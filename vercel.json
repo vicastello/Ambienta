@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/tiny/sync/enrich-background",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+{}
