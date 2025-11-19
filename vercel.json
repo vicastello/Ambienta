@@ -1,10 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/tiny/sync/cron",
-      "schedule": "*/30 * * * *"
-    },
-    {
       "path": "/api/tiny/sync/enrich-background",
       "schedule": "*/5 * * * *"
     }
