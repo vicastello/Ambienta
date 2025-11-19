@@ -1,0 +1,35 @@
+name: Tiny Sync Worker
+
+on:
+  workflow_dispatch: {}
+  # DISABLED: Sync is now handled by Vercel crons
+  # schedule:
+  #   - cron: '*/15 * * * *' # every 15 minutes (adjust as needed)
+
+jobs:
+  enqueue-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enqueue sync job (current month)
+        env:
+          API_URL: ${{ secrets.SITE_API_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: |
+          # Enqueue a monthly sync for the CURRENT month
+          start=$(date -u +%Y-%m-01)
+          end=$(date -u -d "$start +1 month -1 day" +%F)
+          curl -s -X POST "$API_URL/api/tiny/sync" \
+            -H "Content-Type: application/json" \
+            -d "{\"mode\":\"range\",\"dataInicial\":\"$start\",\"dataFinal\":\"$end\",\"background\":true}"
+
+      - name: Process queued job (worker)
+        env:
+          API_URL: ${{ secrets.SITE_API_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: |
+          # Call the worker endpoint with secret header
+          curl -s -X POST "$API_URL/api/tiny/sync/worker" \
+            -H "x-worker-secret: $WORKER_SECRET" \
+            -H "Accept: application/json" \
+            | jq '.'
+

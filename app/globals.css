@@ -1,26 +1,266 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* =========================
+   Tema (claro / escuro)
+   ========================= */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Cores base – modo claro */
+    --bg-body: #F5F7FA;
+    --bg-card: rgba(255, 255, 255, 0.6);
+    --bg-card-soft: rgba(255, 255, 255, 0.4);
+    --border-subtle: rgba(255, 255, 255, 0.4);
+    --text-main: #020617;
+    --text-muted: #6B7280;
+
+    --accent: #009DA8;
+    --accent-light: #00B5C3;
+    --accent-dark: #006E76;
+    --accent-soft: rgba(0, 157, 168, 0.1);
+    --positive: #22c55e;
+    --negative: #e11d48;
+  }
+
+  :root.dark {
+    /* Modo escuro */
+    --bg-body: #0F1929;
+    --bg-card: rgba(15, 23, 42, 0.6);
+    --bg-card-soft: rgba(15, 23, 42, 0.4);
+    --border-subtle: rgba(255, 255, 255, 0.15);
+    --text-main: #e5e7eb;
+    --text-muted: #9ca3af;
+
+    --accent: #009DA8;
+    --accent-light: #00B5C3;
+    --accent-dark: #006E76;
+    --accent-soft: rgba(0, 157, 168, 0.15);
+    --positive: #22c55e;
+    --negative: #fb7185;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: linear-gradient(135deg, var(--bg-body) 0%, #ECF4F5 100%);
+    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* =========================
+   Helpers de layout / cards
+   ========================= */
+
+@layer components {
+  /* layout principal da página */
+  .app-shell {
+    min-height: 100vh;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, var(--bg-body) 0%, #ECF4F5 100%);
+  }
+
+  @media (max-width: 768px) {
+    .app-shell {
+      padding: 1rem;
+    }
+  }
+
+  /* container interno - responsivo */
+  .app-shell-inner {
+    max-width: 90rem;
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    flex-direction: column;
+    row-gap: 1.5rem;
+  }
+
+  /* Cartão Liquid Glass com efeito vidro fosco */
+  .app-card {
+    border-radius: 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .app-card:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  }
+
+  :root.dark .app-card {
+    background-color: rgba(15, 23, 42, 0.6);
+  }
+
+  :root.dark .app-card:hover {
+    background-color: rgba(15, 23, 42, 0.7);
+  }
+
+  /* Chip group para filtros */
+  .app-chip-group {
+    display: inline-flex;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    overflow: hidden;
+    background-color: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(16px);
+  }
+
+  /* Chip individual */
+  .app-chip {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 150ms ease;
+  }
+
+  .app-chip:hover {
+    color: var(--text-main);
+  }
+
+  /* Chip ativo */
+  .app-chip-active {
+    background-color: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+
+  :root.dark .app-chip-active {
+    background-color: var(--accent);
+    color: white;
+  }
+
+  /* Cabeçalho das tabelas */
+  .app-table-header {
+    position: sticky;
+    top: 0;
+    backdrop-filter: blur(16px);
+    background-color: rgba(255, 255, 255, 0.5);
+    z-index: 10;
+  }
+
+  /* Borda discreta */
+  .app-border-subtle {
+    border-color: var(--border-subtle);
+  }
+
+  /* Input com estilo Liquid Glass */
+  .app-input {
+    background-color: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 1.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: var(--text-main);
+    backdrop-filter: blur(8px);
+    transition: all 150ms ease;
+  }
+
+  .app-input:focus {
+    outline: none;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  :root.dark .app-input {
+    background-color: rgba(15, 23, 42, 0.6);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  :root.dark .app-input:focus {
+    background-color: rgba(15, 23, 42, 0.8);
+    border-color: var(--accent);
+  }
+
+  /* Button primário */
+  .app-btn-primary {
+    background-color: var(--accent);
+    color: white;
+    border-radius: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 15px rgba(0, 157, 168, 0.3);
+  }
+
+  .app-btn-primary:hover {
+    background-color: var(--accent-dark);
+    box-shadow: 0 6px 20px rgba(0, 157, 168, 0.4);
+  }
+
+  .app-btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  /* Badge / Pill para status */
+  .app-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: var(--accent-soft);
+    color: var(--accent-dark);
+  }
+}
+
+@media (max-width: 1024px) {
+  @layer components {
+    .app-shell {
+      padding: 1rem;
+    }
+
+    .app-card {
+      padding: 1.25rem;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  @layer components {
+    .app-card {
+      border-radius: 1.5rem;
+      padding: 1rem;
+    }
+
+    .app-shell-inner {
+      row-gap: 1rem;
+    }
+  }
+}
+
+/* Recharts Tooltip Styling */
+.recharts-tooltip {
+  outline: none !important;
+  z-index: 9999 !important;
+}
+
+.recharts-default-tooltip {
+  outline: none !important;
+  z-index: 9999 !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* SVG text for Recharts tooltip should be sharp */
+.recharts-text {
+  outline: none !important;
 }
