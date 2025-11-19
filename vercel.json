@@ -1,10 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/tiny/sync/cron-fast",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/tiny/sync/cron",
       "schedule": "*/30 * * * *"
     },
