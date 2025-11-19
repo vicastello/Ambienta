@@ -212,9 +212,8 @@ Adicione estas variáveis na seção "Secrets" da função:
 |----------|-------|
 | `SUPABASE_URL` | `https://znoiauhdrujwkfryhwiz.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpub2lhdWhkcnVqd2tmcnlod2l6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM5ODEyNywiZXhwIjoyMDc4OTc0MTI3fQ.J1GFCdU1Fb9Jc5NlQSHkI7vsvXPWbE3l6h-17KLPsZQ` |
-| `TINY_ACCESS_TOKEN` | *(seu token do Tiny - você já tem no .env.local)* |
-| `TINY_CLIENT_ID` | `tiny-api-96c52ae7713211e99e3d9fd50ee4385d928437a7-1763324548` |
-| `TINY_CLIENT_SECRET` | `vTDeowXckMitwa9brXA2w8CX64m9Axdh` |
+
+**Observação:** O token Tiny é obtido automaticamente da tabela `tiny_tokens` (OAuth já configurado!)
 
 ---
 

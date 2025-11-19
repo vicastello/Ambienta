@@ -3,9 +3,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.47.0";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const tinyToken = Deno.env.get("TINY_ACCESS_TOKEN");
-const tinyClientId = Deno.env.get("TINY_CLIENT_ID");
-const tinyClientSecret = Deno.env.get("TINY_CLIENT_SECRET");
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -24,20 +21,17 @@ serve(async (req: Request) => {
   try {
     console.log("[sync-polling] Starting differential sync...");
 
-    // Get current token or refresh if needed
-    let accessToken = tinyToken;
-    if (!accessToken) {
-      // Try to get from database
-      const { data: tokenData, error: tokenError } = await supabase
-        .from("tiny_tokens")
-        .select("access_token")
-        .single();
+    // Get token from database (stored via OAuth)
+    const { data: tokenData, error: tokenError } = await supabase
+      .from("tiny_tokens")
+      .select("access_token")
+      .single();
 
-      if (tokenError || !tokenData) {
-        throw new Error("Token not available");
-      }
-      accessToken = tokenData.access_token;
+    if (tokenError || !tokenData) {
+      throw new Error("Token not available in database. Please complete OAuth setup first.");
     }
+
+    const accessToken = tokenData.access_token;
 
     // Fetch orders from last 7 days (recent orders only)
     const hoje = new Date();
