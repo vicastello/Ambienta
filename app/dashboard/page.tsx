@@ -360,7 +360,7 @@ export default function DashboardPage() {
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
   async function fetchLastSync() {
     try {
