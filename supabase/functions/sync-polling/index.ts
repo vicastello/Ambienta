@@ -82,11 +82,15 @@ serve(async (req: Request) => {
     console.log(
       `[sync-polling] Syncing orders from ${dataInicial} to ${dataFinal}`
     );
+    console.log(
+      `[sync-polling] URL: https://api.tiny.com.br/public-api/v3/pedidos?dataInicial=${dataInicial}&dataFinal=${dataFinal}`
+    );
 
-    // Call Tiny API
-    const tinyResponse = await fetch(
-      `https://api.tiny.com.br/public-api/v3/pedidos?dataInicial=${dataInicial}&dataFinal=${dataFinal}`,
-      {
+    // Call Tiny API (corrected endpoint - without /listar and pagina)
+    const tinyUrl = `https://api.tiny.com.br/public-api/v3/pedidos?dataInicial=${dataInicial}&dataFinal=${dataFinal}`;
+    console.log(`[sync-polling] Making request to: ${tinyUrl}`);
+    
+    const tinyResponse = await fetch(tinyUrl, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
