@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 /**
  * Sync Polling Function - Runs every 1 minute
  * Smart differential polling with hash-based change detection
- * ✅ Version 2.2: Fixed endpoint
+ * ✅ Version 2.3: Force redeploy - endpoint /pedidos (no /listar, no pagina)
  */
 serve(async (req: Request) => {
   // Only accept POST requests
