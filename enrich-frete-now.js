@@ -2,61 +2,85 @@
 
 /**
  * Script para enriquecer fretes dos últimos 30 dias
- * Chama diretamente a função de enriquecimento via API route
+ * Executa em loop até não haver mais pedidos para enriquecer
  */
 
-const https = require('https');
+const http = require('http');
 
-// Tenta usar a URL de produção do Vercel
-const VERCEL_URL = process.env.VERCEL_URL || 'gestor-tiny-git-main-vitorcastellos-projects.vercel.app';
-const API_URL = `https://${VERCEL_URL}/api/admin/enrich-frete`;
+const API_URL = 'http://localhost:3000/api/admin/enrich-frete';
+let totalEnriched = 0;
+let totalFailed = 0;
+let round = 0;
 
-console.log('🚀 Iniciando enriquecimento de fretes...');
-console.log(`📡 URL: ${API_URL}\n`);
+console.log('🚀 Iniciando enriquecimento em lote de fretes...\n');
 
-const req = https.request(
-  API_URL,
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  },
-  (res) => {
-    let data = '';
-
-    res.on('data', (chunk) => {
-      data += chunk;
-    });
-
-    res.on('end', () => {
-      console.log(`\n📊 Status: ${res.statusCode}`);
-      
-      try {
-        const result = JSON.parse(data);
-        console.log('\n✅ Resultado:');
-        console.log(JSON.stringify(result, null, 2));
-        
-        if (result.enriched > 0) {
-          console.log(`\n🎉 Sucesso! ${result.enriched} pedidos enriquecidos com frete.`);
-        } else if (result.enriched === 0) {
-          console.log('\n✓ Nenhum pedido precisava de enriquecimento.');
-        }
-        
-        if (result.failed > 0) {
-          console.log(`\n⚠️  ${result.failed} pedidos falharam no enriquecimento.`);
-        }
-      } catch (err) {
-        console.log('\n❌ Resposta:', data);
+async function enrichBatch() {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      API_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (err) {
+            reject(new Error('Failed to parse response'));
+          }
+        });
       }
-    });
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function runEnrichment() {
+  try {
+    round++;
+    console.log(`📦 Rodada ${round}...`);
+    
+    const result = await enrichBatch();
+    
+    totalEnriched += result.enriched || 0;
+    totalFailed += result.failed || 0;
+    
+    console.log(`   ✅ Enriquecidos: ${result.enriched || 0}`);
+    console.log(`   ❌ Falhados: ${result.failed || 0}`);
+    console.log(`   📊 Total acumulado: ${totalEnriched} enriquecidos, ${totalFailed} falhados\n`);
+    
+    // Continue if there were orders processed
+    if (result.total > 0 && result.enriched > 0) {
+      // Wait 3 seconds between batches
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      await runEnrichment();
+    } else if (result.total === 0) {
+      console.log('🎉 Concluído! Não há mais pedidos para enriquecer.');
+      console.log(`\n📊 Resumo final:`);
+      console.log(`   Total enriquecido: ${totalEnriched}`);
+      console.log(`   Total falhado: ${totalFailed}`);
+      console.log(`   Rodadas: ${round}`);
+    } else {
+      console.log('⚠️  Última rodada não teve sucesso. Finalizando...');
+      console.log(`\n📊 Resumo final:`);
+      console.log(`   Total enriquecido: ${totalEnriched}`);
+      console.log(`   Total falhado: ${totalFailed}`);
+      console.log(`   Rodadas: ${round}`);
+    }
+  } catch (err) {
+    console.error('\n❌ Erro:', err.message);
+    console.log('\n📊 Parcial até o erro:');
+    console.log(`   Total enriquecido: ${totalEnriched}`);
+    console.log(`   Total falhado: ${totalFailed}`);
+    console.log(`   Rodadas: ${round}`);
+    process.exit(1);
   }
-);
+}
 
-req.on('error', (err) => {
-  console.error('\n❌ Erro na requisição:', err.message);
-  console.log('\n💡 Dica: Verifique se o app está deployado no Vercel.');
-  process.exit(1);
-});
-
-req.end();
+runEnrichment();
