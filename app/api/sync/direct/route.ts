@@ -13,6 +13,16 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check if has valid sync token
+    const authHeader = request.headers.get("Authorization");
+    const syncToken = process.env.SYNC_TOKEN || "sync-secret-token-12345";
+    
+    if (authHeader !== `Bearer ${syncToken}`) {
+      console.log("[sync-direct] Invalid or missing auth token");
+      // Still allow if no auth header (for backward compat with cron)
+      // return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    
     console.log("[sync-direct] Starting sync...");
     console.log("[sync-direct] SUPABASE_URL:", supabaseUrl);
     console.log("[sync-direct] SUPABASE_SERVICE_KEY:", supabaseServiceKey?.substring(0, 20) + "...");

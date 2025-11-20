@@ -14,7 +14,8 @@ SELECT cron.schedule(
       url := 'https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app/api/sync/direct',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'User-Agent', 'Supabase-PgCron'
+        'User-Agent', 'Supabase-PgCron',
+        'Authorization', 'Bearer sync-secret-token-12345'
       ),
       body := jsonb_build_object(
         'action', 'sync',
@@ -26,3 +27,4 @@ SELECT cron.schedule(
 
 -- Verify the job
 SELECT jobname, schedule, command FROM cron.job WHERE jobname LIKE 'sync%';
+
