@@ -1,5 +1,6 @@
 -- Update cron job to use the direct Vercel endpoint instead of Edge Function
 -- This bypasses the Supabase Edge Function cache issues
+-- Endpoint now responds immediately and processes sync in background
 
 -- First, unschedule the old job if it exists
 SELECT cron.unschedule('sync-polling-every-minute');
@@ -14,8 +15,7 @@ SELECT cron.schedule(
       url := 'https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app/api/sync/direct',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
-        'User-Agent', 'Supabase-PgCron',
-        'Authorization', 'Bearer sync-secret-token-12345'
+        'User-Agent', 'Supabase-PgCron/1.0'
       ),
       body := jsonb_build_object(
         'action', 'sync',
