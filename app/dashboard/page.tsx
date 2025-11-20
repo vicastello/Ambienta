@@ -326,8 +326,8 @@ export default function DashboardPage() {
           const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
           const resC = await fetch(url, { cache: 'no-store' });
           if (resC.ok) {
-            await carregarResumo();
-            await fetchLastSync();
+            setComplementMsg('Dados completados automaticamente');
+            setTimeout(() => setComplementMsg(null), 5000);
           } else {
             const j = await resC.json().catch(() => ({}));
             setComplementMsg(j?.message || 'Erro ao complementar automaticamente');
@@ -418,8 +418,10 @@ export default function DashboardPage() {
           setComplementLoading(true);
           const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
           const resC = await fetch(url, { cache: 'no-store' });
-          if (resC.ok) await carregarResumoChart();
-          else {
+          if (resC.ok) {
+            setComplementMsg('Dados completados automaticamente');
+            setTimeout(() => setComplementMsg(null), 5000);
+          } else {
             const j = await resC.json().catch(() => ({}));
             setComplementMsg(j?.message || 'Erro ao complementar automaticamente');
             setTimeout(() => setComplementMsg(null), 5000);
@@ -455,10 +457,8 @@ export default function DashboardPage() {
         setComplementMsg(msg);
         return;
       }
-      setComplementMsg('Complemento realizado. Atualizando gráfico...');
-      await carregarResumoChart();
-      await fetchLastSync();
-      setComplementMsg('Gráfico atualizado com dados do Tiny.');
+      setComplementMsg('Complemento realizado.');
+      setTimeout(() => setComplementMsg(null), 6_000);
     } catch (e: any) {
       setComplementMsg(e?.message ?? 'Erro inesperado ao complementar.');
     } finally {
