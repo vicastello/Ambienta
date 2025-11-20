@@ -13,20 +13,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check if has valid sync token
-    const authHeader = request.headers.get("Authorization");
-    const syncToken = process.env.SYNC_TOKEN || "sync-secret-token-12345";
-    
-    if (authHeader !== `Bearer ${syncToken}`) {
-      console.log("[sync-direct] Invalid or missing auth token");
-      // Still allow if no auth header (for backward compat with cron)
-      // return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-    
-    console.log("[sync-direct] Starting sync...");
-    console.log("[sync-direct] SUPABASE_URL:", supabaseUrl);
-    console.log("[sync-direct] SUPABASE_SERVICE_KEY:", supabaseServiceKey?.substring(0, 20) + "...");
-    
+    console.log("[sync-direct] POST received - starting sync...");
+
     // Get token from database
     const { data: tokenData, error: tokenError } = await supabase
       .from("tiny_tokens")
@@ -34,23 +22,14 @@ export async function POST(request: NextRequest) {
       .eq("id", 1)
       .single();
 
-    if (tokenError) {
-      console.error("[sync-direct] Token fetch error:", tokenError);
+    if (tokenError || !tokenData?.access_token) {
+      const errorMsg = tokenError?.message || "No token available";
+      console.error("[sync-direct] Token error:", errorMsg);
       return Response.json(
-        { success: false, error: "Token fetch failed", details: tokenError },
+        { success: false, error: errorMsg },
         { status: 401 }
       );
     }
-
-    if (!tokenData?.access_token) {
-      console.error("[sync-direct] No token data available");
-      return Response.json(
-        { success: false, error: "No token available" },
-        { status: 401 }
-      );
-    }
-    
-    console.log("[sync-direct] Token retrieved successfully");
 
     const { access_token, expires_at } = tokenData;
 
