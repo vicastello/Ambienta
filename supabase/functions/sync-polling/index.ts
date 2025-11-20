@@ -24,14 +24,54 @@ serve(async (req: Request) => {
     // Get token from database (stored via OAuth)
     const { data: tokenData, error: tokenError } = await supabase
       .from("tiny_tokens")
-      .select("access_token")
+      .select("access_token, refresh_token, expires_at")
       .single();
 
     if (tokenError || !tokenData) {
       throw new Error("Token not available in database. Please complete OAuth setup first.");
     }
 
-    const accessToken = tokenData.access_token;
+    let accessToken = tokenData.access_token;
+
+    // Check if token is expired and refresh if needed
+    const now = Date.now();
+    if (tokenData.expires_at && now > tokenData.expires_at) {
+      console.log("[sync-polling] Access token expired, attempting refresh...");
+      
+      const refreshResponse = await fetch(
+        "https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: Deno.env.get("TINY_CLIENT_ID") || "",
+            client_secret: Deno.env.get("TINY_CLIENT_SECRET") || "",
+            refresh_token: tokenData.refresh_token || "",
+          }).toString(),
+        }
+      );
+
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        accessToken = refreshData.access_token;
+        
+        // Update token in database
+        const newExpiresAt = now + (refreshData.expires_in - 60) * 1000;
+        await supabase
+          .from("tiny_tokens")
+          .update({
+            access_token: refreshData.access_token,
+            refresh_token: refreshData.refresh_token || tokenData.refresh_token,
+            expires_at: newExpiresAt,
+          })
+          .eq("id", 1);
+
+        console.log("[sync-polling] Token refreshed successfully");
+      } else {
+        console.warn("[sync-polling] Token refresh failed, using existing token");
+      }
+    }
 
     // Fetch orders from last 7 days (recent orders only)
     const hoje = new Date();
