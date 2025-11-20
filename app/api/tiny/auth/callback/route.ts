@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
 
   // persist tokens in DB for worker use (upsert)
   try {
-    await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('tiny_tokens')
       .upsert(
         {
@@ -139,6 +139,12 @@ export async function GET(req: NextRequest) {
         },
         { onConflict: 'id' }
       );
+    
+    if (error) {
+      console.error('[Tiny OAuth callback] Erro ao salvar tokens no DB:', error);
+    } else {
+      console.log('[Tiny OAuth callback] ✅ Tokens salvos no DB com sucesso', data);
+    }
   } catch (e) {
     console.error('[Tiny OAuth callback] Não foi possível salvar tokens no DB', e);
   }
