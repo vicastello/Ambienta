@@ -85,7 +85,7 @@ serve(async (req: Request) => {
 
     // Call Tiny API
     const tinyResponse = await fetch(
-      `https://api.tiny.com.br/public-api/v3/pedidos/listar?dataInicial=${dataInicial}&dataFinal=${dataFinal}&pagina=1`,
+      `https://api.tiny.com.br/public-api/v3/pedidos?dataInicial=${dataInicial}&dataFinal=${dataFinal}`,
       {
         method: "GET",
         headers: {
