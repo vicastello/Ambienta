@@ -348,9 +348,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     carregarResumo();
-    fetchLastSync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
+
+  useEffect(() => {
+    fetchLastSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Removed auto-refresh - only refresh on page reload or manual action
 
