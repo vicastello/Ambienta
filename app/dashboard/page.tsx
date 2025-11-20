@@ -352,15 +352,7 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
-  // Auto-refresh dashboard every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      carregarResumo();
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
+  // Removed auto-refresh - only refresh on page reload or manual action
 
   async function fetchLastSync() {
     try {
