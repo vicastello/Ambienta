@@ -1,47 +1,24 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
- * Setup endpoint - Execute efficient polling setup
- * GET /api/admin/setup-polling
+ * Setup endpoint - Execute efficient polling setup manually
+ * GET /api/admin/setup-polling?confirm=yes
+ * 
+ * This endpoint cannot auto-execute raw SQL via REST API,
+ * but provides instructions for manual setup.
  */
-export async function GET() {
-  try {
-    console.log("[setup-polling] Starting setup...");
+export async function GET(request: NextRequest) {
+  const confirm = request.nextUrl.searchParams.get("confirm");
 
-    // Step 1: Create HTTP extension
-    try {
-      const { error: extError } = await supabase.rpc("_internal_execute_sql", {
-        sql: "CREATE EXTENSION IF NOT EXISTS http;",
-      });
-      if (extError) console.log("[setup-polling] Extension note:", extError.message);
-    } catch (e) {
-      console.log("[setup-polling] Extension setup skipped (RPC not available)");
-    }
+  if (confirm === "yes") {
+    // Return the SQL that needs to be executed
+    const sql = `
+CREATE EXTENSION IF NOT EXISTS http;
 
-    // Step 2: Unschedule old jobs
-    const oldJobs = [
-      "sync-polling-every-minute",
-      "sync-tiny-direct-every-minute",
-      "sync-tiny-direct-sql",
-    ];
-
-    for (const job of oldJobs) {
-      try {
-        await supabase.rpc("cron_unschedule", { job_name: job });
-      } catch (e) {
-        // Job might not exist, that's ok
-      }
-    }
-
-    console.log("[setup-polling] Old jobs unscheduled");
-
-    // Step 3: Create polling function via raw SQL
-    const createFunctionSQL = `
 CREATE OR REPLACE FUNCTION sync_tiny_orders_now()
 RETURNS json AS $$
 DECLARE
@@ -107,42 +84,47 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql;
-    `;
 
-    // Execute function creation via direct SQL query (if possible)
-    try {
-      const { data, error } = await supabase.from("_supabase_migrations").select().single();
-      console.log("[setup-polling] Can execute migrations");
-    } catch (e) {
-      console.log("[setup-polling] Cannot execute migrations directly");
-    }
+SELECT cron.unschedule('sync-polling-every-minute') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'sync-polling-every-minute');
+SELECT cron.unschedule('sync-tiny-direct-every-minute') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'sync-tiny-direct-every-minute');
+SELECT cron.unschedule('sync-tiny-direct-sql') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'sync-tiny-direct-sql');
 
-    // Step 4: Schedule via cron.schedule
-    const scheduleSQL = `
 SELECT cron.schedule(
   'sync-tiny-efficient',
   '*/1 * * * *',
   'SELECT sync_tiny_orders_now();'
 );
-    `;
 
-    console.log("[setup-polling] Setup SQL prepared");
+SELECT jobname, schedule, command FROM cron.job WHERE jobname LIKE '%efficient%' OR jobname LIKE '%sync%';
+`;
 
     return NextResponse.json({
       success: true,
-      message: "Setup prepared. Please execute the SQL directly in Supabase SQL editor.",
-      instructions: {
-        step1: "Go to https://app.supabase.com/project/znoiauhdrujwkfryhwiz/sql/new",
-        step2: "Copy content from SETUP_EFFICIENT_POLLING.sql",
-        step3: "Paste and run in SQL editor",
-      },
+      message: "Copy the SQL below and paste in Supabase SQL Editor",
+      steps: [
+        "Go to: https://app.supabase.com/project/znoiauhdrujwkfryhwiz/sql/new",
+        "Paste the SQL below",
+        "Click RUN",
+        "Wait 60 seconds, then check dashboard",
+      ],
+      sql,
+      dashboard: "https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app",
     });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[setup-polling] Error:", errorMessage);
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json({
+    message: "Setup instructions",
+    instructions: [
+      "1. Open Supabase SQL Editor: https://app.supabase.com/project/znoiauhdrujwkfryhwiz/sql/new",
+      "2. Copy SQL from: GET /api/admin/setup-polling?confirm=yes",
+      "3. Paste and RUN",
+      "4. Wait 60 seconds",
+      "5. Dashboard updates: https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app",
+    ],
+    links: {
+      supabase_sql_editor: "https://app.supabase.com/project/znoiauhdrujwkfryhwiz/sql/new",
+      setup_sql: "/api/admin/setup-polling?confirm=yes",
+      dashboard: "https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app",
+    },
+  });
 }
