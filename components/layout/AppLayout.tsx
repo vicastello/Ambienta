@@ -56,7 +56,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
         <div className="px-4 py-3 border-t app-border-subtle space-y-2">
           <ThemeToggle />
           <div className="text-[9px] text-[var(--text-muted)] opacity-60 text-center font-mono">
-            Build: 2025-11-20 14:35
+            Build: 2025-11-20 15:18
           </div>
         </div>
       </aside>
