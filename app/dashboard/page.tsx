@@ -356,6 +356,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    console.log('[DEBUG] carregarResumo triggered', { preset, customStart, customEnd, canais: canaisSelecionados, situacoes: situacoesSelecionadas });
     carregarResumo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
@@ -454,6 +455,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    console.log('[DEBUG] carregarResumoChart triggered', { chartPreset, chartCustomStart, chartCustomEnd });
     carregarResumoChart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartPreset, chartCustomStart, chartCustomEnd]);
@@ -557,10 +559,6 @@ export default function DashboardPage() {
               <div className="space-y-1">
                 <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-main)]">Visão Geral</h1>
                 <p className="text-sm text-[var(--text-muted)]">Período de {intervaloInicio} até {intervaloFim} ({diasIntervalo} dias)</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                  <p className="text-xs text-[var(--text-muted)]">Atualizado em tempo real (a cada 30s)</p>
-                </div>
                 {lastSync && <p className="text-xs text-[var(--text-muted)] mt-1">Última sincronização: {new Date(lastSync).toLocaleString()}</p>}
               </div>
             </div>
