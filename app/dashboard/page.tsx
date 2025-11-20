@@ -215,6 +215,20 @@ function diffDays(startIso: string, endIso: string): number {
   return Math.floor(diff / (24 * 60 * 60 * 1000));
 }
 
+function formatDateTime(dateString: string): string {
+  try {
+    return new Date(dateString).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return dateString;
+  }
+}
+
 type ChartPreset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
 export default function DashboardPage() {
@@ -559,7 +573,11 @@ export default function DashboardPage() {
               <div className="space-y-1">
                 <h1 className="text-3xl sm:text-4xl font-bold text-[var(--text-main)]">Visão Geral</h1>
                 <p className="text-sm text-[var(--text-muted)]">Período de {intervaloInicio} até {intervaloFim} ({diasIntervalo} dias)</p>
-                {lastSync && <p className="text-xs text-[var(--text-muted)] mt-1">Última sincronização: {new Date(lastSync).toLocaleString()}</p>}
+                {lastSync && (
+                  <p className="text-xs text-[var(--text-muted)] mt-1" suppressHydrationWarning>
+                    Última sincronização: {formatDateTime(lastSync)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -684,7 +702,9 @@ export default function DashboardPage() {
                     <div className="flex items-start justify-between mb-3">
                       <div className="space-y-1">
                         <p className="text-[10px] sm:text-[11px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">Pedidos</p>
-                        <p className="text-2xl sm:text-3xl font-bold">{resumoAtual.totalPedidos.toLocaleString('pt-BR')}</p>
+                        <p className="text-2xl sm:text-3xl font-bold" suppressHydrationWarning>
+                          {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
+                        </p>
                       </div>
                       <div className="p-2 sm:p-3 rounded-2xl bg-sky-500/10"><ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-sky-500" /></div>
                     </div>
