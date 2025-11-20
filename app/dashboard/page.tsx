@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import {
@@ -240,6 +240,10 @@ export default function DashboardPage() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [autoComplementedRanges, setAutoComplementedRanges] = useState<Record<string, boolean>>({});
 
+  // Refs para evitar chamadas simultâneas
+  const isLoadingRef = useRef(false);
+  const isLoadingChartRef = useRef(false);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -301,6 +305,10 @@ export default function DashboardPage() {
   }
 
   async function carregarResumo() {
+    // Evitar chamadas simultâneas
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+
     try {
       setLoading(true);
       setErro(null);
@@ -343,6 +351,7 @@ export default function DashboardPage() {
       setResumo(null);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   }
 
@@ -396,6 +405,10 @@ export default function DashboardPage() {
   }
 
   async function carregarResumoChart() {
+    // Evitar chamadas simultâneas
+    if (isLoadingChartRef.current) return;
+    isLoadingChartRef.current = true;
+
     try {
       setLoadingChart(true);
       setErroChart(null);
@@ -436,6 +449,7 @@ export default function DashboardPage() {
       setResumoChart(null);
     } finally {
       setLoadingChart(false);
+      isLoadingChartRef.current = false;
     }
   }
 
