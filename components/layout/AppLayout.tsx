@@ -55,8 +55,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
         <div className="px-4 py-3 border-t app-border-subtle space-y-2">
           <ThemeToggle />
-          <div className="text-[9px] text-[var(--text-muted)] opacity-50 text-center" suppressHydrationWarning>
-            v{new Date().toISOString().slice(0, 16).replace('T', ' ')}
+          <div className="text-[9px] text-[var(--text-muted)] opacity-60 text-center font-mono">
+            Build: 2025-11-20 14:35
           </div>
         </div>
       </aside>
