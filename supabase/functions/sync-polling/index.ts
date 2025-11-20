@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 /**
  * Sync Polling Function - Runs every 1 minute
  * Smart differential polling with hash-based change detection
- * ✅ Version 2.1: Token refresh support
+ * ✅ Version 2.2: Fixed endpoint
  */
 serve(async (req: Request) => {
   // Only accept POST requests
