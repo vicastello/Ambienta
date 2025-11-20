@@ -1,1 +1,4 @@
-{}
+{
+  "bypassToken": "8a5c5bd2e9f4a2bc1d3e6f9a0b2c4d5e",
+  "protectedPaths": ["/admin", "/configuracoes"]
+}
