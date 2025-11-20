@@ -1,5 +1,0 @@
-{
-  "name": "sync-polling",
-  "description": "Sync polling - runs every 1 minute with hash-based change detection",
-  "importMap": "./import_map.json"
-}
