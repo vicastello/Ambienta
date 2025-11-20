@@ -13,7 +13,7 @@ export async function POST() {
       .select('tiny_id, numero_pedido')
       .is('valor_frete', null)
       .gte('data_criacao', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-      .limit(50); // Process 50 at a time
+      .limit(200); // Process 200 at a time - faster batches
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -30,43 +30,63 @@ export async function POST() {
     let enriched = 0;
     let failed = 0;
 
-    for (const order of orders) {
-      try {
-        // Call Tiny API for order details
-        const response = await fetch(
-          `https://api.tiny.com.br/public-api/v3/pedidos/${order.tiny_id}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Accept': 'application/json',
-            },
+    // Process in parallel batches to respect 120 req/min (2 req/sec)
+    const batchSize = 10; // Process 10 at a time
+    
+    for (let i = 0; i < orders.length; i += batchSize) {
+      const batch = orders.slice(i, i + batchSize);
+      
+      const results = await Promise.allSettled(
+        batch.map(async (order) => {
+          try {
+            // Call Tiny API for order details
+            const response = await fetch(
+              `https://api.tiny.com.br/public-api/v3/pedidos/${order.tiny_id}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/json',
+                },
+              }
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+              const valorFrete = data?.valorFrete || data?.frete?.valor || 0;
+
+              // Update order with frete value
+              await supabaseAdmin
+                .from('tiny_orders')
+                .update({ 
+                  valor_frete: valorFrete,
+                  raw: data, // Update full data
+                  updated_at: new Date().toISOString()
+                })
+                .eq('tiny_id', order.tiny_id);
+
+              return { success: true };
+            } else {
+              return { success: false };
+            }
+          } catch (err) {
+            console.error(`Error enriching order ${order.numero_pedido}:`, err);
+            return { success: false };
           }
-        );
+        })
+      );
 
-        if (response.ok) {
-          const data = await response.json();
-          const valorFrete = data?.valorFrete || data?.frete?.valor || 0;
-
-          // Update order with frete value
-          await supabaseAdmin
-            .from('tiny_orders')
-            .update({ 
-              valor_frete: valorFrete,
-              raw: data, // Update full data
-              updated_at: new Date().toISOString()
-            })
-            .eq('tiny_id', order.tiny_id);
-
+      // Count successes and failures
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value.success) {
           enriched++;
         } else {
           failed++;
         }
+      });
 
-        // Delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (err) {
-        failed++;
-        console.error(`Error enriching order ${order.numero_pedido}:`, err);
+      // Delay between batches: 10 requests per 5 seconds = 120/min
+      if (i + batchSize < orders.length) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
 
