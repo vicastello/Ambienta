@@ -56,7 +56,7 @@ async function enrichRecentOrders() {
       maxRequests: 50,
       dataMinima: today,
     });
-    console.log(`✅ ${freteResult.enrichedCount} pedidos com frete atualizado\n`);
+    console.log(`✅ ${freteResult.updated} pedidos com frete atualizado\n`);
   } catch (error: any) {
     console.error('❌ Erro ao enriquecer frete:', error.message);
   }

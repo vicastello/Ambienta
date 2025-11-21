@@ -133,7 +133,7 @@ async function syncPedidosAtualizados(): Promise<boolean> {
           maxRequests: 30,
           dataMinima: lookbackDate,
         });
-        console.log(`✅ ${freteResult.enrichedCount} pedidos com frete atualizado`);
+        console.log(`✅ ${freteResult.updated} pedidos com frete atualizado`);
       } catch (error: any) {
         console.error('❌ Erro ao enriquecer frete:', error.message);
       }
