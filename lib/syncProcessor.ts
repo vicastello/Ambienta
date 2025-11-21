@@ -347,30 +347,6 @@ export async function processJob(jobId: string) {
           meta: { janela: `${janelaIniStr}/${janelaFimStr}`, pages: pagesJanela } 
         });
 
-            // Sincronizar itens imediatamente para os pedidos desta página
-            try {
-              const itensResult = await sincronizarItensPorPedidos(
-                accessToken!,
-                validRows.map((r) => r.tiny_id as number)
-              );
-
-              if (itensResult.sucesso > 0) {
-                await supabaseAdmin.from('sync_logs').insert({
-                  job_id: jobId,
-                  level: 'info',
-                  message: 'Itens sincronizados para pedidos da janela',
-                  meta: itensResult,
-                });
-              }
-            } catch (error: any) {
-              await supabaseAdmin.from('sync_logs').insert({
-                job_id: jobId,
-                level: 'warning',
-                message: 'Erro ao sincronizar itens para pedidos da janela',
-                meta: { error: error?.message || String(error) },
-              });
-            }
-
         cursor = new Date(janelaFim.getTime() + DAY_MS);
       }
 
