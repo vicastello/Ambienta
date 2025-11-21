@@ -57,9 +57,9 @@ export async function salvarItensPedido(
         codigo_produto: produto.codigo || item.codigo || null,
         nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
         quantidade: Number(item.quantidade || 0),
-        valor_unitario: Number(item.valorUnitario || item.valor_unitario || 0),
-        valor_total: Number(item.valorTotal || item.valor_total || 0),
-        info_adicional: item.informacoesAdicionais || item.info_adicional || null,
+        valor_unitario: Number(item.valorUnitario || 0),
+        valor_total: Number(item.valorTotal || 0),
+        info_adicional: item.informacoesAdicionais || null,
       };
     });
 
