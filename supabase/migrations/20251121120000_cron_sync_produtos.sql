@@ -142,6 +142,3 @@ SELECT cron.schedule(
   '*/2 * * * *',
   'SELECT sync_produtos_from_tiny();'
 );
-
--- Log da configuração
-RAISE NOTICE 'Cron job "sync-produtos-supabase" agendado para rodar a cada 2 minutos';

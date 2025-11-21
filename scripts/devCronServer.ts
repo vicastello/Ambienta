@@ -19,6 +19,8 @@ import { listarPedidosTinyPorPeriodo, TinyApiError } from "../lib/tinyApi";
 import { upsertOrdersPreservingEnriched } from "../lib/syncProcessor";
 import { mapPedidoToOrderRow } from "../lib/tinyMapping";
 import { sincronizarItensAutomaticamente } from "../lib/pedidoItensHelper";
+import { runFreteEnrichment } from "../lib/freteEnricher";
+import { normalizeMissingOrderChannels } from "../lib/channelNormalizer";
 
 // Configurações
 const SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 horas
@@ -122,6 +124,27 @@ async function syncPedidosAtualizados(): Promise<boolean> {
         }
       } catch (error: any) {
         console.error('❌ Erro ao sincronizar itens:', error.message);
+      }
+
+      // Enriquecer frete
+      console.log('\n🚚 Enriquecendo valor de frete...');
+      try {
+        const freteResult = await runFreteEnrichment(accessToken, {
+          maxRequests: 30,
+          dataMinima: lookbackDate,
+        });
+        console.log(`✅ ${freteResult.enrichedCount} pedidos com frete atualizado`);
+      } catch (error: any) {
+        console.error('❌ Erro ao enriquecer frete:', error.message);
+      }
+
+      // Normalizar canais
+      console.log('\n📺 Normalizando canais...');
+      try {
+        const canalResult = await normalizeMissingOrderChannels();
+        console.log(`✅ ${canalResult.updated} canais normalizados`);
+      } catch (error: any) {
+        console.error('❌ Erro ao normalizar canais:', error.message);
       }
     }
 

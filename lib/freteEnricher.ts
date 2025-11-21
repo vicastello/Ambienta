@@ -17,6 +17,8 @@ export interface FreteEnrichmentOptions {
   startDate?: string;
   endDate?: string;
   newestFirst?: boolean;
+  maxRequests?: number;
+  dataMinima?: Date;
 }
 
 export interface FreteEnrichmentResult {
@@ -93,17 +95,41 @@ function resolveValorFrete(detail: TinyPedidoDetalhado): number {
 }
 
 export async function runFreteEnrichment(
+  accessTokenOrOptions?: string | FreteEnrichmentOptions,
   options: FreteEnrichmentOptions = {}
 ): Promise<FreteEnrichmentResult> {
-  const batchSize = options.batchSize ?? 10;
-  const batchDelayMs = options.batchDelayMs ?? 5000;
-  const newestFirst = options.newestFirst ?? true;
+  // Suportar tanto runFreteEnrichment(token, options) quanto runFreteEnrichment(options)
+  let token: string;
+  let opts: FreteEnrichmentOptions;
+  
+  if (typeof accessTokenOrOptions === 'string') {
+    token = accessTokenOrOptions;
+    opts = options;
+  } else {
+    opts = accessTokenOrOptions || {};
+    token = await getAccessTokenFromDbOrRefresh();
+  }
 
-  const orders = await fetchOrdersNeedingFrete(options);
+  const batchSize = opts.batchSize ?? 5; // Reduzido para evitar rate limit
+  const batchDelayMs = opts.batchDelayMs ?? 3000; // Aumentado para 3s entre batches
+  const newestFirst = opts.newestFirst ?? true;
+  const maxRequests = opts.maxRequests ?? 30;
+
+  // Se dataMinima foi passada, converter para startDate
+  if (opts.dataMinima && !opts.startDate) {
+    opts.startDate = opts.dataMinima.toISOString().split('T')[0];
+  }
+
+  // Limitar pelo maxRequests
+  if (!opts.limit || opts.limit > maxRequests) {
+    opts.limit = maxRequests;
+  }
+
+  const orders = await fetchOrdersNeedingFrete(opts);
   const requested = orders.length;
 
   if (!requested) {
-    const remaining = await countOrdersNeedingFrete(options);
+    const remaining = await countOrdersNeedingFrete(opts);
     return {
       requested,
       processed: 0,
@@ -115,7 +141,6 @@ export async function runFreteEnrichment(
     };
   }
 
-  const token = await getAccessTokenFromDbOrRefresh();
   let processed = 0;
   let updated = 0;
   let failed = 0;
@@ -177,7 +202,7 @@ export async function runFreteEnrichment(
     }
   }
 
-  const remaining = await countOrdersNeedingFrete(options);
+  const remaining = await countOrdersNeedingFrete(opts);
   const firstDate = orders[0]?.data_criacao ?? null;
   const lastDate = orders[orders.length - 1]?.data_criacao ?? null;
 
