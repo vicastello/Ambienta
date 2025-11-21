@@ -51,6 +51,8 @@ async function enrichRecentOrders() {
   try {
     const freteResult = await runFreteEnrichment(accessToken, {
       maxRequests: 50,
+      batchSize: 1,
+      batchDelayMs: 2000,
       dataMinima: today,
     });
     console.log(`✅ ${freteResult.updated} pedidos com frete atualizado\n`);

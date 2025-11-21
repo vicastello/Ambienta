@@ -131,6 +131,8 @@ async function syncPedidosAtualizados(): Promise<boolean> {
       try {
         const freteResult = await runFreteEnrichment(accessToken, {
           maxRequests: 30,
+          batchSize: 1,
+          batchDelayMs: 2000,
           dataMinima: lookbackDate,
         });
         console.log(`✅ ${freteResult.updated} pedidos com frete atualizado`);

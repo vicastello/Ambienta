@@ -18,12 +18,22 @@ async function debugFrete() {
   }
 
   // Pegar um pedido de hoje
-  const { data: order } = await supabase
+  const numero = process.argv[2] ? Number(process.argv[2]) : null;
+
+  const query = supabase
     .from('tiny_orders')
     .select('tiny_id, numero_pedido, raw')
     .gte('data_criacao', '2025-11-21')
-    .limit(1)
-    .single();
+    .order('numero_pedido', { ascending: false });
+
+  const { data: order, error } = numero
+    ? await query.eq('numero_pedido', numero).limit(1).single()
+    : await query.limit(1).single();
+
+  if (error) {
+    console.error('Erro ao buscar pedido:', error.message);
+    return;
+  }
 
   if (!order) {
     console.log('Sem pedidos hoje');
@@ -51,15 +61,14 @@ async function debugFrete() {
   console.log(JSON.stringify(json, null, 2));
 
   console.log('\n🔍 CAMPOS DE FRETE:');
-  console.log('json.data.frete:', json.data?.frete);
-  console.log('json.data.valorFrete:', json.data?.valorFrete);
-  console.log('json.data.valor_frete:', json.data?.valor_frete);
-  console.log('json.data.transporte:', json.data?.transporte);
-  console.log('json.data.transportador:', json.data?.transportador);
+  console.log('valorFrete:', (json as any)?.valorFrete);
+  console.log('frete:', (json as any)?.frete);
+  console.log('transporte:', (json as any)?.transporte);
+  console.log('transportador:', (json as any)?.transportador);
 
-  if (json.data?.transporte) {
-    console.log('\n📦 OBJETO TRANSPORTE:');
-    console.log(JSON.stringify(json.data.transporte, null, 2));
+  if ((json as any)?.transportador) {
+    console.log('\n📦 OBJETO TRANSPORTADOR:');
+    console.log(JSON.stringify((json as any).transportador, null, 2));
   }
 
   console.log('\n💾 RAW ARMAZENADO NO BANCO:');
