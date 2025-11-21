@@ -99,7 +99,7 @@ async function main() {
 
       // Rate limit: 100 req/min = 600ms per request
       if (processed % 10 === 0) {
-        console.log(`\n⏳ Processed ${processed}/${orders.length}, pausing...\n`);
+        console.log(`\n⏳ Processed ${processed}/${orders?.length || 0}, pausing...\n`);
         await new Promise(r => setTimeout(r, 1000));
       } else {
         await new Promise(r => setTimeout(r, 650));
