@@ -64,12 +64,15 @@ BEGIN
 
   -- Call Tiny API via HTTP
   BEGIN
-    v_response := http(('GET',
+    v_response := http((
+      'GET',
       'https://api.tiny.com.br/public-api/v3/pedidos?dataInicial=' || v_data_inicial || '&dataFinal=' || v_data_final,
       ARRAY[
         http_header('Authorization', 'Bearer ' || v_token),
         http_header('Accept', 'application/json')
-      ]
+      ],
+      NULL,
+      NULL
     )::http_request);
   EXCEPTION WHEN OTHERS THEN
     RETURN QUERY SELECT 0, 0, 'HTTP error: ' || SQLERRM, now();
