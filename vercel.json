@@ -12,16 +12,8 @@
   ],
   "crons": [
     {
-      "path": "/api/admin/cron/sync-produtos",
-      "schedule": "0 */6 * * *"
-    },
-    {
       "path": "/api/admin/cron/refresh-tiny-token",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/admin/cron/sync-pedidos-updated",
-      "schedule": "0 */2 * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
