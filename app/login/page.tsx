@@ -35,21 +35,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="bg-white shadow p-6 rounded-lg w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-4 text-center">
-          Login – Gestor Tiny
-        </h1>
+    <main className="min-h-screen flex items-center justify-center bg-[var(--bg-page)] text-[var(--text-main)] px-4">
+      <div className="surface-panel surface-panel-soft w-full max-w-md p-8 space-y-6">
+        <div className="text-center space-y-1">
+          <p className="text-xs uppercase tracking-[0.4em] text-muted">Ambienta</p>
+          <h1 className="text-2xl font-bold">Login – Gestor Tiny</h1>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1" htmlFor="email">
+            <label className="block text-sm font-medium text-muted mb-1" htmlFor="email">
               E-mail
             </label>
             <input
               id="email"
               type="email"
-              className="w-full border rounded px-3 py-2 text-sm"
+              className="w-full app-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -57,13 +58,13 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1" htmlFor="password">
+            <label className="block text-sm font-medium text-muted mb-1" htmlFor="password">
               Senha
             </label>
             <input
               id="password"
               type="password"
-              className="w-full border rounded px-3 py-2 text-sm"
+              className="w-full app-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -71,7 +72,7 @@ export default function LoginPage() {
           </div>
 
           {errorMsg && (
-            <p className="text-red-500 text-sm">
+            <p className="text-rose-500 text-sm">
               Erro ao entrar: {errorMsg}
             </p>
           )}
@@ -79,13 +80,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-60"
+            className="w-full py-3 rounded-full font-semibold bg-[var(--accent)] text-white shadow-[0_14px_35px_rgba(0,157,168,0.35)] hover:opacity-90 transition disabled:opacity-60"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
 
-        <p className="mt-4 text-xs text-gray-500 text-center">
+        <p className="text-xs text-muted text-center">
           Use o e-mail e a senha cadastrados no Supabase.
         </p>
       </div>

@@ -1,5 +1,4 @@
 // lib/tinyApi.ts
-import "server-only";
 
 const TINY_BASE_URL =
   process.env.TINY_API_BASE_URL ?? "https://api.tiny.com.br/public-api/v3";
@@ -110,24 +109,30 @@ export async function tinyGet<T>(
 export async function listarPedidosTiny(
   accessToken: string,
   options?: {
-    // NÃO vamos mandar filtros de data aqui por enquanto, para evitar 400.
-    // Se quiser depois, usamos exatamente: dataInicial / dataFinal / dataAtualizacao
     limit?: number;
     offset?: number;
     orderBy?: "asc" | "desc";
     situacao?: number; // 0,1,2,... conforme enum
+    fields?: string;
+    dataAtualizacao?: string; // yyyy-mm-dd - busca pedidos atualizados desde essa data
   }
 ): Promise<TinyListarPedidosResponse> {
-  const { limit = 100, offset = 0, orderBy = "desc", situacao } = options ?? {};
+  const { limit = 100, offset = 0, orderBy = "desc", situacao, fields, dataAtualizacao } = options ?? {};
 
   const params: TinyGetParams = {
     limit,
     offset,
     orderBy,
+    // Always request freight and detailed values
+    fields: fields ?? 'valorFrete,valorTotalPedido,valorTotalProdutos,valorDesconto,valorOutrasDespesas,transportador',
   };
 
   if (typeof situacao === "number") {
     params.situacao = situacao;
+  }
+
+  if (dataAtualizacao) {
+    params.dataAtualizacao = dataAtualizacao;
   }
 
   return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params);
@@ -166,14 +171,12 @@ export async function listarPedidosTinyPorPeriodo(
     orderBy,
     dataInicial,
     dataFinal,
+    // Always request freight and detailed values unless explicitly overridden
+    fields: fields ?? 'valorFrete,valorTotalPedido,valorTotalProdutos,valorDesconto,valorOutrasDespesas,transportador',
   };
 
   if (typeof situacao === "number") {
     params.situacao = situacao;
-  }
-
-  if (fields) {
-    params.fields = fields;
   }
 
   return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params);
@@ -195,12 +198,181 @@ export interface TinyPedidoDetalhado {
   valorOutrasDespesas?: number | string;
   valorTotalPedido?: number | string;
   valorTotalProdutos?: number | string;
+  itens?: Array<{
+    id?: number;
+    idProduto?: number;
+    codigo?: string;
+    descricao?: string;
+    quantidade?: number;
+    valorUnitario?: number;
+    valorTotal?: number;
+    informacoesAdicionais?: string;
+  }>;
   [key: string]: any;
 }
 
+/**
+ * Get detailed order information by ID
+ * This is the only endpoint that returns valorFrete reliably
+ */
 export async function obterPedidoDetalhado(
   accessToken: string,
   pedidoId: number
 ): Promise<TinyPedidoDetalhado> {
-  return tinyGet<TinyPedidoDetalhado>(`/pedidos/${pedidoId}`, accessToken);
+  return tinyGet<TinyPedidoDetalhado>(`/pedidos/${pedidoId}`, accessToken, {});
+}
+
+// ==================== PRODUTOS ====================
+
+/**
+ * Produto da listagem (ListagemProdutosResponseModel)
+ */
+export interface TinyProdutoListaItem {
+  id: number;
+  sku: string;
+  descricao: string;
+  tipo: 'K' | 'S' | 'V' | 'F' | 'M'; // Kit, Simples, Com Variações, Fabricado, Matéria Prima
+  situacao: 'A' | 'I' | 'E'; // Ativo, Inativo, Excluído
+  dataCriacao?: string | null;
+  dataAlteracao?: string | null;
+  unidade: string;
+  gtin: string;
+  precos?: {
+    preco?: number;
+    precoPromocional?: number;
+  };
+}
+
+/**
+ * Produto detalhado (ObterProdutoModelResponse)
+ */
+export interface TinyProdutoDetalhado {
+  id: number;
+  codigo: string;
+  nome: string;
+  unidade: string;
+  tipo: 'K' | 'S' | 'V' | 'F' | 'M';
+  situacao: 'A' | 'I' | 'E';
+  gtin?: string;
+  descricao?: string;
+  descricaoComplementar?: string;
+  ncm?: string;
+  origem?: string;
+  dimensoes?: {
+    pesoLiquido?: number;
+    pesoBruto?: number;
+  };
+  precos?: {
+    preco?: number;
+    precoPromocional?: number;
+  };
+  estoque?: {
+    controlar?: boolean;
+    sobEncomenda?: boolean;
+    minimo?: number;
+    maximo?: number;
+    saldo?: number;
+    reservado?: number;
+    disponivel?: number;
+  };
+  fornecedores?: Array<{
+    id?: number;
+    codigoProdutoNoFornecedor?: string;
+  }>;
+  anexos?: Array<{
+    url?: string;
+    interno?: boolean;
+  }>;
+  [key: string]: any;
+}
+
+/**
+ * Estoque detalhado por produto (ObterEstoqueProdutoModelResponse)
+ */
+export interface TinyEstoqueProduto {
+  id: number;
+  nome: string;
+  codigo: string;
+  unidade: string;
+  saldo: number;
+  reservado: number;
+  disponivel: number;
+  depositos?: Array<{
+    id: number;
+    nome: string;
+    desconsiderar: boolean;
+    saldo: number;
+    reservado: number;
+    disponivel: number;
+  }>;
+}
+
+export interface TinyListarProdutosResponse {
+  itens: TinyProdutoListaItem[];
+  paginacao?: TinyPaginacao;
+}
+
+/**
+ * Listar produtos com paginação
+ * Doc: GET /produtos
+ */
+export async function listarProdutos(
+  accessToken: string,
+  options?: {
+    nome?: string; // busca por nome parcial
+    codigo?: string; // busca por código
+    gtin?: number; // busca por GTIN
+    situacao?: 'A' | 'I' | 'E'; // A=Ativo, I=Inativo, E=Excluído
+    dataCriacao?: string; // yyyy-mm-dd HH:mm:ss
+    dataAlteracao?: string; // yyyy-mm-dd HH:mm:ss
+    limit?: number;
+    offset?: number;
+  }
+): Promise<TinyListarProdutosResponse> {
+  const {
+    nome,
+    codigo,
+    gtin,
+    situacao,
+    dataCriacao,
+    dataAlteracao,
+    limit = 100,
+    offset = 0,
+  } = options ?? {};
+
+  const params: TinyGetParams = {
+    limit,
+    offset,
+  };
+
+  if (nome) params.nome = nome;
+  if (codigo) params.codigo = codigo;
+  if (gtin) params.gtin = gtin;
+  if (situacao) params.situacao = situacao;
+  if (dataCriacao) params.dataCriacao = dataCriacao;
+  if (dataAlteracao) params.dataAlteracao = dataAlteracao;
+
+  return tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, params);
+}
+
+/**
+ * Obter produto detalhado por ID
+ * Doc: GET /produtos/{idProduto}
+ */
+export async function obterProduto(
+  accessToken: string,
+  produtoId: number
+): Promise<TinyProdutoDetalhado> {
+  return tinyGet<TinyProdutoDetalhado>(`/produtos/${produtoId}`, accessToken, {});
+}
+
+/**
+ * Obter estoque detalhado de um produto
+ * Doc: GET /estoque/{idProduto}
+ */
+export async function obterEstoqueProduto(
+  accessToken: string,
+  produtoId: number
+): Promise<TinyEstoqueProduto> {
+  return tinyGet<TinyEstoqueProduto>(`/estoque/${produtoId}`, accessToken, {});
 }

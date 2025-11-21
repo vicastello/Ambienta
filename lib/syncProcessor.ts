@@ -1,12 +1,130 @@
 import { listarPedidosTiny, listarPedidosTinyPorPeriodo, TinyApiError, TinyPedidoListaItem } from './tinyApi';
 import { supabaseAdmin } from './supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from './tinyAuth';
-import { extrairDataISO, normalizarCanalTiny, parseValorTiny } from './tinyMapping';
+import { filtrarEMapearPedidos, mapPedidoToOrderRow, extrairFreteFromRaw } from './tinyMapping';
+import { runFreteEnrichment } from './freteEnricher';
+import { normalizeMissingOrderChannels } from './channelNormalizer';
+import { enrichOrdersBatch } from './orderEnricher';
+import { sincronizarItensAutomaticamente, sincronizarItensPorPedidos } from './pedidoItensHelper';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FRETE_MAX_PASSES = Number(process.env.FRETE_ENRICH_MAX_PASSES ?? '5');
+const ENABLE_INLINE_FRETE_ENRICHMENT = process.env.ENABLE_INLINE_FRETE_ENRICHMENT === 'true'; // Desabilitado por padrão devido a rate limits
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Upsert inteligente: preserva campos enriquecidos (valor_frete, canal) se já existirem
+ * EXPORTADA para uso em cron jobs
+ */
+export async function upsertOrdersPreservingEnriched(rows: any[]) {
+  if (!rows.length) return { error: null };
+
+  // Buscar pedidos existentes
+  const tinyIds = rows.map(r => r.tiny_id);
+  const { data: existing } = await supabaseAdmin
+    .from('tiny_orders')
+    .select('tiny_id, valor_frete, canal')
+    .in('tiny_id', tinyIds);
+
+  const existingMap = new Map(
+    (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal }])
+  );
+
+  // Mesclar: preservar valor_frete e canal enriquecidos
+  const mergedRows = rows.map(row => {
+    const exists = existingMap.get(row.tiny_id);
+    if (!exists) return row; // Novo pedido, usar como está
+
+    return {
+      ...row,
+      // Preservar valor_frete se já existe e é maior que zero
+      valor_frete: (exists.valor_frete && exists.valor_frete > 0) 
+        ? exists.valor_frete 
+        : row.valor_frete,
+      // Preservar canal se já existe e não é "Outros"
+      canal: (exists.canal && exists.canal !== 'Outros') 
+        ? exists.canal 
+        : row.canal,
+    };
+  });
+
+  return await supabaseAdmin
+    .from('tiny_orders')
+    .upsert(mergedRows, { onConflict: 'tiny_id' });
+}
+
+async function enrichFreteRange(opts: {
+  startDate?: string;
+  endDate?: string;
+  newestFirst?: boolean;
+  jobId?: string | null;
+  context: string;
+}) {
+  const { startDate, endDate, newestFirst = true, jobId = null, context } = opts; // newestFirst=true por padrão
+  const passes = Math.max(1, FRETE_MAX_PASSES);
+  for (let pass = 0; pass < passes; pass++) {
+    const result = await runFreteEnrichment({
+      startDate,
+      endDate,
+      newestFirst,
+      limit: 100, // Mais pedidos por vez
+      batchSize: 10, // Lotes maiores
+      batchDelayMs: 2000, // Delay de 2s entre lotes
+    });
+
+    if (jobId) {
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'info',
+        message: `Frete enrichment (${context}) pass ${pass + 1}`,
+        meta: {
+          requested: result.requested,
+          updated: result.updated,
+          remaining: result.remaining,
+          newestProcessed: result.newestProcessed,
+          oldestProcessed: result.oldestProcessed,
+        },
+      });
+    }
+
+    if (!result.requested || result.remaining === 0) {
+      break;
+    }
+    
+    // Se falhou muito, aumenta delay antes do próximo pass
+    if (result.failed > result.updated * 2) {
+      await sleep(5000);
+    }
+  }
+}
+
+async function normalizeChannels(jobId: string | null, context: string) {
+  try {
+    const result = await normalizeMissingOrderChannels({ includeOutros: true });
+    if (jobId) {
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'info',
+        message: `Normalização de canais (${context})`,
+        meta: result,
+      });
+    }
+  } catch (error: any) {
+    const meta = { context, error: error?.message ?? String(error) };
+    if (jobId) {
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'warn',
+        message: 'Falha ao normalizar canais',
+        meta,
+      });
+    } else {
+      console.warn('[syncProcessor] Falha ao normalizar canais', meta);
+    }
+  }
 }
 
 export async function processJob(jobId: string) {
@@ -145,29 +263,53 @@ export async function processJob(jobId: string) {
           const pag = (page as any).paginacao;
           if (pag && typeof pag.total === 'number') totalAPIJanela = pag.total;
 
-          // Mapear e filtrar pedidos da janela
-          const rows = itens
-            .map((p) => {
-              const canalBruto = (p as any).canalVenda ?? (p as any).ecommerce?.nome ?? null;
-              const canalNormalizado = normalizarCanalTiny(canalBruto);
-              return {
-                tiny_id: (p as any).id ?? null,
-                numero_pedido: (p as any).numeroPedido ?? (p as any).numero ?? null,
-                situacao: (p as any).situacao ?? null,
-                data_criacao: extrairDataISO((p as any).dataCriacao ?? null),
-                valor: parseValorTiny((p as any).valor ?? null),
-                canal: canalNormalizado,
-                cliente_nome: (p as any).cliente?.nome ?? null,
-                raw: p,
-              };
-            })
-            .filter((r) => r.data_criacao && r.data_criacao >= janelaIniStr && r.data_criacao <= janelaFimStr);
+          // Enriquecer pedidos com detalhes (valorFrete) se habilitado
+          let freteEnriquecidos = 0;
+          if (ENABLE_INLINE_FRETE_ENRICHMENT && accessToken) {
+            try {
+              const freteMap = await enrichOrdersBatch(accessToken, itens, {
+                batchSize: 5,
+                delayMs: 500,
+                skipIfHasFrete: true,
+              });
+              
+              // Aplicar frete enriquecido aos itens (tanto no objeto quanto no raw)
+              itens.forEach((item) => {
+                if (item.id && freteMap.has(item.id)) {
+                  const freteValue = freteMap.get(item.id);
+                  (item as any).valorFrete = freteValue;
+                  freteEnriquecidos++;
+                }
+              });
 
-          const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
-          const descartados = rows.length - validRows.length;
+              if (freteEnriquecidos > 0) {
+                await supabaseAdmin.from('sync_logs').insert({ 
+                  job_id: jobId, 
+                  level: 'info', 
+                  message: `Enriquecimento inline: ${freteEnriquecidos} pedidos com frete`, 
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, enriquecidos: freteEnriquecidos, total: itens.length } 
+                });
+              }
+            } catch (enrichError: any) {
+              await supabaseAdmin.from('sync_logs').insert({ 
+                job_id: jobId, 
+                level: 'warn', 
+                message: 'Falha no enriquecimento inline de frete', 
+                meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: enrichError?.message ?? String(enrichError) } 
+              });
+            }
+          }
 
-          if (validRows.length) {
-            const { error: upsertError } = await supabaseAdmin.from('tiny_orders').upsert(validRows as any[], { onConflict: 'tiny_id' });
+          const rows = filtrarEMapearPedidos(itens, {
+            dataInicial: janelaIniStr,
+            dataFinal: janelaFimStr,
+          });
+
+        const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
+        const descartados = itens.length - validRows.length;
+
+        if (validRows.length) {
+          const { error: upsertError } = await upsertOrdersPreservingEnriched(validRows);
             if (upsertError) {
               await supabaseAdmin.from('sync_logs').insert({ 
                 job_id: jobId, 
@@ -182,7 +324,7 @@ export async function processJob(jobId: string) {
               job_id: jobId, 
               level: 'info', 
               message: `Janela: salvos ${validRows.length} pedidos`, 
-              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, salvos: validRows.length, descartados, totalOrders } 
+              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, salvos: validRows.length, descartados, totalOrders, freteEnriquecidos } 
             });
           } else {
             await supabaseAdmin.from('sync_logs').insert({ 
@@ -205,8 +347,42 @@ export async function processJob(jobId: string) {
           meta: { janela: `${janelaIniStr}/${janelaFimStr}`, pages: pagesJanela } 
         });
 
+            // Sincronizar itens imediatamente para os pedidos desta página
+            try {
+              const itensResult = await sincronizarItensPorPedidos(
+                accessToken!,
+                validRows.map((r) => r.tiny_id as number)
+              );
+
+              if (itensResult.sucesso > 0) {
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'info',
+                  message: 'Itens sincronizados para pedidos da janela',
+                  meta: itensResult,
+                });
+              }
+            } catch (error: any) {
+              await supabaseAdmin.from('sync_logs').insert({
+                job_id: jobId,
+                level: 'warning',
+                message: 'Erro ao sincronizar itens para pedidos da janela',
+                meta: { error: error?.message || String(error) },
+              });
+            }
+
         cursor = new Date(janelaFim.getTime() + DAY_MS);
       }
+
+      await enrichFreteRange({
+        startDate: dataInicialISO,
+        endDate: dataFinalISO,
+        newestFirst: false,
+        jobId,
+        context: 'range-sync',
+      });
+
+      await normalizeChannels(jobId, 'range-sync');
 
       await supabaseAdmin.from('sync_jobs').update({ 
         status: 'finished', 
@@ -294,26 +470,12 @@ export async function processJob(jobId: string) {
       const pag = (page as any).paginacao;
       if (pag && typeof pag.total === 'number') totalAPI = pag.total;
 
-      const rows = itens.map((p) => {
-        const canalBruto = (p as any).canalVenda ?? (p as any).ecommerce?.nome ?? null;
-        const canalNormalizado = normalizarCanalTiny(canalBruto);
-
-        return {
-          tiny_id: (p as any).id ?? null,
-          numero_pedido: (p as any).numeroPedido ?? (p as any).numero ?? null,
-          situacao: (p as any).situacao ?? null,
-          data_criacao: extrairDataISO((p as any).dataCriacao ?? null),
-          valor: parseValorTiny((p as any).valor ?? null),
-          canal: canalNormalizado,
-          cliente_nome: (p as any).cliente?.nome ?? null,
-          raw: p,
-        };
-      });
+      const rows = itens.map((p) => mapPedidoToOrderRow(p));
 
       const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
 
       if (validRows.length) {
-        const { error: upsertError } = await supabaseAdmin.from('tiny_orders').upsert(validRows as any[], { onConflict: 'tiny_id' });
+        const { error: upsertError } = await upsertOrdersPreservingEnriched(validRows);
         if (upsertError) {
           await supabaseAdmin.from('sync_logs').insert({ 
             job_id: jobId, 
@@ -322,6 +484,29 @@ export async function processJob(jobId: string) {
             meta: { error: upsertError.message } 
           });
           throw upsertError;
+        }
+
+        try {
+          const itensResult = await sincronizarItensPorPedidos(
+            accessToken!,
+            validRows.map((r) => r.tiny_id as number)
+          );
+
+          if (itensResult.sucesso > 0) {
+            await supabaseAdmin.from('sync_logs').insert({
+              job_id: jobId,
+              level: 'info',
+              message: 'Itens sincronizados para pedidos recém-importados',
+              meta: itensResult,
+            });
+          }
+        } catch (error: any) {
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'warning',
+            message: 'Erro ao sincronizar itens recém-importados',
+            meta: { error: error?.message || String(error) },
+          });
         }
 
         totalOrders += validRows.length;
@@ -336,6 +521,40 @@ export async function processJob(jobId: string) {
       offset += itens.length;
       if (totalAPI && offset >= totalAPI) acabou = true;
       if (!acabou) await sleep(700);
+    }
+
+    await enrichFreteRange({
+      newestFirst: true,
+      jobId,
+      context: 'generic-sync',
+    });
+
+    await normalizeChannels(jobId, 'generic-sync');
+
+    // Sincronizar itens dos pedidos recém-sincronizados
+    try {
+      console.log('[Sync] Iniciando sincronização automática de itens...');
+      const itensResult = await sincronizarItensAutomaticamente(accessToken, {
+        limit: 100,
+        maxRequests: 50,
+      });
+      
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'info',
+        message: 'Itens sincronizados automaticamente',
+        meta: itensResult,
+      });
+      
+      console.log(`[Sync] Itens sincronizados: ${itensResult.totalItens} itens de ${itensResult.sucesso} pedidos`);
+    } catch (error: any) {
+      console.error('[Sync] Erro ao sincronizar itens automaticamente:', error);
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'warning',
+        message: 'Erro ao sincronizar itens automaticamente',
+        meta: { error: error?.message || String(error) },
+      });
     }
 
     await supabaseAdmin.from('sync_jobs').update({ 

@@ -15,10 +15,15 @@
  * (the script uses the same token refresh logic as the app)
  */
 
-import 'ts-node/register';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
 import { listarPedidosTinyPorPeriodo } from '../lib/tinyApi';
+import { mapPedidoToOrderRow } from '../lib/tinyMapping';
+import { runFreteEnrichment } from '../lib/freteEnricher';
+import { normalizeMissingOrderChannels } from '../lib/channelNormalizer';
+import { enrichOrdersBatch } from '../lib/orderEnricher';
+
+const ENABLE_INLINE_ENRICHMENT = process.env.ENABLE_INLINE_FRETE_ENRICHMENT === 'true'; // Desabilitado por padrão
 
 function parseArg(name: string): string | undefined {
   const idx = process.argv.findIndex((a) => a.startsWith(`--${name}=`));
@@ -26,10 +31,32 @@ function parseArg(name: string): string | undefined {
   return process.argv[idx].split('=')[1];
 }
 
-function formatDateOnly(iso?: string | null) {
-  if (!iso) return null;
-  // keep only yyyy-mm-dd
-  return iso.slice(0, 10);
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function enrichFreteForRange(start?: string, end?: string) {
+  const maxPasses = Number(process.env.FRETE_ENRICH_MAX_PASSES ?? '5');
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const result = await runFreteEnrichment({
+      startDate: start,
+      endDate: end,
+      newestFirst: false,
+    });
+    console.log(`[syncMonth] frete pass ${pass + 1}:`, result);
+    if (!result.requested || result.remaining === 0) break;
+  }
+}
+
+async function normalizeChannelsLoop() {
+  const maxPasses = Number(process.env.CHANNEL_NORMALIZE_MAX_PASSES ?? '5');
+  const batchLimit = Number(process.env.CHANNEL_NORMALIZE_BATCH ?? '500');
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const result = await normalizeMissingOrderChannels({ limit: batchLimit });
+    console.log(`[syncMonth] channel pass ${pass + 1}:`, result);
+    if (!result.requested || result.updated === 0) break;
+  }
 }
 
 async function main() {
@@ -67,6 +94,7 @@ async function main() {
     let offset = 0;
     let totalFetched = 0;
     let round = 0;
+    let requestsMade = 0;
 
     while (true) {
       round++;
@@ -84,38 +112,90 @@ async function main() {
         break;
       }
 
+      // Enriquecer pedidos com detalhes inline se habilitado
+      if (ENABLE_INLINE_ENRICHMENT) {
+        try {
+          const freteMap = await enrichOrdersBatch(accessToken, itens, {
+            batchSize: 5,
+            delayMs: 500,
+            skipIfHasFrete: true,
+          });
+          
+          // Aplicar frete aos itens (tanto no item quanto no raw que será salvo)
+          let enriched = 0;
+          itens.forEach((item: any) => {
+            if (item.id && freteMap.has(item.id)) {
+              const freteValue = freteMap.get(item.id);
+              item.valorFrete = freteValue;
+              // Também adicionar no raw para preservar
+              if (!item.raw) item.raw = {};
+              item.raw.valorFrete = freteValue;
+              enriched++;
+            }
+          });
+          
+          if (enriched > 0) {
+            console.log(`[syncMonth] enriched ${enriched}/${itens.length} orders with freight`);
+          }
+        } catch (enrichError: any) {
+          console.warn('[syncMonth] inline enrichment failed:', enrichError?.message);
+        }
+      }
+
       // Transform and upsert
-      const rows = itens.map((it: any) => {
+      const rows = itens.map((it: any) => mapPedidoToOrderRow(it));
+
+      // Buscar pedidos existentes para preservar campos enriquecidos
+      const tinyIds = rows.map(r => r.tiny_id);
+      const { data: existing } = await supabaseAdmin
+        .from('tiny_orders')
+        .select('tiny_id, valor_frete, canal')
+        .in('tiny_id', tinyIds);
+
+      const existingMap = new Map(
+        (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal }])
+      );
+
+      // Mesclar: preservar valor_frete e canal enriquecidos
+      const mergedRows = rows.map(row => {
+        const exists = existingMap.get(row.tiny_id);
+        if (!exists) return row; // Novo pedido, usar como está
+
         return {
-          tiny_id: it.id ?? null,
-          numero_pedido: it.numeroPedido ?? null,
-          situacao: it.situacao ?? null,
-          data_criacao: formatDateOnly(it.dataCriacao),
-          valor: it.valor ? Number(String(it.valor).replace(',', '.')) : null,
-          canal: it.ecommerce?.canal ?? null,
-          cliente_nome: it.cliente?.nome ?? null,
-          raw: it,
+          ...row,
+          // Preservar valor_frete se já existe e é maior que zero
+          valor_frete: (exists.valor_frete && exists.valor_frete > 0) 
+            ? exists.valor_frete 
+            : row.valor_frete,
+          // Preservar canal se já existe e não é "Outros"
+          canal: (exists.canal && exists.canal !== 'Outros') 
+            ? exists.canal 
+            : row.canal,
         };
       });
 
       // upsert in batches
-      console.log(`[syncMonth] upserting ${rows.length} orders`);
+      console.log(`[syncMonth] upserting ${mergedRows.length} orders (preserving enriched fields)`);
       const { error: upsertErr } = await supabaseAdmin
         .from('tiny_orders')
-        .upsert(rows, { onConflict: 'tiny_id' });
+        .upsert(mergedRows, { onConflict: 'tiny_id' });
 
       if (upsertErr) {
         throw new Error('Erro ao upsert tiny_orders: ' + upsertErr.message);
       }
 
       totalFetched += rows.length;
+      requestsMade += 1;
 
       // update job progress
       if (jobId) {
-        await supabaseAdmin.from('sync_jobs').update({
-          total_requests: (x => (x ?? 0) + 1)(jobRow.total_requests),
-          total_orders: (x => (x ?? 0) + rows.length)(jobRow.total_orders),
-        }).eq('id', jobId);
+        await supabaseAdmin
+          .from('sync_jobs')
+          .update({
+            total_requests: requestsMade,
+            total_orders: totalFetched,
+          })
+          .eq('id', jobId);
       }
 
       // prepare next page
@@ -125,9 +205,15 @@ async function main() {
       if (pag && typeof pag.total === 'number') {
         if (offset >= (pag.total ?? 0)) break;
       }
+
+      // rate limit: Tiny permite 120 req/min => ~500ms por chamada
+      await sleep(550);
     }
 
     console.log('[syncMonth] finished, total orders fetched/upserted:', totalFetched);
+
+    await enrichFreteForRange(start, end);
+    await normalizeChannelsLoop();
 
     if (jobId) {
       await supabaseAdmin.from('sync_jobs').update({ status: 'finished', finished_at: new Date().toISOString() }).eq('id', jobId);

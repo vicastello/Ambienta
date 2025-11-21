@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "dev:cron": "tsx scripts/devCronServer.ts",
+    "dev:full": "concurrently \"npm run dev\" \"npm run dev:cron\"",
     "build": "next build --webpack",
     "start": "next start",
-    "sync:month": "ts-node --esm scripts/syncMonth.ts"
+    "sync:month": "tsx scripts/syncMonth.ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.81.1",
     "lucide-react": "^0.554.0",
     "next": "16.0.3",
@@ -26,6 +29,7 @@
     "eslint-config-next": "16.0.3",
     "tailwindcss": "^4",
     "ts-node": "^10.9.1",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

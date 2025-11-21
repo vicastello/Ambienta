@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 
 type Option = {
@@ -15,6 +15,7 @@ type MultiSelectDropdownProps = {
   onChange: (values: (string | number)[]) => void;
   onClear: () => void;
   singleSelect?: boolean;
+  displayFormatter?: (values: (string | number)[], options: Option[]) => string;
 };
 
 export function MultiSelectDropdown({
@@ -24,6 +25,7 @@ export function MultiSelectDropdown({
   onChange,
   onClear,
   singleSelect = false,
+  displayFormatter,
 }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -72,12 +74,14 @@ export function MultiSelectDropdown({
     }
   };
 
-  const displayText =
-    selected.length === 0
-      ? 'Selecione...'
-      : selected.length === 1
-        ? `${selected.length} selecionado`
-        : `${selected.length} selecionados`;
+  const displayText = useMemo(() => {
+    if (displayFormatter) {
+      return displayFormatter(selected, options);
+    }
+    if (selected.length === 0) return 'Selecione...';
+    if (selected.length === 1) return `${selected.length} selecionado`;
+    return `${selected.length} selecionados`;
+  }, [displayFormatter, options, selected]);
 
   return (
     <>

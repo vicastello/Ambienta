@@ -1,5 +1,16 @@
 import { TinyPedidoListaItem } from './tinyApi';
 
+function firstNonEmptyString(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length) return trimmed;
+  }
+  return null;
+}
+
 // Converte valor do Tiny (string ou number) em number.
 export function parseValorTiny(valor: string | number | null): number {
   if (!valor) return 0;
@@ -72,6 +83,17 @@ export function normalizarCanalTiny(raw: string | null | undefined): string {
   return raw;
 }
 
+export function deriveCanalFromRaw(raw: any): string {
+  const canalBruto = firstNonEmptyString(
+    raw?.canal,
+    raw?.canalVenda,
+    raw?.ecommerce?.canal,
+    raw?.ecommerce?.nome,
+    raw?.origem
+  );
+  return normalizarCanalTiny(canalBruto);
+}
+
 // Mapeia situação numérica do Tiny para descrição legível
 // Retorna objeto com codigo e descricao para melhor UX
 export function descricaoSituacao(situacao: number | null | undefined): string {
@@ -104,10 +126,23 @@ export const TODAS_SITUACOES = [
   { codigo: 9, descricao: 'Não entregue' },
 ] as const;
 
+// Extrai valor de frete do raw data do Tiny
+export function extrairFreteFromRaw(raw: any): number {
+  // Prioridade: valorFrete direto > transportador.valorFrete > transportador.valor_frete
+  const frete = 
+    raw?.valorFrete ??
+    raw?.transportador?.valorFrete ??
+    raw?.transportador?.valor_frete ??
+    raw?.valor_frete ??
+    null;
+  
+  return parseValorTiny(frete);
+}
+
 // Mapeia um item de pedido da API v3 para o formato da tabela tiny_orders
 export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
-  const canalBruto = (p as any).canalVenda ?? (p as any).ecommerce?.nome ?? null;
-  const canal = normalizarCanalTiny(canalBruto);
+  const canal = deriveCanalFromRaw(p);
+  const valorFrete = extrairFreteFromRaw(p);
 
   return {
     tiny_id: p.id,
@@ -115,6 +150,7 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
     situacao: (p as any).situacao ?? null,
     data_criacao: extrairDataISO(p.dataCriacao),
     valor: parseValorTiny(p.valor),
+    valor_frete: valorFrete,
     canal,
     cliente_nome: p.cliente?.nome ?? null,
     raw: p as any,

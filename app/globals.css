@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    font-size: 80%; /* reduce overall scale so rem-based sizes render ~20% smaller */
     /* Cores base – modo claro */
     --bg-body: #F5F7FA;
     --bg-card: rgba(255, 255, 255, 0.6);
@@ -263,4 +264,28 @@
 /* SVG text for Recharts tooltip should be sharp */
 .recharts-text {
   outline: none !important;
+}
+
+/* Scrollbar ultra sutil para painel de insights */
+.insights-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.15) transparent;
+}
+
+.insights-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.insights-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.insights-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 23, 42, 0.15);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+}
+
+.insights-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(15, 23, 42, 0.25);
 }

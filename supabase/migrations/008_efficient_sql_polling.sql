@@ -2,10 +2,24 @@
 -- This function runs DIRECTLY in PostgreSQL, no HTTP calls needed
 -- Much faster and more reliable than Edge Functions or HTTP cron
 
--- First, unschedule any existing cron jobs
-SELECT cron.unschedule('sync-polling-every-minute');
-SELECT cron.unschedule('sync-tiny-direct-every-minute');
-SELECT cron.unschedule('sync-tiny-direct-sql');
+-- Wrap unschedules so missing jobs do not break the migration
+DO $$ BEGIN
+  PERFORM cron.unschedule('sync-polling-every-minute');
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+DO $$ BEGIN
+  PERFORM cron.unschedule('sync-tiny-direct-every-minute');
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+DO $$ BEGIN
+  PERFORM cron.unschedule('sync-tiny-direct-sql');
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
 
 -- Create HTTP extension if not present
 CREATE EXTENSION IF NOT EXISTS http;
@@ -124,13 +138,17 @@ SELECT cron.schedule(
   'SELECT sync_tiny_orders_efficient();'
 );
 
--- Log the result
-INSERT INTO pg_cron_logs (cron_name, status, message, created_at)
-VALUES ('sync-tiny-orders-sql-efficient', 'scheduled', 'Efficient SQL-based sync scheduled to run every minute', now())
-ON CONFLICT (cron_name) DO UPDATE SET 
-  status = 'scheduled',
-  message = 'Efficient SQL-based sync scheduled to run every minute',
-  created_at = now();
+DO $$
+BEGIN
+  IF to_regclass('public.pg_cron_logs') IS NOT NULL THEN
+    INSERT INTO pg_cron_logs (cron_name, status, message, created_at)
+    VALUES ('sync-tiny-orders-sql-efficient', 'scheduled', 'Efficient SQL-based sync scheduled to run every minute', now())
+    ON CONFLICT (cron_name) DO UPDATE SET 
+      status = 'scheduled',
+      message = 'Efficient SQL-based sync scheduled to run every minute',
+      created_at = now();
+  END IF;
+END $$;
 
 -- Verify
 SELECT jobname, schedule, command FROM cron.job WHERE jobname LIKE '%efficient%' OR jobname LIKE '%sync%';

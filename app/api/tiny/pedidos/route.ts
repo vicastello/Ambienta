@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { listarPedidosTiny, listarPedidosTinyPorPeriodo } from "@/lib/tinyApi";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getAccessTokenFromDbOrRefresh } from "@/lib/tinyAuth";
+import { mapPedidoToOrderRow } from "@/lib/tinyMapping";
 
 export async function GET(req: NextRequest) {
   try {
@@ -103,49 +104,50 @@ export async function POST(req: NextRequest) {
           break;
         }
 
-        // Save orders with valorFrete from list endpoint
-        for (const item of items) {
-          try {
-            const tinyId = (item as any).id;
-            const dataCriacao = (item as any).dataCriacao;
+        // Map all items using the proper mapping function
+        const rows = items.map((item) => mapPedidoToOrderRow(item as any));
 
-            if (!tinyId || !dataCriacao) continue;
+        // Filter valid rows
+        const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
 
-            // Fetch existing order to merge data
-            const { data: existing } = await supabaseAdmin
-              .from('tiny_orders')
-              .select('raw')
-              .eq('tiny_id', tinyId)
-              .single();
+        if (validRows.length > 0) {
+          // Buscar pedidos existentes para preservar campos enriquecidos
+          const tinyIds = validRows.map(r => r.tiny_id);
+          const { data: existing } = await supabaseAdmin
+            .from('tiny_orders')
+            .select('tiny_id, valor_frete, canal')
+            .in('tiny_id', tinyIds);
 
-            // Merge: preserve enriched fields but update with new data
-            const existingRaw = existing?.raw ?? {};
-            const newRaw = item as any;
-            const mergedRaw = {
-              ...newRaw,
-              // Only preserve enriched fields that came from detailed API if they exist
-              // but DO NOT override valorFrete from the list API (which is current)
-              ...(existingRaw.valorTotalPedido !== undefined && !newRaw.valorTotalPedido && { valorTotalPedido: existingRaw.valorTotalPedido }),
-              ...(existingRaw.valorTotalProdutos !== undefined && !newRaw.valorTotalProdutos && { valorTotalProdutos: existingRaw.valorTotalProdutos }),
+          const existingMap = new Map(
+            (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal }])
+          );
+
+          // Mesclar: preservar valor_frete e canal enriquecidos
+          const mergedRows = validRows.map(row => {
+            const exists = existingMap.get(row.tiny_id);
+            if (!exists) return row; // Novo pedido, usar como está
+
+            return {
+              ...row,
+              // Preservar valor_frete se já existe e é maior que zero
+              valor_frete: (exists.valor_frete && exists.valor_frete > 0) 
+                ? exists.valor_frete 
+                : row.valor_frete,
+              // Preservar canal se já existe e não é "Outros"
+              canal: (exists.canal && exists.canal !== 'Outros') 
+                ? exists.canal 
+                : row.canal,
             };
+          });
 
-            const { error: upsertErr } = await supabaseAdmin
-              .from('tiny_orders')
-              .upsert(
-                {
-                  tiny_id: tinyId,
-                  data_criacao: dataCriacao,
-                  situacao: (item as any).situacao,
-                  raw: mergedRaw,
-                },
-                { onConflict: 'tiny_id' }
-              );
+          const { error: upsertErr } = await supabaseAdmin
+            .from('tiny_orders')
+            .upsert(mergedRows, { onConflict: 'tiny_id' });
 
-            if (!upsertErr) {
-              totalSaved++;
-            }
-          } catch (err) {
-            console.warn('[pedidos-POST] Erro ao processar item:', err);
+          if (!upsertErr) {
+            totalSaved += mergedRows.length;
+          } else {
+            console.error('[pedidos-POST] Erro ao upsert batch:', upsertErr);
           }
         }
 

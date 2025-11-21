@@ -4,36 +4,12 @@ import { cookies } from 'next/headers';
 import { listarPedidosTiny, listarPedidosTinyPorPeriodo, TinyPedidoListaItem, TinyApiError } from '@/lib/tinyApi';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
+import { extrairDataISO, normalizarCanalTiny, parseValorTiny } from '@/lib/tinyMapping';
 import processJob from '@/lib/syncProcessor';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type SyncMode = 'full' | 'range' | 'recent' | 'repair';
-
-function extrairDataISO(dataStr: string | null): string | null {
-  if (!dataStr) return null;
-  const d = new Date(dataStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
-function parseValorTiny(valor: string | null): number {
-  if (!valor) return 0;
-
-  const temVirgula = valor.includes(',');
-  const temPonto = valor.includes('.');
-
-  let normalizado = valor;
-
-  if (temVirgula) {
-    normalizado = valor.replace(/\./g, '').replace(',', '.');
-  } else if (temPonto && !temVirgula) {
-    normalizado = valor;
-  }
-
-  const n = Number(normalizado);
-  return Number.isFinite(n) ? n : 0;
-}
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,24 +29,13 @@ async function logJob(
   });
 }
 
-// Normaliza o canal vindo do Tiny
-function normalizarCanalTiny(raw: string | null | undefined): string {
-  if (!raw) return 'Outros';
-
-  const v = raw.toLowerCase().trim();
-
-  if (v.includes('shopee')) return 'Shopee';
-  if (v.includes('mercado')) return 'Mercado Livre';
-  if (v.includes('magalu') || v.includes('magazine')) return 'Magalu';
-  if (v.includes('olist')) return 'Olist';
-  if (v.includes('amazon')) return 'Amazon';
-  if (v.includes('site') || v.includes('loja') || v.includes('ambienta')) {
-    return 'Loja própria';
-  }
-
-  // se não bater em nada conhecido, devolve o original
-  return raw;
+function runJobInBackground(jobId: string) {
+  processJob(jobId).catch((error) => {
+    console.error(`[API] Job ${jobId} falhou no background`, error);
+  });
 }
+
+// Normalização de canais/datas/valores veio de lib/tinyMapping para evitar duplicidade
 
 export async function POST(req: NextRequest) {
   let jobId: string | null = null;
@@ -138,7 +103,7 @@ export async function POST(req: NextRequest) {
     const background = body.background === true || body.background === 'true';
 
     const jobPayload: any = {
-      status: background ? 'queued' : 'running',
+      status: 'queued',
       params: { mode, dataInicial: dataInicialISO, dataFinal: dataFinalISO },
     };
 
@@ -161,16 +126,18 @@ export async function POST(req: NextRequest) {
       background,
     });
 
-    // Sempre delega ao processador único (com chunking, backoff e salvando logs)
-    const inApp = process.env.PROCESS_IN_APP === 'true';
-    if (inApp) {
-      await logJob(jobId, 'info', 'PROCESS_IN_APP enabled — processing job inside the app');
+    const processInApp = process.env.PROCESS_IN_APP === 'true';
+    const shouldAwait = processInApp || !background;
+
+    if (shouldAwait) {
+      await logJob(jobId, 'info', 'Processando job inline', { processInApp, background });
       const res = await processJob(jobId);
       return NextResponse.json({ jobId, queued: false, processedInApp: true, result: res });
     }
 
-    // Sem PROCESS_IN_APP, apenas retorna o job para um worker externo pegar
-    return NextResponse.json({ jobId, queued: true });
+    await logJob(jobId, 'info', 'Processando job em background', { background: true });
+    runJobInBackground(jobId);
+    return NextResponse.json({ jobId, queued: true, processedInApp: false, runningInBackground: true });
   } catch (err: any) {
     console.error('[API] /api/tiny/sync erro', err);
 

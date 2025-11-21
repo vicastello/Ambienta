@@ -1,138 +1,193 @@
-/**
- * Background worker to enrich order data with frete information
- * This runs separately to avoid blocking main sync process
- */
-
 import { supabaseAdmin } from './supabaseAdmin';
-import { obterPedidoDetalhado } from './tinyApi';
+import { obterPedidoDetalhado, TinyPedidoDetalhado } from './tinyApi';
 import { getAccessTokenFromDbOrRefresh } from './tinyAuth';
+import { parseValorTiny } from './tinyMapping';
+
+type TinyOrderRow = {
+  tiny_id: number;
+  numero_pedido: number | null;
+  data_criacao: string | null;
+  raw: Record<string, any> | null;
+};
+
+export interface FreteEnrichmentOptions {
+  limit?: number;
+  batchSize?: number;
+  batchDelayMs?: number;
+  startDate?: string;
+  endDate?: string;
+  newestFirst?: boolean;
+}
+
+export interface FreteEnrichmentResult {
+  requested: number;
+  processed: number;
+  updated: number;
+  failed: number;
+  remaining: number;
+  newestProcessed: string | null;
+  oldestProcessed: string | null;
+}
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function enrichFreteInBackground(
-  orderIds: number[] = [],
-  maxToProcess: number = 100,
-  delayMs: number = 200
-): Promise<{ processed: number; updated: number; failed: number }> {
-  let processed = 0;
-  let updated = 0;
-  let failed = 0;
+async function countOrdersNeedingFrete(filters: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<number> {
+  let query = supabaseAdmin
+    .from('tiny_orders')
+    .select('tiny_id', { count: 'exact', head: true })
+    .is('valor_frete', null);
 
-  try {
-    const accessToken = await getAccessTokenFromDbOrRefresh();
-    
-    // Get all order IDs if not provided
-    let idsToProcess = orderIds;
-    if (!idsToProcess.length) {
-      const { data: orders, error } = await supabaseAdmin
-        .from('tiny_orders')
-        .select('tiny_id')
-        .is('valorFrete', null) // Only get orders without frete data
-        .limit(maxToProcess);
-
-      if (error) throw error;
-      idsToProcess = orders?.map((o: any) => o.tiny_id) || [];
-    } else {
-      idsToProcess = idsToProcess.slice(0, maxToProcess);
-    }
-
-    if (!idsToProcess.length) {
-      console.log('[freteEnricher] Nenhum pedido para enriquecer com frete');
-      return { processed, updated, failed };
-    }
-
-    console.log(`[freteEnricher] Iniciando enriquecimento de ${idsToProcess.length} pedidos com frete...`);
-
-    for (const orderId of idsToProcess) {
-      try {
-        const detalhado = await obterPedidoDetalhado(accessToken, orderId);
-        
-        const { data: currentOrder, error: selectErr } = await supabaseAdmin
-          .from('tiny_orders')
-          .select('raw')
-          .eq('tiny_id', orderId)
-          .single();
-
-        if (selectErr || !currentOrder?.raw) {
-          failed++;
-          continue;
-        }
-
-        const updatedRaw = {
-          ...currentOrder.raw,
-          valorFrete: detalhado.valorFrete || 0,
-          valorTotalProdutos: detalhado.valorTotalProdutos,
-          valorTotalPedido: detalhado.valorTotalPedido,
-        };
-
-        const { error: updateErr } = await supabaseAdmin
-          .from('tiny_orders')
-          .update({ raw: updatedRaw })
-          .eq('tiny_id', orderId);
-
-        if (updateErr) {
-          failed++;
-          console.warn(`[freteEnricher] Erro ao atualizar ${orderId}:`, updateErr);
-        } else {
-          updated++;
-          console.log(`[freteEnricher] ✓ Pedido ${orderId}: frete=${detalhado.valorFrete || 0}`);
-        }
-      } catch (err) {
-        failed++;
-        console.warn(`[freteEnricher] Falha ao enriquecer pedido ${orderId}:`, (err as any)?.message || err);
-      }
-
-      processed++;
-      // Delay between requests to avoid rate limiting
-      if (processed < idsToProcess.length) {
-        await sleep(delayMs);
-      }
-    }
-
-    console.log(`[freteEnricher] Concluído: ${processed} processados, ${updated} atualizados, ${failed} falhados`);
-  } catch (err) {
-    console.error('[freteEnricher] Erro geral:', err);
+  if (filters.startDate) {
+    query = query.gte('data_criacao', filters.startDate);
   }
 
-  return { processed, updated, failed };
+  if (filters.endDate) {
+    query = query.lte('data_criacao', filters.endDate);
+  }
+
+  const { count } = await query;
+  return count ?? 0;
 }
 
-export async function enrichFreteForPeriod(
-  dataInicial: string, // yyyy-mm-dd
-  dataFinal: string,   // yyyy-mm-dd
-  maxToProcess: number = 100
-): Promise<{ processed: number; updated: number; failed: number }> {
+async function fetchOrdersNeedingFrete(options: FreteEnrichmentOptions): Promise<TinyOrderRow[]> {
+  const limit = options.limit ?? 40;
+  const newestFirst = options.newestFirst ?? true;
+
+  let query = supabaseAdmin
+    .from('tiny_orders')
+    .select('tiny_id, numero_pedido, data_criacao, raw')
+    .is('valor_frete', null)
+    .order('data_criacao', { ascending: !newestFirst })
+    .limit(limit);
+
+  if (options.startDate) {
+    query = query.gte('data_criacao', options.startDate);
+  }
+
+  if (options.endDate) {
+    query = query.lte('data_criacao', options.endDate);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[freteEnricher] Full error object:', JSON.stringify(error, null, 2));
+    throw new Error(`Erro ao buscar pedidos para enriquecimento: ${error.message}`);
+  }
+
+  return (data ?? []).filter((row): row is TinyOrderRow => !!row?.tiny_id);
+}
+
+function resolveValorFrete(detail: TinyPedidoDetalhado): number {
+  const rawValor =
+    detail?.valorFrete ??
+    (detail as any)?.frete?.valor ??
+    (detail as any)?.frete?.valorFrete ??
+    0;
+
+  return parseValorTiny(rawValor as any);
+}
+
+export async function runFreteEnrichment(
+  options: FreteEnrichmentOptions = {}
+): Promise<FreteEnrichmentResult> {
+  const batchSize = options.batchSize ?? 10;
+  const batchDelayMs = options.batchDelayMs ?? 5000;
+  const newestFirst = options.newestFirst ?? true;
+
+  const orders = await fetchOrdersNeedingFrete(options);
+  const requested = orders.length;
+
+  if (!requested) {
+    const remaining = await countOrdersNeedingFrete(options);
+    return {
+      requested,
+      processed: 0,
+      updated: 0,
+      failed: 0,
+      remaining,
+      newestProcessed: null,
+      oldestProcessed: null,
+    };
+  }
+
+  const token = await getAccessTokenFromDbOrRefresh();
   let processed = 0;
   let updated = 0;
   let failed = 0;
 
-  try {
-    const accessToken = await getAccessTokenFromDbOrRefresh();
+  for (let i = 0; i < orders.length; i += batchSize) {
+    const batch = orders.slice(i, i + batchSize);
 
-    // Get orders in period without frete data
-    const { data: orders, error } = await supabaseAdmin
-      .from('tiny_orders')
-      .select('tiny_id, data_criacao')
-      .gte('data_criacao', `${dataInicial}T00:00:00`)
-      .lte('data_criacao', `${dataFinal}T23:59:59`)
-      .is('raw->>valorFrete', 'null')
-      .limit(maxToProcess);
+    const results = await Promise.allSettled(
+      batch.map(async (order) => {
+        const detail = await obterPedidoDetalhado(token, order.tiny_id);
+        const valorFrete = resolveValorFrete(detail);
+        const mergedRaw = {
+          ...(order.raw ?? {}),
+          ...detail,
+          valorFrete,
+        };
 
-    if (error) throw error;
+        // Buscar canal atual para preservá-lo se já estiver enriquecido
+        const { data: current } = await supabaseAdmin
+          .from('tiny_orders')
+          .select('canal')
+          .eq('tiny_id', order.tiny_id)
+          .single();
 
-    if (!orders?.length) {
-      console.log(`[freteEnricher] Nenhum pedido para enriquecer no período ${dataInicial} a ${dataFinal}`);
-      return { processed, updated, failed };
+        const updateData: any = {
+          valor_frete: valorFrete,
+          raw: mergedRaw,
+          is_enriched: true,
+          updated_at: new Date().toISOString(),
+        };
+
+        // NÃO sobrescrever canal se já existe e não é "Outros"
+        // O freteEnricher só atualiza o frete, não deve mexer no canal
+        // O canal deve ser atualizado apenas pelo channelNormalizer
+
+        const { error } = await supabaseAdmin
+          .from('tiny_orders')
+          .update(updateData)
+          .eq('tiny_id', order.tiny_id);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+      })
+    );
+
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        updated += 1;
+      } else {
+        failed += 1;
+      }
+    });
+
+    processed += batch.length;
+
+    if (i + batchSize < orders.length) {
+      await sleep(batchDelayMs);
     }
-
-    console.log(`[freteEnricher] Enriquecendo ${orders.length} pedidos no período ${dataInicial} a ${dataFinal}...`);
-
-    const orderIds = orders.map((o: any) => o.tiny_id);
-    return await enrichFreteInBackground(orderIds, maxToProcess, 250);
-  } catch (err) {
-    console.error('[freteEnricher] Erro ao enriquecer período:', err);
-    return { processed, updated, failed };
   }
+
+  const remaining = await countOrdersNeedingFrete(options);
+  const firstDate = orders[0]?.data_criacao ?? null;
+  const lastDate = orders[orders.length - 1]?.data_criacao ?? null;
+
+  return {
+    requested,
+    processed,
+    updated,
+    failed,
+    remaining,
+    newestProcessed: newestFirst ? firstDate : lastDate,
+    oldestProcessed: newestFirst ? lastDate : firstDate,
+  };
 }
