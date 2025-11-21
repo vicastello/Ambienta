@@ -146,7 +146,7 @@ async function main() {
       const rows = itens.map((it: any) => mapPedidoToOrderRow(it));
 
       // Buscar pedidos existentes para preservar campos enriquecidos
-      const tinyIds = rows.map(r => r.tiny_id);
+      const tinyIds = rows.map((r: any) => r.tiny_id);
       const { data: existing } = await supabaseAdmin
         .from('tiny_orders')
         .select('tiny_id, valor_frete, canal')
