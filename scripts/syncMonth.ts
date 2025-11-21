@@ -157,7 +157,7 @@ async function main() {
       );
 
       // Mesclar: preservar valor_frete e canal enriquecidos
-      const mergedRows = rows.map(row => {
+      const mergedRows = rows.map((row: any) => {
         const exists = existingMap.get(row.tiny_id);
         if (!exists) return row; // Novo pedido, usar como está
 
