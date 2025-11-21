@@ -39,10 +39,7 @@ async function enrichRecentOrders() {
   console.log('📦 Sincronizando itens...');
   try {
     const tinyIds = orders.map(o => o.tiny_id);
-    const itensResult = await sincronizarItensPorPedidos(accessToken, tinyIds, {
-      batchSize: 10,
-      delayMs: 700,
-    });
+    const itensResult = await sincronizarItensPorPedidos(accessToken, tinyIds);
     
     console.log(`✅ ${itensResult.totalItens} itens de ${itensResult.sucesso} pedidos\n`);
   } catch (error: any) {
