@@ -1719,7 +1719,7 @@ export default function DashboardPage() {
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
                                     {(pedido.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
+                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
                                         +{(pedido.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
