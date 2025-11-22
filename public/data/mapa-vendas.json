@@ -1,0 +1,134 @@
+{
+  "periodo": {
+    "dataInicial": "2025-10-24",
+    "dataFinal": "2025-11-22"
+  },
+  "mapaVendasUF": [
+    {
+      "uf": "SP",
+      "totalValor": 32327.69000000015,
+      "totalPedidos": 650
+    },
+    {
+      "uf": "MG",
+      "totalValor": 20836.53,
+      "totalPedidos": 390
+    },
+    {
+      "uf": "RJ",
+      "totalValor": 14494.319999999976,
+      "totalPedidos": 279
+    },
+    {
+      "uf": "RS",
+      "totalValor": 8724.109999999991,
+      "totalPedidos": 157
+    },
+    {
+      "uf": "PR",
+      "totalValor": 7909.579999999998,
+      "totalPedidos": 165
+    },
+    {
+      "uf": "BA",
+      "totalValor": 6077.450000000001,
+      "totalPedidos": 112
+    },
+    {
+      "uf": "SC",
+      "totalValor": 5314.439999999999,
+      "totalPedidos": 106
+    },
+    {
+      "uf": "GO",
+      "totalValor": 4581.890000000001,
+      "totalPedidos": 82
+    },
+    {
+      "uf": "ES",
+      "totalValor": 4536.640000000004,
+      "totalPedidos": 98
+    },
+    {
+      "uf": "PE",
+      "totalValor": 3465.4400000000023,
+      "totalPedidos": 67
+    },
+    {
+      "uf": "DF",
+      "totalValor": 2863.190000000001,
+      "totalPedidos": 48
+    },
+    {
+      "uf": "CE",
+      "totalValor": 2181.94,
+      "totalPedidos": 48
+    },
+    {
+      "uf": "MT",
+      "totalValor": 1778.7900000000002,
+      "totalPedidos": 26
+    },
+    {
+      "uf": "PB",
+      "totalValor": 1351.73,
+      "totalPedidos": 29
+    },
+    {
+      "uf": "MS",
+      "totalValor": 1185.4999999999998,
+      "totalPedidos": 24
+    },
+    {
+      "uf": "PI",
+      "totalValor": 991.1799999999998,
+      "totalPedidos": 12
+    },
+    {
+      "uf": "RN",
+      "totalValor": 978.1499999999999,
+      "totalPedidos": 17
+    },
+    {
+      "uf": "SE",
+      "totalValor": 970.7599999999998,
+      "totalPedidos": 22
+    },
+    {
+      "uf": "MA",
+      "totalValor": 952.9599999999999,
+      "totalPedidos": 16
+    },
+    {
+      "uf": "PA",
+      "totalValor": 715.2399999999999,
+      "totalPedidos": 14
+    },
+    {
+      "uf": "AL",
+      "totalValor": 570.5499999999998,
+      "totalPedidos": 9
+    },
+    {
+      "uf": "AM",
+      "totalValor": 403.01,
+      "totalPedidos": 9
+    },
+    {
+      "uf": "TO",
+      "totalValor": 249.58,
+      "totalPedidos": 5
+    },
+    {
+      "uf": "AC",
+      "totalValor": 97.66,
+      "totalPedidos": 2
+    },
+    {
+      "uf": "RO",
+      "totalValor": 58.3,
+      "totalPedidos": 1
+    }
+  ],
+  "mapaVendasCidade": []
+}

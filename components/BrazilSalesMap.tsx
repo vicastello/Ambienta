@@ -48,30 +48,48 @@ export function BrazilSalesMap({
 }) {
   const [hoverInfo, setHoverInfo] = useState<{ uf: string; name?: string } | null>(null);
   const [mapData, setMapData] = useState<any | null>(null);
+  const [cachedMapa, setCachedMapa] = useState<{
+    mapaVendasUF?: VendasUF[];
+    mapaVendasCidade?: VendasCidade[];
+  } | null>(null);
 
   React.useEffect(() => {
     let alive = true;
-    const url = "https://react-vector-maps.netlify.app/maps/brazil.json";
-    fetch(url)
+    const mapUrl = "https://react-vector-maps.netlify.app/maps/brazil.json";
+    fetch(mapUrl)
       .then((r) => r.json())
       .then((json) => {
         if (alive) setMapData(json);
       })
       .catch(() => setMapData(null));
+
+    // Try to load precomputed mapa vendas from public/data
+    fetch('/data/mapa-vendas.json')
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (alive && json) {
+          setCachedMapa({ mapaVendasUF: json.mapaVendasUF, mapaVendasCidade: json.mapaVendasCidade });
+        }
+      })
+      .catch(() => {/* ignore */});
     return () => {
       alive = false;
     };
   }, []);
 
+  const effectiveDataUF = cachedMapa?.mapaVendasUF && cachedMapa.mapaVendasUF.length ? cachedMapa.mapaVendasUF : dataUF;
+  const effectiveTopCidades = cachedMapa?.mapaVendasCidade && cachedMapa.mapaVendasCidade.length ? cachedMapa.mapaVendasCidade : topCidades;
+
   const mapaUF = useMemo(() => {
     const map = new Map<string, VendasUF>();
-    for (const d of dataUF) map.set(d.uf.toUpperCase(), d);
+    for (const d of effectiveDataUF || []) map.set(d.uf.toUpperCase(), d);
     return map;
-  }, [dataUF]);
+  }, [effectiveDataUF]);
 
   const maxValor = useMemo(() => {
-    return dataUF.reduce((m, d) => Math.max(m, d.totalValor || 0), 0) || 1;
-  }, [dataUF]);
+    const arr = effectiveDataUF || [];
+    return arr.reduce((m, d) => Math.max(m, d.totalValor || 0), 0) || 1;
+  }, [effectiveDataUF]);
 
   const colorScale = (v: number) => {
     const t = Math.max(0, Math.min(1, v / maxValor));
@@ -146,6 +164,20 @@ export function BrazilSalesMap({
         }} />
         <span>Mais</span>
       </div>
+      {/* Top cities list (if provided) */}
+      {effectiveTopCidades && effectiveTopCidades.length > 0 && (
+        <div className="mt-3 text-xs text-slate-600">
+          <div className="font-medium mb-1">Top cidades</div>
+          <ul className="max-h-40 overflow-auto">
+            {effectiveTopCidades.slice(0, 8).map((c, i) => (
+              <li key={i} className="flex justify-between">
+                <span>{c.cidade} {c.uf ? `(${c.uf})` : ''}</span>
+                <span className="text-right">{(c.totalValor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

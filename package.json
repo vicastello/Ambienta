@@ -10,7 +10,10 @@
     "start": "next start",
     "sync:month": "tsx scripts/syncMonth.ts",
     "db:migrate:city-uf": "psql $SUPABASE_DB_URL -f supabase/migrations/20251122143000_add_city_state_to_tiny_orders.sql",
-    "db:backfill:city-uf": "tsx scripts/backfillCityState.ts"
+    "db:backfill:city-uf": "tsx scripts/backfillCityState.ts",
+    "generate:mapa-vendas": "tsx scripts/generateMapaVendas.ts",
+    "cron:generate-mapa:recommendation": "# Suggestion: run 'npm run generate:mapa-vendas' periodically via cron or a scheduled job"
+    ,"db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
