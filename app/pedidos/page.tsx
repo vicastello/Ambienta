@@ -129,8 +129,8 @@ export default function PedidosPage() {
     start: isoDaysAgo(6),
     end: todayIso(),
   });
-  const [sort, setSort] = useState<{ by: "data_criacao" | "valor" | "valor_frete"; dir: "asc" | "desc" }>({
-    by: "data_criacao",
+  const [sort, setSort] = useState<{ by: "numero_pedido" | "data_criacao" | "valor" | "valor_frete"; dir: "asc" | "desc" }>({
+    by: "numero_pedido",
     dir: "desc",
   });
 
@@ -215,7 +215,7 @@ export default function PedidosPage() {
     resetPage();
   };
 
-  const onSort = (field: "data_criacao" | "valor" | "valor_frete") => {
+  const onSort = (field: "numero_pedido" | "data_criacao" | "valor" | "valor_frete") => {
     setSort((prev) => ({
       by: field,
       dir: prev.by === field && prev.dir === "desc" ? "asc" : "desc",
@@ -372,7 +372,15 @@ export default function PedidosPage() {
                   <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
                   <p className="text-lg font-semibold text-[var(--text-main)]">Trilhas ativas no Tiny ERP</p>
                 </div>
-                <div className="text-xs text-muted">Ordenação atual: {sort.by === "valor" ? "Valor total" : sort.by === "valor_frete" ? "Frete" : "Data"}</div>
+                <div className="text-xs text-muted">
+                  Ordenação atual: {sort.by === "valor"
+                    ? "Valor total"
+                    : sort.by === "valor_frete"
+                    ? "Frete"
+                    : sort.by === "data_criacao"
+                    ? "Data"
+                    : "Número do pedido"}
+                </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {STATUS_CONFIG.filter((status) => status.codigo >= 0).map((status) => {
@@ -402,8 +410,8 @@ export default function PedidosPage() {
               <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr] bg-slate-50 dark:bg-slate-800 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                 <div className="px-6 py-4 flex items-center gap-2">
                   Pedido / Cliente
-                  <button onClick={() => onSort("data_criacao")}>
-                    <ArrowUpDown className={`w-4 h-4 ${sort.by === "data_criacao" ? "text-[var(--accent)]" : "text-slate-400"}`} />
+                  <button onClick={() => onSort("numero_pedido")}>
+                    <ArrowUpDown className={`w-4 h-4 ${sort.by === "numero_pedido" ? "text-[var(--accent)]" : "text-slate-400"}`} />
                   </button>
                 </div>
                 <div className="px-6 py-4">Status</div>
@@ -441,10 +449,17 @@ export default function PedidosPage() {
                       <article key={order.tinyId} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm">
                         <div className="px-6 py-4 space-y-1">
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                            <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
                               {order.primeiraImagem ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                  {order.itensQuantidade > 1 && (
+                                    <span className="absolute -top-2 -right-2 bg-white border-2 border-blue-500 text-blue-600 rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:2}}>
+                                      +{order.itensQuantidade - 1}
+                                    </span>
+                                  )}
+                                </>
                               ) : (
                                 <span className="text-xs text-muted">{order.itensQuantidade || 0} itens</span>
                               )}
@@ -453,7 +468,7 @@ export default function PedidosPage() {
                               <p className="font-semibold text-[var(--text-main)] flex items-center gap-2">
                                 #{order.numeroPedido ?? order.tinyId}
                                 <a
-                                  href={`https://erp.tiny.com.br/pedido/${order.tinyId}`}
+                                  href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-[var(--accent)] hover:underline"

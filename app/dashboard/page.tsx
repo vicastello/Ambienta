@@ -489,6 +489,8 @@ export default function DashboardPage() {
     situacao: number;
     canal: string | null;
     cliente: string | null;
+    primeiraImagem?: string | null;
+    itensQuantidade?: number;
   };
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [loadingRecentOrders, setLoadingRecentOrders] = useState<boolean>(false);
@@ -736,7 +738,20 @@ export default function DashboardPage() {
   async function fetchRecentOrders() {
     try {
       setLoadingRecentOrders(true);
-      const res = await fetch('/api/orders?page=1&pageSize=10&sortBy=data_criacao&sortDir=desc');
+      const today = new Date();
+      const end = today.toISOString().slice(0, 10);
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 89);
+      const start = startDate.toISOString().slice(0, 10);
+      const params = new URLSearchParams({
+        page: '1',
+        pageSize: '10',
+        sortBy: 'numero_pedido',
+        sortDir: 'desc',
+        dataInicial: start,
+        dataFinal: end,
+      });
+      const res = await fetch(`/api/orders?${params.toString()}`);
       const json = await res.json();
       if (res.ok && Array.isArray(json.orders)) {
         setRecentOrders(json.orders);
@@ -1685,18 +1700,35 @@ export default function DashboardPage() {
                     <div className="space-y-2">
                       {recentOrders.map((pedido) => {
                         const situacaoLabel = labelSituacao(pedido.situacao ?? -1);
+                        // Exibe a data exatamente como vem da API (YYYY-MM-DD -> DD/MM/YY)
                         const dataCriacao = pedido.dataCriacao
-                          ? new Date(pedido.dataCriacao).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: '2-digit',
-                            })
+                          ? (() => {
+                              const [y, m, d] = pedido.dataCriacao.split('-');
+                              return `${d}/${m}/${y.slice(2)}`;
+                            })()
                           : '';
                         return (
                           <div
                             key={pedido.tinyId}
                             className="flex items-start justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3"
                           >
+                            <div className="flex items-center gap-3">
+                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                {pedido.primeiraImagem ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                    {pedido.itensQuantidade > 1 && (
+                                      <span className="absolute -top-2 -right-2 bg-white border-2 border-blue-500 text-blue-600 rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:2}}>
+                                        +{pedido.itensQuantidade - 1}
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-muted">{pedido.itensQuantidade || 0} itens</span>
+                                )}
+                              </div>
+                            </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">

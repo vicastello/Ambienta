@@ -4,7 +4,7 @@ import { normalizarCanalTiny, descricaoSituacao } from '@/lib/tinyMapping';
 
 const MAX_PAGE_SIZE = 200;
 const DEFAULT_PAGE_SIZE = 25;
-const ORDERABLE_FIELDS = new Set(['data_criacao', 'valor', 'valor_frete']);
+const ORDERABLE_FIELDS = new Set(['numero_pedido', 'data_criacao', 'valor', 'valor_frete']);
 
 function parseNumberList(param: string | null): number[] | null {
   if (!param) return null;
@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('search')?.trim();
     const situacoes = parseNumberList(searchParams.get('situacoes'));
     const canais = parseStringList(searchParams.get('canais'));
-    const sortByParam = searchParams.get('sortBy') ?? 'data_criacao';
-    const sortBy = ORDERABLE_FIELDS.has(sortByParam) ? sortByParam : 'data_criacao';
+    const sortByParam = searchParams.get('sortBy') ?? 'numero_pedido';
+    const sortBy = ORDERABLE_FIELDS.has(sortByParam) ? sortByParam : 'numero_pedido';
     const sortDirParam = searchParams.get('sortDir') === 'asc' ? 'asc' : 'desc';
 
     const from = (page - 1) * pageSize;
@@ -106,12 +106,13 @@ export async function GET(req: NextRequest) {
     const rows = (data ?? []) as OrderRow[];
     const orderIds = rows.map((order) => order.id);
     let itensPorPedido: Record<number, number> = {};
+    let primeiraImagemMap: Record<number, string | null> = {};
 
     if (orderIds.length) {
-      // Leverage persisted itens instead of depending on raw payload presence
+      // Leverage persisted itens (with joined produto imagem) instead of depending solely on raw payload
       const { data: itensData, error: itensError } = await supabaseAdmin
         .from('tiny_pedido_itens')
-        .select('id_pedido')
+        .select(`id_pedido, quantidade, nome_produto, tiny_produtos(imagem_url)`)
         .in('id_pedido', orderIds);
 
       if (itensError) {
@@ -121,10 +122,21 @@ export async function GET(req: NextRequest) {
       itensPorPedido = (itensData ?? []).reduce<Record<number, number>>((acc, item) => {
         const idPedido = (item as { id_pedido: number | null }).id_pedido;
         if (typeof idPedido === 'number') {
-          acc[idPedido] = (acc[idPedido] ?? 0) + 1;
+          acc[idPedido] = (acc[idPedido] ?? 0) + Number((item as any).quantidade ?? 1);
         }
         return acc;
       }, {});
+
+      // Build first-image map per pedido from joined tiny_produtos.imagem_url when available
+      for (const row of (itensData ?? [])) {
+        const idPedido = (row as any).id_pedido as number | null;
+        if (typeof idPedido !== 'number') continue;
+        if (primeiraImagemMap[idPedido]) continue; // already have first image
+        const imagem = (row as any).tiny_produtos?.imagem_url ?? null;
+        if (imagem) primeiraImagemMap[idPedido] = imagem;
+      }
+
+      // primeiraImagemMap (outer scope) is now populated
     }
 
     const orders = rows.map((order) => {
@@ -135,12 +147,14 @@ export async function GET(req: NextRequest) {
           ? raw.itens
           : [];
       const firstItem = itens[0]?.produto ?? {};
-      const imagem =
+      const imagemFromRaw =
         firstItem?.imagemPrincipal?.url ||
         firstItem?.imagemPrincipal ||
         firstItem?.imagem ||
         firstItem?.foto ||
         null;
+      const imagemFromItens = primeiraImagemMap[order.id] ?? null;
+      const imagem = imagemFromItens ?? imagemFromRaw;
 
       const valor = Number(order.valor ?? 0);
       const valorFrete = Number(order.valor_frete ?? 0);
@@ -160,8 +174,8 @@ export async function GET(req: NextRequest) {
         valor,
         valorFrete,
         valorLiquido: Math.max(0, valor - valorFrete),
-        // Fallback to raw itens array for legacy records without persisted itens
-        itensQuantidade: itensPorPedido[order.id] ?? itens.length,
+        // Prefer persisted itens count if present, else fallback to raw itens length
+        itensQuantidade: Math.max(0, Number(itensPorPedido[order.id] ?? itens.length)),
         primeiraImagem: imagem,
         notaFiscal,
         marketplaceOrder,

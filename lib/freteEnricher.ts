@@ -42,7 +42,7 @@ async function countOrdersNeedingFrete(filters: {
   let query = supabaseAdmin
     .from('tiny_orders')
     .select('tiny_id', { count: 'exact', head: true })
-    .is('valor_frete', null);
+    .or('valor_frete.is.null,is_enriched.eq.false');
 
   if (filters.startDate) {
     query = query.gte('data_criacao', filters.startDate);
@@ -63,7 +63,7 @@ async function fetchOrdersNeedingFrete(options: FreteEnrichmentOptions): Promise
   let query = supabaseAdmin
     .from('tiny_orders')
     .select('tiny_id, numero_pedido, data_criacao, raw')
-    .is('valor_frete', null)
+    .or('valor_frete.is.null,is_enriched.eq.false')
     .order('data_criacao', { ascending: !newestFirst })
     .limit(limit);
 
