@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import fetch from 'node-fetch';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+
+// declare global fetch for environments where node DOM lib is not available
+declare const fetch: any;
 
 type Combo = { cidade: string; uf: string | null };
 
@@ -58,7 +60,7 @@ async function main() {
         const j = JSON.parse(fs.readFileSync(LOCAL_DATA, 'utf-8'));
         localMap = j;
         console.log('Dataset local de centróides carregado.');
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Falha ao ler dataset local:', e?.message || e);
       }
     }

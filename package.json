@@ -12,15 +12,17 @@
     "db:migrate:city-uf": "psql $SUPABASE_DB_URL -f supabase/migrations/20251122143000_add_city_state_to_tiny_orders.sql",
     "db:backfill:city-uf": "tsx scripts/backfillCityState.ts",
     "generate:mapa-vendas": "tsx scripts/generateMapaVendas.ts",
-    "cron:generate-mapa:recommendation": "# Suggestion: run 'npm run generate:mapa-vendas' periodically via cron or a scheduled job"
-    ,"db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts"
+    "cron:generate-mapa:recommendation": "# Suggestion: run 'npm run generate:mapa-vendas' periodically via cron or a scheduled job",
+    "db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@supabase/supabase-js": "^2.81.1",
     "@south-paw/react-vector-maps": "^3.2.0",
+    "@supabase/supabase-js": "^2.81.1",
+    "@svg-maps/brazil": "^1.0.0",
     "lucide-react": "^0.554.0",
     "next": "16.0.3",
+    "node-fetch": "^2.7.0",
     "pg": "^8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
