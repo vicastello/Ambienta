@@ -8,11 +8,14 @@
     "dev:full": "concurrently \"npm run dev\" \"npm run dev:cron\"",
     "build": "next build --webpack",
     "start": "next start",
-    "sync:month": "tsx scripts/syncMonth.ts"
+    "sync:month": "tsx scripts/syncMonth.ts",
+    "db:migrate:city-uf": "psql $SUPABASE_DB_URL -f supabase/migrations/20251122143000_add_city_state_to_tiny_orders.sql",
+    "db:backfill:city-uf": "tsx scripts/backfillCityState.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.81.1",
+    "@south-paw/react-vector-maps": "^3.2.0",
     "lucide-react": "^0.554.0",
     "next": "16.0.3",
     "pg": "^8.16.3",

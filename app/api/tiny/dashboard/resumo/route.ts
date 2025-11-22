@@ -39,6 +39,19 @@ type CanalResumo = {
   totalPedidos: number;
 };
 
+type VendasUF = {
+  uf: string; // ex: 'SP'
+  totalValor: number;
+  totalPedidos: number;
+};
+
+type VendasCidade = {
+  cidade: string; // nome da cidade
+  uf: string | null; // UF se disponível
+  totalValor: number;
+  totalPedidos: number;
+};
+
 type ProdutoResumo = {
   produtoId: number | null;
   sku?: string | null;
@@ -73,6 +86,8 @@ type DashboardResposta = {
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: Array<{ codigo: number; descricao: string }>;
+  mapaVendasUF: VendasUF[];
+  mapaVendasCidade: VendasCidade[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -497,6 +512,10 @@ export async function GET(req: NextRequest) {
     const mapaProdutoAtual = new Map<string, ProdutoResumo>();
     const mapaProdutoAnterior = new Map<string, ProdutoResumo>();
 
+    // Mapas geográficos (período atual)
+    const mapaUFAtual = new Map<string, { totalValor: number; totalPedidos: number }>();
+    const mapaCidadeAtual = new Map<string, { uf: string | null; totalValor: number; totalPedidos: number }>();
+
     const canaisDisponiveisSet = new Set<string>();
     const situacoesDisponiveisSet = new Set<number>();
 
@@ -646,6 +665,40 @@ export async function GET(req: NextRequest) {
       canalInfo.totalPedidos += 1;
       canalInfo.totalValor += valor;
       mapaCanalAtual.set(canal, canalInfo);
+
+      // Agregação geográfica por UF e Cidade (melhor esforço a partir do raw)
+      try {
+        const raw: any = (p as any).raw || {};
+        const endereco =
+          raw?.cliente?.endereco ||
+          raw?.cliente?.enderecoEntrega ||
+          raw?.enderecoEntrega ||
+          raw?.entrega?.endereco ||
+          raw?.destinatario?.endereco ||
+          raw?.pedido?.cliente?.endereco ||
+          null;
+        const ufRaw: string | null = (endereco?.uf ?? endereco?.estado ?? endereco?.estadoUF ?? endereco?.ufCliente ?? raw?.cliente?.uf ?? raw?.cliente?.estado ?? null) as any;
+        const cidadeRaw: string | null = (endereco?.cidade ?? endereco?.municipio ?? raw?.cliente?.cidade ?? null) as any;
+        const uf = typeof ufRaw === 'string' ? ufRaw.trim().toUpperCase().slice(0, 2) : null;
+        const cidade = typeof cidadeRaw === 'string' ? cidadeRaw.trim() : null;
+
+        if (uf) {
+          const infoUF = mapaUFAtual.get(uf) ?? { totalValor: 0, totalPedidos: 0 };
+          infoUF.totalValor += valor;
+          infoUF.totalPedidos += 1;
+          mapaUFAtual.set(uf, infoUF);
+        }
+
+        if (cidade) {
+          const keyCidade = `${cidade.toLowerCase()}|${uf ?? ''}`;
+          const infoCid = mapaCidadeAtual.get(keyCidade) ?? { uf: uf ?? null, totalValor: 0, totalPedidos: 0 };
+          infoCid.totalValor += valor;
+          infoCid.totalPedidos += 1;
+          mapaCidadeAtual.set(keyCidade, infoCid);
+        }
+      } catch {
+        // ignore erros de parsing geográfico
+      }
 
       // demais métricas seguem filtros aplicados
 
@@ -879,6 +932,12 @@ export async function GET(req: NextRequest) {
       canais,
       canaisDisponiveis: Array.from(canaisDisponiveisSet),
       situacoesDisponiveis: [...TODAS_SITUACOES],
+      mapaVendasUF: Array.from(mapaUFAtual.entries())
+        .map(([uf, info]) => ({ uf, totalValor: info.totalValor, totalPedidos: info.totalPedidos }))
+        .sort((a, b) => b.totalValor - a.totalValor),
+      mapaVendasCidade: Array.from(mapaCidadeAtual.entries())
+        .map(([key, info]) => ({ cidade: key.split('|')[0], uf: info.uf, totalValor: info.totalValor, totalPedidos: info.totalPedidos }))
+        .sort((a, b) => b.totalValor - a.totalValor),
     };
 
     return NextResponse.json(resposta);

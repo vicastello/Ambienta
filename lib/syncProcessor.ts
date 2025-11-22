@@ -26,11 +26,11 @@ export async function upsertOrdersPreservingEnriched(rows: any[]) {
   const tinyIds = rows.map(r => r.tiny_id);
   const { data: existing } = await supabaseAdmin
     .from('tiny_orders')
-    .select('tiny_id, valor_frete, canal')
+    .select('tiny_id, valor_frete, canal, cidade, uf')
     .in('tiny_id', tinyIds);
 
   const existingMap = new Map(
-    (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal }])
+    (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal, cidade: (e as any).cidade, uf: (e as any).uf }])
   );
 
   // Mesclar: preservar valor_frete e canal enriquecidos
@@ -48,6 +48,9 @@ export async function upsertOrdersPreservingEnriched(rows: any[]) {
       canal: (exists.canal && exists.canal !== 'Outros') 
         ? exists.canal 
         : row.canal,
+      // Preservar cidade/uf já enriquecidos (não sobrescrever por nulo)
+      cidade: exists.cidade ?? row.cidade,
+      uf: exists.uf ?? row.uf,
     };
   });
 

@@ -94,6 +94,29 @@ export function deriveCanalFromRaw(raw: any): string {
   return normalizarCanalTiny(canalBruto);
 }
 
+// Extrai cidade e UF do objeto bruto do Tiny (melhor esforço)
+export function extractCidadeUfFromRaw(raw: any): { cidade: string | null; uf: string | null } {
+  try {
+    const endereco =
+      raw?.cliente?.endereco ||
+      raw?.cliente?.enderecoEntrega ||
+      raw?.enderecoEntrega ||
+      raw?.entrega?.endereco ||
+      raw?.destinatario?.endereco ||
+      raw?.pedido?.cliente?.endereco ||
+      null;
+
+    const ufRaw: string | null = (endereco?.uf ?? endereco?.estado ?? endereco?.estadoUF ?? endereco?.ufCliente ?? raw?.cliente?.uf ?? raw?.cliente?.estado ?? null) as any;
+    const cidadeRaw: string | null = (endereco?.cidade ?? endereco?.municipio ?? raw?.cliente?.cidade ?? null) as any;
+
+    const uf = typeof ufRaw === 'string' ? ufRaw.trim().toUpperCase().slice(0, 2) : null;
+    const cidade = typeof cidadeRaw === 'string' ? cidadeRaw.trim() : null;
+    return { cidade, uf };
+  } catch {
+    return { cidade: null, uf: null };
+  }
+}
+
 // Mapeia situação numérica do Tiny para descrição legível
 // Retorna objeto com codigo e descricao para melhor UX
 export function descricaoSituacao(situacao: number | null | undefined): string {
@@ -143,6 +166,7 @@ export function extrairFreteFromRaw(raw: any): number {
 export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
   const canal = deriveCanalFromRaw(p);
   const valorFrete = extrairFreteFromRaw(p);
+  const { cidade, uf } = extractCidadeUfFromRaw(p);
 
   return {
     tiny_id: p.id,
@@ -153,6 +177,8 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
     valor_frete: valorFrete,
     canal,
     cliente_nome: p.cliente?.nome ?? null,
+    cidade: cidade ?? null,
+    uf: uf ?? null,
     raw: p as any,
   } as const;
 }

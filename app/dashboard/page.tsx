@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
+import { BrazilSalesMap } from '@/components/BrazilSalesMap';
 import {
   Area,
   AreaChart,
@@ -189,6 +190,8 @@ type DashboardResumo = {
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: SituacaoDisponivel[];
+  mapaVendasUF?: Array<{ uf: string; totalValor: number; totalPedidos: number }>;
+  mapaVendasCidade?: Array<{ cidade: string; uf: string | null; totalValor: number; totalPedidos: number }>;
 };
 
 type InsightTone = 'info' | 'opportunity' | 'risk' | 'action';
@@ -1581,7 +1584,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-3">
+            <div className="grid gap-6 xl:grid-cols-2">
               <div className="flex flex-col gap-6">
                 <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 flex flex-col shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
                   <div className="flex items-start justify-between gap-4 mb-4">
@@ -1759,6 +1762,66 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
+              {/* Coluna da direita: Mapa do Brasil */}
+              <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
+                    <p className="text-sm text-slate-500">Calor por estado e ranking por cidade</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                  <div className="min-w-0">
+                    {/* @ts-expect-error async import type */}
+                    {(() => {
+                      const vendasUF = resumo?.mapaVendasUF ?? [];
+                      const vendasCidade = resumo?.mapaVendasCidade ?? [];
+                      if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
+                      return (
+                        <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
+                      );
+                    })()}
+                  </div>
+                  <div className="min-w-0 flex flex-col gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
+                      <div className="space-y-2">
+                        {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
+                          <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
+                            <div className="text-right text-xs">
+                              <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
+                              <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
+                          <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Cidades</p>
+                      <div className="space-y-2">
+                        {((resumo?.mapaVendasCidade ?? []).slice(0, 6)).map((cid, idx) => (
+                          <div key={`${cid.cidade}-${idx}`} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{cid.cidade}{cid.uf ? `/${cid.uf}` : ''}</div>
+                            <div className="text-right text-xs">
+                              <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(cid.totalValor)}</div>
+                              <div className="text-slate-500">{cid.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!resumo?.mapaVendasCidade || resumo.mapaVendasCidade.length === 0) && (
+                          <p className="text-xs text-slate-400">Nenhuma cidade identificada.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-3">Notas: o calor é proporcional ao faturamento por UF. Para cidades, a posição no mapa será adicionada em uma próxima versão.</p>
+              </div>
+            </div>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
