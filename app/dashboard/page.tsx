@@ -37,111 +37,221 @@ function CustomTooltip({ active, payload, label, formatter }: any) {
   if (!active || !payload) return null;
 
   return (
-            {/* Pie + Map on the same row, full width */}
-            <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="space-y-6">
-                  <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div>
-                        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                        <p className="text-sm text-slate-500">Calor por estado • cidades visíveis no mapa</p>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                      <div className="min-w-0 flex items-center justify-center">
-                        {/* Pie chart */}
-                        {canaisData.length === 0 ? (
-                          <div className="flex items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
-                        ) : (
-                          <div className="relative w-full max-w-[320px]" style={{ aspectRatio: '1/1' }} ref={pieRef}>
-                            {chartsMounted && (pieReady || forceChartRender) ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                  <Pie
-                                    data={canaisData}
-                                    dataKey="value"
-                                    nameKey="name"
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius="72%"
-                                    outerRadius="88%"
-                                    paddingAngle={3}
-                                    cornerRadius={18}
-                                    stroke="transparent"
-                                    labelLine={false}
-                                    label={renderChannelPercentLabel}
-                                  >
-                                    {canaisData.map((entry) => (
-                                      <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
-                                    ))}
-                                    <Label
-                                      position="center"
-                                      content={({ viewBox }) => {
-                                        if (!viewBox) return null;
-                                        const vb = viewBox as any;
-                                        const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                        const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
-                                        return (
-                                          <g>
-                                            <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
-                                              Total
-                                            </text>
-                                            <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
-                                              {formatBRL(totalCanaisValue)}
-                                            </text>
-                                          </g>
-                                        );
-                                      }}
-                                    />
-                                  </Pie>
-                                  <Tooltip content={<CustomPieTooltip />} />
-                                </PieChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="space-y-6">
-                                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                                  <div className="flex items-start justify-between gap-4 mb-4">
-                                    <div>
-                                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                                      <p className="text-sm text-slate-500">Calor por estado • cidades visíveis no mapa</p>
-                                    </div>
-                                  </div>
-                                  <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                                    <div className="min-w-0 flex items-center justify-center">
-                                    </div>
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                        #{pedido.numeroPedido || pedido.tinyId}
-                                      </p>
-                                      {pedido.canal && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#009DA8]/10 text-[#009DA8] font-medium">
-                                          {pedido.canal}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 truncate">
-                                      {pedido.cliente || 'Cliente'} • {dataCriacao}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">{situacaoLabel}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-sm font-semibold text-[#009DA8]">
-                                      {formatBRL(pedido.valor ?? 0)}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-slate-400">Nenhum pedido disponível.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+    <div
+      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
+      style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        color: 'var(--text-main)',
+        fontSize: '11px',
+        zIndex: 9999,
+      }}
+    >
+      <p style={{ margin: '0 0 4px 0' }}>
+        {label ? `Dia ${label}` : 'Data'}
+      </p>
+      {payload.map((entry: any, index: number) => (
+        <p key={index} style={{ margin: '2px 0', color: entry.color }}>
+          <strong>{entry.name}:</strong> {formatter ? formatter(entry.value) : entry.value}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function CustomPieTooltip({ active, payload }: any) {
+  if (!active || !payload || !payload[0]) return null;
+
+  const data = payload[0].payload;
+
+  return (
+    <div
+      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
+      style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        color: 'var(--text-main)',
+        fontSize: '11px',
+        zIndex: 9999,
+      }}
+    >
+      <p style={{ margin: '0 0 4px 0', fontWeight: 600 }}>
+        {data.name}
+      </p>
+      <p style={{ margin: '2px 0', color: payload[0].fill }}>
+        <strong>Faturamento:</strong> {payload[0].value?.toLocaleString?.('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        }) || payload[0].value}
+      </p>
+      <p style={{ margin: '2px 0', fontSize: '10px', color: 'var(--text-muted)' }}>
+        ({data.pedidos} pedidos)
+      </p>
+    </div>
+  );
+}
+
+// Ambienta colors
+const AMBIENTA_PRIMARY = '#009DA8';
+const AMBIENTA_LIGHT = '#00B5C3';
+const AMBIENTA_DARK = '#006E76';
+const COLORS_PALETTE = [AMBIENTA_PRIMARY, '#22c55e', '#f97316', '#0ea5e9', '#a855f7'];
+const GLOBAL_INTERVAL_DAYS = 30;
+const SPARK_WINDOW_DAYS = 7;
+const PIE_LABEL_RAD = Math.PI / 180;
+
+const renderChannelPercentLabel = (props: any) => {
+  const { cx, cy, midAngle, outerRadius, percent: slicePercent, payload } = props ?? {};
+  const resolvedPercent =
+    typeof slicePercent === 'number'
+      ? slicePercent
+      : typeof payload?.percentage === 'number'
+        ? payload.percentage / 100
+        : 0;
+  if (!cx || !cy || !outerRadius || resolvedPercent <= 0 || resolvedPercent * 100 < 4) {
+    return null;
+  }
+  const radius = Number(outerRadius) * 1.12;
+  const x = cx + radius * Math.cos(-midAngle * PIE_LABEL_RAD);
+  const y = cy + radius * Math.sin(-midAngle * PIE_LABEL_RAD);
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="var(--text-main)"
+      fontSize={12}
+      fontWeight={600}
+      textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central"
+      opacity={resolvedPercent > 0 ? 0.9 : 0}
+    >
+      {(resolvedPercent * 100).toFixed(0)}%
+    </text>
+  );
+};
+
+type DiaResumo = {
+  data: string;
+  quantidade: number;
+  totalDia: number;
+};
+
+type SituacaoResumo = {
+  situacao: number;
+  descricao: string;
+  quantidade: number;
+};
+
+type PeriodoResumo = {
+  dataInicial: string;
+  dataFinal: string;
+  dias: number;
+  totalPedidos: number;
+  totalValor: number;
+  totalValorLiquido: number;
+  totalFreteTotal: number;
+  ticketMedio: number;
+  vendasPorDia: DiaResumo[];
+  pedidosPorSituacao: SituacaoResumo[];
+  totalProdutosVendidos: number;
+  percentualCancelados: number;
+  topProdutos: ProdutoResumo[];
+};
+
+type CanalResumo = {
+  canal: string;
+  totalValor: number;
+  totalPedidos: number;
+};
+
+type ProdutoResumo = {
+  produtoId: number | null;
+  sku?: string | null;
+  descricao: string;
+  quantidade: number;
+  receita: number;
+  imagemUrl?: string | null;
+};
+
+type SituacaoDisponivel = {
+  codigo: number;
+  descricao: string;
+};
+
+type DashboardResumo = {
+  periodoAtual: PeriodoResumo;
+  periodoAnterior: PeriodoResumo;
+  periodoAnteriorCards: PeriodoResumo;
+  canais: CanalResumo[];
+  canaisDisponiveis: string[];
+  situacoesDisponiveis: SituacaoDisponivel[];
+  mapaVendasUF?: Array<{ uf: string; totalValor: number; totalPedidos: number }>;
+  mapaVendasCidade?: Array<{ cidade: string; uf: string | null; totalValor: number; totalPedidos: number }>;
+};
+
+type InsightTone = 'info' | 'opportunity' | 'risk' | 'action';
+
+type InsightCard = {
+  id: string;
+  title: string;
+  body?: string;
+  tone: InsightTone;
+  dismissible?: boolean;
+};
+
+type InsightThemeConfig = {
+  label: string;
+  icon: typeof Info;
+  bg: string;
+  border: string;
+  iconBg: string;
+  iconColor: string;
+};
+
+const INSIGHT_THEMES: Record<InsightTone, InsightThemeConfig> = {
+  info: {
+    label: 'Insight',
+    icon: Info,
+    bg: 'bg-white/80 dark:bg-slate-900/70',
+    border: 'border-white/60 dark:border-slate-800/60',
+    iconBg: 'bg-slate-100 text-slate-700 dark:bg-slate-800/80',
+    iconColor: 'text-slate-600 dark:text-slate-300',
+  },
+  opportunity: {
+    label: 'Oportunidade',
+    icon: Sparkles,
+    bg: 'bg-emerald-50/80 dark:bg-emerald-500/10',
+    border: 'border-emerald-200/60',
+    iconBg: 'bg-emerald-100/80',
+    iconColor: 'text-emerald-600',
+  },
+  risk: {
+    label: 'Risco',
+    icon: AlertTriangle,
+    bg: 'bg-rose-50/80 dark:bg-rose-500/10',
+    border: 'border-rose-200/60',
+    iconBg: 'bg-rose-100/80',
+    iconColor: 'text-rose-600',
+  },
+  action: {
+    label: 'Ação',
+    icon: Target,
+    bg: 'bg-amber-50/80 dark:bg-amber-500/10',
+    border: 'border-amber-200/60',
+    iconBg: 'bg-amber-100/80',
+    iconColor: 'text-amber-600',
+  },
+};
+
+type DatePreset =
+  | 'today'
+  | 'yesterday'
+  | '7d'
   | 'month'
   | '3m'
   | 'year'
@@ -339,11 +449,10 @@ function getInitials(text?: string | null) {
 type ChartPreset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
 export default function DashboardPage() {
-  // Read saved filters only after mount to keep server & initial client render identical
-  // (avoids hydration mismatches when localStorage contains a different preset)
-  const [preset, setPreset] = useState<DatePreset>('7d');
-  const [customStart, setCustomStart] = useState<string | null>(null);
-  const [customEnd, setCustomEnd] = useState<string | null>(null);
+  const [initialFilters] = useState<SavedFilters | null>(() => loadSavedFilters());
+  const [preset, setPreset] = useState<DatePreset>(initialFilters?.preset ?? '7d');
+  const [customStart, setCustomStart] = useState<string | null>(initialFilters?.customStart ?? null);
+  const [customEnd, setCustomEnd] = useState<string | null>(initialFilters?.customEnd ?? null);
 
   const [resumo, setResumo] = useState<DashboardResumo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -352,8 +461,12 @@ export default function DashboardPage() {
   const [loadingGlobal, setLoadingGlobal] = useState<boolean>(true);
   const [erroGlobal, setErroGlobal] = useState<string | null>(null);
 
-  const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>([]);
-  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>([]);
+  const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>(
+    initialFilters?.canaisSelecionados ?? []
+  );
+  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>(
+    initialFilters?.situacoesSelecionadas ?? []
+  );
 
   const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
   const [chartCustomStart, setChartCustomStart] = useState<string | null>(null);
@@ -371,52 +484,6 @@ export default function DashboardPage() {
   const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const [insightsBaseline, setInsightsBaseline] = useState<DashboardResumo | null>(null);
 
-  // Prevent Recharts from measuring before layout is settled which can produce
-  // width/height = -1 and NaN path coordinates. Only render charts after
-  // the component has mounted on the client.
-  const [chartsMounted, setChartsMounted] = useState(false);
-  const [forceChartRender, setForceChartRender] = useState(false);
-  useEffect(() => {
-    setChartsMounted(true);
-  }, []);
-
-  // If ResizeObserver doesn't report a positive size quickly (rare edge cases
-  // on some environments), allow charts to render after a short timeout so
-  // users still see content instead of an empty placeholder.
-  useEffect(() => {
-    if (!chartsMounted) return;
-    const t = setTimeout(() => setForceChartRender(true), 200);
-    return () => clearTimeout(t);
-  }, [chartsMounted]);
-
-  // Helper: observe a container and report when it has a positive size.
-  function useHasSize<T extends HTMLElement>(ref: React.RefObject<T | null>) {
-    const [hasSize, setHasSize] = useState(false);
-    useEffect(() => {
-      const el = ref.current;
-      if (!el) return;
-      const check = () => {
-        try {
-          const r = el.getBoundingClientRect();
-          setHasSize(r.width > 0 && r.height > 0);
-        } catch {
-          setHasSize(false);
-        }
-      };
-      check();
-      const ro = new ResizeObserver(check);
-      ro.observe(el);
-      return () => ro.disconnect();
-    }, [ref]);
-    return hasSize;
-  }
-
-  const microtrendRef = useRef<HTMLDivElement | null>(null);
-  const mainChartRef = useRef<HTMLDivElement | null>(null);
-  const pieRef = useRef<HTMLDivElement | null>(null);
-  const microtrendReady = useHasSize(microtrendRef);
-  const mainChartReady = useHasSize(mainChartRef);
-  const pieReady = useHasSize(pieRef);
   type RecentOrder = {
     tinyId: number;
     numeroPedido: number | null;
@@ -448,23 +515,6 @@ export default function DashboardPage() {
       console.error('Erro ao salvar filtros', err);
     }
   }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
-
-  // Apply saved filters from localStorage after client mounts.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const saved = loadSavedFilters();
-      if (!saved) return;
-      // Only apply saved values when they differ from defaults to avoid extra re-renders
-      setPreset((prev) => (saved.preset && saved.preset !== prev ? saved.preset : prev));
-      setCustomStart((prev) => (saved.customStart ?? prev));
-      setCustomEnd((prev) => (saved.customEnd ?? prev));
-      setCanaisSelecionados((prev) => (saved.canaisSelecionados ?? prev));
-      setSituacoesSelecionadas((prev) => (saved.situacoesSelecionadas ?? prev));
-    } catch (err) {
-      // ignore — keep defaults
-    }
-  }, []);
 
   function resolverIntervalo(): { inicio: string; fim: string } {
     const hojeIso = isoToday();
@@ -529,221 +579,218 @@ export default function DashboardPage() {
         const minutos = now.getHours() * 60 + now.getMinutes();
         params.set('horaComparacaoMinutos', String(minutos));
       }
-            <div className="space-y-6">
-              <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                    <p className="text-sm text-slate-500">Calor por estado • cidades visíveis no mapa</p>
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                  <div className="min-w-0 flex items-center justify-center">
-                    {/* Pie chart */}
-                    {canaisData.length === 0 ? (
-                      <div className="flex items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
-                    ) : (
-                      <div className="relative w-full max-w-[320px]" style={{ aspectRatio: '1/1' }} ref={pieRef}>
-                        {chartsMounted && (pieReady || forceChartRender) ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={canaisData}
-                                dataKey="value"
-                                nameKey="name"
-                                cx="50%"
-                                cy="50%"
-                                innerRadius="72%"
-                                outerRadius="88%"
-                                paddingAngle={3}
-                                cornerRadius={18}
-                                stroke="transparent"
-                                labelLine={false}
-                                label={renderChannelPercentLabel}
-                              >
-                                {canaisData.map((entry) => (
-                                  <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
-                                ))}
-                                <Label
-                                  position="center"
-                                  content={({ viewBox }) => {
-                                    if (!viewBox) return null;
-                                    const vb = viewBox as any;
-                                    const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                    const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
-                                    return (
-                                      <g>
-                                        <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
-                                          Total
-                                        </text>
-                                        <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
-                                          {formatBRL(totalCanaisValue)}
-                                        </text>
-                                      </g>
-                                    );
-                                  }}
-                                />
-                              </Pie>
-                              <Tooltip content={<CustomPieTooltip />} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        ) : (
-                          <div style={{ width: '100%', height: '100%' }} />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    {/* Map + estados column (keeps previous layout inside) */}
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                      <div className="min-w-0">
-                        {(() => {
-                          const vendasUF = resumo?.mapaVendasUF ?? [];
-                          const vendasCidade = resumo?.mapaVendasCidade ?? [];
-                          if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
-                          return (
-                            <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
-                          );
-                        })()}
-                      </div>
-                      <div className="min-w-0 flex flex-col gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
-                          <div className="space-y-2">
-                            {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                              <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
-                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
-                                <div className="text-right text-xs">
-                                  <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
-                                  <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                                </div>
-                              </div>
-                            ))}
-                            {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
-                              <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-3">Nota: o calor é proporcional ao faturamento por UF.</p>
-              </div>
+      if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
+      if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
+      const parsedResumo = json as DashboardResumo;
+      setResumo(parsedResumo);
+      safeWriteCache(cacheKey, parsedResumo);
+      try {
+        const { inicio, fim } = resolverIntervalo();
+        const diasEsperados = 1 + diffDays(inicio, fim);
+        const atualDias = parsedResumo.periodoAtual.vendasPorDia.length ?? 0;
+        const key = `${inicio}_${fim}`;
+        const already = !!autoComplementedRanges[key];
+        if (preset === 'month' && !already && atualDias < diasEsperados) {
+          setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
+          setComplementLoading(true);
+          const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
+          const resC = await fetch(url, { cache: 'no-store' });
+          if (resC.ok) {
+            setComplementMsg('Dados completados automaticamente');
+            setTimeout(() => setComplementMsg(null), 5000);
+          } else {
+            const j = await resC.json().catch(() => ({}));
+            setComplementMsg(j?.message || 'Erro ao complementar automaticamente');
+            setTimeout(() => setComplementMsg(null), 5000);
+          }
+          setComplementLoading(false);
+        }
+      } catch (e) {
+        // swallow
+      }
+    } catch (e: any) {
+      setErro(e?.message ?? 'Erro inesperado ao carregar dashboard');
+    } finally {
+      setLoading(false);
+      isLoadingRef.current = false;
+    }
+  }
 
-              <div className="grid gap-6 xl:grid-cols-2">
-                <div className="flex flex-col gap-6">
-                  <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
-                      <span className="text-xs text-slate-400">Top {topProdutos.length}</span>
-                    </div>
-                    {topProdutos.length ? (
-                      <div className="space-y-4">
-                        {topProdutos.map((produto) => (
-                          <div key={`${produto.produtoId ?? produto.descricao}`} className="flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              {produto.imagemUrl ? (
-                                <img
-                                  src={produto.imagemUrl}
-                                  alt={produto.descricao}
-                                  className="w-12 h-12 rounded-2xl object-cover border border-white/60 shadow-sm"
-                                />
-                              ) : (
-                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#009DA8] to-[#5eead4] text-white flex items-center justify-center text-sm font-semibold">
-                                  {getInitials(produto.descricao)}
-                                </div>
-                              )}
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900 dark:text-white">{produto.descricao}</p>
-                                <p className="text-[11px] text-slate-400">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
-                              </div>
-                            </div>
-                            <div className="text-right text-sm">
-                              <p className="font-semibold text-slate-900 dark:text-white">{produto.quantidade.toLocaleString('pt-BR')} un</p>
-                              <p className="text-slate-500">{formatBRL(produto.receita)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">Sincronize pedidos com itens para ver os produtos líderes.</p>
-                    )}
-                  </div>
-                </div>
+  async function carregarResumoGlobal() {
+    if (isLoadingGlobalRef.current) return;
+    isLoadingGlobalRef.current = true;
 
-                <div>
-                  <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Últimos pedidos</h2>
-                      <span className="text-xs text-slate-400">{recentOrders.length} recentes</span>
-                    </div>
-                    {loadingRecentOrders ? (
-                      <p className="text-sm text-slate-400">Carregando...</p>
-                    ) : recentOrders.length > 0 ? (
-                      <div className="space-y-2">
-                        {recentOrders.map((pedido) => {
-                          const situacaoLabel = labelSituacao(pedido.situacao ?? -1);
-                          // Exibe a data exatamente como vem da API (YYYY-MM-DD -> DD/MM/YY)
-                          const dataCriacao = pedido.dataCriacao
-                            ? (() => {
-                                const [y, m, d] = pedido.dataCriacao.split('-');
-                                return `${d}/${m}/${y.slice(2)}`;
-                              })()
-                            : '';
-                          return (
-                            <div
-                              key={pedido.tinyId}
-                              className="flex items-start justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
-                                  {pedido.primeiraImagem ? (
-                                    <>
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
-                                      {(pedido.itensQuantidade ?? 0) > 1 && (
-                                        <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
-                                          +{(pedido.itensQuantidade ?? 0) - 1}
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <span className="text-xs text-muted">{pedido.itensQuantidade ?? 0} itens</span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                    #{pedido.numeroPedido || pedido.tinyId}
-                                  </p>
-                                  {pedido.canal && (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#009DA8]/10 text-[#009DA8] font-medium">
-                                      {pedido.canal}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-slate-400 truncate">
-                                  {pedido.cliente || 'Cliente'} • {dataCriacao}
-                                </p>
-                                <p className="text-[10px] text-slate-500 mt-0.5">{situacaoLabel}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-semibold text-[#009DA8]">
-                                  {formatBRL(pedido.valor ?? 0)}
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">Nenhum pedido disponível.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
+    try {
+      const { inicio, fim } = resolverIntervaloGlobal();
+      const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
+      const cachedGlobal = safeReadCache<DashboardResumo>(cacheKey);
+      if (cachedGlobal) setResumoGlobal(cachedGlobal);
+      setLoadingGlobal(!cachedGlobal);
+      setErroGlobal(null);
+      const params = new URLSearchParams();
+      params.set('dataInicial', inicio);
+      params.set('dataFinal', fim);
+      if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
+      if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
+      const parsedGlobal = json as DashboardResumo;
+      setResumoGlobal(parsedGlobal);
+      safeWriteCache(cacheKey, parsedGlobal);
+    } catch (e: any) {
+      setErroGlobal(e?.message ?? 'Erro inesperado ao carregar visão consolidada');
+    } finally {
+      setLoadingGlobal(false);
+      isLoadingGlobalRef.current = false;
+    }
+  }
+
+  async function carregarResumoInsightsBase() {
+    if (isLoadingInsightsBaseRef.current) return;
+    isLoadingInsightsBaseRef.current = true;
+
+    try {
+      const { inicio, fim } = resolverIntervaloGlobal();
+      const cacheKey = buildGlobalCacheKey(inicio, fim, [], []);
+      const cached = safeReadCache<DashboardResumo>(cacheKey);
+      if (cached) setInsightsBaseline(cached);
+      const params = new URLSearchParams();
+      params.set('dataInicial', inicio);
+      params.set('dataFinal', fim);
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar base de insights');
+      const parsed = json as DashboardResumo;
+      setInsightsBaseline(parsed);
+      safeWriteCache(cacheKey, parsed);
+    } catch (e) {
+      console.error('Erro ao carregar base de insights', e);
+    } finally {
+      isLoadingInsightsBaseRef.current = false;
+    }
+  }
+
+  useEffect(() => {
+    console.log('[DEBUG] carregarResumo triggered', { preset, customStart, customEnd, canais: canaisSelecionados, situacoes: situacoesSelecionadas });
+    carregarResumo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
+
+  useEffect(() => {
+    carregarResumoGlobal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canaisSelecionados, situacoesSelecionadas]);
+
+  useEffect(() => {
+    carregarResumoInsightsBase();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    fetchLastSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    fetchRecentOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateHeight = () => {
+      if (!heroCardRef.current) return;
+      setPanelMaxHeight(heroCardRef.current.offsetHeight);
+    };
+    updateHeight();
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && heroCardRef.current) {
+      observer = new ResizeObserver(() => updateHeight());
+      observer.observe(heroCardRef.current);
+    }
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+      observer?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!insightsBaseline) return;
+    gerarInsights(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insightsBaseline]);
+
+  // Removed auto-refresh - only refresh on page reload or manual action
+
+  async function fetchLastSync() {
+    try {
+      const res = await fetch('/api/tiny/sync/last-updated', { cache: 'no-store' });
+      const j = await res.json();
+      if (res.ok && j?.lastUpdated) setLastSync(j.lastUpdated);
+      else setLastSync(null);
+    } catch (e) {
+      setLastSync(null);
+    }
+  }
+
+  async function fetchRecentOrders() {
+    try {
+      setLoadingRecentOrders(true);
+      const today = new Date();
+      const end = today.toISOString().slice(0, 10);
+      const startDate = new Date(today);
+      startDate.setDate(startDate.getDate() - 89);
+      const start = startDate.toISOString().slice(0, 10);
+      const params = new URLSearchParams({
+        page: '1',
+        pageSize: '10',
+        sortBy: 'numero_pedido',
+        sortDir: 'desc',
+        dataInicial: start,
+        dataFinal: end,
+      });
+      const res = await fetch(`/api/orders?${params.toString()}`);
+      const json = await res.json();
+      if (res.ok && Array.isArray(json.orders)) {
+        setRecentOrders(json.orders);
+      }
+    } catch (e) {
+      console.error('Erro ao carregar pedidos recentes:', e);
+    } finally {
+      setLoadingRecentOrders(false);
+    }
+  }
+
+  function resolverIntervaloChart(): { inicio: string; fim: string } {
+    const hojeIso = isoToday();
+    if (chartPreset === 'today') return { inicio: hojeIso, fim: hojeIso };
+    if (chartPreset === '7d') {
+      const fim = hojeIso;
+      const inicio = addDays(fim, -6);
+      return { inicio, fim };
+    }
+    if (chartPreset === '30d') {
+      const fim = hojeIso;
+      const inicio = addDays(fim, -29);
+      return { inicio, fim };
+    }
+    if (chartPreset === 'month') {
+      const hoje = new Date(`${hojeIso}T00:00:00`);
+      const inicio = startOfMonthFrom(hojeIso);
+      const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+      return { inicio, fim };
+    }
+    if (chartCustomStart && chartCustomEnd) return { inicio: chartCustomStart, fim: chartCustomEnd };
+    const hoje = new Date(`${hojeIso}T00:00:00`);
+    const inicio = startOfMonthFrom(hojeIso);
+    const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
+    return { inicio, fim };
+  }
 
   async function carregarResumoChart() {
     // Evitar chamadas simultâneas
@@ -1088,7 +1135,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm text-slate-500/80">Bem-vindo de volta</p>
                 <h2 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Visão geral do Tiny</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400" suppressHydrationWarning>{intervaloInicio} • {intervaloFim} · {diasIntervalo} dias monitorados</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{intervaloInicio} • {intervaloFim} · {diasIntervalo} dias monitorados</p>
                 {lastSync && (
                   <p className="text-xs text-slate-400 mt-2" suppressHydrationWarning>
                     Última sincronização {formatDateTime(lastSync)}
@@ -1210,217 +1257,214 @@ export default function DashboardPage() {
                     <p className="text-xl font-semibold text-slate-900 dark:text-white truncate">{formatPercent(cancelamentoPerc)}</p>
                   </div>
                   <div className="min-w-0">
-                    <div className="space-y-6">
-                      <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                        <div className="flex items-start justify-between gap-4 mb-4">
-                          <div>
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                            <p className="text-sm text-slate-500">Calor por estado • cidades visíveis no mapa</p>
-                          </div>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                          <div className="min-w-0 flex items-center justify-center">
-                            {/* Pie chart */}
-                            {canaisData.length === 0 ? (
-                              <div className="flex items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
-                            ) : (
-                              <div className="relative w-full max-w-[320px]" style={{ aspectRatio: '1/1' }} ref={pieRef}>
-                                {chartsMounted && (pieReady || forceChartRender) ? (
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                      <Pie
-                                        data={canaisData}
-                                        dataKey="value"
-                                        nameKey="name"
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius="72%"
-                                        outerRadius="88%"
-                                        paddingAngle={3}
-                                        cornerRadius={18}
-                                        stroke="transparent"
-                                        labelLine={false}
-                                        label={renderChannelPercentLabel}
-                                      >
-                                        {canaisData.map((entry) => (
-                                          <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
-                                        ))}
-                                        <Label
-                                          position="center"
-                                          content={({ viewBox }) => {
-                                            if (!viewBox) return null;
-                                            const vb = viewBox as any;
-                                            const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                            const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
-                                            return (
-                                              <g>
-                                                <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
-                                                  Total
-                                                </text>
-                                                <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
-                                                  {formatBRL(totalCanaisValue)}
-                                                </text>
-                                              </g>
-                                            );
-                                          }}
-                                        />
-                                      </Pie>
-                                      <Tooltip content={<CustomPieTooltip />} />
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                ) : (
-                                  <div style={{ width: '100%', height: '100%' }} />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            {/* Map + estados column (keeps previous layout inside) */}
-                            <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                              <div className="min-w-0">
-                                {(() => {
-                                  const vendasUF = resumo?.mapaVendasUF ?? [];
-                                  const vendasCidade = resumo?.mapaVendasCidade ?? [];
-                                  if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
-                                  return (
-                                    <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
-                                  );
-                                })()}
-                              </div>
-                              <div className="min-w-0 flex flex-col gap-4">
-                                <div>
-                                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
-                                  <div className="space-y-2">
-                                    {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                                      <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
-                                        <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
-                                        <div className="text-right text-xs">
-                                          <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
-                                          <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                    {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
-                                      <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-3">Nota: o calor é proporcional ao faturamento por UF.</p>
-                      </div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400 truncate">Produtos vendidos</p>
+                    <p className="text-xl font-semibold text-slate-900 dark:text-white truncate" suppressHydrationWarning>
+                      {totalProdutosVendidos.toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-                      <div className="grid gap-6 xl:grid-cols-2">
-                        <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                          <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
-                            <span className="text-xs text-slate-400">Top {topProdutos.length}</span>
+              <div className="rounded-[28px] border border-white/60 bg-gradient-to-br from-[#ede9fe]/80 to-[#fff5f5]/70 backdrop-blur-xl p-6 shadow-inner shadow-white/30">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Microtrend</p>
+                    <p className="text-sm text-slate-500">Últimos {sparkData.length} registros</p>
+                  </div>
+                  <span className="text-xs text-slate-400">{resumoAtual ? 'Atualizado em tempo real' : 'Aguardando dados'}</span>
+                </div>
+                <div className="h-32">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sparkData}>
+                      <defs>
+                        <linearGradient id="microSpark" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
+                          <stop offset="100%" stopColor="#a855f7" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
+                      <XAxis dataKey="label" hide />
+                      <YAxis hide />
+                      <Tooltip content={<CustomTooltip formatter={formatBRL} />} />
+                      <Area type="monotone" dataKey="value" stroke="#a855f7" fill="url(#microSpark)" strokeWidth={3} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {quickHighlights.length ? (
+                quickHighlights.map((item, idx) => (
+                  <div
+                    key={item.label}
+                    className={`rounded-[24px] border border-white/60 ${
+                      idx % 2 === 0 ? 'bg-white/80 dark:bg-slate-900/70' : 'bg-gradient-to-br from-white/70 to-[#f7f3ff]/80 dark:bg-slate-900/60'
+                    } backdrop-blur-xl p-5 shadow-inner shadow-white/40 flex flex-col gap-1`}
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
+                    <p className="text-xs text-slate-400">{item.helper}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[24px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-5 text-sm text-slate-400 sm:col-span-2 xl:col-span-4">
+                  {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
+                </div>
+              )}
+            </div>
+
+            {erroGlobal && (
+              <div className="rounded-[24px] border border-rose-200/60 bg-rose-50/80 p-4 text-sm text-rose-600">
+                {erroGlobal}
+              </div>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Situações em destaque</h3>
+                  <span className="text-xs text-slate-400">Fluxo Tiny</span>
+                </div>
+                <div className="space-y-3">
+                  {topSituacoes.length ? (
+                    topSituacoes.map((sit) => (
+                      <div key={sit.situacao} className="flex items-center justify-between rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{labelSituacao(sit.situacao)}</p>
+                          <p className="text-[11px] text-slate-400">{sit.quantidade.toLocaleString('pt-BR')} pedidos</p>
+                        </div>
+                        <span className="text-sm font-semibold text-[#009DA8]">{sit.quantidade}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400">Aguardando dados…</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Últimos dias</h3>
+                  <span className="text-xs text-slate-400">Base consolidada</span>
+                </div>
+                <div className="space-y-3">
+                  {trendingDias.length ? (
+                    trendingDias.map((dia) => {
+                      let dataFormatada = dia.data;
+                      try {
+                        dataFormatada = new Date(dia.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                      } catch {
+                        // ignore
+                      }
+                      return (
+                        <div key={dia.data} className="flex items-center justify-between rounded-2xl border border-white/60 bg-gradient-to-r from-white/80 to-[#ecfeff]/80 px-4 py-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{dataFormatada}</p>
+                            <p className="text-[11px] text-slate-400">{dia.quantidade} pedidos</p>
                           </div>
-                          {topProdutos.length ? (
-                            <div className="space-y-4">
-                              {topProdutos.map((produto) => (
-                                <div key={`${produto.produtoId ?? produto.descricao}`} className="flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3">
-                                  <div className="flex items-center gap-3">
-                                    {produto.imagemUrl ? (
-                                      <img
-                                        src={produto.imagemUrl}
-                                        alt={produto.descricao}
-                                        className="w-12 h-12 rounded-2xl object-cover border border-white/60 shadow-sm"
-                                      />
-                                    ) : (
-                                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#009DA8] to-[#5eead4] text-white flex items-center justify-center text-sm font-semibold">
-                                        {getInitials(produto.descricao)}
-                                      </div>
-                                    )}
-                                    <div>
-                                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{produto.descricao}</p>
-                                      <p className="text-[11px] text-slate-400">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
-                                    </div>
-                                  </div>
-                                  <div className="text-right text-sm">
-                                    <p className="font-semibold text-slate-900 dark:text-white">{produto.quantidade.toLocaleString('pt-BR')} un</p>
-                                    <p className="text-slate-500">{formatBRL(produto.receita)}</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400">Sincronize pedidos com itens para ver os produtos líderes.</p>
+                          <span className="text-sm font-semibold text-[#0f172a]">{formatBRL(dia.totalDia)}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-slate-400">Ainda sem histórico suficiente.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside
+            className="rounded-[36px] border border-white/50 dark:border-slate-800/50 bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-6 shadow-[0_10px_50px_rgba(15,23,42,0.12)] flex flex-col gap-6 self-start overflow-hidden"
+            style={panelMaxHeight ? { height: panelMaxHeight, maxHeight: panelMaxHeight } : undefined}
+          >
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Insights de IA</p>
+              <h3 className="text-2xl font-semibold text-slate-900 dark:text-white mt-2">Ambienta Copilot</h3>
+              <p className="text-sm text-slate-500">Análises automáticas geradas com Gemini.</p>
+            </div>
+            <button
+              onClick={() => gerarInsights(false)}
+              className="w-full rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#38c5cf] text-white text-sm font-semibold py-2.5 shadow-lg shadow-[#009DA8]/30 disabled:opacity-60"
+              disabled={loadingInsights || !insightsBaseline}
+            >
+              {loadingInsights ? 'Gerando insights…' : 'Atualizar com Gemini'}
+            </button>
+              <div className="relative flex-1 min-h-0 overflow-hidden">
+              <div
+                ref={insightsScrollRef}
+                  className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
+                  style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(15,23,42,0.2) transparent' }}
+              >
+                {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
+                {!erroInsights && insights.length === 0 && !loadingInsights && (
+                  <p className="text-sm text-slate-400">Carregue o dashboard para receber recomendações inteligentes.</p>
+                )}
+                {loadingInsights && (
+                  <div className="space-y-2 text-sm text-slate-400">
+                    <div className="h-2 rounded-full bg-slate-100/60" />
+                    <div className="h-2 rounded-full bg-slate-100/60 w-3/4" />
+                    <div className="h-2 rounded-full bg-slate-100/60 w-1/2" />
+                  </div>
+                )}
+                {!loadingInsights &&
+                  insights.map((card) => {
+                    const theme = INSIGHT_THEMES[card.tone] ?? INSIGHT_THEMES.info;
+                    const Icon = theme.icon;
+                    return (
+                      <div
+                        key={card.id}
+                        className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border}`}
+                      >
+                        <div className={`mt-0.5 rounded-xl p-2 ${theme.iconBg} ${theme.iconColor}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 leading-relaxed">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {card.title || theme.label}
+                          </p>
+                          {card.body && (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{card.body}</p>
                           )}
                         </div>
-
-                        <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                          <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Últimos pedidos</h2>
-                            <span className="text-xs text-slate-400">{recentOrders.length} recentes</span>
-                          </div>
-                          {loadingRecentOrders ? (
-                            <p className="text-sm text-slate-400">Carregando...</p>
-                          ) : recentOrders.length > 0 ? (
-                            <div className="space-y-2">
-                              {recentOrders.map((pedido) => {
-                                const situacaoLabel = labelSituacao(pedido.situacao ?? -1);
-                                // Exibe a data exatamente como vem da API (YYYY-MM-DD -> DD/MM/YY)
-                                const dataCriacao = pedido.dataCriacao
-                                  ? (() => {
-                                      const [y, m, d] = pedido.dataCriacao.split('-');
-                                      return `${d}/${m}/${y.slice(2)}`;
-                                    })()
-                                  : '';
-                                return (
-                                  <div
-                                    key={pedido.tinyId}
-                                    className="flex items-start justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
-                                        {pedido.primeiraImagem ? (
-                                          <>
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
-                                            {(pedido.itensQuantidade ?? 0) > 1 && (
-                                              <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
-                                                +{(pedido.itensQuantidade ?? 0) - 1}
-                                              </span>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <span className="text-xs text-muted">{pedido.itensQuantidade ?? 0} itens</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                          #{pedido.numeroPedido || pedido.tinyId}
-                                        </p>
-                                        {pedido.canal && (
-                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#009DA8]/10 text-[#009DA8] font-medium">
-                                            {pedido.canal}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="text-[11px] text-slate-400 truncate">
-                                        {pedido.cliente || 'Cliente'} • {dataCriacao}
-                                      </p>
-                                      <p className="text-[10px] text-slate-500 mt-0.5">{situacaoLabel}</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-sm font-semibold text-[#009DA8]">
-                                        {formatBRL(pedido.valor ?? 0)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400">Nenhum pedido disponível.</p>
-                          )}
-                        </div>
+                        {card.dismissible !== false && (
+                          <button
+                            type="button"
+                            onClick={() => dismissInsightCard(card.id)}
+                            className="rounded-full p-1 text-slate-400 hover:text-slate-600 hover:bg-white/60 dark:hover:bg-slate-800/80 transition"
+                            aria-label="Fechar insight"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
+                    );
+                  })}
+              </div>
+              <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
+            </div>
+            <p className="text-[11px] text-slate-400">Fonte: Gemini · Considera visão consolidada de {GLOBAL_INTERVAL_DAYS} dias sem aplicar filtros de canal ou período.</p>
+          </aside>
+        </section>
+
+        {loading && (
+          <div className="rounded-[32px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6 text-sm text-slate-500">
+            Carregando dados do Tiny…
+          </div>
+        )}
+        {erro && (
+          <div className="rounded-[32px] border border-rose-200/70 bg-rose-50/80 p-6 text-sm text-rose-600">
+            Erro ao carregar dashboard: {erro}
+          </div>
+        )}
+
+        {!loading && !erro && resumo && resumoAtual && (
+          <div className="space-y-8">
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#e8e0ff] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+                <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento líquido</p>
                   <TrendingUp className="w-5 h-5 text-[#5b21b6] shrink-0" />
                 </div>
@@ -1515,10 +1559,9 @@ export default function DashboardPage() {
               {loadingChart && <p className="text-xs text-slate-400 mb-2">Carregando…</p>}
               {erroChart && <p className="text-xs text-rose-500 mb-2">{erroChart}</p>}
               {complementMsg && <p className="text-xs text-slate-400 mb-2">{complementMsg}</p>}
-                <div className="h-80" ref={mainChartRef}>
-                {chartsMounted && (mainChartReady || forceChartRender) ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData}>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorAtual" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={AMBIENTA_PRIMARY} stopOpacity={0.5} />
@@ -1536,119 +1579,81 @@ export default function DashboardPage() {
                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                     <Area type="monotone" dataKey="anterior" name="Período anterior" stroke="#a5b4fc" fill="url(#colorAnterior)" strokeWidth={3} strokeDasharray="6 6" />
                     <Area type="monotone" dataKey="atual" name="Período atual" stroke={AMBIENTA_PRIMARY} fill="url(#colorAtual)" strokeWidth={3} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div style={{ width: '100%', height: '100%' }} />
-                )}
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Pie + Map on the same row, full width, followed by a 2-column row with
-                Produtos mais vendidos (left) and Últimos pedidos (right) */}
-            <div className="space-y-6">
-              <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                    <p className="text-sm text-slate-500">Calor por estado • cidades visíveis no mapa</p>
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                  <div className="min-w-0 flex items-center justify-center">
-                    {/* Pie chart */}
-                    {canaisData.length === 0 ? (
-                      <div className="flex items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
-                    ) : (
-                      <div className="relative w-full max-w-[320px]" style={{ aspectRatio: '1/1' }} ref={pieRef}>
-                        {chartsMounted && (pieReady || forceChartRender) ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={canaisData}
-                                dataKey="value"
-                                nameKey="name"
-                                cx="50%"
-                                cy="50%"
-                                innerRadius="72%"
-                                outerRadius="88%"
-                                paddingAngle={3}
-                                cornerRadius={18}
-                                stroke="transparent"
-                                labelLine={false}
-                                label={renderChannelPercentLabel}
-                              >
-                                {canaisData.map((entry) => (
-                                  <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
-                                ))}
-                                <Label
-                                  position="center"
-                                  content={({ viewBox }) => {
-                                    if (!viewBox) return null;
-                                    const vb = viewBox as any;
-                                    const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                    const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
-                                    return (
-                                      <g>
-                                        <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
-                                          Total
-                                        </text>
-                                        <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
-                                          {formatBRL(totalCanaisValue)}
-                                        </text>
-                                      </g>
-                                    );
-                                  }}
-                                />
-                              </Pie>
-                              <Tooltip content={<CustomPieTooltip />} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        ) : (
-                          <div style={{ width: '100%', height: '100%' }} />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    {/* Map + estados column (keeps previous layout inside) */}
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                      <div className="min-w-0">
-                        {(() => {
-                          const vendasUF = resumo?.mapaVendasUF ?? [];
-                          const vendasCidade = resumo?.mapaVendasCidade ?? [];
-                          if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
-                          return (
-                            <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
-                          );
-                        })()}
-                      </div>
-                      <div className="min-w-0 flex flex-col gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
-                          <div className="space-y-2">
-                            {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                              <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
-                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
-                                <div className="text-right text-xs">
-                                  <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
-                                  <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                                </div>
-                              </div>
-                            ))}
-                            {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
-                              <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+            <div className="grid gap-6 xl:grid-cols-2">
+              <div className="flex flex-col gap-6">
+                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 flex flex-col shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Faturamento por canal</h2>
+                      <p className="text-sm text-slate-500">Distribuição percentual do período</p>
                     </div>
                   </div>
+                  {canaisData.length === 0 ? (
+                    <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-6">
+                      <div className="relative w-full" style={{ aspectRatio: '1/1', maxWidth: '280px', margin: '0 auto' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={canaisData}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius="72%"
+                              outerRadius="88%"
+                              paddingAngle={3}
+                              cornerRadius={18}
+                              stroke="transparent"
+                              labelLine={false}
+                              label={renderChannelPercentLabel}
+                            >
+                              {canaisData.map((entry) => (
+                                <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
+                              ))}
+                              <Label
+                                position="center"
+                                content={({ viewBox }) => {
+                                  if (!viewBox) return null;
+                                  const { cx, cy } = viewBox as { cx: number; cy: number };
+                                  return (
+                                    <g>
+                                      <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
+                                        Total
+                                      </text>
+                                      <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
+                                        {formatBRL(totalCanaisValue)}
+                                      </text>
+                                    </g>
+                                  );
+                                }}
+                              />
+                            </Pie>
+                            <Tooltip content={<CustomPieTooltip />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-200">
+                        {canaisData.map((canal) => (
+                          <div key={canal.name} className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: canal.color }} />
+                            <span>{canal.name}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-white/80 dark:bg-slate-800/60 text-xs font-semibold text-slate-600 dark:text-slate-100 shadow-sm">
+                              {formatPercent(canal.percentage)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-3">Nota: o calor é proporcional ao faturamento por UF.</p>
-              </div>
 
-              <div className="grid gap-6 xl:grid-cols-2">
                 <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
@@ -1760,81 +1765,24 @@ export default function DashboardPage() {
               {/* Coluna da direita: Mapa do Brasil */}
               <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col">
                 <div className="flex items-start justify-between gap-4 mb-4">
-                  </div>
-                  <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
+                    <p className="text-sm text-slate-500">Calor por estado e ranking por cidade</p>
                   </div>
                 </div>
-                {/* Faturamento por canal + Mapa lado-a-lado em uma única linha (desktop) */}
-                <div className="grid gap-4 md:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)]">
-                  <div className="min-w-0 flex items-center justify-center">
-                    {/* Pie chart */}
-                    {canaisData.length === 0 ? (
-                      <div className="flex items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
-                    ) : (
-                      <div className="relative w-full max-w-[320px]" style={{ aspectRatio: '1/1' }} ref={pieRef}>
-                        {chartsMounted && (pieReady || forceChartRender) ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={canaisData}
-                                dataKey="value"
-                                nameKey="name"
-                                cx="50%"
-                                cy="50%"
-                                innerRadius="72%"
-                                outerRadius="88%"
-                                paddingAngle={3}
-                                cornerRadius={18}
-                                stroke="transparent"
-                                labelLine={false}
-                                label={renderChannelPercentLabel}
-                              >
-                                {canaisData.map((entry) => (
-                                  <Cell key={entry.name} fill={entry.color} stroke={entry.color} />
-                                ))}
-                                <Label
-                                  position="center"
-                                  content={({ viewBox }) => {
-                                    if (!viewBox) return null;
-                                    const vb = viewBox as any;
-                                    const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                    const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
-                                    return (
-                                      <g>
-                                        <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
-                                          Total
-                                        </text>
-                                        <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-main)" fontSize={18} fontWeight={700}>
-                                          {formatBRL(totalCanaisValue)}
-                                        </text>
-                                      </g>
-                                    );
-                                  }}
-                                />
-                              </Pie>
-                              <Tooltip content={<CustomPieTooltip />} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        ) : (
-                          <div style={{ width: '100%', height: '100%' }} />
-                        )}
-                      </div>
-                    )}
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                  <div className="min-w-0">
+                    {/* @ts-expect-error async import type */}
+                    {(() => {
+                      const vendasUF = resumo?.mapaVendasUF ?? [];
+                      const vendasCidade = resumo?.mapaVendasCidade ?? [];
+                      if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
+                      return (
+                        <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
+                      );
+                    })()}
                   </div>
-                  <div>
-                    {/* Map + estados column (keeps previous layout inside) */}
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                      <div className="min-w-0">
-                        {(() => {
-                          const vendasUF = resumo?.mapaVendasUF ?? [];
-                          const vendasCidade = resumo?.mapaVendasCidade ?? [];
-                          if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
-                          return (
-                            <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
-                          );
-                        })()}
-                      </div>
-                      <div className="min-w-0 flex flex-col gap-4">
+                  <div className="min-w-0 flex flex-col gap-4">
                     <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
                       <div className="space-y-2">
@@ -1852,10 +1800,28 @@ export default function DashboardPage() {
                         )}
                       </div>
                     </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Cidades</p>
+                      <div className="space-y-2">
+                        {((resumo?.mapaVendasCidade ?? []).slice(0, 6)).map((cid, idx) => (
+                          <div key={`${cid.cidade}-${idx}`} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{cid.cidade}{cid.uf ? `/${cid.uf}` : ''}</div>
+                            <div className="text-right text-xs">
+                              <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(cid.totalValor)}</div>
+                              <div className="text-slate-500">{cid.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!resumo?.mapaVendasCidade || resumo.mapaVendasCidade.length === 0) && (
+                          <p className="text-xs text-slate-400">Nenhuma cidade identificada.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-3">Nota: o calor é proporcional ao faturamento por UF.</p>
+                <p className="text-[10px] text-slate-400 mt-3">Notas: o calor é proporcional ao faturamento por UF. Para cidades, a posição no mapa será adicionada em uma próxima versão.</p>
               </div>
+            </div>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
