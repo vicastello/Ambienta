@@ -8,8 +8,9 @@
 -- 2) Rodar GET em /api/tiny/sync/enrich-background a cada 5 minutos
 --    para enriquecer frete/canal e manter dados atualizados.
 
--- Habilitar pg_cron se necessário
+-- Habilitar pg_cron e pg_net (necessário para net.http_get/post)
 CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- Desagendar jobs antigos com mesmo nome (se existirem)
 DO $$
@@ -38,22 +39,21 @@ BEGIN
     PERFORM cron.schedule(
       'sync-tiny-recent-itens',
       '*/2 * * * *',
-      $$
-      SELECT 
-        net.http_post(
-          url := 'https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app/api/tiny/sync',
-          headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'User-Agent', 'Supabase-PgCron/1.0'
-          ),
-          body := jsonb_build_object(
-            'mode', 'recent',
-            'diasRecentes', 2,
-            'background', true,
-            'timestamp', now()
-          )
+      $cron$
+      SELECT net.http_post(
+        url := 'https://gestor-tiny.vercel.app/api/tiny/sync',
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'User-Agent', 'Supabase-PgCron/1.0'
+        ),
+        body := jsonb_build_object(
+          'mode', 'recent',
+          'diasRecentes', 2,
+          'background', true,
+          'timestamp', now()
         )
-      $$
+      )
+      $cron$
     );
   END IF;
 END $$;
@@ -65,15 +65,14 @@ BEGIN
     PERFORM cron.schedule(
       'enrich-tiny-background',
       '*/5 * * * *',
-      $$
-      SELECT 
-        net.http_get(
-          url := 'https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app/api/tiny/sync/enrich-background',
-          headers := jsonb_build_object(
-            'User-Agent', 'Supabase-PgCron/1.0'
-          )
+      $cron$
+      SELECT net.http_get(
+        url := 'https://gestor-tiny.vercel.app/api/tiny/sync/enrich-background',
+        headers := jsonb_build_object(
+          'User-Agent', 'Supabase-PgCron/1.0'
         )
-      $$
+      )
+      $cron$
     );
   END IF;
 END $$;

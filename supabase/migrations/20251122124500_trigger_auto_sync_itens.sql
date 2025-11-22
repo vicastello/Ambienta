@@ -2,7 +2,8 @@
 -- Assim que um registro é criado em tiny_orders, o Postgres chama a rota
 -- /api/tiny/sync/itens passando o tiny_id do pedido para salvar os itens
 
-CREATE EXTENSION IF NOT EXISTS http;
+-- Usamos a extensão pg_net (schema "net") para chamadas HTTP
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- Função de trigger
 CREATE OR REPLACE FUNCTION public.tiny_orders_auto_sync_itens()
@@ -16,9 +17,9 @@ BEGIN
   END IF;
 
   -- Dispara chamada HTTP para API do app (Vercel)
-  -- Reutiliza o mesmo domínio configurado nas crons do projeto
+  -- Importante: usar o domínio estável de produção (alias), NUNCA o subdomínio efêmero do deploy
   PERFORM net.http_post(
-    url := 'https://gestor-tiny-qxv7irs5g-vihcastello-6133s-projects.vercel.app/api/tiny/sync/itens',
+    url := 'https://gestor-tiny.vercel.app/api/tiny/sync/itens',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'User-Agent', 'Supabase-Trigger/1.0'
