@@ -455,7 +455,7 @@ export default function PedidosPage() {
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
                                     {(order.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-md min-w-[18px] h-4 px-1.5 flex items-center justify-center text-[10px] font-semibold" style={{zIndex:50}}>
+                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{zIndex:50}}>
                                         +{(order.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
