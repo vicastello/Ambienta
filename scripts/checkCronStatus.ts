@@ -12,7 +12,11 @@ async function checkCronStatus() {
     let cronJobs: any = null;
     let cronError: any = null;
     try {
-      await supabaseAdmin.rpc('pg_stat_statements_reset').catch(() => null);
+      try {
+        await supabaseAdmin.rpc('pg_stat_statements_reset');
+      } catch (_) {
+        // ignore rpc reset errors
+      }
       const res = await supabaseAdmin.from('cron.job').select('*');
       cronJobs = res.data;
       cronError = res.error;
