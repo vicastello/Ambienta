@@ -9,21 +9,21 @@ async function checkCronStatus() {
 
   try {
     // Verificar cron jobs agendados
-    const { data: cronJobs, error: cronError } = await supabaseAdmin
-      .rpc('pg_stat_statements_reset')
-      .then(() => 
-        supabaseAdmin.from('cron.job').select('*')
-      )
-      .catch(async () => {
-        // Fallback: tentar query direta
-        const { data, error } = await supabaseAdmin
-          .rpc('exec_sql', { 
-            sql: 'SELECT * FROM cron.job ORDER BY jobid;' 
-          })
-          .catch(() => ({ data: null, error: null }));
-        
-        return { data, error };
-      });
+    let cronJobs: any = null;
+    let cronError: any = null;
+    try {
+      await supabaseAdmin.rpc('pg_stat_statements_reset').catch(() => null);
+      const res = await supabaseAdmin.from('cron.job').select('*');
+      cronJobs = res.data;
+      cronError = res.error;
+    } catch (err) {
+      // Fallback: tentar query direta via RPC exec_sql
+      const fallback = await supabaseAdmin
+        .rpc('exec_sql', { sql: 'SELECT * FROM cron.job ORDER BY jobid;' })
+        .catch(() => ({ data: null, error: null } as any));
+      cronJobs = fallback.data;
+      cronError = fallback.error;
+    }
 
     if (cronError) {
       console.log('⚠️ Não foi possível acessar cron.job via API');
