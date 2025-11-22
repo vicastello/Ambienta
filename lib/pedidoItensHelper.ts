@@ -86,7 +86,9 @@ export async function salvarItensPedido(
  */
 export async function salvarItensLote(
   accessToken: string,
-  pedidos: Array<{ idTiny: number; idLocal: number }>
+  pedidos: Array<{ idTiny: number; idLocal: number }>,
+  // delay between requests in milliseconds. Default 600ms (~100 req/min)
+  delayMs: number = 600
 ): Promise<{ sucesso: number; falhas: number; totalItens: number }> {
   let sucesso = 0;
   let falhas = 0;
@@ -106,8 +108,8 @@ export async function salvarItensLote(
       falhas++;
     }
 
-    // Rate limit: 600ms = ~100 req/min
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    // Respect provided rate limit delay
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   return { sucesso, falhas, totalItens };
@@ -119,7 +121,8 @@ export async function salvarItensLote(
  */
 export async function sincronizarItensPorPedidos(
   accessToken: string,
-  tinyIds: Array<number | null | undefined>
+  tinyIds: Array<number | null | undefined>,
+  options?: { delayMs?: number }
 ): Promise<{ processados: number; sucesso: number; totalItens: number }> {
   const uniqueTinyIds = Array.from(new Set(tinyIds.filter((id): id is number => Boolean(id))));
 
@@ -154,7 +157,8 @@ export async function sincronizarItensPorPedidos(
 
   const resultado = await salvarItensLote(
     accessToken,
-    pedidosSemItens.map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id }))
+    pedidosSemItens.map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id })),
+    options?.delayMs
   );
 
   return {

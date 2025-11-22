@@ -43,6 +43,12 @@ export default function ConfiguracoesPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncErro, setSyncErro] = useState<string | null>(null);
   const [syncOk, setSyncOk] = useState<string | null>(null);
+  // Enriquecimento manual (itens/imagens)
+  const [enrichLastNumber, setEnrichLastNumber] = useState<number>(10);
+  const [enrichNumeroPedido, setEnrichNumeroPedido] = useState<string>('');
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<any>(null);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
 
   const [jobs, setJobs] = useState<SyncJob[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);
@@ -323,7 +329,98 @@ export default function ConfiguracoesPage() {
                 </span>
               </div>
             </div>
+              {/* Enriquecer últimos X pedidos / pedido específico */}
+              <div className="border-t app-border-subtle pt-3 space-y-2 text-xs">
+                <p className="text-[var(--text-muted)] font-medium">
+                  Enriquecer itens/imagens manualmente
+                </p>
 
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[var(--text-muted)] text-[12px]">Últimos</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={enrichLastNumber}
+                      onChange={(e) => setEnrichLastNumber(Number(e.target.value || '1'))}
+                      className="w-20 rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
+                    />
+                    <button
+                      onClick={async () => {
+                        setEnrichLoading(true);
+                        setEnrichError(null);
+                        setEnrichResult(null);
+                        try {
+                          // 500ms delay => ~120 req/min
+                          const res = await fetch('/api/tiny/enrich', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mode: 'last', last: enrichLastNumber, delayMs: 500 }),
+                          });
+                          const json = await res.json();
+                          if (!res.ok) throw new Error(json?.message || json?.details || 'Erro');
+                          setEnrichResult(json);
+                        } catch (e: any) {
+                          setEnrichError(e?.message ?? 'Erro ao enriquecer');
+                        } finally {
+                          setEnrichLoading(false);
+                          carregarLogs();
+                        }
+                      }}
+                      disabled={enrichLoading}
+                      className="px-3 py-1 rounded-xl bg-emerald-500 text-slate-950 text-[11px] hover:bg-emerald-400 disabled:opacity-60"
+                    >
+                      {enrichLoading ? 'Enriquecendo…' : `Enriquecer últimos ${enrichLastNumber}`}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className="text-[var(--text-muted)] text-[12px]">Pedido (nº)</label>
+                    <input
+                      type="text"
+                      value={enrichNumeroPedido}
+                      onChange={(e) => setEnrichNumeroPedido(e.target.value)}
+                      placeholder="Ex: 251122F76FT7PJ ou 22844"
+                      className="w-48 rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!enrichNumeroPedido) return setEnrichError('Informe o número do pedido');
+                        setEnrichLoading(true);
+                        setEnrichError(null);
+                        setEnrichResult(null);
+                        try {
+                          const res = await fetch('/api/tiny/enrich', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mode: 'numero', numeroPedido: enrichNumeroPedido, delayMs: 500 }),
+                          });
+                          const json = await res.json();
+                          if (!res.ok) throw new Error(json?.message || json?.details || 'Erro');
+                          setEnrichResult(json);
+                        } catch (e: any) {
+                          setEnrichError(e?.message ?? 'Erro ao enriquecer');
+                        } finally {
+                          setEnrichLoading(false);
+                          carregarLogs();
+                        }
+                      }}
+                      disabled={enrichLoading}
+                      className="px-3 py-1 rounded-xl bg-sky-500 text-slate-950 text-[11px] hover:bg-sky-400 disabled:opacity-60"
+                    >
+                      {enrichLoading ? 'Enriquecendo…' : 'Enriquecer pedido'}
+                    </button>
+                  </div>
+                </div>
+
+                {enrichError && <p className="text-xs text-rose-500">{enrichError}</p>}
+                {enrichResult && (
+                  <div className="text-xs text-emerald-500">
+                    Enriquecimento finalizado. Resultado: {JSON.stringify(enrichResult)}
+                  </div>
+                )}
+              </div>
             {/* Janela padrão */}
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex flex-col gap-1">
