@@ -47,7 +47,7 @@ async function main() {
       if (itemsWithImage.length > 0) {
         console.log('  amostras_imagem_urls:');
         for (let i = 0; i < Math.min(3, itemsWithImage.length); i++) {
-          console.log('   -', itemsWithImage[i].tiny_produtos.imagem_url);
+          console.log('   -', (itemsWithImage[i] as any).tiny_produtos?.imagem_url);
         }
       }
 
