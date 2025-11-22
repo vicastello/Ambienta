@@ -1718,14 +1718,14 @@ export default function DashboardPage() {
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
-                                    {pedido.itensQuantidade > 1 && (
+                                    {(pedido.itensQuantidade ?? 0) > 1 && (
                                       <span className="absolute -top-2 -right-2 bg-white border-2 border-blue-500 text-blue-600 rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:2}}>
-                                        +{pedido.itensQuantidade - 1}
+                                        +{(pedido.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
                                   </>
                                 ) : (
-                                  <span className="text-xs text-muted">{pedido.itensQuantidade || 0} itens</span>
+                                  <span className="text-xs text-muted">{pedido.itensQuantidade ?? 0} itens</span>
                                 )}
                               </div>
                             </div>
