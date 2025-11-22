@@ -449,21 +449,21 @@ export default function PedidosPage() {
                       <article key={order.tinyId} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm">
                         <div className="px-6 py-4 space-y-1">
                           <div className="flex items-center gap-3">
-                            <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
-                              {order.primeiraImagem ? (
-                                <>
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
-                                  {(order.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute -top-2 -right-2 bg-white border-2 border-blue-500 text-blue-600 rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:2}}>
+                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
+                                {order.primeiraImagem ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                    {(order.itensQuantidade ?? 0) > 1 && (
+                                      <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 bg-[var(--accent)] text-white border-2 border-white rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:50}}>
                                         +{(order.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
-                                </>
-                              ) : (
-                                <span className="text-xs text-muted">{order.itensQuantidade ?? 0} itens</span>
-                              )}
-                            </div>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-muted">{order.itensQuantidade ?? 0} itens</span>
+                                )}
+                              </div>
                             <div>
                               <p className="font-semibold text-[var(--text-main)] flex items-center gap-2">
                                 #{order.numeroPedido ?? order.tinyId}

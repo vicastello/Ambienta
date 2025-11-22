@@ -1713,13 +1713,13 @@ export default function DashboardPage() {
                             className="flex items-start justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
                                 {pedido.primeiraImagem ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
                                     {(pedido.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute -top-2 -right-2 bg-white border-2 border-blue-500 text-blue-600 rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:2}}>
+                                      <span className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2 bg-[var(--accent)] text-white border-2 border-white rounded-full px-2 py-0.5 text-xs font-bold shadow" style={{zIndex:50}}>
                                         +{(pedido.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
