@@ -176,6 +176,9 @@ type ProdutoResumo = {
   quantidade: number;
   receita: number;
   imagemUrl?: string | null;
+  saldo?: number | null;
+  reservado?: number | null;
+  disponivel?: number | null;
 };
 
 type SituacaoDisponivel = {
@@ -449,10 +452,9 @@ function getInitials(text?: string | null) {
 type ChartPreset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
 export default function DashboardPage() {
-  const [initialFilters] = useState<SavedFilters | null>(() => loadSavedFilters());
-  const [preset, setPreset] = useState<DatePreset>(initialFilters?.preset ?? '7d');
-  const [customStart, setCustomStart] = useState<string | null>(initialFilters?.customStart ?? null);
-  const [customEnd, setCustomEnd] = useState<string | null>(initialFilters?.customEnd ?? null);
+  const [preset, setPreset] = useState<DatePreset>('7d');
+  const [customStart, setCustomStart] = useState<string | null>(null);
+  const [customEnd, setCustomEnd] = useState<string | null>(null);
 
   const [resumo, setResumo] = useState<DashboardResumo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -461,12 +463,10 @@ export default function DashboardPage() {
   const [loadingGlobal, setLoadingGlobal] = useState<boolean>(true);
   const [erroGlobal, setErroGlobal] = useState<string | null>(null);
 
-  const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>(
-    initialFilters?.canaisSelecionados ?? []
-  );
-  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>(
-    initialFilters?.situacoesSelecionadas ?? []
-  );
+  const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>([]);
+  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>([]);
+
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
 
   const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
   const [chartCustomStart, setChartCustomStart] = useState<string | null>(null);
@@ -508,13 +508,26 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const saved = loadSavedFilters();
+    if (saved) {
+      setPreset(saved.preset ?? '7d');
+      setCustomStart(saved.customStart ?? null);
+      setCustomEnd(saved.customEnd ?? null);
+      setCanaisSelecionados(saved.canaisSelecionados ?? []);
+      setSituacoesSelecionadas(saved.situacoesSelecionadas ?? []);
+    }
+    setFiltersLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!filtersLoaded || typeof window === 'undefined') return;
     const toSave: SavedFilters = { preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas };
     try {
       window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(toSave));
     } catch (err) {
       console.error('Erro ao salvar filtros', err);
     }
-  }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
+  }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
   function resolverIntervalo(): { inicio: string; fim: string } {
     const hojeIso = isoToday();
@@ -557,6 +570,7 @@ export default function DashboardPage() {
   }
 
   async function carregarResumo() {
+    if (!filtersLoaded) return;
     // Evitar chamadas simultâneas
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
@@ -620,6 +634,7 @@ export default function DashboardPage() {
   }
 
   async function carregarResumoGlobal() {
+    if (!filtersLoaded) return;
     if (isLoadingGlobalRef.current) return;
     isLoadingGlobalRef.current = true;
 
@@ -675,15 +690,17 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    if (!filtersLoaded) return;
     console.log('[DEBUG] carregarResumo triggered', { preset, customStart, customEnd, canais: canaisSelecionados, situacoes: situacoesSelecionadas });
     carregarResumo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
+  }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
+    if (!filtersLoaded) return;
     carregarResumoGlobal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canaisSelecionados, situacoesSelecionadas]);
+  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     carregarResumoInsightsBase();
@@ -1029,6 +1046,16 @@ export default function DashboardPage() {
     });
   }, [resumoChart, chartPreset]);
 
+  const chartTicks = useMemo(() => {
+    if (!chartData.length) return [0, 1000];
+    const valores = chartData.flatMap((d) => [d.atual ?? 0, d.anterior ?? 0]);
+    const max = Math.max(0, ...valores);
+    const top = Math.max(1000, Math.ceil(max / 1000) * 1000);
+    const ticks: number[] = [];
+    for (let v = 0; v <= top; v += 1000) ticks.push(v);
+    return ticks;
+  }, [chartData]);
+
   const canaisData = useMemo(() => {
     if (!resumo) return [];
     const total = resumo.canais.reduce((acc, canal) => acc + (canal.totalValor || 0), 0);
@@ -1082,6 +1109,17 @@ export default function DashboardPage() {
       .slice(0, 4);
   }, [resumoAtual]);
 
+  const vendasPorDiaFonte = useMemo(() => resumoGlobalAtual?.vendasPorDia ?? [], [resumoGlobalAtual]);
+  const vendasPorDiaOrdenadas = useMemo(() => {
+    return [...vendasPorDiaFonte]
+      .sort((a, b) => {
+        const da = new Date(`${a.data}T00:00:00`).getTime();
+        const db = new Date(`${b.data}T00:00:00`).getTime();
+        return db - da;
+      })
+      .slice(0, 30);
+  }, [vendasPorDiaFonte]);
+
   const trendingDias = useMemo(() => {
     if (!resumoGlobalAtual) return [];
     return resumoGlobalAtual.vendasPorDia.slice(-4).reverse();
@@ -1121,7 +1159,7 @@ export default function DashboardPage() {
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
   const totalProdutosVendidos = resumoAtual?.totalProdutosVendidos ?? 0;
-  const topProdutos = resumoAtual?.topProdutos?.slice(0, 5) ?? [];
+  const topProdutos = resumoAtual?.topProdutos?.slice(0, 10) ?? [];
 
   return (
     <AppLayout title="Dashboard Ambienta">
@@ -1129,22 +1167,15 @@ export default function DashboardPage() {
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div
             ref={heroCardRef}
-            className="rounded-[36px] border border-white/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/70 backdrop-blur-2xl shadow-[0_25px_90px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-6"
+            className="rounded-[36px] border border-white/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/70 backdrop-blur-2xl shadow-[0_25px_90px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-6 min-w-0"
           >
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-4">
               <div>
-                <p className="text-sm text-slate-500/80">Bem-vindo de volta</p>
-                <h2 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Visão geral do Tiny</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{intervaloInicio} • {intervaloFim} · {diasIntervalo} dias monitorados</p>
-                {lastSync && (
-                  <p className="text-xs text-slate-400 mt-2" suppressHydrationWarning>
-                    Última sincronização {formatDateTime(lastSync)}
-                  </p>
-                )}
+                <h2 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Dashboard</h2>
               </div>
-              <div className="flex flex-1 justify-end flex-wrap gap-3">
-                <div className="rounded-[20px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-4 min-w-[200px] max-w-[260px]">
-                  <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Período</p>
+              <div className="grid grid-cols-3 gap-2 w-full min-w-0 max-w-full md:flex md:flex-nowrap md:justify-end md:overflow-visible">
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                  <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Período</p>
                   <MultiSelectDropdown
                     label="Período"
                     options={[
@@ -1165,55 +1196,57 @@ export default function DashboardPage() {
                       const option = options.find((opt) => opt.value === values[0]);
                       return option?.label ?? 'Selecione...';
                     }}
-                  />
-                  {preset === 'custom' && (
-                    <div className="mt-3 flex items-center gap-2 text-xs">
-                      <input type="date" className="app-input flex-1" value={customStart ?? ''} onChange={(e) => setCustomStart(e.target.value || null)} />
-                      <span className="text-slate-400">a</span>
-                      <input type="date" className="app-input flex-1" value={customEnd ?? ''} onChange={(e) => setCustomEnd(e.target.value || null)} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-[20px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-4 min-w-[200px] max-w-[260px]">
-                  <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Canais</p>
-                  {resumo ? (
-                    <MultiSelectDropdown
-                      label="Canais"
-                      options={resumo.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
-                      selected={canaisSelecionados}
-                      onChange={(values) => setCanaisSelecionados(values as string[])}
-                      onClear={() => setCanaisSelecionados([])}
                     />
-                  ) : (
-                    <p className="text-xs text-slate-400">Carregando…</p>
-                  )}
+                    {preset === 'custom' && (
+                      <div className="mt-3 flex items-center gap-2 text-xs">
+                        <input type="date" className="app-input flex-1" value={customStart ?? ''} onChange={(e) => setCustomStart(e.target.value || null)} />
+                        <span className="text-slate-400">a</span>
+                        <input type="date" className="app-input flex-1" value={customEnd ?? ''} onChange={(e) => setCustomEnd(e.target.value || null)} />
+                      </div>
+                    )}
+                  </div>
+
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Canais</p>
+                    {resumo ? (
+                      <MultiSelectDropdown
+                        label="Canais"
+                        options={resumo.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
+                        selected={canaisSelecionados}
+                        onChange={(values) => setCanaisSelecionados(values as string[])}
+                        onClear={() => setCanaisSelecionados([])}
+                      />
+                    ) : (
+                      <p className="text-xs text-slate-400">Carregando…</p>
+                    )}
+                  </div>
+
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                    <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Situações</p>
+                    {resumo ? (
+                      <MultiSelectDropdown
+                        label="Situações"
+                        options={resumo.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
+                        selected={situacoesSelecionadas}
+                        onChange={(values) => setSituacoesSelecionadas(values as number[])}
+                        onClear={() => setSituacoesSelecionadas([])}
+                      />
+                    ) : (
+                      <p className="text-xs text-slate-400">Carregando…</p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="rounded-[20px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-4 min-w-[200px] max-w-[260px]">
-                  <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Situações</p>
-                  {resumo ? (
-                    <MultiSelectDropdown
-                      label="Situações"
-                      options={resumo.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
-                      selected={situacoesSelecionadas}
-                      onChange={(values) => setSituacoesSelecionadas(values as number[])}
-                      onClear={() => setSituacoesSelecionadas([])}
-                    />
-                  ) : (
-                    <p className="text-xs text-slate-400">Carregando…</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-inner shadow-white/40 space-y-6">
-                <div className="grid gap-6 sm:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-2">
+              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-[#141832e6] dark:border-[rgba(109,132,190,0.035)] backdrop-blur-xl p-5 sm:p-6 shadow-inner shadow-white/40 dark:shadow-[0_8px_20px_rgba(0,0,0,0.16)] space-y-5 sm:space-y-6">
+                <div className="grid grid-cols-2 gap-4 sm:gap-6">
                   <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2 truncate">Faturamento líquido</p>
-                    <p className="text-3xl font-semibold text-[#5b21b6] break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
-                    <div className="mt-3 min-h-[32px] flex items-center gap-2 text-sm min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mb-2 truncate">
+                      <span className="sm:hidden">Líquido</span>
+                      <span className="hidden sm:inline">Faturamento líquido</span>
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
+                    <div className="mt-3 min-h-[32px] flex flex-wrap items-center gap-2 text-xs sm:text-sm min-w-0">
                       {variacaoValorCards.abs >= 0 ? (
                         <>
                           <div className="flex items-center gap-1 rounded-full bg-emerald-100/80 px-2 py-1 text-emerald-600 shrink-0">
@@ -1224,7 +1257,7 @@ export default function DashboardPage() {
                         </>
                       ) : (
                         <>
-                          <div className="flex items-center gap-1 rounded-full bg-rose-100/80 px-2 py-1 text-rose-500 shrink-0">
+                          <div className="flex items-center gap-1 rounded-full bg-rose-100/80 dark:bg-[rgba(255,107,125,0.12)] px-2 py-1 text-rose-500 dark:text-[#ff7b8a] shrink-0">
                             <ArrowDownRight className="w-4 h-4" />
                             <span>{variacaoValorCards.perc.toFixed(1)}%</span>
                           </div>
@@ -1234,14 +1267,17 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2 truncate">Faturamento bruto</p>
-                    <p className="text-3xl font-semibold text-[#009DA8] break-words">{formatBRL(resumoAtual?.totalValor ?? 0)}</p>
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mb-2 truncate">
+                      <span className="sm:hidden">Bruto</span>
+                      <span className="hidden sm:inline">Faturamento bruto</span>
+                    </p>
+                    <p className="text-2xl sm:text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] break-words">{formatBRL(resumoAtual?.totalValor ?? 0)}</p>
                     <div className="mt-3 min-h-[32px] flex items-center min-w-0">
-                      <p className="text-sm text-slate-500 truncate">Após frete {formatBRL(resumoAtual?.totalFreteTotal ?? 0)}</p>
+                      <p className="text-xs sm:text-sm text-slate-500 truncate">Após frete {formatBRL(resumoAtual?.totalFreteTotal ?? 0)}</p>
                     </div>
                   </div>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 text-sm text-slate-500">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4 text-sm text-slate-500">
                   <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-slate-400 truncate">Pedidos</p>
                     <p className="text-xl font-semibold text-slate-900 dark:text-white truncate" suppressHydrationWarning>
@@ -1265,7 +1301,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-white/60 bg-gradient-to-br from-[#ede9fe]/80 to-[#fff5f5]/70 backdrop-blur-xl p-6 shadow-inner shadow-white/30">
+              <div className="rounded-[28px] border border-white/60 bg-gradient-to-br from-[#ede9fe]/80 to-[#fff5f5]/70 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] dark:border-[rgba(109,132,190,0.035)] backdrop-blur-xl p-6 shadow-inner shadow-white/30 dark:shadow-[0_8px_20px_rgba(0,0,0,0.16)]">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Microtrend</p>
@@ -1294,14 +1330,14 @@ export default function DashboardPage() {
             </div>
 
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {quickHighlights.length ? (
                 quickHighlights.map((item, idx) => (
                   <div
                     key={item.label}
                     className={`rounded-[24px] border border-white/60 ${
-                      idx % 2 === 0 ? 'bg-white/80 dark:bg-slate-900/70' : 'bg-gradient-to-br from-white/70 to-[#f7f3ff]/80 dark:bg-slate-900/60'
-                    } backdrop-blur-xl p-5 shadow-inner shadow-white/40 flex flex-col gap-1`}
+                      idx % 2 === 0 ? 'bg-white/80 dark:bg-[#141832e6]' : 'bg-gradient-to-br from-white/70 to-[#f7f3ff]/80 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6]'
+                    } backdrop-blur-xl p-5 shadow-inner shadow-white/40 dark:shadow-[0_6px_18px_rgba(0,0,0,0.14)] flex flex-col gap-1`}
                   >
                     <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
                     <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
@@ -1309,7 +1345,7 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-[24px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-5 text-sm text-slate-400 sm:col-span-2 xl:col-span-4">
+                <div className="rounded-[24px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-5 text-sm text-slate-400 col-span-2 xl:col-span-4">
                   {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
                 </div>
               )}
@@ -1335,7 +1371,7 @@ export default function DashboardPage() {
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{labelSituacao(sit.situacao)}</p>
                           <p className="text-[11px] text-slate-400">{sit.quantidade.toLocaleString('pt-BR')} pedidos</p>
                         </div>
-                        <span className="text-sm font-semibold text-[#009DA8]">{sit.quantidade}</span>
+                        <span className="text-sm font-semibold text-[#009DA8] dark:text-[#6fe8ff]">{sit.quantidade}</span>
                       </div>
                     ))
                   ) : (
@@ -1352,19 +1388,21 @@ export default function DashboardPage() {
                 <div className="space-y-3">
                   {trendingDias.length ? (
                     trendingDias.map((dia) => {
-                      let dataFormatada = dia.data;
-                      try {
-                        dataFormatada = new Date(dia.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                      } catch {
-                        // ignore
-                      }
+                      const parts = dia.data.split('-');
+                      const dataFormatada =
+                        parts.length === 3
+                          ? `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}`
+                          : dia.data;
                       return (
-                        <div key={dia.data} className="flex items-center justify-between rounded-2xl border border-white/60 bg-gradient-to-r from-white/80 to-[#ecfeff]/80 px-4 py-3">
+                        <div
+                          key={dia.data}
+                          className="flex items-center justify-between rounded-2xl border border-white/60 bg-gradient-to-r from-white/80 to-[#ecfeff]/80 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] px-4 py-3"
+                        >
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">{dataFormatada}</p>
                             <p className="text-[11px] text-slate-400">{dia.quantidade} pedidos</p>
                           </div>
-                          <span className="text-sm font-semibold text-[#0f172a]">{formatBRL(dia.totalDia)}</span>
+                          <span className="text-sm font-semibold text-[#0f172a] dark:text-slate-200">{formatBRL(dia.totalDia)}</span>
                         </div>
                       );
                     })
@@ -1375,9 +1413,10 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+        </div>
 
           <aside
-            className="rounded-[36px] border border-white/50 dark:border-slate-800/50 bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-6 shadow-[0_10px_50px_rgba(15,23,42,0.12)] flex flex-col gap-6 self-start overflow-hidden"
+              className="hidden xl:flex rounded-[36px] border border-white/50 dark:border-transparent bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-6 shadow-[0_10px_50px_rgba(15,23,42,0.12)] flex-col gap-6 self-start overflow-hidden"
             style={panelMaxHeight ? { height: panelMaxHeight, maxHeight: panelMaxHeight } : undefined}
           >
             <div>
@@ -1416,7 +1455,7 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={card.id}
-                        className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border}`}
+                        className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border} dark:border-transparent`}
                       >
                         <div className={`mt-0.5 rounded-xl p-2 ${theme.iconBg} ${theme.iconColor}`}>
                           <Icon className="w-4 h-4" />
@@ -1462,62 +1501,62 @@ export default function DashboardPage() {
 
         {!loading && !erro && resumo && resumoAtual && (
           <div className="space-y-8">
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-[28px] bg-gradient-to-br from-[#e8e0ff] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#e8e0ff] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento líquido</p>
-                  <TrendingUp className="w-5 h-5 text-[#5b21b6] shrink-0" />
+                  <TrendingUp className="w-5 h-5 text-[#5b21b6] dark:text-[#a78bfa] shrink-0" />
                 </div>
-                <p className="text-3xl font-semibold text-[#5b21b6] truncate">{formatBRL(resumoAtual.totalValorLiquido)}</p>
+                <p className="text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] truncate">{formatBRL(resumoAtual.totalValorLiquido)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#e0ecff] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#e0ecff] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento bruto</p>
-                  <TrendingUp className="w-5 h-5 text-[#009DA8] shrink-0" />
+                  <TrendingUp className="w-5 h-5 text-[#009DA8] dark:text-[#6fe8ff] shrink-0" />
                 </div>
-                <p className="text-3xl font-semibold text-[#009DA8] truncate">{formatBRL(resumoAtual.totalValor)}</p>
+                <p className="text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] truncate">{formatBRL(resumoAtual.totalValor)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#d1fae5] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#d1fae5] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Pedidos</p>
-                  <ShoppingCart className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Pedidos</p>
+                  <ShoppingCart className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
                 </div>
-                <p className="text-3xl font-semibold text-emerald-500 truncate" suppressHydrationWarning>
+                <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
                   {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
                 </p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - resumo.periodoAnteriorCards.totalPedidos}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#ddd6fe] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#ddd6fe] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Produtos vendidos</p>
-                  <Package className="w-5 h-5 text-purple-500 shrink-0" />
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Produtos vendidos</p>
+                  <Package className="w-5 h-5 text-purple-500 dark:text-[#b794f4] shrink-0" />
                 </div>
-                <p className="text-3xl font-semibold text-purple-500 truncate" suppressHydrationWarning>
+                <p className="text-3xl font-semibold text-purple-500 dark:text-[#b794f4] truncate" suppressHydrationWarning>
                   {totalProdutosVendidos.toLocaleString('pt-BR')}
                 </p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Total de itens</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#fef3c7] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#fef3c7] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Ticket médio</p>
-                  <BarChart3 className="w-5 h-5 text-amber-500 shrink-0" />
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Ticket médio</p>
+                  <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
-                <p className="text-3xl font-semibold text-amber-500 truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
+                <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - resumo.periodoAnteriorCards.ticketMedio)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#fee2e2] to-white shadow-inner shadow-white/60 p-5 min-w-0">
+              <div className="rounded-[28px] bg-gradient-to-br from-[#fee2e2] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Variação</p>
-                  {variacaoValorCards.abs >= 0 ? <ArrowUpRight className="w-5 h-5 text-emerald-500 shrink-0" /> : <ArrowDownRight className="w-5 h-5 text-rose-500 shrink-0" />}
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Variação</p>
+                  {variacaoValorCards.abs >= 0 ? <ArrowUpRight className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" /> : <ArrowDownRight className="w-5 h-5 text-rose-500 dark:text-[#ff6b7d] shrink-0" />}
                 </div>
-                <p className={`text-3xl font-semibold truncate ${variacaoValorCards.abs >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{variacaoValorCards.perc.toFixed(1)}%</p>
+                <p className={`text-3xl font-semibold truncate ${variacaoValorCards.abs >= 0 ? 'text-emerald-500 dark:text-[#33e2a7]' : 'text-rose-500 dark:text-[#ff6b7d]'}`}>{variacaoValorCards.perc.toFixed(1)}%</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Impacto {formatBRL(Math.abs(variacaoValorCards.abs))}</p>
               </div>
             </div>
@@ -1572,21 +1611,21 @@ export default function DashboardPage() {
                         <stop offset="100%" stopColor="#a5b4fc" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148,163,184,0.4)" />
-                    <XAxis dataKey="data" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                    <YAxis tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: '#94a3b8' }} width={40} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} />
+                    <XAxis dataKey="data" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="values" ticks={chartTicks} hide />
                     <Tooltip content={<CustomTooltip formatter={formatBRL} />} />
                     <Legend wrapperStyle={{ fontSize: '12px' }} />
-                    <Area type="monotone" dataKey="anterior" name="Período anterior" stroke="#a5b4fc" fill="url(#colorAnterior)" strokeWidth={3} strokeDasharray="6 6" />
-                    <Area type="monotone" dataKey="atual" name="Período atual" stroke={AMBIENTA_PRIMARY} fill="url(#colorAtual)" strokeWidth={3} />
+                    <Area yAxisId="values" type="monotone" dataKey="anterior" name="Período anterior" stroke="#a5b4fc" fill="url(#colorAnterior)" strokeWidth={3} strokeDasharray="6 6" />
+                    <Area yAxisId="values" type="monotone" dataKey="atual" name="Período atual" stroke={AMBIENTA_PRIMARY} fill="url(#colorAtual)" strokeWidth={3} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="flex flex-col gap-6">
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 flex flex-col shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+              <div className="grid gap-6">
+              <div className="grid gap-6 lg:grid-cols-2 w-full min-w-0">
+                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 flex flex-col shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
                       <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Faturamento por canal</h2>
@@ -1596,8 +1635,8 @@ export default function DashboardPage() {
                   {canaisData.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center text-sm text-slate-400">Nenhum pedido no período.</div>
                   ) : (
-                    <div className="flex flex-col items-center gap-6">
-                      <div className="relative w-full" style={{ aspectRatio: '1/1', maxWidth: '280px', margin: '0 auto' }}>
+                    <div className="flex flex-col items-center gap-4 w-full">
+                      <div className="relative w-full max-w-full h-72 sm:h-80">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -1606,7 +1645,7 @@ export default function DashboardPage() {
                               nameKey="name"
                               cx="50%"
                               cy="50%"
-                              innerRadius="72%"
+                              innerRadius="68%"
                               outerRadius="88%"
                               paddingAngle={3}
                               cornerRadius={18}
@@ -1621,7 +1660,9 @@ export default function DashboardPage() {
                                 position="center"
                                 content={({ viewBox }) => {
                                   if (!viewBox) return null;
-                                  const { cx, cy } = viewBox as { cx: number; cy: number };
+                                  const vb = viewBox as any;
+                                  const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
+                                  const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
                                   return (
                                     <g>
                                       <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
@@ -1654,15 +1695,60 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col w-full min-w-0 overflow-hidden">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
+                      <p className="text-sm text-slate-500">Calor por estado e ranking por cidade</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] w-full min-w-0">
+                    <div className="min-w-0">
+                      {(() => {
+                        const vendasUF = resumo?.mapaVendasUF ?? [];
+                        const vendasCidade = resumo?.mapaVendasCidade ?? [];
+                        if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
+                        return (
+                          <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
+                        );
+                      })()}
+                    </div>
+                      <div className="min-w-0 flex flex-col gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
+                          <div className="space-y-2">
+                            {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
+                              <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
+                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
+                                <div className="text-right text-xs">
+                                  <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
+                                  <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
+                                </div>
+                              </div>
+                            ))}
+                            {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
+                              <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2 w-full min-w-0">
+                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
                     <span className="text-xs text-slate-400">Top {topProdutos.length}</span>
                   </div>
                   {topProdutos.length ? (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {topProdutos.map((produto) => (
-                        <div key={`${produto.produtoId ?? produto.descricao}`} className="flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3">
+                        <div
+                          key={`${produto.produtoId ?? produto.descricao}`}
+                          className="flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3 min-h-[78px]"
+                        >
                           <div className="flex items-center gap-3">
                             {produto.imagemUrl ? (
                               <img
@@ -1676,8 +1762,13 @@ export default function DashboardPage() {
                               </div>
                             )}
                             <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white">{produto.descricao}</p>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[220px] sm:max-w-[320px]">
+                                {produto.descricao}
+                              </p>
                               <p className="text-[11px] text-slate-400">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                              <p className="text-[11px] text-slate-400">
+                                Estoque: {produto.saldo ?? '—'} • Reservado: {produto.reservado ?? '—'} • Saldo: {produto.disponivel ?? '—'}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right text-sm">
@@ -1692,7 +1783,7 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Últimos pedidos</h2>
                     <span className="text-xs text-slate-400">{recentOrders.length} recentes</span>
@@ -1700,10 +1791,9 @@ export default function DashboardPage() {
                   {loadingRecentOrders ? (
                     <p className="text-sm text-slate-400">Carregando...</p>
                   ) : recentOrders.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {recentOrders.map((pedido) => {
                         const situacaoLabel = labelSituacao(pedido.situacao ?? -1);
-                        // Exibe a data exatamente como vem da API (YYYY-MM-DD -> DD/MM/YY)
                         const dataCriacao = pedido.dataCriacao
                           ? (() => {
                               const [y, m, d] = pedido.dataCriacao.split('-');
@@ -1713,7 +1803,7 @@ export default function DashboardPage() {
                         return (
                           <div
                             key={pedido.tinyId}
-                            className="flex items-start justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3"
+                            className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3 min-h-[78px]"
                           >
                             <div className="flex items-center gap-3">
                               <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
@@ -1734,24 +1824,16 @@ export default function DashboardPage() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                  #{pedido.numeroPedido || pedido.tinyId}
-                                </p>
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">#{pedido.numeroPedido || pedido.tinyId}</p>
                                 {pedido.canal && (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#009DA8]/10 text-[#009DA8] font-medium">
-                                    {pedido.canal}
-                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#009DA8]/10 dark:bg-[#7de8ff]/15 text-[#009DA8] dark:text-[#7de8ff] font-medium">{pedido.canal}</span>
                                 )}
                               </div>
-                              <p className="text-[11px] text-slate-400 truncate">
-                                {pedido.cliente || 'Cliente'} • {dataCriacao}
-                              </p>
+                              <p className="text-[11px] text-slate-400 truncate">{pedido.cliente || 'Cliente'} • {dataCriacao}</p>
                               <p className="text-[10px] text-slate-500 mt-0.5">{situacaoLabel}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-semibold text-[#009DA8]">
-                                {formatBRL(pedido.valor ?? 0)}
-                              </p>
+                              <p className="text-sm font-semibold text-[#009DA8] dark:text-[#6fe8ff]">{formatBRL(pedido.valor ?? 0)}</p>
                             </div>
                           </div>
                         );
@@ -1762,93 +1844,58 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
-              {/* Coluna da direita: Mapa do Brasil */}
-              <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
-                    <p className="text-sm text-slate-500">Calor por estado e ranking por cidade</p>
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                  <div className="min-w-0">
-                    {/* @ts-expect-error async import type */}
-                    {(() => {
-                      const vendasUF = resumo?.mapaVendasUF ?? [];
-                      const vendasCidade = resumo?.mapaVendasCidade ?? [];
-                      if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
-                      return (
-                        <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
-                      );
-                    })()}
-                  </div>
-                  <div className="min-w-0 flex flex-col gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
-                      <div className="space-y-2">
-                        {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                          <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
-                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
-                            <div className="text-right text-xs">
-                              <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
-                              <div className="text-slate-500">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                            </div>
-                          </div>
-                        ))}
-                        {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
-                          <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Cidades</p>
-                      <div className="space-y-2">
-                        {((resumo?.mapaVendasCidade ?? []).slice(0, 6)).map((cid, idx) => (
-                          <div key={`${cid.cidade}-${idx}`} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
-                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{cid.cidade}{cid.uf ? `/${cid.uf}` : ''}</div>
-                            <div className="text-right text-xs">
-                              <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(cid.totalValor)}</div>
-                              <div className="text-slate-500">{cid.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                            </div>
-                          </div>
-                        ))}
-                        {(!resumo?.mapaVendasCidade || resumo.mapaVendasCidade.length === 0) && (
-                          <p className="text-xs text-slate-400">Nenhuma cidade identificada.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-3">Notas: o calor é proporcional ao faturamento por UF. Para cidades, a posição no mapa será adicionada em uma próxima versão.</p>
-              </div>
-            </div>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <div className="rounded-[32px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Vendas por dia</h2>
-                  <span className="text-xs text-slate-400">{resumoAtual.vendasPorDia.length} registros</span>
+              <div className="relative overflow-hidden rounded-[32px] border border-white/70 dark:border-transparent bg-white/80 dark:bg-slate-900/70 backdrop-blur-2xl p-6 shadow-[0_30px_80px_rgba(15,23,42,0.16)]">
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-white/40 to-[#e9f9ff]/70 dark:from-[#121626] dark:via-[#121626]/40 dark:to-[#0c111f] opacity-80" />
+                  <div className="absolute -top-16 -left-10 h-40 w-40 rounded-full bg-white/30 blur-3xl" />
+                  <div className="absolute -bottom-10 -right-6 h-52 w-52 rounded-full bg-[#c4f1f9]/40 blur-3xl" />
                 </div>
-                <div className="overflow-hidden rounded-3xl border border-white/40">
-                  <table className="w-full text-xs">
-                    <thead className="bg-white/60 text-slate-500">
-                      <tr>
-                        <th className="text-left px-4 py-3 font-semibold">Data</th>
-                        <th className="text-right px-4 py-3 font-semibold">Qtde</th>
-                        <th className="text-right px-4 py-3 font-semibold">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resumoAtual.vendasPorDia.map((linha) => (
-                        <tr key={linha.data} className="border-t border-white/40 odd:bg-white/30">
-                          <td className="px-4 py-3 text-slate-700 dark:text-white">{linha.data}</td>
-                          <td className="text-right px-4 py-3 text-slate-500">{linha.quantidade}</td>
-                          <td className="text-right px-4 py-3 font-semibold text-slate-900 dark:text-white">{formatBRL(linha.totalDia)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="relative flex items-center justify-between mb-5">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Vendas por dia</h2>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Base consolidada ({GLOBAL_INTERVAL_DAYS} dias) • filtros de canal/situação aplicados
+                    </p>
+                  </div>
+                  <span className="text-xs text-slate-400">{vendasPorDiaOrdenadas.length} registros</span>
+                </div>
+                <div className="relative overflow-hidden rounded-3xl border border-white/50 dark:border-white/10 bg-white/60 dark:bg-white/5 shadow-inner shadow-white/40">
+                  <div className="grid grid-cols-3 bg-white/60 dark:bg-white/10 text-slate-500 dark:text-slate-300 uppercase tracking-[0.08em] text-xs font-semibold px-4 py-3">
+                    <span className="text-left">Data</span>
+                    <span className="text-right">Qtde</span>
+                    <span className="text-right">Total</span>
+                  </div>
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-white/40 dark:divide-white/10">
+                    {vendasPorDiaOrdenadas.map((linha, idx) => {
+                      const [y, m, d] = linha.data.split('-');
+                      const dataBR = d && m ? `${d}/${m}` : linha.data;
+                      const weekday = (() => {
+                        const dt = new Date(`${linha.data}T00:00:00`);
+                        return dt.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase();
+                      })();
+                      return (
+                        <div
+                          key={linha.data}
+                          className={`grid grid-cols-3 px-4 py-3 text-xs sm:text-sm ${
+                            idx % 2 === 0 ? 'bg-white/40 dark:bg-white/5' : 'bg-white/20 dark:bg-white/[0.02]'
+                          } hover:bg-white/70 dark:hover:bg-white/10 transition-colors`}
+                        >
+                          <div className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
+                            <span className="text-[10px] sm:text-[11px] uppercase text-slate-400">{weekday}</span>
+                            <span>{dataBR}</span>
+                          </div>
+                          <div className="flex items-center justify-end text-slate-600 dark:text-slate-300">{linha.quantidade}</div>
+                          <div className="flex items-center justify-end font-semibold text-slate-900 dark:text-white">{formatBRL(linha.totalDia)}</div>
+                        </div>
+                      );
+                    })}
+                    {!vendasPorDiaOrdenadas.length && (
+                      <div className="px-4 py-6 text-center text-slate-400 text-xs">Nenhum registro consolidado ainda.</div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1875,6 +1922,80 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Copilot mobile-only (rendered no final do app) */}
+      <div className="xl:hidden pb-12 mt-8">
+        <aside
+          className="w-full min-w-0 mx-auto rounded-[32px] border border-white/60 dark:border-transparent bg-white/90 dark:bg-slate-900/70 backdrop-blur-2xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col gap-5 overflow-hidden"
+        >
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Insights de IA</p>
+            <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Ambienta Copilot</h3>
+            <p className="text-sm text-slate-500 leading-relaxed">Análises automáticas geradas com Gemini.</p>
+          </div>
+          <button
+            onClick={() => gerarInsights(false)}
+            className="w-full rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#38c5cf] text-white text-sm font-semibold py-2.5 shadow-lg shadow-[#009DA8]/30 disabled:opacity-60"
+            disabled={loadingInsights || !insightsBaseline}
+          >
+            {loadingInsights ? 'Gerando insights…' : 'Atualizar com Gemini'}
+          </button>
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div
+              ref={insightsScrollRef}
+              className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-6"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(15,23,42,0.2) transparent', maxHeight: '50vh' }}
+            >
+              {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
+              {!erroInsights && insights.length === 0 && !loadingInsights && (
+                <p className="text-sm text-slate-400">Carregue o dashboard para receber recomendações inteligentes.</p>
+              )}
+              {loadingInsights && (
+                <div className="space-y-2 text-sm text-slate-400">
+                  <div className="h-2 rounded-full bg-slate-100/60" />
+                  <div className="h-2 rounded-full bg-slate-100/60 w-3/4" />
+                  <div className="h-2 rounded-full bg-slate-100/60 w-1/2" />
+                </div>
+              )}
+              {!loadingInsights &&
+                insights.map((card) => {
+                  const theme = INSIGHT_THEMES[card.tone] ?? INSIGHT_THEMES.info;
+                  const Icon = theme.icon;
+                  return (
+                    <div
+                      key={card.id}
+                      className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border} dark:border-transparent`}
+                    >
+                      <div className={`mt-0.5 rounded-xl p-2 ${theme.iconBg} ${theme.iconColor}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 leading-relaxed">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {card.title || theme.label}
+                        </p>
+                        {card.body && (
+                          <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{card.body}</p>
+                        )}
+                      </div>
+                      {card.dismissible !== false && (
+                        <button
+                          type="button"
+                          onClick={() => dismissInsightCard(card.id)}
+                          className="rounded-full p-1 text-slate-400 hover:text-slate-600 hover:bg-white/60 dark:hover:bg-slate-800/80 transition"
+                          aria-label="Fechar insight"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
+          </div>
+          <p className="text-[11px] text-slate-400">Fonte: Gemini · Considera visão consolidada de {GLOBAL_INTERVAL_DAYS} dias sem aplicar filtros de canal ou período.</p>
+        </aside>
       </div>
     </AppLayout>
   );

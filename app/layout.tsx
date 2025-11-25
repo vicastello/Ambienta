@@ -21,6 +21,10 @@ const themeScript = `
 export const metadata = {
   title: 'Ambienta – Painel Tiny',
   description: 'Dashboard de e-commerce integrado ao Tiny ERP.',
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
@@ -32,6 +36,8 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/favicon.ico" />
       </head>
       <body>{children}</body>
     </html>
