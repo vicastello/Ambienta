@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDown,
   CalendarDays,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
+import { staleWhileRevalidate } from "@/lib/staleCache";
 
 const STATUS_CONFIG = [
   { codigo: -1, label: "Todos", color: "text-slate-600", bg: "bg-slate-200/50" },
@@ -40,7 +41,7 @@ const CHANNEL_COLORS: Record<string, string> = {
   Outros: "bg-slate-100 text-slate-600",
 };
 
-type DatePreset = "today" | "7d" | "30d" | "custom";
+type DatePreset = "today" | "7d" | "30d" | "month" | "custom";
 
 type OrderRow = {
   tinyId: number;
@@ -93,6 +94,16 @@ const formatDate = (value: string | null) =>
       })
     : "—";
 
+const PEDIDOS_FILTERS_STORAGE_KEY = "tiny_pedidos_filters_v1";
+const ORDERS_CACHE_TTL_MS = 60_000;
+const startOfCurrentMonthIso = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return start.toISOString().slice(0, 10);
+};
+
+const buildOrdersCacheKey = (params: URLSearchParams) => `orders:${params.toString()}`;
+
 function useDebounce<T>(value: T, delay = 400) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -133,30 +144,33 @@ export default function PedidosPage() {
     by: "numero_pedido",
     dir: "desc",
   });
+  const [isMobile, setIsMobile] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
+  const ordersRequestId = useRef(0);
 
   const resetPage = () => setPage(1);
 
   const fetchOrders = async () => {
+    const requestId = ++ordersRequestId.current;
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("pageSize", String(pageSize));
-      params.set("sortBy", sort.by);
-      params.set("sortDir", sort.dir);
-      params.set("dataInicial", dateRange.start);
-      params.set("dataFinal", dateRange.end);
-      if (selectedStatuses.length) params.set("situacoes", selectedStatuses.join(","));
-      if (selectedChannels.length) params.set("canais", selectedChannels.join(","));
-      if (debouncedSearch) params.set("search", debouncedSearch);
 
-      const response = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
-      const json = (await response.json()) as OrdersResponse;
-      if (!response.ok) {
-        throw new Error((json as any)?.details ?? "Erro ao carregar pedidos");
-      }
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("sortBy", sort.by);
+    params.set("sortDir", sort.dir);
+    params.set("dataInicial", dateRange.start);
+    params.set("dataFinal", dateRange.end);
+    if (selectedStatuses.length) params.set("situacoes", selectedStatuses.join(","));
+    if (selectedChannels.length) params.set("canais", selectedChannels.join(","));
+    if (debouncedSearch) params.set("search", debouncedSearch);
 
+    const cacheKey = buildOrdersCacheKey(params);
+
+    const applyResponse = (json: OrdersResponse) => {
+      if (ordersRequestId.current !== requestId) return;
       setOrders(json.orders);
       setMetrics(json.metrics);
       setStatusCounts(json.statusCounts || {});
@@ -164,15 +178,36 @@ export default function PedidosPage() {
       setPageMeta({ total: json.pageInfo.total, totalPages: json.pageInfo.totalPages });
       if (json.pageInfo.page !== page) setPage(json.pageInfo.page);
       if (json.pageInfo.pageSize !== pageSize) setPageSize(json.pageInfo.pageSize);
-      if (json.warnings?.includes('orders_metrics_function_missing')) {
+      if ((json as any)?.warnings?.includes('orders_metrics_function_missing')) {
         setWarning('Execute a migração 010_create_orders_metrics_function.sql (supabase db push) para habilitar os indicadores completos desta página.');
       } else {
         setWarning(null);
       }
+    };
+
+    try {
+      const { data } = await staleWhileRevalidate<OrdersResponse>({
+        key: cacheKey,
+        ttlMs: ORDERS_CACHE_TTL_MS,
+        fetcher: async () => {
+          const response = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
+          const json = (await response.json()) as OrdersResponse;
+          if (!response.ok) {
+            throw new Error((json as any)?.details ?? "Erro ao carregar pedidos");
+          }
+          return json;
+        },
+        onUpdate: (fresh) => applyResponse(fresh),
+      });
+      applyResponse(data);
     } catch (err: any) {
-      setError(err?.message ?? "Erro desconhecido");
+      if (ordersRequestId.current === requestId) {
+        setError(err?.message ?? "Erro desconhecido");
+      }
     } finally {
-      setLoading(false);
+      if (ordersRequestId.current === requestId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -180,6 +215,71 @@ export default function PedidosPage() {
     fetchOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, debouncedSearch, selectedStatuses, selectedChannels, dateRange, sort]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(PEDIDOS_FILTERS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.search === "string") setSearch(parsed.search);
+        if (Array.isArray(parsed.selectedStatuses)) setSelectedStatuses(parsed.selectedStatuses);
+        if (Array.isArray(parsed.selectedChannels)) setSelectedChannels(parsed.selectedChannels);
+        if (parsed.datePreset === "today" || parsed.datePreset === "7d" || parsed.datePreset === "30d" || parsed.datePreset === "month" || parsed.datePreset === "custom") {
+          setDatePreset(parsed.datePreset);
+        }
+        if (parsed.dateRange?.start && parsed.dateRange?.end) {
+          setDateRange({ start: parsed.dateRange.start, end: parsed.dateRange.end });
+        } else if (parsed.datePreset === "month") {
+          setDateRange({ start: startOfCurrentMonthIso(), end: todayIso() });
+        }
+        if (parsed.sort?.by && parsed.sort?.dir) {
+          setSort(parsed.sort);
+        }
+        if (typeof parsed.pageSize === "number") setPageSize(parsed.pageSize);
+      }
+    } catch (e) {
+      // ignore parse errors
+    } finally {
+      setFiltersLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!filtersLoaded || typeof window === "undefined") return;
+    const toStore = {
+      search,
+      selectedStatuses,
+      selectedChannels,
+      datePreset,
+      dateRange,
+      sort,
+      pageSize,
+    };
+    try {
+      window.localStorage.setItem(PEDIDOS_FILTERS_STORAGE_KEY, JSON.stringify(toStore));
+    } catch (e) {
+      // ignore write errors
+    }
+  }, [filtersLoaded, search, selectedStatuses, selectedChannels, datePreset, dateRange, sort, pageSize]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 1024px)");
+    const handler = (event: MediaQueryListEvent) => {
+      setIsMobile(event.matches);
+      if (!event.matches) setShowFilters(true);
+      else setShowFilters(false);
+    };
+    setIsMobile(mq.matches);
+    setShowFilters(!mq.matches ? true : false);
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", handler);
+    else mq.addListener(handler);
+    return () => {
+      if (typeof mq.removeEventListener === "function") mq.removeEventListener("change", handler);
+      else mq.removeListener(handler);
+    };
+  }, []);
 
   const statusOptions = useMemo(
     () =>
@@ -199,6 +299,7 @@ export default function PedidosPage() {
     { preset: "today", label: "Hoje", start: todayIso(), end: todayIso() },
     { preset: "7d", label: "7 dias", start: isoDaysAgo(6), end: todayIso() },
     { preset: "30d", label: "30 dias", start: isoDaysAgo(29), end: todayIso() },
+    { preset: "month", label: "Mês atual", start: startOfCurrentMonthIso(), end: todayIso() },
   ];
 
   const handleQuickRange = (preset: DatePreset, start: string, end: string) => {
@@ -225,6 +326,101 @@ export default function PedidosPage() {
   const changePage = (direction: -1 | 1) => {
     setPage((prev) => Math.min(Math.max(1, prev + direction), pageMeta.totalPages));
   };
+
+  const filtersPanel = (
+    <>
+      <FilterGroup label="Buscar pedido, cliente ou canal">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            className="app-input pl-9"
+            placeholder="Ex: 251121B59 ou Shopee"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              resetPage();
+            }}
+          />
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Períodos rápidos">
+        <div className="flex gap-2 overflow-x-auto flex-nowrap pb-1">
+          {quickRanges.map((range) => (
+            <button
+              key={range.preset}
+              onClick={() => handleQuickRange(range.preset, range.start, range.end)}
+              className={`flex-none min-w-[90px] max-w-[180px] rounded-2xl px-3 py-1.5 text-xs font-semibold transition whitespace-nowrap overflow-hidden text-ellipsis ${
+                datePreset === range.preset
+                  ? "bg-[var(--accent)] text-white shadow"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Período manual">
+        <div className="flex flex-col gap-3">
+          <input
+            type="date"
+            className="app-input"
+            value={dateRange.start}
+            onChange={(event) => {
+              setDatePreset("custom");
+              setDateRange((prev) => ({ ...prev, start: event.target.value }));
+              resetPage();
+            }}
+          />
+          <input
+            type="date"
+            className="app-input"
+            value={dateRange.end}
+            onChange={(event) => {
+              setDatePreset("custom");
+              setDateRange((prev) => ({ ...prev, end: event.target.value }));
+              resetPage();
+            }}
+          />
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Status Tiny">
+        <MultiSelectDropdown
+          label="Status"
+          options={statusOptions}
+          selected={selectedStatuses}
+          onChange={(values) => {
+            setSelectedStatuses(values as number[]);
+            resetPage();
+          }}
+          onClear={() => {
+            setSelectedStatuses([]);
+            resetPage();
+          }}
+        />
+      </FilterGroup>
+
+      <FilterGroup label="Canal">
+        <MultiSelectDropdown
+          label="Canais"
+          options={channelOptions}
+          selected={selectedChannels}
+          onChange={(values) => {
+            setSelectedChannels(values as string[]);
+            resetPage();
+          }}
+          onClear={() => {
+            setSelectedChannels([]);
+            resetPage();
+          }}
+          displayFormatter={(values) => (values.length ? `${values.length} selecionado(s)` : "Todos")}
+        />
+      </FilterGroup>
+    </>
+  );
 
   return (
     <AppLayout title="Pedidos">
@@ -272,97 +468,23 @@ export default function PedidosPage() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <aside className="rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/50 dark:border-white/10 p-6 shadow-[0_25px_60px_rgba(15,23,42,0.12)] space-y-6">
-            <FilterGroup label="Buscar pedido, cliente ou canal">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input
-                  className="app-input pl-9"
-                  placeholder="Ex: 251121B59 ou Shopee"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    resetPage();
-                  }}
-                />
+          <div className="lg:hidden space-y-3">
+            <button
+              onClick={() => setShowFilters((open) => !open)}
+              className="w-full flex items-center justify-between rounded-3xl border border-white/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/70 px-4 py-3 text-sm font-semibold shadow-sm"
+            >
+              Filtros e período
+              <span className="text-xs text-muted">{showFilters ? "Ocultar" : "Exibir"}</span>
+            </button>
+            {showFilters && (
+              <div className="rounded-[28px] bg-white/95 dark:bg-slate-900/80 border border-white/60 dark:border-slate-800/70 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.12)] space-y-6">
+                {filtersPanel}
               </div>
-            </FilterGroup>
+            )}
+          </div>
 
-            <FilterGroup label="Períodos rápidos">
-              <div className="flex flex-wrap gap-2">
-                {quickRanges.map((range) => (
-                  <button
-                    key={range.preset}
-                    onClick={() => handleQuickRange(range.preset, range.start, range.end)}
-                    className={`flex-1 min-w-[90px] rounded-2xl px-3 py-1.5 text-xs font-semibold transition ${
-                      datePreset === range.preset
-                        ? "bg-[var(--accent)] text-white shadow"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {range.label}
-                  </button>
-                ))}
-              </div>
-            </FilterGroup>
-
-            <FilterGroup label="Período manual">
-              <div className="flex flex-col gap-3">
-                <input
-                  type="date"
-                  className="app-input"
-                  value={dateRange.start}
-                  onChange={(event) => {
-                    setDatePreset("custom");
-                    setDateRange((prev) => ({ ...prev, start: event.target.value }));
-                    resetPage();
-                  }}
-                />
-                <input
-                  type="date"
-                  className="app-input"
-                  value={dateRange.end}
-                  onChange={(event) => {
-                    setDatePreset("custom");
-                    setDateRange((prev) => ({ ...prev, end: event.target.value }));
-                    resetPage();
-                  }}
-                />
-              </div>
-            </FilterGroup>
-
-            <FilterGroup label="Status Tiny">
-              <MultiSelectDropdown
-                label="Status"
-                options={statusOptions}
-                selected={selectedStatuses}
-                onChange={(values) => {
-                  setSelectedStatuses(values as number[]);
-                  resetPage();
-                }}
-                onClear={() => {
-                  setSelectedStatuses([]);
-                  resetPage();
-                }}
-              />
-            </FilterGroup>
-
-            <FilterGroup label="Canal">
-              <MultiSelectDropdown
-                label="Canais"
-                options={channelOptions}
-                selected={selectedChannels}
-                onChange={(values) => {
-                  setSelectedChannels(values as string[]);
-                  resetPage();
-                }}
-                onClear={() => {
-                  setSelectedChannels([]);
-                  resetPage();
-                }}
-                displayFormatter={(values) => (values.length ? `${values.length} selecionado(s)` : "Todos")}
-              />
-            </FilterGroup>
+          <aside className="hidden lg:block rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/50 dark:border-white/10 p-6 shadow-[0_25px_60px_rgba(15,23,42,0.12)] space-y-6">
+            {filtersPanel}
           </aside>
 
           <div className="space-y-4">
@@ -382,7 +504,7 @@ export default function PedidosPage() {
                     : "Número do pedido"}
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 flex gap-2 overflow-x-auto flex-nowrap pb-1">
                 {STATUS_CONFIG.filter((status) => status.codigo >= 0).map((status) => {
                   const count = statusCounts[String(status.codigo)] ?? 0;
                   const active = selectedStatuses.length === 1 && selectedStatuses[0] === status.codigo;
@@ -390,13 +512,13 @@ export default function PedidosPage() {
                     <button
                       key={status.codigo}
                       onClick={() => toggleStatusTab(status.codigo)}
-                      className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold transition border ${
+                      className={`flex-none max-w-[220px] items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold transition border whitespace-nowrap overflow-hidden text-ellipsis ${
                         active
                           ? "bg-[var(--accent)] text-white border-transparent shadow"
                           : "border-slate-200 text-slate-600 hover:border-[var(--accent)]"
                       }`}
                     >
-                      <span>{status.label}</span>
+                      <span className="truncate">{status.label}</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/70 text-slate-700">
                         {count.toLocaleString("pt-BR")}
                       </span>
@@ -407,55 +529,141 @@ export default function PedidosPage() {
             </div>
 
             <div className="rounded-[36px] bg-white dark:bg-slate-900 border border-white/60 dark:border-white/10 overflow-hidden shadow-[0_35px_80px_rgba(15,23,42,0.18)]">
-              <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr] bg-slate-50 dark:bg-slate-800 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                <div className="px-6 py-4 flex items-center gap-2">
-                  Pedido / Cliente
-                  <button onClick={() => onSort("numero_pedido")}>
-                    <ArrowUpDown className={`w-4 h-4 ${sort.by === "numero_pedido" ? "text-[var(--accent)]" : "text-slate-400"}`} />
-                  </button>
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-muted text-sm gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando pedidos...
                 </div>
-                <div className="px-6 py-4">Status</div>
-                <div className="px-6 py-4">Canal</div>
-                <div className="px-6 py-4 flex items-center gap-2">
-                  Frete
-                  <button onClick={() => onSort("valor_frete")}>
-                    <ArrowUpDown className={`w-4 h-4 ${sort.by === "valor_frete" ? "text-[var(--accent)]" : "text-slate-400"}`} />
-                  </button>
-                </div>
-                <div className="px-6 py-4 flex items-center gap-2">
-                  Total
-                  <button onClick={() => onSort("valor")}>
-                    <ArrowUpDown className={`w-4 h-4 ${sort.by === "valor" ? "text-[var(--accent)]" : "text-slate-400"}`} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {loading && (
-                  <div className="flex items-center justify-center py-16 text-muted text-sm gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Carregando pedidos...
+              ) : !orders.length ? (
+                <div className="text-center py-16 text-muted text-sm">Nenhum pedido encontrado com os filtros atuais.</div>
+              ) : (
+                <>
+                  <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr] bg-slate-50 dark:bg-slate-800 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <div className="px-6 py-4 flex items-center gap-2">
+                      Pedido / Cliente
+                      <button onClick={() => onSort("numero_pedido")}>
+                        <ArrowUpDown className={`w-4 h-4 ${sort.by === "numero_pedido" ? "text-[var(--accent)]" : "text-slate-400"}`} />
+                      </button>
+                    </div>
+                    <div className="px-6 py-4">Status</div>
+                    <div className="px-6 py-4">Canal</div>
+                    <div className="px-6 py-4 flex items-center gap-2">
+                      Frete
+                      <button onClick={() => onSort("valor_frete")}>
+                        <ArrowUpDown className={`w-4 h-4 ${sort.by === "valor_frete" ? "text-[var(--accent)]" : "text-slate-400"}`} />
+                      </button>
+                    </div>
+                    <div className="px-6 py-4 flex items-center gap-2">
+                      Total
+                      <button onClick={() => onSort("valor")}>
+                        <ArrowUpDown className={`w-4 h-4 ${sort.by === "valor" ? "text-[var(--accent)]" : "text-slate-400"}`} />
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                {!loading && !orders.length && (
-                  <div className="text-center py-16 text-muted text-sm">Nenhum pedido encontrado com os filtros atuais.</div>
-                )}
+                  <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                    {orders.map((order) => {
+                      const status = STATUS_CONFIG.find((cfg) => cfg.codigo === order.situacao);
+                      const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
+                      return (
+                        <article key={order.tinyId} className="p-4 flex flex-col gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                              {order.primeiraImagem ? (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                  {(order.itensQuantidade ?? 0) > 1 && (
+                                    <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ zIndex: 50 }}>
+                                      +{(order.itensQuantidade ?? 0) - 1}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-xs text-muted">{order.itensQuantidade ?? 0} itens</span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-[var(--text-main)] truncate flex items-center gap-2">
+                                    #{order.numeroPedido ?? order.tinyId}
+                                    <a
+                                      href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[var(--accent)] hover:underline shrink-0"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  </p>
+                                  <p className="text-[11px] text-muted truncate">
+                                    {order.cliente || "Cliente não informado"} · {formatDate(order.dataCriacao)}
+                                  </p>
+                                  {order.marketplaceOrder && <p className="text-[11px] text-muted truncate">Marketplace: {order.marketplaceOrder}</p>}
+                                </div>
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${status ? `${status.bg} ${status.color}` : "bg-slate-100 text-slate-600"}`}
+                                >
+                                  {status?.label ?? order.situacaoDescricao}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
 
-                {!loading &&
-                  orders.map((order) => {
-                    const status = STATUS_CONFIG.find((cfg) => cfg.codigo === order.situacao);
-                    const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
-                    return (
-                      <article key={order.tinyId} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm">
-                        <div className="px-6 py-4 space-y-1">
-                          <div className="flex items-center gap-3">
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+                              <p className="uppercase tracking-[0.15em] text-[10px] text-muted">Total</p>
+                              <p className="font-semibold text-[var(--text-main)]">{formatCurrency(order.valor)}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+                              <p className="uppercase tracking-[0.15em] text-[10px] text-muted">Frete</p>
+                              <p className="font-semibold text-[var(--text-main)]">{formatCurrency(order.valorFrete)}</p>
+                              <p className="text-[11px] text-muted">Líquido {formatCurrency(order.valorLiquido)}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-2">
+                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold ${channelColor}`}>
+                                {order.canal}
+                              </span>
+                              {order.itensQuantidade ? (
+                                <span className="text-[10px] text-muted">{order.itensQuantidade} itens</span>
+                              ) : null}
+                            </div>
+                            <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+                              {order.dataPrevista && (
+                                <p className="text-[11px] text-muted flex items-center gap-1">
+                                  <Clock className="w-3 h-3" /> Previsto {formatDate(order.dataPrevista)}
+                                </p>
+                              )}
+                              {order.notaFiscal && (
+                                <p className="text-[11px] text-muted flex items-center gap-1 mt-1">
+                                  NF {order.notaFiscal}
+                                </p>
+                              )}
+                              {!order.dataPrevista && !order.notaFiscal && (
+                                <p className="text-[11px] text-muted">Sem previsão disponível</p>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <div className="hidden md:block divide-y divide-slate-100 dark:divide-slate-800">
+                    {orders.map((order) => {
+                      const status = STATUS_CONFIG.find((cfg) => cfg.codigo === order.situacao);
+                      const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
+                      return (
+                        <article key={order.tinyId} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm">
+                          <div className="px-6 py-4 space-y-1">
+                            <div className="flex items-center gap-3">
                               <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
                                 {order.primeiraImagem ? (
                                   <>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
                                     {(order.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
+                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ zIndex: 50 }}>
                                         +{(order.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
@@ -464,64 +672,66 @@ export default function PedidosPage() {
                                   <span className="text-xs text-muted">{order.itensQuantidade ?? 0} itens</span>
                                 )}
                               </div>
-                            <div>
-                              <p className="font-semibold text-[var(--text-main)] flex items-center gap-2">
-                                #{order.numeroPedido ?? order.tinyId}
-                                <a
-                                  href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[var(--accent)] hover:underline"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
-                              </p>
-                              <p className="text-xs text-muted">
-                                {order.cliente || "Cliente não informado"} · Criado em {formatDate(order.dataCriacao)}
-                              </p>
-                              {order.marketplaceOrder && <p className="text-[11px] text-muted">Pedido marketplace: {order.marketplaceOrder}</p>}
+                              <div>
+                                <p className="font-semibold text-[var(--text-main)] flex items-center gap-2">
+                                  #{order.numeroPedido ?? order.tinyId}
+                                  <a
+                                    href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[var(--accent)] hover:underline"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </p>
+                                <p className="text-xs text-muted">
+                                  {order.cliente || "Cliente não informado"} · Criado em {formatDate(order.dataCriacao)}
+                                </p>
+                                {order.marketplaceOrder && <p className="text-[11px] text-muted">Pedido marketplace: {order.marketplaceOrder}</p>}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold ${
-                              status ? `${status.bg} ${status.color}` : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {status?.label ?? order.situacaoDescricao}
-                          </span>
-                          {order.dataPrevista && (
-                            <p className="text-[11px] text-muted flex items-center gap-1 mt-1">
-                              <Clock className="w-3 h-3" /> Previsto {formatDate(order.dataPrevista)}
-                            </p>
-                          )}
-                          {order.notaFiscal && (
-                            <p className="text-[11px] text-muted flex items-center gap-1">
-                              NF {order.notaFiscal}
-                            </p>
-                          )}
-                        </div>
+                          <div className="px-6 py-4">
+                            <span
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold ${
+                                status ? `${status.bg} ${status.color}` : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {status?.label ?? order.situacaoDescricao}
+                            </span>
+                            {order.dataPrevista && (
+                              <p className="text-[11px] text-muted flex items-center gap-1 mt-1">
+                                <Clock className="w-3 h-3" /> Previsto {formatDate(order.dataPrevista)}
+                              </p>
+                            )}
+                            {order.notaFiscal && (
+                              <p className="text-[11px] text-muted flex items-center gap-1">
+                                NF {order.notaFiscal}
+                              </p>
+                            )}
+                          </div>
 
-                        <div className="px-6 py-4">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold ${channelColor}`}>
-                            {order.canal}
-                          </span>
-                        </div>
+                          <div className="px-6 py-4">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold ${channelColor}`}>
+                              {order.canal}
+                            </span>
+                          </div>
 
-                        <div className="px-6 py-4 font-semibold text-[var(--text-main)]">
-                          <p>{formatCurrency(order.valorFrete)}</p>
-                          <p className="text-[11px] text-muted">Líquido: {formatCurrency(order.valorLiquido)}</p>
-                        </div>
+                          <div className="px-6 py-4 font-semibold text-[var(--text-main)]">
+                            <p>{formatCurrency(order.valorFrete)}</p>
+                            <p className="text-[11px] text-muted">Líquido: {formatCurrency(order.valorLiquido)}</p>
+                          </div>
 
-                        <div className="px-6 py-4 font-semibold text-[var(--text-main)]">
-                          <p>{formatCurrency(order.valor)}</p>
-                        </div>
-                      </article>
-                    );
-                  })}
-              </div>
+                          <div className="px-6 py-4 font-semibold text-[var(--text-main)]">
+                            <p>{formatCurrency(order.valor)}</p>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
 
             {error && (

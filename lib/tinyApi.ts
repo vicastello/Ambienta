@@ -1,3 +1,49 @@
+// Interface de paginação padrão das respostas Tiny
+export interface TinyPaginacao {
+  pagina: number;
+  paginas: number;
+  por_pagina: number;
+  total: number;
+}
+// Resposta da listagem de pedidos Tiny v3
+export interface TinyListarPedidosResponse {
+  itens: any[];
+  total?: number;
+  [key: string]: any;
+}
+// Parâmetros genéricos para GETs na Tiny API
+export type TinyGetParams = Record<string, string | number | boolean | undefined>;
+// Situações possíveis do pedido segundo o Swagger oficial Tiny v3
+export type TinyPedidoSituacao =
+  | 8 // Dados Incompletos
+  | 0 // Aberta
+  | 3 // Aprovada
+  | 4 // Preparando Envio
+  | 1 // Faturada
+  | 7 // Pronto Envio
+  | 5 // Enviada
+  | 6 // Entregue
+  | 2 // Cancelada
+  | 9; // Não Entregue
+
+// Parâmetros para GET /pedidos conforme Swagger oficial
+export interface TinyListarPedidosParams {
+  numero?: number;
+  nomeCliente?: string;
+  codigoCliente?: string;
+  cnpj?: string;
+  dataInicial?: string;      // formato "YYYY-MM-DD"
+  dataFinal?: string;        // formato "YYYY-MM-DD"
+  dataAtualizacao?: string;  // formato "YYYY-MM-DD"
+  situacao?: TinyPedidoSituacao;
+  numeroPedidoEcommerce?: string;
+  idVendedor?: number;
+  marcadores?: string[];
+  orderBy?: 'asc' | 'desc';
+  limit?: number;   // default 100
+  offset?: number;  // default 0
+}
+
 // lib/tinyApi.ts
 
 const TINY_BASE_URL =
@@ -24,47 +70,18 @@ export interface TinyPedidoListaItem {
   };
   dataCriacao: string | null;
   dataPrevista: string | null;
-  cliente?: {
-    nome?: string | null;
-    codigo?: string | null;
-    cnpj?: string | null;
-  };
-  valor: string | null; // vem como string na API v3
-  valorFrete?: string | number | null; // frete quando fields incluem isso
-  valorTotalPedido?: string | number | null; // valor bruto quando fields incluem isso
-  valorTotalProdutos?: string | number | null; // valor líquido quando fields incluem isso
-  valorDesconto?: string | number | null;
-  valorOutrasDespesas?: string | number | null;
-  vendedor?: {
-    id?: number | null;
-    nome?: string | null;
-  };
-  transportador?: {
-    nome?: string | null;
-  };
-  [key: string]: any; // allow additional fields from API
+  // ...demais campos conforme uso real
 }
+export type TinyGetOptions = {
+  headers?: Record<string, string>;
+  allowNotModified?: boolean;
+};
 
-export interface TinyPaginacao {
-  total?: number;
-  limit?: number;
-  offset?: number;
-}
-
-export interface TinyListarPedidosResponse {
-  itens: TinyPedidoListaItem[];
-  paginacao?: TinyPaginacao;
-}
-
-type TinyGetParams = Record<string, string | number | boolean | undefined>;
-
-/**
- * Cliente genérico de GET para a Tiny API v3
- */
 export async function tinyGet<T>(
   path: string,
   accessToken: string,
-  params: TinyGetParams = {}
+  params: TinyGetParams = {},
+  options: TinyGetOptions = {}
 ): Promise<T> {
   const url = new URL(TINY_BASE_URL + path);
 
@@ -78,10 +95,15 @@ export async function tinyGet<T>(
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
+      ...(options.headers ?? {}),
     },
   });
 
   const text = await res.text();
+
+  if (res.status === 304 && options.allowNotModified) {
+    return { notModified: true } as unknown as T;
+  }
 
   if (!res.ok) {
     console.error("[TinyApi] Erro ao chamar Tiny", res.status, text, {
@@ -361,9 +383,10 @@ export async function listarProdutos(
  */
 export async function obterProduto(
   accessToken: string,
-  produtoId: number
+  produtoId: number,
+  opts?: TinyGetOptions
 ): Promise<TinyProdutoDetalhado> {
-  return tinyGet<TinyProdutoDetalhado>(`/produtos/${produtoId}`, accessToken, {});
+  return tinyGet<TinyProdutoDetalhado>(`/produtos/${produtoId}`, accessToken, {}, opts);
 }
 
 /**
@@ -372,7 +395,8 @@ export async function obterProduto(
  */
 export async function obterEstoqueProduto(
   accessToken: string,
-  produtoId: number
+  produtoId: number,
+  opts?: TinyGetOptions
 ): Promise<TinyEstoqueProduto> {
-  return tinyGet<TinyEstoqueProduto>(`/estoque/${produtoId}`, accessToken, {});
+  return tinyGet<TinyEstoqueProduto>(`/estoque/${produtoId}`, accessToken, {}, opts);
 }

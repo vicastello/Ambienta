@@ -521,15 +521,6 @@ export function BrazilSalesMap({
           </div>
         )}
       </div>
-      {/* Legend */}
-      <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-        <span>Menos</span>
-        <div className="h-2 flex-1 rounded-full" style={{
-          background: `linear-gradient(90deg, #e0f7fa, #38c5cf, #009DA8, #006E76)`,
-        }} />
-        <span>Mais</span>
-      </div>
-      {/* Removido: a lista de cidades não é mais exibida aqui. As cidades aparecem somente no mapa. */}
     </div>
   );
 }

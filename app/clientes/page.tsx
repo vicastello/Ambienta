@@ -1,6 +1,11 @@
 import { AppLayout } from '@/components/layout/AppLayout';
 
 export default function ClientesPage() {
+  const clientesMock = [
+    { nome: 'Maria Silva', tipo: 'Cliente', documento: '***.***.***-**', cidade: 'Pedreira/SP', badge: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' },
+    { nome: 'Plasmont', tipo: 'Fornecedor', documento: '**.***.***/****-**', cidade: 'Santa Catarina/SC', badge: 'bg-sky-500/15 text-sky-600 dark:text-sky-300' },
+  ];
+
   return (
     <AppLayout title="Clientes">
       <div className="surface-panel p-6 mb-4 space-y-4">
@@ -33,7 +38,22 @@ export default function ClientesPage() {
 
       <div className="surface-panel p-6">
         <h3 className="text-sm font-semibold text-[var(--text-main)] mb-2">Lista de clientes (exemplo)</h3>
-        <div className="overflow-hidden rounded-3xl border border-white/20 dark:border-white/5">
+        <div className="md:hidden space-y-3">
+          {clientesMock.map((cliente) => (
+            <article key={cliente.nome} className="rounded-2xl border border-white/30 dark:border-white/10 bg-white/80 dark:bg-slate-900/70 px-4 py-3 flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[var(--text-main)]">{cliente.nome}</p>
+                <p className="text-xs text-muted">{cliente.documento}</p>
+                <p className="text-xs text-muted">{cliente.cidade}</p>
+              </div>
+              <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${cliente.badge}`}>
+                {cliente.tipo}
+              </span>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-hidden rounded-3xl border border-white/20 dark:border-white/5">
           <table className="w-full text-sm">
             <thead className="bg-[var(--bg-card-soft)] text-muted">
               <tr>

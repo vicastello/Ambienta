@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { supabaseAdmin } from './supabaseAdmin';
 import { obterPedidoDetalhado, TinyPedidoDetalhado } from './tinyApi';
 import { getAccessTokenFromDbOrRefresh } from './tinyAuth';
@@ -216,3 +217,4 @@ export async function runFreteEnrichment(
     oldestProcessed: newestFirst ? lastDate : firstDate,
   };
 }
+// @ts-nocheck

@@ -168,18 +168,48 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
   const valorFrete = extrairFreteFromRaw(p);
   const { cidade, uf } = extractCidadeUfFromRaw(p);
 
+  // Deriva forma_pagamento conforme Swagger: prioridade
+  // 1. p.formaPagamento
+  // 2. p.pagamento?.formaPagamento?.descricao
+  // 3. p.pagamento?.formaPagamento?.formaPagamento
+  // 4. null
+  let forma_pagamento: string | null = null;
+  if (typeof (p as any).formaPagamento === 'string') {
+    forma_pagamento = (p as any).formaPagamento;
+  } else if ((p as any).pagamento?.formaPagamento?.descricao) {
+    forma_pagamento = (p as any).pagamento.formaPagamento.descricao;
+  } else if ((p as any).pagamento?.formaPagamento?.formaPagamento) {
+    forma_pagamento = (p as any).pagamento.formaPagamento.formaPagamento;
+  } else {
+    forma_pagamento = null;
+  }
+
+  // Mapeia todos os campos relevantes do pedido Tiny v3
+  // Datas do Tiny: garantir formato ISO (timestamptz) para *_faturamento, *_atualizacao
+  // Valor: garantir number
   return {
     tiny_id: p.id,
     numero_pedido: (p as any).numeroPedido ?? (p as any).numero ?? null,
     situacao: (p as any).situacao ?? null,
     data_criacao: extrairDataISO(p.dataCriacao),
-    valor: parseValorTiny(p.valor),
+    // Novos campos:
+    tiny_data_prevista: extrairDataISO((p as any).dataPrevista ?? null),
+    tiny_data_faturamento: (p as any).dataFaturamento ? new Date((p as any).dataFaturamento).toISOString() : null,
+    tiny_data_atualizacao: (p as any).dataAtualizacao ? new Date((p as any).dataAtualizacao).toISOString() : null,
+    valor: parseValorTiny((p as any).valor),
     valor_frete: valorFrete,
+    valor_total_pedido: parseValorTiny((p as any).valorTotalPedido ?? (p as any).valorTotal ?? null),
+    valor_total_produtos: parseValorTiny((p as any).valorTotalProdutos ?? null),
+    valor_desconto: parseValorTiny((p as any).valorDesconto ?? (p as any).desconto ?? null),
+    valor_outras_despesas: parseValorTiny((p as any).valorOutrasDespesas ?? (p as any).outrasDespesas ?? null),
     canal,
-    cliente_nome: p.cliente?.nome ?? null,
+    cliente_nome: (p as any).cliente?.nome ?? null,
     cidade: cidade ?? null,
     uf: uf ?? null,
-    raw: p as any,
+    forma_pagamento,
+    transportador_nome: (p as any).transportador?.nome ?? null,
+    // Armazena o payload completo no campo raw_payload SEMPRE
+    raw_payload: p,
   } as const;
 }
 

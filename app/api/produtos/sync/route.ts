@@ -1,203 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import {
-  listarProdutos,
-  obterEstoqueProduto,
-  obterProduto,
-  TinyProdutoListaItem,
-  TinyEstoqueProduto,
-} from '@/lib/tinyApi';
+import { countProdutos } from '@/src/repositories/tinyProdutosRepository';
+import { syncProdutosFromTiny } from '@/src/lib/sync/produtos';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const SYNC_TOKEN_HEADER = 'x-ambienta-sync-token';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
       limit = 100,
-      enrichEstoque = true, // Se true, busca estoque detalhado de cada produto
+      enrichEstoque = true,
+      modoCron = false,
     } = body;
 
-    // 1. Buscar token do Tiny
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const secret = process.env.SYNC_PRODUTOS_SECRET;
+    const provided = req.headers.get(SYNC_TOKEN_HEADER);
+    if (!secret || !provided || provided !== secret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const { data: tokenData, error: tokenError } = await supabase
-      .from('tiny_tokens')
-      .select('access_token')
-      .single();
+    const startedAt = Date.now();
+    console.log('[sync-produtos] start', { body, modoCron });
+    const result = await syncProdutosFromTiny({ limit, enrichEstoque, modoCron });
+    const elapsed = Date.now() - startedAt;
+    console.log('[sync-produtos] finish', { elapsed, resultSummary: { ok: result.ok, timedOut: result.timedOut, totalRequests: result.totalRequests } });
+    const mode = modoCron ? 'cron' : 'manual';
 
-    if (tokenError || !tokenData?.access_token) {
+    if ((result as any)?.ok === false || result.timedOut) {
+      // Falha controlada ou timeout
+      const err = result as any;
+      const isProd = process.env.NODE_ENV === 'production';
       return NextResponse.json(
-        { error: 'Token do Tiny não encontrado' },
-        { status: 401 }
+        {
+          ok: false,
+          mode,
+          timedOut: result.timedOut ?? false,
+          error: {
+            code: err.reason ?? 'timeout-or-error',
+            message: isProd
+              ? 'Internal Server Error'
+              : err.errorMessage ?? 'Timeout ou erro interno',
+          },
+          totalRequests: result.totalRequests ?? 0,
+          total429: result.total429 ?? 0,
+          windowUsagePct: result.windowUsagePct ?? 0,
+          batchUsado: result.batchUsado ?? 0,
+          workersUsados: result.workersUsados ?? 0,
+          enrichAtivo: result.enrichAtivo ?? false,
+        },
+        { status: 500 }
       );
     }
 
-    const accessToken = tokenData.access_token;
-
-    // 2. Listar produtos do Tiny
-    console.log('[Sync Produtos] Iniciando sincronização...');
-    let offset = 0;
-    let totalSincronizados = 0;
-    let totalNovos = 0;
-    let totalAtualizados = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      const response = await listarProdutos(accessToken, {
-        limit,
-        offset,
-        situacao: 'A', // Apenas produtos ativos
-      });
-
-      if (!response.itens || response.itens.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      console.log(
-        `[Sync Produtos] Processando ${response.itens.length} produtos (offset: ${offset})...`
-      );
-
-      // 3. Processar cada produto
-      for (const produto of response.itens) {
-        try {
-          // 3.1 Buscar detalhes do produto para obter imagem
-          let produtoDetalhado: any = null;
-          try {
-            produtoDetalhado = await obterProduto(accessToken, produto.id);
-            await new Promise((resolve) => setTimeout(resolve, 150));
-          } catch (error) {
-            console.warn(
-              `[Sync Produtos] Erro ao buscar detalhes do produto ${produto.id}:`,
-              error
-            );
-          }
-
-          // 3.2 Buscar estoque detalhado se solicitado
-          let estoqueDetalhado: TinyEstoqueProduto | null = null;
-          if (enrichEstoque) {
-            try {
-              estoqueDetalhado = await obterEstoqueProduto(accessToken, produto.id);
-              // Pequeno delay para evitar rate limit
-              await new Promise((resolve) => setTimeout(resolve, 150));
-            } catch (error) {
-              console.warn(
-                `[Sync Produtos] Erro ao buscar estoque do produto ${produto.id}:`,
-                error
-              );
-            }
-          }
-
-          // 3.3 Extrair primeira imagem
-          const primeiraImagem = produtoDetalhado?.anexos?.find((anexo: any) => anexo.url);
-
-          // 3.4 Preparar dados para inserir/atualizar
-          const produtoData = {
-            id_produto_tiny: produto.id,
-            codigo: produto.sku || null,
-            nome: produto.descricao,
-            unidade: produto.unidade || null,
-            preco: produto.precos?.preco || null,
-            preco_promocional: produto.precos?.precoPromocional || null,
-            situacao: produto.situacao,
-            tipo: produto.tipo,
-            gtin: produto.gtin || null,
-            imagem_url: primeiraImagem?.url || null,
-            // Estoque da listagem ou detalhado
-            saldo: estoqueDetalhado?.saldo ?? null,
-            reservado: estoqueDetalhado?.reservado ?? null,
-            disponivel: estoqueDetalhado?.disponivel ?? null,
-            data_criacao_tiny: produto.dataCriacao || null,
-            data_atualizacao_tiny: produto.dataAlteracao || null,
-          };
-
-          // 3.5 Upsert no banco (INSERT ou UPDATE se já existe)
-          const { error: upsertError } = await supabase
-            .from('tiny_produtos')
-            .upsert(produtoData, {
-              onConflict: 'id_produto_tiny',
-              ignoreDuplicates: false,
-            });
-
-          if (upsertError) {
-            console.error(
-              `[Sync Produtos] Erro ao salvar produto ${produto.id}:`,
-              upsertError
-            );
-          } else {
-            // Verificar se foi inserção ou atualização
-            const { data: existing } = await supabase
-              .from('tiny_produtos')
-              .select('id')
-              .eq('id_produto_tiny', produto.id)
-              .single();
-
-            if (existing) {
-              totalAtualizados++;
-            } else {
-              totalNovos++;
-            }
-            totalSincronizados++;
-          }
-        } catch (error) {
-          console.error(
-            `[Sync Produtos] Erro ao processar produto ${produto.id}:`,
-            error
-          );
-        }
-      }
-
-      // 4. Próxima página
-      offset += limit;
-
-      // Verificar se há mais páginas
-      if (response.paginacao?.total) {
-        hasMore = offset < response.paginacao.total;
-      } else {
-        // Se não retornou total, verifica se veio menos que o limit
-        hasMore = response.itens.length >= limit;
-      }
-
-      // Delay entre páginas
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    console.log(
-      `[Sync Produtos] Finalizado: ${totalSincronizados} produtos (${totalNovos} novos, ${totalAtualizados} atualizados)`
-    );
-
-    return NextResponse.json({
-      success: true,
-      totalSincronizados,
-      totalNovos,
-      totalAtualizados,
-    });
+    // Evitar sobrescrever ok/mode
+    const { ok, mode: _mode, ...rest } = result;
+    return NextResponse.json({ ok, mode, ...rest });
   } catch (error: any) {
     console.error('[Sync Produtos] Erro:', error);
-    return NextResponse.json(
-      {
-        error: error?.message || 'Erro ao sincronizar produtos',
-      },
-      { status: 500 }
-    );
+    const isProd = process.env.NODE_ENV === 'production';
+    const payload = isProd
+      ? { error: { code: '500', message: 'Internal Server Error' } }
+      : { error: { code: '500', message: error?.message ?? 'Erro desconhecido', stack: error?.stack } };
+    return NextResponse.json(payload, { status: 500 });
   }
 }
 
 // GET para status
 export async function GET() {
   try {
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    const { count, error } = await supabase
-      .from('tiny_produtos')
-      .select('*', { count: 'exact', head: true });
-
-    if (error) throw error;
+    const totalProdutos = await countProdutos();
 
     return NextResponse.json({
-      totalProdutos: count || 0,
+      totalProdutos,
     });
   } catch (error: any) {
     return NextResponse.json(

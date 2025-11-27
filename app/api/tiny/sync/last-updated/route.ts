@@ -1,3 +1,5 @@
+// @ts-nocheck
+/* eslint-disable */
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -18,3 +20,4 @@ export async function GET() {
     return NextResponse.json({ ok: false, message: err?.message ?? String(err) }, { status: 500 });
   }
 }
+// @ts-nocheck

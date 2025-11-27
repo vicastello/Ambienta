@@ -103,6 +103,7 @@ const COLORS_PALETTE = [AMBIENTA_PRIMARY, '#22c55e', '#f97316', '#0ea5e9', '#a85
 const GLOBAL_INTERVAL_DAYS = 30;
 const SPARK_WINDOW_DAYS = 7;
 const PIE_LABEL_RAD = Math.PI / 180;
+const DASHBOARD_AUTO_REFRESH_MS = 60_000; // polling leve para dados mais frescos
 
 const renderChannelPercentLabel = (props: any) => {
   const { cx, cy, midAngle, outerRadius, percent: slicePercent, payload } = props ?? {};
@@ -220,33 +221,33 @@ const INSIGHT_THEMES: Record<InsightTone, InsightThemeConfig> = {
   info: {
     label: 'Insight',
     icon: Info,
-    bg: 'bg-white/80 dark:bg-slate-900/70',
-    border: 'border-white/60 dark:border-slate-800/60',
+    bg: 'glass-panel insight-card-bg-info',
+    border: 'border-white/60 dark:border-white/10',
     iconBg: 'bg-slate-100 text-slate-700 dark:bg-slate-800/80',
     iconColor: 'text-slate-600 dark:text-slate-300',
   },
   opportunity: {
     label: 'Oportunidade',
     icon: Sparkles,
-    bg: 'bg-emerald-50/80 dark:bg-emerald-500/10',
-    border: 'border-emerald-200/60',
-    iconBg: 'bg-emerald-100/80',
+    bg: 'glass-panel insight-card-bg-opportunity',
+    border: 'border-emerald-200/60 dark:border-emerald-500/20',
+    iconBg: 'bg-emerald-100/80 dark:bg-emerald-500/20',
     iconColor: 'text-emerald-600',
   },
   risk: {
     label: 'Risco',
     icon: AlertTriangle,
-    bg: 'bg-rose-50/80 dark:bg-rose-500/10',
-    border: 'border-rose-200/60',
-    iconBg: 'bg-rose-100/80',
+    bg: 'glass-panel insight-card-bg-risk',
+    border: 'border-rose-200/60 dark:border-rose-500/20',
+    iconBg: 'bg-rose-100/80 dark:bg-rose-500/20',
     iconColor: 'text-rose-600',
   },
   action: {
     label: 'Ação',
     icon: Target,
-    bg: 'bg-amber-50/80 dark:bg-amber-500/10',
-    border: 'border-amber-200/60',
-    iconBg: 'bg-amber-100/80',
+    bg: 'glass-panel insight-card-bg-action',
+    border: 'border-amber-200/60 dark:border-amber-500/20',
+    iconBg: 'bg-amber-100/80 dark:bg-amber-500/20',
     iconColor: 'text-amber-600',
   },
 };
@@ -465,6 +466,9 @@ export default function DashboardPage() {
 
   const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>([]);
   const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>([]);
+  const [topSituacoesMes, setTopSituacoesMes] = useState<SituacaoResumo[]>([]);
+  const [situacoesMes, setSituacoesMes] = useState<SituacaoResumo[]>([]);
+  const [loadingTopSituacoesMes, setLoadingTopSituacoesMes] = useState<boolean>(false);
 
   const [filtersLoaded, setFiltersLoaded] = useState(false);
 
@@ -499,9 +503,9 @@ export default function DashboardPage() {
   const [loadingRecentOrders, setLoadingRecentOrders] = useState<boolean>(false);
 
   // Refs para evitar chamadas simultâneas
-  const isLoadingRef = useRef(false);
-  const isLoadingChartRef = useRef(false);
-  const isLoadingGlobalRef = useRef(false);
+  const resumoRequestId = useRef(0);
+  const chartRequestId = useRef(0);
+  const globalRequestId = useRef(0);
   const isLoadingInsightsBaseRef = useRef(false);
   const insightsScrollRef = useRef<HTMLDivElement | null>(null);
   const heroCardRef = useRef<HTMLDivElement | null>(null);
@@ -563,17 +567,22 @@ export default function DashboardPage() {
     return { inicio, fim };
   }
 
-  function resolverIntervaloGlobal(): { inicio: string; fim: string } {
-    const fim = isoToday();
-    const inicio = addDays(fim, -(GLOBAL_INTERVAL_DAYS - 1));
-    return { inicio, fim };
+function resolverIntervaloGlobal(): { inicio: string; fim: string } {
+  const fim = isoToday();
+  const inicio = addDays(fim, -(GLOBAL_INTERVAL_DAYS - 1));
+  return { inicio, fim };
+}
+
+function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
+  const hoje = new Date();
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const inicioIso = inicio.toISOString().slice(0, 10);
+  return { inicio: inicioIso, fim: isoToday() };
   }
 
   async function carregarResumo() {
     if (!filtersLoaded) return;
-    // Evitar chamadas simultâneas
-    if (isLoadingRef.current) return;
-    isLoadingRef.current = true;
+    const requestId = ++resumoRequestId.current;
 
     try {
       const { inicio, fim } = resolverIntervalo();
@@ -582,8 +591,10 @@ export default function DashboardPage() {
       if (cachedResumo) {
         setResumo(cachedResumo);
       }
-      setLoading(!cachedResumo);
-      setErro(null);
+      if (requestId === resumoRequestId.current) {
+        setLoading(!cachedResumo);
+        setErro(null);
+      }
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
@@ -599,7 +610,9 @@ export default function DashboardPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
       const parsedResumo = json as DashboardResumo;
-      setResumo(parsedResumo);
+      if (requestId === resumoRequestId.current) {
+        setResumo(parsedResumo);
+      }
       safeWriteCache(cacheKey, parsedResumo);
       try {
         const { inicio, fim } = resolverIntervalo();
@@ -607,7 +620,7 @@ export default function DashboardPage() {
         const atualDias = parsedResumo.periodoAtual.vendasPorDia.length ?? 0;
         const key = `${inicio}_${fim}`;
         const already = !!autoComplementedRanges[key];
-        if (preset === 'month' && !already && atualDias < diasEsperados) {
+        if (requestId === resumoRequestId.current && preset === 'month' && !already && atualDias < diasEsperados) {
           setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
           setComplementLoading(true);
           const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
@@ -626,25 +639,29 @@ export default function DashboardPage() {
         // swallow
       }
     } catch (e: any) {
-      setErro(e?.message ?? 'Erro inesperado ao carregar dashboard');
+      if (requestId === resumoRequestId.current) {
+        setErro(e?.message ?? 'Erro inesperado ao carregar dashboard');
+      }
     } finally {
-      setLoading(false);
-      isLoadingRef.current = false;
+      if (requestId === resumoRequestId.current) {
+        setLoading(false);
+      }
     }
   }
 
   async function carregarResumoGlobal() {
     if (!filtersLoaded) return;
-    if (isLoadingGlobalRef.current) return;
-    isLoadingGlobalRef.current = true;
+    const requestId = ++globalRequestId.current;
 
     try {
       const { inicio, fim } = resolverIntervaloGlobal();
       const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cachedGlobal = safeReadCache<DashboardResumo>(cacheKey);
-      if (cachedGlobal) setResumoGlobal(cachedGlobal);
-      setLoadingGlobal(!cachedGlobal);
-      setErroGlobal(null);
+      if (cachedGlobal && requestId === globalRequestId.current) setResumoGlobal(cachedGlobal);
+      if (requestId === globalRequestId.current) {
+        setLoadingGlobal(!cachedGlobal);
+        setErroGlobal(null);
+      }
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
@@ -654,13 +671,45 @@ export default function DashboardPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
       const parsedGlobal = json as DashboardResumo;
-      setResumoGlobal(parsedGlobal);
+      if (requestId === globalRequestId.current) {
+        setResumoGlobal(parsedGlobal);
+      }
       safeWriteCache(cacheKey, parsedGlobal);
     } catch (e: any) {
-      setErroGlobal(e?.message ?? 'Erro inesperado ao carregar visão consolidada');
+      if (requestId === globalRequestId.current) {
+        setErroGlobal(e?.message ?? 'Erro inesperado ao carregar visão consolidada');
+      }
     } finally {
-      setLoadingGlobal(false);
-      isLoadingGlobalRef.current = false;
+      if (requestId === globalRequestId.current) {
+        setLoadingGlobal(false);
+      }
+    }
+  }
+
+  async function carregarTopSituacoesMes() {
+    if (!filtersLoaded) return;
+    setLoadingTopSituacoesMes(true);
+    try {
+      const { inicio, fim } = resolverIntervaloMesAtual();
+      const params = new URLSearchParams();
+      params.set('dataInicial', inicio);
+      params.set('dataFinal', fim);
+      if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
+      if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar situações do mês');
+      const parsed = json as DashboardResumo;
+      const top = [...parsed.periodoAtual.pedidosPorSituacao]
+        .sort((a, b) => b.quantidade - a.quantidade)
+        .slice(0, 4);
+      setTopSituacoesMes(top);
+      setSituacoesMes(parsed.periodoAtual.pedidosPorSituacao ?? []);
+    } catch (e) {
+      setTopSituacoesMes([]);
+      setSituacoesMes([]);
+    } finally {
+      setLoadingTopSituacoesMes(false);
     }
   }
 
@@ -691,7 +740,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!filtersLoaded) return;
-    console.log('[DEBUG] carregarResumo triggered', { preset, customStart, customEnd, canais: canaisSelecionados, situacoes: situacoesSelecionadas });
     carregarResumo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
@@ -703,9 +751,26 @@ export default function DashboardPage() {
   }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
+    if (!filtersLoaded) return;
+    carregarTopSituacoesMes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
+
+  useEffect(() => {
     carregarResumoInsightsBase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    const interval = setInterval(() => {
+      carregarResumo();
+      carregarResumoGlobal();
+      carregarTopSituacoesMes();
+    }, DASHBOARD_AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     fetchLastSync();
@@ -810,17 +875,17 @@ export default function DashboardPage() {
   }
 
   async function carregarResumoChart() {
-    // Evitar chamadas simultâneas
-    if (isLoadingChartRef.current) return;
-    isLoadingChartRef.current = true;
+    const requestId = ++chartRequestId.current;
 
     try {
       const { inicio, fim } = resolverIntervaloChart();
       const cacheKey = buildChartCacheKey(inicio, fim, chartPreset, chartCustomStart, chartCustomEnd);
       const cachedChart = safeReadCache<DashboardResumo>(cacheKey);
-      if (cachedChart) setResumoChart(cachedChart);
-      setLoadingChart(!cachedChart);
-      setErroChart(null);
+      if (cachedChart && requestId === chartRequestId.current) setResumoChart(cachedChart);
+      if (requestId === chartRequestId.current) {
+        setLoadingChart(!cachedChart);
+        setErroChart(null);
+      }
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
@@ -828,7 +893,9 @@ export default function DashboardPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo (gráfico)');
       const parsedChart = json as DashboardResumo;
-      setResumoChart(parsedChart);
+      if (requestId === chartRequestId.current) {
+        setResumoChart(parsedChart);
+      }
       safeWriteCache(cacheKey, parsedChart);
       try {
         const { inicio, fim } = resolverIntervaloChart();
@@ -836,7 +903,7 @@ export default function DashboardPage() {
         const atualDias = parsedChart.periodoAtual.vendasPorDia.length ?? 0;
         const key = `${inicio}_${fim}`;
         const already = !!autoComplementedRanges[key];
-        if (chartPreset === 'month' && !already && atualDias < diasEsperados) {
+        if (requestId === chartRequestId.current && chartPreset === 'month' && !already && atualDias < diasEsperados) {
           setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
           setComplementLoading(true);
           const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
@@ -855,15 +922,17 @@ export default function DashboardPage() {
         // swallow
       }
     } catch (e: any) {
-      setErroChart(e?.message ?? 'Erro inesperado ao carregar gráfico');
+      if (requestId === chartRequestId.current) {
+        setErroChart(e?.message ?? 'Erro inesperado ao carregar gráfico');
+      }
     } finally {
-      setLoadingChart(false);
-      isLoadingChartRef.current = false;
+      if (requestId === chartRequestId.current) {
+        setLoadingChart(false);
+      }
     }
   }
 
   useEffect(() => {
-    console.log('[DEBUG] carregarResumoChart triggered', { chartPreset, chartCustomStart, chartCustomEnd });
     carregarResumoChart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartPreset, chartCustomStart, chartCustomEnd]);
@@ -1103,11 +1172,18 @@ export default function DashboardPage() {
   }, [resumoGlobalAtual]);
 
   const topSituacoes = useMemo(() => {
+    if (topSituacoesMes.length) return topSituacoesMes;
     if (!resumoAtual) return [];
     return [...resumoAtual.pedidosPorSituacao]
       .sort((a, b) => b.quantidade - a.quantidade)
       .slice(0, 4);
-  }, [resumoAtual]);
+  }, [resumoAtual, topSituacoesMes]);
+
+  const situacoesLista = useMemo(() => {
+    if (situacoesMes.length) return situacoesMes;
+    if (!resumoAtual) return [];
+    return resumoAtual.pedidosPorSituacao;
+  }, [resumoAtual, situacoesMes]);
 
   const vendasPorDiaFonte = useMemo(() => resumoGlobalAtual?.vendasPorDia ?? [], [resumoGlobalAtual]);
   const vendasPorDiaOrdenadas = useMemo(() => {
@@ -1167,14 +1243,14 @@ export default function DashboardPage() {
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div
             ref={heroCardRef}
-            className="rounded-[36px] border border-white/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/70 backdrop-blur-2xl shadow-[0_25px_90px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-6 min-w-0"
+            className="rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 shadow-[0_25px_90px_rgba(15,23,42,0.12)] p-6 sm:p-8 space-y-6 min-w-0"
           >
             <div className="space-y-4">
               <div>
                 <h2 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Dashboard</h2>
               </div>
               <div className="grid grid-cols-3 gap-2 w-full min-w-0 max-w-full md:flex md:flex-nowrap md:justify-end md:overflow-visible">
-                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                   <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Período</p>
                   <MultiSelectDropdown
                     label="Período"
@@ -1182,7 +1258,7 @@ export default function DashboardPage() {
                       { value: 'today', label: 'Hoje' },
                       { value: 'yesterday', label: 'Ontem' },
                       { value: '7d', label: '7 dias' },
-                      { value: 'month', label: 'Mês' },
+                      { value: 'month', label: 'Mês atual' },
                       { value: '3m', label: '3 meses' },
                       { value: 'year', label: 'Ano' },
                       { value: 'custom', label: 'Personalizado' },
@@ -1206,7 +1282,7 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                     <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Canais</p>
                     {resumo ? (
                       <MultiSelectDropdown
@@ -1221,7 +1297,7 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-3">
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                     <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Situações</p>
                     {resumo ? (
                       <MultiSelectDropdown
@@ -1238,7 +1314,7 @@ export default function DashboardPage() {
                 </div>
 
               <div className="grid gap-5 md:grid-cols-2">
-              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-[#141832e6] dark:border-[rgba(109,132,190,0.035)] backdrop-blur-xl p-5 sm:p-6 shadow-inner shadow-white/40 dark:shadow-[0_8px_20px_rgba(0,0,0,0.16)] space-y-5 sm:space-y-6">
+              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] space-y-5 sm:space-y-6">
                 <div className="grid grid-cols-2 gap-4 sm:gap-6">
                   <div className="min-w-0">
                     <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mb-2 truncate">
@@ -1301,11 +1377,11 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-white/60 bg-gradient-to-br from-[#ede9fe]/80 to-[#fff5f5]/70 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] dark:border-[rgba(109,132,190,0.035)] backdrop-blur-xl p-6 shadow-inner shadow-white/30 dark:shadow-[0_8px_20px_rgba(0,0,0,0.16)]">
+              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)]">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Microtrend</p>
-                    <p className="text-sm text-slate-500">Últimos {sparkData.length} registros</p>
+                    <p className="text-sm text-slate-500">Últimos {sparkData.length} dias</p>
                   </div>
                   <span className="text-xs text-slate-400">{resumoAtual ? 'Atualizado em tempo real' : 'Aguardando dados'}</span>
                 </div>
@@ -1335,9 +1411,9 @@ export default function DashboardPage() {
                 quickHighlights.map((item, idx) => (
                   <div
                     key={item.label}
-                    className={`rounded-[24px] border border-white/60 ${
-                      idx % 2 === 0 ? 'bg-white/80 dark:bg-[#141832e6]' : 'bg-gradient-to-br from-white/70 to-[#f7f3ff]/80 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6]'
-                    } backdrop-blur-xl p-5 shadow-inner shadow-white/40 dark:shadow-[0_6px_18px_rgba(0,0,0,0.14)] flex flex-col gap-1`}
+                    className={`rounded-[24px] glass-panel ${
+                      idx % 2 === 0 ? 'glass-tint' : 'glass-tint-blush'
+                    } border border-white/60 dark:border-white/10 p-5 dark:shadow-[0_14px_34px_rgba(0,0,0,0.42)] flex flex-col gap-1`}
                   >
                     <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
                     <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
@@ -1345,7 +1421,7 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-[24px] border border-white/60 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-5 text-sm text-slate-400 col-span-2 xl:col-span-4">
+                <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 text-sm text-slate-400 col-span-2 xl:col-span-4">
                   {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
                 </div>
               )}
@@ -1358,15 +1434,17 @@ export default function DashboardPage() {
             )}
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6">
+              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] space-y-5 sm:space-y-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Situações em destaque</h3>
                   <span className="text-xs text-slate-400">Fluxo Tiny</span>
                 </div>
                 <div className="space-y-3">
-                  {topSituacoes.length ? (
+                  {loadingTopSituacoesMes ? (
+                    <p className="text-sm text-slate-400">Carregando situações do mês…</p>
+                  ) : topSituacoes.length ? (
                     topSituacoes.map((sit) => (
-                      <div key={sit.situacao} className="flex items-center justify-between rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3">
+                      <div key={sit.situacao} className="flex items-center justify-between rounded-2xl glass-row glass-tint border border-white/60 dark:border-white/10 px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{labelSituacao(sit.situacao)}</p>
                           <p className="text-[11px] text-slate-400">{sit.quantidade.toLocaleString('pt-BR')} pedidos</p>
@@ -1380,7 +1458,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6">
+              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] space-y-5 sm:space-y-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Últimos dias</h3>
                   <span className="text-xs text-slate-400">Base consolidada</span>
@@ -1396,7 +1474,7 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={dia.data}
-                          className="flex items-center justify-between rounded-2xl border border-white/60 bg-gradient-to-r from-white/80 to-[#ecfeff]/80 dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] px-4 py-3"
+                          className="flex items-center justify-between rounded-2xl glass-row glass-tint border border-white/60 dark:border-white/10 px-4 py-3"
                         >
                           <div>
                             <p className="text-sm font-semibold text-slate-900 dark:text-white">{dataFormatada}</p>
@@ -1416,7 +1494,7 @@ export default function DashboardPage() {
         </div>
 
           <aside
-              className="hidden xl:flex rounded-[36px] border border-white/50 dark:border-transparent bg-white/70 dark:bg-slate-900/60 backdrop-blur-2xl p-6 shadow-[0_10px_50px_rgba(15,23,42,0.12)] flex-col gap-6 self-start overflow-hidden"
+            className="hidden xl:flex rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 shadow-[0_15px_60px_rgba(15,23,42,0.18)] dark:shadow-[0_18px_70px_rgba(0,0,0,0.48)] flex-col gap-6 self-start overflow-hidden"
             style={panelMaxHeight ? { height: panelMaxHeight, maxHeight: panelMaxHeight } : undefined}
           >
             <div>
@@ -1434,8 +1512,7 @@ export default function DashboardPage() {
               <div className="relative flex-1 min-h-0 overflow-hidden">
               <div
                 ref={insightsScrollRef}
-                  className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
-                  style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(15,23,42,0.2) transparent' }}
+              className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
               >
                 {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
                 {!erroInsights && insights.length === 0 && !loadingInsights && (
@@ -1482,14 +1559,12 @@ export default function DashboardPage() {
                     );
                   })}
               </div>
-              <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
             </div>
-            <p className="text-[11px] text-slate-400">Fonte: Gemini · Considera visão consolidada de {GLOBAL_INTERVAL_DAYS} dias sem aplicar filtros de canal ou período.</p>
           </aside>
         </section>
 
         {loading && (
-          <div className="rounded-[32px] border border-white/60 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-6 text-sm text-slate-500">
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 text-sm text-slate-500">
             Carregando dados do Tiny…
           </div>
         )}
@@ -1502,7 +1577,7 @@ export default function DashboardPage() {
         {!loading && !erro && resumo && resumoAtual && (
           <div className="space-y-8">
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-[28px] bg-gradient-to-br from-[#e8e0ff] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento líquido</p>
                   <TrendingUp className="w-5 h-5 text-[#5b21b6] dark:text-[#a78bfa] shrink-0" />
@@ -1511,7 +1586,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#e0ecff] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint-sky-strong  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento bruto</p>
                   <TrendingUp className="w-5 h-5 text-[#009DA8] dark:text-[#6fe8ff] shrink-0" />
@@ -1520,7 +1595,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#d1fae5] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint-mint  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Pedidos</p>
                   <ShoppingCart className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
@@ -1531,7 +1606,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - resumo.periodoAnteriorCards.totalPedidos}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#ddd6fe] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint-violet  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Produtos vendidos</p>
                   <Package className="w-5 h-5 text-purple-500 dark:text-[#b794f4] shrink-0" />
@@ -1542,7 +1617,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 mt-2 truncate">Total de itens</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#fef3c7] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint-amber  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Ticket médio</p>
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
@@ -1551,7 +1626,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - resumo.periodoAnteriorCards.ticketMedio)}</p>
               </div>
 
-              <div className="rounded-[28px] bg-gradient-to-br from-[#fee2e2] to-white dark:bg-[#141832e6] dark:from-[#141832e6] dark:to-[#141832e6] shadow-inner shadow-white/60 dark:shadow-[0_8px_24px_rgba(0,0,0,0.28)] p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint-rose  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)] p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Variação</p>
                   {variacaoValorCards.abs >= 0 ? <ArrowUpRight className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" /> : <ArrowDownRight className="w-5 h-5 text-rose-500 dark:text-[#ff6b7d] shrink-0" />}
@@ -1561,7 +1636,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+              <div className="rounded-[36px] glass-panel glass-tint2 border border-white/60 dark:border-white/10 p-6">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Faturamento por dia</h2>
@@ -1625,7 +1700,7 @@ export default function DashboardPage() {
 
               <div className="grid gap-6">
               <div className="grid gap-6 lg:grid-cols-2 w-full min-w-0">
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 flex flex-col shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
+                <div className="rounded-[36px] glass-panel glass-tint2 border border-white/60 dark:border-white/10 p-4 sm:p-6 flex flex-col w-full min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
                       <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Faturamento por canal</h2>
@@ -1695,7 +1770,7 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col w-full min-w-0 overflow-hidden">
+                <div className="rounded-[36px] glass-panel glass-tint-mint border border-white/60 dark:border-white/10 p-4 sm:p-6 flex flex-col w-full min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
                       <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Mapa de vendas (Brasil)</h2>
@@ -1718,7 +1793,7 @@ export default function DashboardPage() {
                           <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
                           <div className="space-y-2">
                             {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                              <div key={uf.uf} className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-3 py-2">
+                              <div key={uf.uf} className="flex items-center justify-between rounded-xl glass-panel glass-tint border border-white/60 dark:border-white/10 px-3 py-2">
                                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
                                 <div className="text-right text-xs">
                                   <div className="font-semibold text-slate-900 dark:text-white">{formatBRL(uf.totalValor)}</div>
@@ -1737,53 +1812,121 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-6 lg:grid-cols-2 w-full min-w-0">
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
+                <div className="rounded-[36px] glass-panel border border-white/60 dark:border-white/10 p-4 sm:p-6 w-full min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
-                    <span className="text-xs text-slate-400">Top {topProdutos.length}</span>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Top 10</p>
+                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
+                    </div>
+                    <span className="text-xs text-slate-400">Atual: {topProdutos.length}</span>
                   </div>
                   {topProdutos.length ? (
-                    <div className="space-y-3">
-                      {topProdutos.map((produto) => (
-                        <div
-                          key={`${produto.produtoId ?? produto.descricao}`}
-                          className="flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3 min-h-[78px]"
-                        >
-                          <div className="flex items-center gap-3">
-                            {produto.imagemUrl ? (
-                              <img
-                                src={produto.imagemUrl}
-                                alt={produto.descricao}
-                                className="w-12 h-12 rounded-2xl object-cover border border-white/60 shadow-sm"
-                              />
-                            ) : (
-                              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#009DA8] to-[#5eead4] text-white flex items-center justify-center text-sm font-semibold">
-                                {getInitials(produto.descricao)}
+                    <>
+                      {/* Desktop / tablet: lista vertical com 5 visíveis e scroll suave */}
+                      <div className="relative hidden md:block">
+                        <div className="grid grid-cols-2 gap-4 pr-2 max-h-[820px] overflow-y-auto scrollbar-hide">
+                          {topProdutos.map((produto, idx) => (
+                            <div
+                              key={`${produto.produtoId ?? produto.descricao}`}
+                              className="product-card rounded-3xl p-4 flex gap-4 items-stretch"
+                            >
+                              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
+                                {produto.imagemUrl ? (
+                                  <img
+                                    src={produto.imagemUrl}
+                                    alt={produto.descricao}
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
+                                    {getInitials(produto.descricao)}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[220px] sm:max-w-[320px]">
-                                {produto.descricao}
-                              </p>
-                              <p className="text-[11px] text-slate-400">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
-                              <p className="text-[11px] text-slate-400">
-                                Estoque: {produto.saldo ?? '—'} • Reservado: {produto.reservado ?? '—'} • Saldo: {produto.disponivel ?? '—'}
-                              </p>
+                              <div className="flex-1 min-w-0 flex flex-col gap-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-base font-semibold text-slate-900 dark:text-white leading-tight truncate">{produto.descricao}</p>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                  </div>
+                                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/50 dark:border-white/15 bg-white/60 dark:bg-white/10 backdrop-blur-md text-[#009DA8] text-xs font-extrabold shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+                                    {idx + 1}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                  <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                    <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
+                                    <p>Reservado: {produto.reservado ?? '—'}</p>
+                                    <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
+                                    <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right text-sm">
-                            <p className="font-semibold text-slate-900 dark:text-white">{produto.quantidade.toLocaleString('pt-BR')} un</p>
-                            <p className="text-slate-500">{formatBRL(produto.receita)}</p>
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                        <div className="fade-bottom" />
+                      </div>
+
+                      {/* Mobile: carrossel horizontal com snap */}
+                      <div className="relative md:hidden -mx-4 px-4">
+                        <div className="flex gap-4 overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-3">
+                          {topProdutos.map((produto, idx) => (
+                            <div
+                              key={`${produto.produtoId ?? produto.descricao}`}
+                              className="product-card rounded-3xl p-4 flex gap-4 min-w-[86vw] snap-center items-stretch"
+                            >
+                              <div className="relative w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
+                                {produto.imagemUrl ? (
+                                  <img
+                                    src={produto.imagemUrl}
+                                    alt={produto.descricao}
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
+                                    {getInitials(produto.descricao)}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col gap-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.descricao}</p>
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                  </div>
+                                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/50 dark:border-white/15 bg-white/60 dark:bg-white/10 backdrop-blur-md text-[#009DA8] text-xs font-extrabold shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+                                    {idx + 1}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                  <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                    <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
+                                    <p>Reservado: {produto.reservado ?? '—'}</p>
+                                    <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
+                                    <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="fade-side fade-left" />
+                        <div className="fade-side fade-right" />
+                      </div>
+                    </>
                   ) : (
                     <p className="text-sm text-slate-400">Sincronize pedidos com itens para ver os produtos líderes.</p>
                   )}
                 </div>
 
-                <div className="rounded-[36px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-4 sm:p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] w-full min-w-0 overflow-hidden">
+                <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6 w-full min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Últimos pedidos</h2>
                     <span className="text-xs text-slate-400">{recentOrders.length} recentes</span>
@@ -1803,7 +1946,7 @@ export default function DashboardPage() {
                         return (
                           <div
                             key={pedido.tinyId}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-slate-900/70 px-4 py-3 min-h-[78px]"
+                            className="flex items-center justify-between gap-3 rounded-2xl glass-row glass-tint border border-white/60 dark:border-white/10 px-4 py-3 min-h-[78px]"
                           >
                             <div className="flex items-center gap-3">
                               <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
@@ -1847,11 +1990,11 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <div className="relative overflow-hidden rounded-[32px] border border-white/70 dark:border-transparent bg-white/80 dark:bg-slate-900/70 backdrop-blur-2xl p-6 shadow-[0_30px_80px_rgba(15,23,42,0.16)]">
+              <div className="relative overflow-hidden rounded-[32px] glass-panel glass-tint border border-white/70 dark:border-white/10 p-6 shadow-[0_30px_80px_rgba(15,23,42,0.16)] dark:shadow-[0_34px_90px_rgba(0,0,0,0.46)]">
                 <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-white/40 to-[#e9f9ff]/70 dark:from-[#121626] dark:via-[#121626]/40 dark:to-[#0c111f] opacity-80" />
+                  <div className="absolute inset-0  from-white/80  dark:via-[#121626]/40 dark:to-[#0c111f] opacity-80" />
                   <div className="absolute -top-16 -left-10 h-40 w-40 rounded-full bg-white/30 blur-3xl" />
-                  <div className="absolute -bottom-10 -right-6 h-52 w-52 rounded-full bg-[#c4f1f9]/40 blur-3xl" />
+                  <div className="absolute -bottom-10 -right-6 h-52 w-52  blur-3xl" />
                 </div>
                 <div className="relative flex items-center justify-between mb-5">
                   <div className="space-y-1">
@@ -1862,8 +2005,8 @@ export default function DashboardPage() {
                   </div>
                   <span className="text-xs text-slate-400">{vendasPorDiaOrdenadas.length} registros</span>
                 </div>
-                <div className="relative overflow-hidden rounded-3xl border border-white/50 dark:border-white/10 bg-white/60 dark:bg-white/5 shadow-inner shadow-white/40">
-                  <div className="grid grid-cols-3 bg-white/60 dark:bg-white/10 text-slate-500 dark:text-slate-300 uppercase tracking-[0.08em] text-xs font-semibold px-4 py-3">
+                <div className="relative overflow-hidden rounded-3xl glass-row border border-white/50 dark:border-white/10  dark:shadow-[0_16px_40px_rgba(0,0,0,0.38)]">
+                  <div className="grid grid-cols-3 glass-row text-slate-500 dark:text-slate-300 uppercase tracking-[0.08em] text-xs font-semibold px-4 py-3">
                     <span className="text-left">Data</span>
                     <span className="text-right">Qtde</span>
                     <span className="text-right">Total</span>
@@ -1880,7 +2023,7 @@ export default function DashboardPage() {
                         <div
                           key={linha.data}
                           className={`grid grid-cols-3 px-4 py-3 text-xs sm:text-sm ${
-                            idx % 2 === 0 ? 'bg-white/40 dark:bg-white/5' : 'bg-white/20 dark:bg-white/[0.02]'
+                            idx % 2 === 0 ? ' dark:bg-white/5' : 'dark:bg-white/[0.02]'
                           } hover:bg-white/70 dark:hover:bg-white/10 transition-colors`}
                         >
                           <div className="flex items-center gap-2 text-slate-800 dark:text-white font-semibold">
@@ -1899,21 +2042,27 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-[32px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)]">
+            <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Pedidos por situação</h2>
                   <span className="text-xs text-slate-400">Fluxo Tiny</span>
                 </div>
                 <div className="space-y-3">
-                  {resumoAtual.pedidosPorSituacao.map((linha, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded-2xl border border-white/50 bg-white/70 dark:bg-slate-900/60 px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{labelSituacao(linha.situacao)}</p>
-                        <p className="text-[11px] text-slate-400">Status operacional</p>
+                  {loadingTopSituacoesMes ? (
+                    <p className="text-sm text-slate-400">Carregando situações do mês…</p>
+                  ) : situacoesLista.length ? (
+                    situacoesLista.map((linha, idx) => (
+                      <div key={idx} className="flex items-center justify-between glass-row rounded-2xl border border-white/50 dark:bg-slate-900/60 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{labelSituacao(linha.situacao)}</p>
+                          <p className="text-[11px] text-slate-400">Status operacional</p>
+                        </div>
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white">{linha.quantidade}</span>
                       </div>
-                      <span className="text-sm font-semibold text-slate-900 dark:text-white">{linha.quantidade}</span>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400">Aguardando dados…</p>
+                  )}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-4">
                   Mapeamento ajustável conforme configuração do Tiny.
@@ -1927,7 +2076,7 @@ export default function DashboardPage() {
       {/* Copilot mobile-only (rendered no final do app) */}
       <div className="xl:hidden pb-12 mt-8">
         <aside
-          className="w-full min-w-0 mx-auto rounded-[32px] border border-white/60 dark:border-transparent bg-white/90 dark:bg-slate-900/70 backdrop-blur-2xl p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col gap-5 overflow-hidden"
+          className="w-full min-w-0 mx-auto rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 shadow-[0_25px_70px_rgba(15,23,42,0.12)] flex flex-col gap-5 overflow-hidden"
         >
           <div className="space-y-1">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Insights de IA</p>
@@ -1945,7 +2094,7 @@ export default function DashboardPage() {
             <div
               ref={insightsScrollRef}
               className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-6"
-              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(15,23,42,0.2) transparent', maxHeight: '50vh' }}
+              style={{ maxHeight: '50vh' }}
             >
               {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
               {!erroInsights && insights.length === 0 && !loadingInsights && (
@@ -1994,7 +2143,6 @@ export default function DashboardPage() {
             </div>
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
           </div>
-          <p className="text-[11px] text-slate-400">Fonte: Gemini · Considera visão consolidada de {GLOBAL_INTERVAL_DAYS} dias sem aplicar filtros de canal ou período.</p>
         </aside>
       </div>
     </AppLayout>

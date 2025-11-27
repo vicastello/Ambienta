@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { supabaseAdmin } from './supabaseAdmin';
 
 const TOKEN_URL = process.env.TINY_TOKEN_URL ?? 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';

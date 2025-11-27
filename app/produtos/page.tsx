@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Loader2,
@@ -9,6 +9,7 @@ import {
   Search,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 
 type Produto = {
   id: number;
@@ -48,6 +49,10 @@ const SITUACAO_CONFIG: Record<string, { label: string; color: string; bg: string
   E: { label: "Excluído", color: "text-rose-700", bg: "bg-rose-100/80" },
 };
 
+const PRODUTOS_CACHE_TTL_MS = 60_000;
+const buildProdutosCacheKey = (params: URLSearchParams) => `produtos:${params.toString()}`;
+const PRODUTOS_AUTO_REFRESH_MS = 30_000; // polling leve para aproximar "tempo real"
+
 export default function ProdutosPage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [total, setTotal] = useState(0);
@@ -57,9 +62,11 @@ export default function ProdutosPage() {
   const [searchInput, setSearchInput] = useState("");
   const [situacao, setSituacao] = useState<string>("A");
   const [page, setPage] = useState(0);
+  const produtosRequestId = useRef(0);
   const limit = 50;
 
   async function fetchProdutos() {
+    const requestId = ++produtosRequestId.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -68,16 +75,35 @@ export default function ProdutosPage() {
         limit: limit.toString(),
         offset: (page * limit).toString(),
       });
+      const cacheKey = buildProdutosCacheKey(params);
 
-      const res = await fetch(`/api/produtos?${params}`);
-      const data: ProdutosResponse = await res.json();
+      const applyData = (data: ProdutosResponse) => {
+        if (produtosRequestId.current !== requestId) return;
+        setProdutos(data.produtos);
+        setTotal(data.total);
+      };
 
-      setProdutos(data.produtos);
-      setTotal(data.total);
+      const { data } = await staleWhileRevalidate<ProdutosResponse>({
+        key: cacheKey,
+        ttlMs: PRODUTOS_CACHE_TTL_MS,
+        fetcher: async () => {
+          const res = await fetch(`/api/produtos?${params}`);
+          const json: ProdutosResponse = await res.json();
+          if (!res.ok) {
+            throw new Error((json as any)?.message ?? "Erro ao buscar produtos");
+          }
+          return json;
+        },
+        onUpdate: applyData,
+      });
+
+      applyData(data);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
     } finally {
-      setLoading(false);
+      if (produtosRequestId.current === requestId) {
+        setLoading(false);
+      }
     }
   }
 
@@ -101,6 +127,7 @@ export default function ProdutosPage() {
         alert(
           `Sincronização concluída!\n\n${data.totalSincronizados} produtos\n${data.totalNovos} novos\n${data.totalAtualizados} atualizados`
         );
+        clearCacheByPrefix("produtos:");
         fetchProdutos();
       } else {
         alert("Erro: " + (data.error || "Erro desconhecido"));
@@ -115,6 +142,14 @@ export default function ProdutosPage() {
 
   useEffect(() => {
     fetchProdutos();
+  }, [search, situacao, page]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      clearCacheByPrefix("produtos:");
+      fetchProdutos();
+    }, PRODUTOS_AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
   }, [search, situacao, page]);
 
   const formatBRL = (value: number | null) => {
@@ -166,7 +201,7 @@ export default function ProdutosPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <div className="flex-1 min-w-[300px]">
+            <div className="flex-1 min-w-[220px] w-full">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
@@ -202,200 +237,276 @@ export default function ProdutosPage() {
         </div>
 
         <div className="rounded-[32px] border border-white/60 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl overflow-hidden shadow-lg">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-slate-200 dark:border-slate-700">
-                <tr className="bg-slate-50 dark:bg-slate-800/50">
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Imagem
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Código
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Produto
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Tipo
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Preço
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Estoque
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Reservado
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Disponível
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                    Situação
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {loading ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center">
-                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" />
-                      <p className="text-sm text-slate-500 mt-2">Carregando...</p>
-                    </td>
-                  </tr>
-                ) : !produtos || produtos.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center">
-                      <Box className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-                      <p className="text-sm text-slate-500">Nenhum produto encontrado</p>
-                      <button
-                        onClick={syncProdutos}
-                        className="mt-4 text-sm text-purple-600 hover:text-purple-700 font-medium"
-                      >
-                        Sincronizar produtos
-                      </button>
-                    </td>
-                  </tr>
-                ) : (
-                  produtos.map((produto) => {
-                    const tipoConfig = TIPO_CONFIG[produto.tipo] || {
-                      label: produto.tipo,
-                      color: "bg-slate-100 text-slate-600",
-                    };
-                    const sitConfig = SITUACAO_CONFIG[produto.situacao] || SITUACAO_CONFIG.A;
-                    const disponivel = produto.disponivel ?? 0;
-                    const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
+          {loading ? (
+            <div className="px-6 py-12 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" />
+              <p className="text-sm text-slate-500 mt-2">Carregando produtos…</p>
+            </div>
+          ) : !produtos || produtos.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <Box className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+              <p className="text-sm text-slate-500">Nenhum produto encontrado</p>
+              <button
+                onClick={syncProdutos}
+                className="mt-4 text-sm text-purple-600 hover:text-purple-700 font-medium"
+              >
+                Sincronizar produtos
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="md:hidden space-y-3 p-4">
+                {produtos.map((produto) => {
+                  const tipoConfig = TIPO_CONFIG[produto.tipo] || {
+                    label: produto.tipo,
+                    color: "bg-slate-100 text-slate-600",
+                  };
+                  const sitConfig = SITUACAO_CONFIG[produto.situacao] || SITUACAO_CONFIG.A;
+                  const disponivel = produto.disponivel ?? 0;
+                  const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
 
-                    return (
-                      <tr
-                        key={produto.id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/30"
-                      >
-                        <td className="px-6 py-4">
-                          <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            {produto.imagem_url ? (
-                              <img
-                                src={produto.imagem_url}
-                                alt={produto.nome}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = "";
-                                  e.currentTarget.style.display = "none";
-                                  e.currentTarget.parentElement!.innerHTML = '<div class="text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>';
-                                }}
-                              />
-                            ) : (
-                              <Package className="w-6 h-6 text-slate-400" />
-                            )}
+                  return (
+                    <article
+                      key={produto.id}
+                      className="rounded-3xl border border-white/60 dark:border-slate-800/70 bg-white/95 dark:bg-slate-900/80 p-3 flex gap-3 shadow-sm"
+                    >
+                      <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
+                        {produto.imagem_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-5 h-5 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
                           </div>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {produto.codigo || "—"}
-                          </div>
-                          {produto.gtin && (
-                            <div className="text-xs text-slate-500">GTIN: {produto.gtin}</div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {produto.nome}
-                          </div>
-                          {produto.unidade && (
-                            <div className="text-xs text-slate-500">Un: {produto.unidade}</div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
                           <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${tipoConfig.color}`}
-                          >
-                            {tipoConfig.label}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                            {formatBRL(produto.preco)}
-                          </div>
-                          {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
-                            <div className="text-xs text-emerald-600 font-medium">
-                              {formatBRL(produto.preco_promocional)}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">
-                            {formatNumber(produto.saldo)}
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <div className="text-sm text-amber-600 font-medium">
-                            {formatNumber(produto.reservado)}
-                          </div>
-                        </td>
-
-                        <td className="px-6 py-4 text-right">
-                          <div
-                            className={`text-sm font-semibold ${
-                              disponivel <= 0
-                                ? "text-rose-600"
-                                : temEstoqueBaixo
-                                ? "text-amber-600"
-                                : "text-emerald-600"
-                            }`}
-                          >
-                            {formatNumber(produto.disponivel)}
-                          </div>
-                          {disponivel <= 0 && (
-                            <div className="text-xs text-rose-500">Sem estoque</div>
-                          )}
-                          {temEstoqueBaixo && (
-                            <div className="text-xs text-amber-500">Estoque baixo</div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${sitConfig.color} ${sitConfig.bg}`}
                           >
                             {sitConfig.label}
                           </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${tipoConfig.color}`}
+                          >
+                            {tipoConfig.label}
+                          </span>
+                          <span className="font-semibold text-slate-900 dark:text-white">{formatBRL(produto.preco)}</span>
+                          {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
+                            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                              Promo {formatBRL(produto.preco_promocional)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
+                            <p className="text-[10px] text-slate-500">Estoque</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.saldo)}</p>
+                          </div>
+                          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
+                            <p className="text-[10px] text-slate-500">Reservado</p>
+                            <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.reservado)}</p>
+                          </div>
+                          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
+                            <p className="text-[10px] text-slate-500">Disponível</p>
+                            <p
+                              className={`font-semibold ${
+                                disponivel <= 0
+                                  ? "text-rose-600"
+                                  : temEstoqueBaixo
+                                  ? "text-amber-600"
+                                  : "text-emerald-600"
+                              }`}
+                            >
+                              {formatNumber(produto.disponivel)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
 
-          {!loading && totalPages > 1 && (
-            <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between">
-              <div className="text-sm text-slate-500">
-                Página {page + 1} de {totalPages} • {total} produtos
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-slate-200 dark:border-slate-700">
+                    <tr className="bg-slate-50 dark:bg-slate-800/50">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Imagem
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Código
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Produto
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Tipo
+                      </th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Preço
+                      </th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Estoque
+                      </th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Reservado
+                      </th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Disponível
+                      </th>
+                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
+                        Situação
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {produtos.map((produto) => {
+                      const tipoConfig = TIPO_CONFIG[produto.tipo] || {
+                        label: produto.tipo,
+                        color: "bg-slate-100 text-slate-600",
+                      };
+                      const sitConfig = SITUACAO_CONFIG[produto.situacao] || SITUACAO_CONFIG.A;
+                      const disponivel = produto.disponivel ?? 0;
+                      const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
+
+                      return (
+                        <tr
+                          key={produto.id}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/30"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                              {produto.imagem_url ? (
+                                <img
+                                  src={produto.imagem_url}
+                                  alt={produto.nome}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src = "";
+                                    e.currentTarget.style.display = "none";
+                                    e.currentTarget.parentElement!.innerHTML = '<div class="text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>';
+                                  }}
+                                />
+                              ) : (
+                                <Package className="w-6 h-6 text-slate-400" />
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
+                              {produto.codigo || "—"}
+                            </div>
+                            {produto.gtin && (
+                              <div className="text-xs text-slate-500">GTIN: {produto.gtin}</div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
+                              {produto.nome}
+                            </div>
+                            {produto.unidade && (
+                              <div className="text-xs text-slate-500">Un: {produto.unidade}</div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${tipoConfig.color}`}
+                            >
+                              {tipoConfig.label}
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-4 text-right">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {formatBRL(produto.preco)}
+                            </div>
+                            {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
+                              <div className="text-xs text-emerald-600 font-medium">
+                                {formatBRL(produto.preco_promocional)}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-right">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">
+                              {formatNumber(produto.saldo)}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4 text-right">
+                            <div className="text-sm text-amber-600 font-medium">
+                              {formatNumber(produto.reservado)}
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4 text-right">
+                            <div
+                              className={`text-sm font-semibold ${
+                                disponivel <= 0
+                                  ? "text-rose-600"
+                                  : temEstoqueBaixo
+                                  ? "text-amber-600"
+                                  : "text-emerald-600"
+                              }`}
+                            >
+                              {formatNumber(produto.disponivel)}
+                            </div>
+                            {disponivel <= 0 && (
+                              <div className="text-xs text-rose-500">Sem estoque</div>
+                            )}
+                            {temEstoqueBaixo && (
+                              <div className="text-xs text-amber-500">Estoque baixo</div>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-4 text-center">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}
+                            >
+                              {sitConfig.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage(Math.max(0, page - 1))}
-                  disabled={page === 0}
-                  className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
-                >
-                  Anterior
-                </button>
-                <button
-                  onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                  disabled={page >= totalPages - 1}
-                  className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
-                >
-                  Próxima
-                </button>
-              </div>
-            </div>
+
+              {totalPages > 1 && (
+                <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between">
+                  <div className="text-sm text-slate-500">
+                    Página {page + 1} de {totalPages} • {total} produtos
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setPage(Math.max(0, page - 1))}
+                      disabled={page === 0}
+                      className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                      disabled={page >= totalPages - 1}
+                      className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

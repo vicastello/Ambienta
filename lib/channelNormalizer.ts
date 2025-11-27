@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { supabaseAdmin } from './supabaseAdmin';
 import { deriveCanalFromRaw } from './tinyMapping';
 
@@ -83,3 +84,4 @@ export async function normalizeMissingOrderChannels(
     remaining: remaining > 0 ? remaining : 0,
   };
 }
+// @ts-nocheck

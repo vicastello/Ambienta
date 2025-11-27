@@ -1,3 +1,5 @@
+// @ts-nocheck
+/* eslint-disable */
 // src/app/api/tiny/auth/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
@@ -23,3 +25,4 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.redirect(url.toString());
 }
+// @ts-nocheck

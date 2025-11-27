@@ -1,0 +1,8 @@
+# Ignore large backups and local caches to keep deploy bundle small
+backup-gestor-tiny-*.tar.gz
+*.tar.gz
+.npm-cache
+.DS_Store
+dev-cron.log
+.next
+node_modules

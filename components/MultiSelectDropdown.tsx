@@ -28,7 +28,7 @@ export function MultiSelectDropdown({
   displayFormatter,
 }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 256 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,9 +36,18 @@ export function MultiSelectDropdown({
     if (!isOpen || !buttonRef.current) return;
 
     const rect = buttonRef.current.getBoundingClientRect();
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 360;
+    const horizontalPadding = 12;
+    const maxWidth = Math.min(360, viewportWidth - horizontalPadding * 2);
+    const clampedWidth = Math.max(Math.min(rect.width, maxWidth), Math.min(240, maxWidth));
+    const left = Math.min(
+      Math.max(rect.left, horizontalPadding),
+      viewportWidth - clampedWidth - horizontalPadding
+    );
     setPosition({
       top: rect.bottom + 8,
-      left: rect.left,
+      left,
+      width: clampedWidth,
     });
   }, [isOpen]);
 
@@ -88,9 +97,9 @@ export function MultiSelectDropdown({
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 rounded-2xl border app-border-subtle bg-[var(--bg-card-soft)] text-[var(--text-main)] hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors"
+        className="flex w-full items-center gap-2 px-4 py-2 rounded-2xl border app-border-subtle bg-[var(--bg-card-soft)] text-[var(--text-main)] hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors min-w-0 justify-between"
       >
-        <span className="text-sm">{displayText}</span>
+        <span className="text-sm truncate">{displayText}</span>
         <span className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
@@ -99,10 +108,12 @@ export function MultiSelectDropdown({
         ReactDOM.createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] w-64 bg-white/60 dark:bg-slate-950/60 border border-white/40 dark:border-slate-700/40 rounded-2xl shadow-lg"
+            className="fixed z-[9999] bg-white/60 dark:bg-slate-950/60 border border-white/40 dark:border-slate-700/40 rounded-2xl shadow-lg"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,
+              width: position.width,
+              maxWidth: 'calc(100vw - 24px)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
             }}

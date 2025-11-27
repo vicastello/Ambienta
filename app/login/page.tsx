@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,15 +31,31 @@ export default function LoginPage() {
     }
 
     // Login OK → manda pra dashboard (que já já vamos criar)
-    console.log('Sessão:', data.session);
     router.push('/dashboard');
   }
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-[var(--bg-page)] text-[var(--text-main)] px-4">
       <div className="surface-panel surface-panel-soft w-full max-w-md p-8 space-y-6">
-        <div className="text-center space-y-1">
-          <p className="text-xs uppercase tracking-[0.4em] text-muted">Ambienta</p>
+        <div className="text-center space-y-3">
+          <div className="relative mx-auto h-12 w-48">
+            <Image
+              src="/brand/logo-horizontal-light.svg"
+              alt="Ambienta Tiny Gestor"
+              fill
+              className="object-contain dark:hidden"
+              sizes="192px"
+              priority
+            />
+            <Image
+              src="/brand/logo-horizontal-dark.svg"
+              alt="Ambienta Tiny Gestor"
+              fill
+              className="object-contain hidden dark:block"
+              sizes="192px"
+              priority
+            />
+          </div>
           <h1 className="text-2xl font-bold">Login – Gestor Tiny</h1>
         </div>
 

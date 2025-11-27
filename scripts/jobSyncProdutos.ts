@@ -9,7 +9,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { listarProdutos, obterProduto, obterEstoqueProduto } from "../lib/tinyApi";
+import { listarProdutos, obterEstoqueProduto } from "../lib/tinyApi";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -29,8 +29,8 @@ interface JobStats {
 }
 
 async function syncProdutosJob(
-  maxProdutos: number = 500,
-  enrichEstoque: boolean = false
+  maxProdutos: number = Number.POSITIVE_INFINITY,
+  enrichEstoque: boolean = true
 ): Promise<JobStats> {
   console.log("🔍 Buscando token de acesso...");
 
@@ -57,9 +57,30 @@ async function syncProdutosJob(
   let offset = 0;
   const limit = 100;
 
-  console.log(`🚀 Sincronizando até ${maxProdutos} produtos (estoque: ${enrichEstoque ? "SIM" : "NÃO"})\n`);
+  const forceFullSync = process.env.FORCE_FULL_SYNC === "1" || process.env.FORCE_FULL_SYNC === "true";
 
-  while (stats.totalProcessados < maxProdutos) {
+  // Busca última atualização conhecida para evitar refetch completo (a menos que forceFullSync)
+  const { data: lastUpdatedRow } = await supabase
+    .from("tiny_produtos")
+    .select("data_atualizacao_tiny")
+    .order("data_atualizacao_tiny", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let dataAlteracao: string | undefined = undefined;
+  if (!forceFullSync && lastUpdatedRow?.data_atualizacao_tiny) {
+    const base = new Date(lastUpdatedRow.data_atualizacao_tiny);
+    // margem de segurança de 12h para não perder eventos
+    base.setHours(base.getHours() - 12);
+    dataAlteracao = base.toISOString().replace('T', ' ').slice(0, 19);
+    console.log(`⏱️  Usando dataAlteracao >= ${dataAlteracao} para reduzir chamadas`);
+  } else if (forceFullSync) {
+    console.log("⏱️  Full sync forçado: ignorando dataAlteracao");
+  }
+
+  console.log(`🚀 Sincronizando produtos (estoque: ${enrichEstoque ? "SIM" : "NÃO"})\n`);
+
+  while (true) {
     try {
       console.log(`📦 Página ${Math.floor(offset / limit) + 1}...`);
 
@@ -67,39 +88,43 @@ async function syncProdutosJob(
         limit,
         offset,
         situacao: "A", // Apenas ativos
+        dataAlteracao,
       });
 
       const produtos = response?.itens || [];
 
-      if (produtos.length === 0) {
-        break;
-      }
+      if (produtos.length === 0) break;
 
       for (const produto of produtos) {
         if (stats.totalProcessados >= maxProdutos) break;
 
         try {
-          // Buscar detalhes (para imagem)
-          let produtoDetalhado: any = null;
-          try {
-            produtoDetalhado = await obterProduto(accessToken, produto.id);
-            await new Promise((resolve) => setTimeout(resolve, 250));
-          } catch (err) {
-            console.warn(`   ⚠️  Erro ao buscar detalhes ${produto.id}`);
-          }
-
           // Buscar estoque se solicitado
           let estoqueData: any = null;
           if (enrichEstoque) {
+            const delayEstoqueMs = Number(process.env.DELAY_ESTOQUE_MS || 700);
             try {
-              estoqueData = await obterEstoqueProduto(accessToken, produto.id);
-              await new Promise((resolve) => setTimeout(resolve, 250));
+              let tentativa = 0;
+              while (tentativa < 3) {
+                try {
+                  estoqueData = await obterEstoqueProduto(accessToken, produto.id);
+                  break;
+                } catch (err: any) {
+                  if (err.status === 429) {
+                    const waitMs = 8000 * (tentativa + 1);
+                    console.warn(`   ⏸️  Rate limit estoque ${produto.id}, aguardando ${waitMs / 1000}s...`);
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    tentativa++;
+                    continue;
+                  }
+                  throw err;
+                }
+              }
+              await new Promise((resolve) => setTimeout(resolve, delayEstoqueMs));
             } catch (err) {
               console.warn(`   ⚠️  Erro ao buscar estoque ${produto.id}`);
             }
           }
-
-          const primeiraImagem = produtoDetalhado?.anexos?.find((a: any) => a.url);
 
           const produtoData = {
             id_produto_tiny: produto.id,
@@ -114,7 +139,7 @@ async function syncProdutosJob(
             situacao: produto.situacao,
             tipo: produto.tipo,
             gtin: produto.gtin || null,
-            imagem_url: primeiraImagem?.url || null,
+            imagem_url: null,
             data_criacao_tiny: produto.dataCriacao || null,
             data_atualizacao_tiny: produto.dataAlteracao || null,
           };
@@ -153,18 +178,19 @@ async function syncProdutosJob(
       console.log(`   ✅ ${stats.totalProcessados} produtos processados\n`);
 
       offset += limit;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      if (stats.totalProcessados >= maxProdutos) break;
+      await new Promise((resolve) => setTimeout(resolve, Number(process.env.DELAY_PAGINA_MS || 3500)));
 
     } catch (err: any) {
       console.error(`❌ Erro na página (offset ${offset}): ${err.message}`);
-      
       if (err.status === 429) {
-        console.log("   ⏸️  Rate limit, aguardando 10s...");
-        await new Promise((resolve) => setTimeout(resolve, 10000));
-      } else {
-        stats.erros++;
-        break;
+        console.log("   ⏸️  Rate limit, aguardando 15s e tentando novamente...");
+        await new Promise((resolve) => setTimeout(resolve, 15000));
+        continue; // tenta novamente a mesma página
       }
+      stats.erros++;
+      break;
     }
   }
 
@@ -180,7 +206,8 @@ async function main() {
 
   try {
     // Sincronizar 500 produtos por execução COM ESTOQUE
-    const stats = await syncProdutosJob(500, true);
+    const max = process.env.MAX_PRODUCTS ? Number(process.env.MAX_PRODUCTS) : Number.POSITIVE_INFINITY;
+    const stats = await syncProdutosJob(max, true);
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 

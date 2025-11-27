@@ -21,6 +21,7 @@ import { mapPedidoToOrderRow } from "../lib/tinyMapping";
 import { sincronizarItensAutomaticamente } from "../lib/pedidoItensHelper";
 import { runFreteEnrichment } from "../lib/freteEnricher";
 import { normalizeMissingOrderChannels } from "../lib/channelNormalizer";
+import { enrichCidadeUfMissing } from "../lib/cidadeUfEnricher";
 
 // Configurações
 const SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 horas
@@ -147,6 +148,15 @@ async function syncPedidosAtualizados(): Promise<boolean> {
         console.log(`✅ ${canalResult.updated} canais normalizados`);
       } catch (error: any) {
         console.error('❌ Erro ao normalizar canais:', error.message);
+      }
+
+      // Preencher cidade/UF ausentes
+      console.log('\n🌎 Preenchendo cidade/UF...');
+      try {
+        const locResult = await enrichCidadeUfMissing();
+        console.log(`✅ ${locResult.updated} pedidos com cidade/UF preenchidos`);
+      } catch (error: any) {
+        console.error('❌ Erro ao preencher cidade/UF:', error.message);
       }
     }
 
