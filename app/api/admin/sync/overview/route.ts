@@ -30,8 +30,9 @@ export async function GET() {
       .order('updated_at', { ascending: false })
       .limit(1);
     if (produtosError) throw produtosError;
-    const produtosTotal = produtosAgg?.length ?? 0;
-    const produtosLastUpdated = Array.isArray(produtosAgg) && produtosAgg[0]?.updated_at ? produtosAgg[0].updated_at : null;
+      const produtosArr = (produtosAgg ?? []) as { updated_at?: string }[];
+      const produtosTotal = Array.isArray(produtosArr) ? produtosArr.length : 0;
+      const produtosLastUpdated = produtosArr[0]?.updated_at ?? null;
 
     // sync_settings: tiny_orders_incremental
     const { data: settingsAgg, error: settingsError } = await supabaseAdmin
