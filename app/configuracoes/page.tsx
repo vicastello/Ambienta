@@ -1,765 +1,1486 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import type { CalendarDayStatus } from '@/app/api/admin/sync/calendar/route';
 
-type SyncJob = {
-  id: string;
-  started_at: string;
-  finished_at: string | null;
-  status: string;
-  error: string | null;
-  params: any;
-  total_requests: number | null;
-  total_orders: number | null;
+type SyncOverviewResponse = {
+  orders: {
+    total: number;
+    firstDate: string | null;
+    lastDate: string | null;
+    withoutItems: number;
+    withoutFrete: number;
+  };
+  produtos: {
+    total: number;
+    lastUpdatedAt: string | null;
+    withoutImage: number;
+  };
 };
 
-type SyncLog = {
-  id: number;
-  job_id: string;
-  created_at: string;
+type SyncLogEntry = {
+  id: string;
+  createdAt: string;
+  level: string;
+  type: string;
+  message: string;
+  meta: Record<string, any> | null;
+  jobId: string | null;
+};
+
+type CronStatusStep = {
+  name: 'orders' | 'enrich' | 'produtos';
+  createdAt: string;
   level: string;
   message: string;
-  meta: any;
+  meta: Record<string, any> | null;
+  ok: boolean;
 };
 
-type SyncSettings = {
-  auto_sync_enabled: boolean;
-  auto_sync_window_days: number;
+type CronStatusConfig = {
+  cron_dias_recent_orders: number;
+  cron_produtos_limit: number;
+  cron_enrich_enabled: boolean;
+  cron_produtos_enabled: boolean;
+  cron_produtos_enrich_estoque: boolean;
+};
+
+type CronSettingsState = {
+  cronDiasRecentOrders: number;
+  cronProdutosLimit: number;
+  cronEnrichEnabled: boolean;
+  cronProdutosEnabled: boolean;
+  cronProdutosEnrichEstoque: boolean;
+};
+
+type CronStatusResponse = {
+  lastRunAt: string | null;
+  lastRunOk: boolean | null;
+  lastError: string | null;
+  steps: CronStatusStep[];
+  cronTrigger: { createdAt: string; message: string; level: string } | null;
+  schedule: {
+    enabled: boolean;
+    expression: string;
+    description: string;
+    defaults: { diasRecentes: number; produtosLimit: number; enrichEstoque: boolean };
+  };
+  config?: CronStatusConfig;
+};
+type LogFilter = 'all' | 'orders' | 'enrich' | 'produtos';
+
+const LOG_FILTERS: { label: string; value: LogFilter }[] = [
+  { label: 'Todos', value: 'all' },
+  { label: 'Pedidos', value: 'orders' },
+  { label: 'Enrich', value: 'enrich' },
+  { label: 'Produtos', value: 'produtos' },
+];
+
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+const CALENDAR_STATUS_ORDER: CalendarDayStatus['status'][] = ['success', 'error', 'none'];
+
+const CALENDAR_STATUS_META: Record<
+  CalendarDayStatus['status'],
+  { label: string; badgeClass: string; surfaceClass: string; dotClass: string }
+> = {
+  success: {
+    label: 'Sincronizado',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-100',
+    surfaceClass: 'border-emerald-300 bg-transparent',
+    dotClass: 'bg-emerald-500',
+  },
+  error: {
+    label: 'Erro',
+    badgeClass: 'bg-red-50 text-red-700 border border-red-100',
+    surfaceClass: 'border-red-300 bg-transparent',
+    dotClass: 'bg-red-500',
+  },
+  none: {
+    label: 'Sem sync',
+    badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+    surfaceClass: 'border-white/20 bg-transparent',
+    dotClass: 'bg-slate-400',
+  },
+};
+
+const SECTION_PANEL_CLASS = 'glass-tint rounded-3xl border border-white/25 backdrop-blur-xl';
+const CARD_PANEL_CLASS = 'glass-tint rounded-2xl border border-white/15 backdrop-blur-lg';
+const CRON_STEP_LABELS: Record<CronStatusStep['name'], string> = {
+  orders: 'Pedidos recentes',
+  enrich: 'Enrich background',
+  produtos: 'Produtos/estoque',
+};
+const CRON_SETTINGS_DEFAULTS: CronSettingsState = {
+  cronDiasRecentOrders: 2,
+  cronProdutosLimit: 30,
+  cronEnrichEnabled: true,
+  cronProdutosEnabled: true,
+  cronProdutosEnrichEstoque: true,
 };
 
 export default function ConfiguracoesPage() {
-  // Tiny OAuth
   const [connecting, setConnecting] = useState(false);
-
-  function handleConnectTiny() {
+  const handleConnectTiny = () => {
     setConnecting(true);
     window.location.href = '/api/tiny/auth/login';
-  }
-
-  // Sync + logs
-  const [dataInicial, setDataInicial] = useState('');
-  const [dataFinal, setDataFinal] = useState('');
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncErro, setSyncErro] = useState<string | null>(null);
-  const [syncOk, setSyncOk] = useState<string | null>(null);
-  // Enriquecimento manual (itens/imagens)
-  const [enrichLastNumber, setEnrichLastNumber] = useState<number>(10);
-  const [enrichNumeroPedido, setEnrichNumeroPedido] = useState<string>('');
-  const [enrichLoading, setEnrichLoading] = useState(false);
-  const [enrichResult, setEnrichResult] = useState<any>(null);
-  const [enrichError, setEnrichError] = useState<string | null>(null);
-
-  const [jobs, setJobs] = useState<SyncJob[]>([]);
-  const [logs, setLogs] = useState<SyncLog[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
-
-  // Settings (auto sync)
-  const [settings, setSettings] = useState<SyncSettings | null>(null);
-  const [savingSettings, setSavingSettings] = useState(false);
-
-  // Progresso mensal (carga por mês)
-  type MonthProgress = {
-    year: number;
-    month: number;
-    start: string;
-    end: string;
-    db_count: number;
-    tiny_total: number | null;
-    percent: number | null;
   };
 
-  const now = new Date();
-  const anoAtual = now.getFullYear();
-  const mesAtual = now.getMonth() + 1; // 1-12
-  const [progressYear, setProgressYear] = useState<number>(anoAtual);
-  const [progress, setProgress] = useState<MonthProgress[]>([]);
-  const [progressLoading, setProgressLoading] = useState<boolean>(false);
-  const [progressErro, setProgressErro] = useState<string | null>(null);
+  const [overview, setOverview] = useState<SyncOverviewResponse | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
 
-  function monthLabel(year: number, month: number) {
-    return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', {
-      month: 'long',
-      year: 'numeric',
-    });
-  }
-
-  function pad2(n: number) {
-    return n < 10 ? `0${n}` : String(n);
-  }
-
-  async function carregarProgresso(ano?: number) {
+  const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    setOverviewError(null);
     try {
-      setProgressLoading(true);
-      setProgressErro(null);
-      const y = typeof ano === 'number' ? ano : progressYear;
-      const months = Array.from({ length: 12 }, (_, i) => i + 1).join(',');
-      const res = await fetch(
-        `/api/tiny/sync/monthly/progress?year=${y}&months=${months}`
-      );
+      const res = await fetch('/api/admin/sync/overview', { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(
-          json?.details || json?.message || 'Erro ao carregar progresso mensal.'
-        );
+        throw new Error(json?.error ?? 'Erro ao consultar overview');
       }
-      setProgress(json.months || []);
-    } catch (e: any) {
-      setProgressErro(e?.message ?? 'Erro inesperado ao carregar progresso.');
-      setProgress([]);
+      setOverview(json);
+    } catch (error: any) {
+      console.error('[config] overview', error);
+      setOverview(null);
+      setOverviewError(error?.message ?? 'Erro ao carregar status');
     } finally {
-      setProgressLoading(false);
+      setOverviewLoading(false);
     }
-  }
+  }, []);
 
-  async function carregarSettings() {
+  const [logs, setLogs] = useState<SyncLogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logFilter, setLogFilter] = useState<LogFilter>('all');
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  const [calendarMonthKey, setCalendarMonthKey] = useState(() => formatMonthKey(new Date()));
+  const [calendarDays, setCalendarDays] = useState<CalendarDayStatus[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  const calendarMonthDate = useMemo(() => parseMonthKey(calendarMonthKey), [calendarMonthKey]);
+  const [cronStatus, setCronStatus] = useState<CronStatusResponse | null>(null);
+  const [cronStatusLoading, setCronStatusLoading] = useState(false);
+  const [cronStatusError, setCronStatusError] = useState<string | null>(null);
+  const [cronSettings, setCronSettings] = useState<CronSettingsState | null>(null);
+  const [cronSettingsDraft, setCronSettingsDraft] = useState<CronSettingsState | null>(null);
+  const [cronSettingsLoading, setCronSettingsLoading] = useState(false);
+  const [cronSettingsError, setCronSettingsError] = useState<string | null>(null);
+  const [cronSettingsSaving, setCronSettingsSaving] = useState(false);
+  const cronStatusConfig = useMemo<CronSettingsState | null>(() => {
+    if (!cronStatus?.config) return null;
+    return {
+      cronDiasRecentOrders:
+        cronStatus.config.cron_dias_recent_orders ?? CRON_SETTINGS_DEFAULTS.cronDiasRecentOrders,
+      cronProdutosLimit:
+        cronStatus.config.cron_produtos_limit ?? CRON_SETTINGS_DEFAULTS.cronProdutosLimit,
+      cronEnrichEnabled:
+        typeof cronStatus.config.cron_enrich_enabled === 'boolean'
+          ? cronStatus.config.cron_enrich_enabled
+          : CRON_SETTINGS_DEFAULTS.cronEnrichEnabled,
+      cronProdutosEnabled:
+        typeof cronStatus.config.cron_produtos_enabled === 'boolean'
+          ? cronStatus.config.cron_produtos_enabled
+          : CRON_SETTINGS_DEFAULTS.cronProdutosEnabled,
+      cronProdutosEnrichEstoque:
+        typeof cronStatus.config.cron_produtos_enrich_estoque === 'boolean'
+          ? cronStatus.config.cron_produtos_enrich_estoque
+          : CRON_SETTINGS_DEFAULTS.cronProdutosEnrichEstoque,
+    };
+  }, [cronStatus]);
+  const cronConfigInUse = cronSettings ?? cronStatusConfig ?? CRON_SETTINGS_DEFAULTS;
+  const cronFormReady = Boolean(cronSettingsDraft);
+
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setLogsError(null);
     try {
-      const res = await fetch('/api/tiny/sync/settings');
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(
-          json?.details ||
-            json?.message ||
-            'Erro ao carregar configurações.'
-        );
-      }
-
-      setSettings({
-        auto_sync_enabled: !!json.auto_sync_enabled,
-        auto_sync_window_days:
-          Number(json.auto_sync_window_days ?? 2) || 2,
+      const params = new URLSearchParams();
+      params.set('limit', '50');
+      if (logFilter !== 'all') params.set('type', logFilter);
+      const res = await fetch(`/api/admin/sync/logs?${params.toString()}`, {
+        cache: 'no-store',
       });
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function updateSettings(patch: Partial<SyncSettings>) {
-    if (!settings) return;
-    try {
-      setSavingSettings(true);
-      const body: any = {};
-      if (patch.auto_sync_enabled !== undefined) {
-        body.auto_sync_enabled = patch.auto_sync_enabled;
-      }
-      if (patch.auto_sync_window_days !== undefined) {
-        body.auto_sync_window_days = patch.auto_sync_window_days;
-      }
-
-      const res = await fetch('/api/tiny/sync/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
       const json = await res.json();
-
       if (!res.ok) {
-        throw new Error(
-          json?.details ||
-            json?.message ||
-            'Erro ao salvar configurações.'
-        );
+        throw new Error(json?.error ?? 'Erro ao consultar logs');
       }
-
-      setSettings({
-        auto_sync_enabled: !!json.auto_sync_enabled,
-        auto_sync_window_days:
-          Number(json.auto_sync_window_days ?? 2) || 2,
-      });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSavingSettings(false);
-    }
-  }
-
-  async function carregarLogs() {
-    try {
-      setLogsLoading(true);
-      const res = await fetch('/api/tiny/sync/logs');
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(
-          json?.details ||
-            json?.message ||
-            'Erro ao carregar logs.'
-        );
-      }
-
-      setJobs(json.jobs ?? []);
       setLogs(json.logs ?? []);
-    } catch (e) {
-      console.error(e);
+    } catch (error: any) {
+      console.error('[config] logs', error);
+      setLogs([]);
+      setLogsError(error?.message ?? 'Erro ao carregar logs');
     } finally {
       setLogsLoading(false);
     }
-  }
+  }, [logFilter]);
 
-  async function dispararSync(extraBody?: any) {
+  const fetchCalendar = useCallback(async () => {
+    setCalendarLoading(true);
+    setCalendarError(null);
     try {
-      setSyncLoading(true);
-      setSyncErro(null);
-      setSyncOk(null);
-
-      const body: any = extraBody ? { ...extraBody } : {};
-
-      // se não veio modo, ou for 'range', usa o intervalo do formulário
-      if (!body.mode || body.mode === 'range') {
-        body.mode = 'range';
-        if (dataInicial) body.dataInicial = dataInicial;
-        if (dataFinal) body.dataFinal = dataFinal;
-      }
-
-      const res = await fetch('/api/tiny/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+      const params = new URLSearchParams();
+      params.set('month', calendarMonthKey);
+      const res = await fetch(`/api/admin/sync/calendar?${params.toString()}`, {
+        cache: 'no-store',
       });
-
       const json = await res.json();
-
       if (!res.ok) {
-        throw new Error(
-          json?.details ||
-            json?.message ||
-            'Erro ao iniciar sincronização.'
-        );
+        throw new Error(json?.error ?? 'Erro ao consultar calendário');
       }
-
-      setSyncOk(
-        `Job ${json.jobId} (${json.mode}) iniciado. Pedidos lidos: ${json.totalOrders}`
-      );
-      await carregarLogs();
-    } catch (e: any) {
-      setSyncErro(e?.message ?? 'Erro inesperado ao sincronizar.');
+      setCalendarDays(json.days ?? []);
+    } catch (error: any) {
+      console.error('[config] calendar', error);
+      setCalendarDays([]);
+      setCalendarError(error?.message ?? 'Erro ao carregar calendário');
     } finally {
-      setSyncLoading(false);
+      setCalendarLoading(false);
     }
-  }
-
-  useEffect(() => {
-    carregarSettings();
-    carregarLogs();
-    carregarProgresso(anoAtual);
+  }, [calendarMonthKey]);
+  const fetchCronStatus = useCallback(async () => {
+    setCronStatusLoading(true);
+    setCronStatusError(null);
+    try {
+      const res = await fetch('/api/admin/cron/status', { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error ?? 'Erro ao consultar status do cron');
+      }
+      setCronStatus(json);
+    } catch (error: any) {
+      console.error('[config] cron-status', error);
+      setCronStatus(null);
+      setCronStatusError(error?.message ?? 'Erro ao consultar status automático');
+    } finally {
+      setCronStatusLoading(false);
+    }
   }, []);
 
-  const ultimoJob = jobs[0];
-  const janelaPadrao =
-    settings?.auto_sync_window_days && settings.auto_sync_window_days > 0
-      ? settings.auto_sync_window_days
-      : 2;
+  const normalizeCronSettingsResponse = useCallback((payload: Record<string, any> | null | undefined): CronSettingsState => {
+    const positive = (value: unknown, fallback: number) => {
+      const parsed = typeof value === 'string' ? Number(value) : Number(value ?? NaN);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    };
+
+    return {
+      cronDiasRecentOrders: positive(payload?.cron_dias_recent_orders, CRON_SETTINGS_DEFAULTS.cronDiasRecentOrders),
+      cronProdutosLimit: positive(payload?.cron_produtos_limit, CRON_SETTINGS_DEFAULTS.cronProdutosLimit),
+      cronEnrichEnabled:
+        typeof payload?.cron_enrich_enabled === 'boolean'
+          ? payload.cron_enrich_enabled
+          : CRON_SETTINGS_DEFAULTS.cronEnrichEnabled,
+      cronProdutosEnabled:
+        typeof payload?.cron_produtos_enabled === 'boolean'
+          ? payload.cron_produtos_enabled
+          : CRON_SETTINGS_DEFAULTS.cronProdutosEnabled,
+      cronProdutosEnrichEstoque:
+        typeof payload?.cron_produtos_enrich_estoque === 'boolean'
+          ? payload.cron_produtos_enrich_estoque
+          : CRON_SETTINGS_DEFAULTS.cronProdutosEnrichEstoque,
+    };
+  }, []);
+
+  const fetchCronSettings = useCallback(async () => {
+    setCronSettingsLoading(true);
+    setCronSettingsError(null);
+    try {
+      const res = await fetch('/api/admin/cron/settings', { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error ?? 'Erro ao consultar configurações do cron');
+      }
+      const normalized = normalizeCronSettingsResponse(json);
+      setCronSettings(normalized);
+      setCronSettingsDraft(normalized);
+    } catch (error: any) {
+      console.error('[config] cron-settings', error);
+      setCronSettings(null);
+      setCronSettingsDraft(null);
+      setCronSettingsError(error?.message ?? 'Erro ao carregar configurações automáticas');
+    } finally {
+      setCronSettingsLoading(false);
+    }
+  }, [normalizeCronSettingsResponse]);
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  useEffect(() => {
+    fetchCalendar();
+  }, [fetchCalendar]);
+  useEffect(() => {
+    fetchCronStatus();
+  }, [fetchCronStatus]);
+
+  useEffect(() => {
+    fetchCronSettings();
+  }, [fetchCronSettings]);
+
+  const handleMonthNavigation = (delta: number) => {
+    setCalendarMonthKey((current: string) => {
+      const base = parseMonthKey(current);
+      base.setMonth(base.getMonth() + delta);
+      return formatMonthKey(base);
+    });
+  };
+
+  const [recentDays, setRecentDays] = useState(2);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [enrichLastCount, setEnrichLastCount] = useState(10);
+  const [enrichNumeroPedido, setEnrichNumeroPedido] = useState('');
+  const [produtosDays, setProdutosDays] = useState(30);
+
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSyncingOrders, setIsSyncingOrders] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [isSyncingProdutos, setIsSyncingProdutos] = useState(false);
+  const [postSyncRunning, setPostSyncRunning] = useState(false);
+  const [syncingDay, setSyncingDay] = useState<string | null>(null);
+  const postSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineResult, setPipelineResult] = useState<any>(null);
+  const refreshAll = useCallback(() => {
+    fetchOverview();
+    fetchLogs();
+    fetchCalendar();
+    fetchCronStatus();
+    fetchCronSettings();
+  }, [fetchOverview, fetchLogs, fetchCalendar, fetchCronStatus, fetchCronSettings]);
+
+  const postJson = useCallback(
+    async (url: string, body: Record<string, any>, extraHeaders?: HeadersInit) => {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body ?? {}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.details ?? json?.message ?? json?.error ?? 'Erro inesperado');
+      }
+      return json;
+    },
+    []
+  );
+
+  const executeBackgroundEnrich = useCallback(async () => {
+    const res = await fetch('/api/tiny/sync/enrich-background', { cache: 'no-store' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json?.error ?? 'Erro ao executar enrich background');
+    }
+    return json;
+  }, []);
+
+  const executeProdutosSync = useCallback(async () => {
+    const res = await fetch('/api/admin/sync/produtos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: produtosDays, enrichEstoque: true }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json?.message ?? 'Falha ao sincronizar produtos');
+    }
+    return json;
+  }, [produtosDays]);
+
+  const renderCronStatusBadge = (ok?: boolean | null) => {
+    if (ok === undefined || ok === null) {
+      return (
+        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-xs font-semibold">
+          Sem dados
+        </span>
+      );
+    }
+    if (ok) {
+      return (
+        <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-semibold">
+          Sucesso
+        </span>
+      );
+    }
+    return (
+      <span className="px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-100 text-xs font-semibold">
+        Erro
+      </span>
+    );
+  };
+
+  const formatYesNo = (value: boolean) => (value ? 'Sim' : 'Não');
+
+  const updateCronSettingsDraft = useCallback(
+    (patch: Partial<CronSettingsState>) => {
+      setCronSettingsDraft((prev) => {
+        const base = prev ?? cronSettings ?? null;
+        if (!base) {
+          return prev;
+        }
+        return { ...base, ...patch } as CronSettingsState;
+      });
+    },
+    [cronSettings]
+  );
+
+  const handleCronNumberChange = useCallback(
+    (field: 'cronDiasRecentOrders' | 'cronProdutosLimit') =>
+      (event: ChangeEvent<HTMLInputElement>) => {
+        const raw = event.target.valueAsNumber;
+        const sanitized = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
+        updateCronSettingsDraft({ [field]: sanitized } as Partial<CronSettingsState>);
+      },
+    [updateCronSettingsDraft]
+  );
+
+  const handleCronToggleChange = useCallback(
+    (field: 'cronEnrichEnabled' | 'cronProdutosEnabled' | 'cronProdutosEnrichEstoque') =>
+      (event: ChangeEvent<HTMLInputElement>) => {
+        updateCronSettingsDraft({ [field]: event.target.checked } as Partial<CronSettingsState>);
+      },
+    [updateCronSettingsDraft]
+  );
+
+  const runManualPipeline = async () => {
+    setPipelineRunning(true);
+    setPipelineResult(null);
+    try {
+      const result = await postJson('/api/admin/cron/run-sync', {});
+      setPipelineResult(result);
+      handleActionSuccess('Pipeline completo executado manualmente.');
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setPipelineRunning(false);
+    }
+  };
+
+  const handleActionSuccess = useCallback(
+    (message: string) => {
+      setActionMessage(message);
+      setActionError(null);
+      refreshAll();
+    },
+    [refreshAll]
+  );
+
+  const handleActionError = useCallback((error: any) => {
+    setActionError(error?.message ?? 'Erro ao executar ação');
+    setActionMessage(null);
+  }, []);
+
+  const saveCronSettings = useCallback(async () => {
+    if (!cronSettingsDraft) {
+      setCronSettingsError('Configurações automáticas ainda não carregadas.');
+      return;
+    }
+
+    setCronSettingsSaving(true);
+    setCronSettingsError(null);
+
+    try {
+      const payload = {
+        cron_dias_recent_orders: cronSettingsDraft.cronDiasRecentOrders,
+        cron_produtos_limit: cronSettingsDraft.cronProdutosLimit,
+        cron_enrich_enabled: cronSettingsDraft.cronEnrichEnabled,
+        cron_produtos_enabled: cronSettingsDraft.cronProdutosEnabled,
+        cron_produtos_enrich_estoque: cronSettingsDraft.cronProdutosEnrichEstoque,
+      };
+
+      const res = await fetch('/api/admin/cron/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error ?? 'Erro ao salvar configurações automáticas');
+      }
+
+      const normalized = normalizeCronSettingsResponse(json);
+      setCronSettings(normalized);
+      setCronSettingsDraft(normalized);
+      handleActionSuccess('Configurações automáticas salvas.');
+    } catch (error: any) {
+      console.error('[config] save-cron-settings', error);
+      setCronSettingsError(error?.message ?? 'Erro ao salvar configurações automáticas');
+      handleActionError(error);
+    } finally {
+      setCronSettingsSaving(false);
+    }
+  }, [cronSettingsDraft, handleActionError, handleActionSuccess, normalizeCronSettingsResponse]);
+
+  const runPostSyncWork = useCallback(async () => {
+    setPostSyncRunning(true);
+    setActionError(null);
+    setActionMessage('Sincronização finalizada. Rodando enrichment automático (frete + produtos)...');
+
+    let hadError = false;
+    let freteOk = false;
+
+    try {
+      await executeBackgroundEnrich();
+      freteOk = true;
+    } catch (error: any) {
+      hadError = true;
+      setActionError(error?.message ?? 'Erro ao enriquecer frete automaticamente');
+    }
+
+    let produtosOk = false;
+
+    try {
+      await executeProdutosSync();
+      produtosOk = true;
+    } catch (error: any) {
+      hadError = true;
+      setActionError(error?.message ?? 'Erro ao sincronizar produtos automaticamente');
+    }
+
+    if (!hadError && freteOk) {
+      setActionMessage(
+        produtosOk
+          ? 'Frete e produtos sincronizados automaticamente.'
+          : 'Frete enriquecido automaticamente; verifique o endpoint de produtos.'
+      );
+    }
+
+    setPostSyncRunning(false);
+    refreshAll();
+  }, [executeBackgroundEnrich, executeProdutosSync, refreshAll]);
+
+  const triggerPostSyncEnrichment = useCallback(() => {
+    postSyncQueueRef.current = postSyncQueueRef.current
+      .catch(() => {})
+      .then(runPostSyncWork);
+    return postSyncQueueRef.current;
+  }, [runPostSyncWork]);
+
+  const syncRecentOrders = async () => {
+    if (recentDays <= 0) {
+      setActionError('Informe um número válido de dias.');
+      return;
+    }
+    setIsSyncingOrders(true);
+    try {
+      const result = await postJson('/api/tiny/sync', {
+        mode: 'recent',
+        diasRecentes: recentDays,
+      });
+      handleActionSuccess(`Sync de ${recentDays} dias disparada (job ${result.jobId ?? 'n/d'})`);
+      await triggerPostSyncEnrichment();
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsSyncingOrders(false);
+    }
+  };
+
+  const syncFullOrders = async () => {
+    setIsSyncingOrders(true);
+    try {
+      const result = await postJson('/api/tiny/sync', { mode: 'full' });
+      handleActionSuccess(`Carga completa disparada (job ${result.jobId ?? 'n/d'})`);
+      await triggerPostSyncEnrichment();
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsSyncingOrders(false);
+    }
+  };
+
+  const syncRangeOrders = async () => {
+    if (!rangeStart || !rangeEnd) {
+      setActionError('Informe data inicial e final.');
+      return;
+    }
+    setIsSyncingOrders(true);
+    try {
+      const result = await postJson('/api/tiny/sync', {
+        mode: 'range',
+        dataInicial: rangeStart,
+        dataFinal: rangeEnd,
+      });
+      handleActionSuccess(`Janela ${rangeStart} → ${rangeEnd} sincronizada (job ${result.jobId ?? 'n/d'})`);
+      await triggerPostSyncEnrichment();
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsSyncingOrders(false);
+    }
+  };
+
+  const syncSpecificDay = async (isoDate: string) => {
+    setSyncingDay(isoDate);
+    try {
+      const result = await postJson('/api/tiny/sync', {
+        mode: 'range',
+        dataInicial: isoDate,
+        dataFinal: isoDate,
+      });
+      handleActionSuccess(`Dia ${formatDate(isoDate)} sincronizado (job ${result.jobId ?? 'n/d'})`);
+      await triggerPostSyncEnrichment();
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setSyncingDay(null);
+    }
+  };
+
+  const enrichLastOrders = async () => {
+    if (enrichLastCount <= 0) {
+      setActionError('Informe um número válido de pedidos.');
+      return;
+    }
+    setIsEnriching(true);
+    try {
+      await postJson('/api/tiny/enrich', { mode: 'last', last: enrichLastCount, delayMs: 500 });
+      handleActionSuccess(`Enriquecimento dos últimos ${enrichLastCount} pedidos iniciado.`);
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  const enrichByNumero = async () => {
+    if (!enrichNumeroPedido.trim()) {
+      setActionError('Informe o número do pedido Tiny.');
+      return;
+    }
+    setIsEnriching(true);
+    try {
+      await postJson('/api/tiny/enrich', {
+        mode: 'numero',
+        numeroPedido: enrichNumeroPedido.trim(),
+        delayMs: 500,
+      });
+      handleActionSuccess(`Pedido ${enrichNumeroPedido.trim()} colocado na fila de enrichment.`);
+      setEnrichNumeroPedido('');
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  const runBackgroundEnrich = async () => {
+    setIsEnriching(true);
+    try {
+      await executeBackgroundEnrich();
+      handleActionSuccess('Rodada de enrichment em background concluída.');
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  const syncProdutos = async () => {
+    setIsSyncingProdutos(true);
+    try {
+      const result = await executeProdutosSync();
+      console.warn('[config] produtos sync result', result);
+      handleActionSuccess('Produtos sincronizados com sucesso.');
+    } catch (error) {
+      console.error('[config] sync-produtos', error);
+      setActionError('Falha ao sincronizar produtos. Veja os logs de sincronização.');
+      setActionMessage(null);
+    } finally {
+      setIsSyncingProdutos(false);
+    }
+  };
+
+  const ordersRangeLabel = useMemo(() => {
+    if (!overview) return 'Sem dados';
+    const { firstDate, lastDate } = overview.orders;
+    if (!firstDate || !lastDate) return 'Sem dados';
+    return `${formatDate(firstDate)} → ${formatDate(lastDate)}`;
+  }, [overview]);
+
+  const calendarCells = useMemo(
+    () => buildCalendarGrid(calendarMonthDate, calendarDays),
+    [calendarMonthDate, calendarDays]
+  );
+
+  const calendarMonthLabel = useMemo(
+    () => formatCalendarLabel(calendarMonthDate),
+    [calendarMonthDate]
+  );
 
   return (
     <AppLayout title="Configurações">
       <div className="app-shell">
-        <div className="app-shell-inner max-w-5xl">
-          <h1 className="text-2xl font-semibold tracking-tight mb-2">
-            Configurações
-          </h1>
+        <div className="app-shell-inner max-w-6xl space-y-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
 
-          {/* Card: conexão com Tiny v3 */}
-          <div className="app-card p-4 space-y-3">
-            <h2 className="text-sm font-semibold">
-              Conexão com Tiny API v3
-            </h2>
-            <p className="text-xs text-[var(--text-muted)]">
-              Clique no botão abaixo para conectar este painel à sua
-              conta Tiny, usando o fluxo de autorização (OAuth2) da API v3.
-            </p>
-            <button
-              disabled={connecting}
-              onClick={handleConnectTiny}
-              className="px-4 py-2 rounded-2xl bg-sky-500 text-white text-xs font-semibold disabled:opacity-60 shadow-lg shadow-sky-500/40 hover:bg-sky-400"
-            >
-              {connecting
-                ? 'Redirecionando para o Tiny...'
-                : 'Conectar com Tiny v3'}
-            </button>
-          </div>
+          <TinyConnectionCard connecting={connecting} onConnect={handleConnectTiny} />
 
-          {/* Card: sincronização para o banco + auto sync */}
-          <div className="app-card p-4 space-y-4">
-            <div className="flex items-center justify-between gap-4">
+          <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-6 text-slate-900`}>
+            <div className="flex flex-col gap-3">
               <div>
-                <h2 className="text-sm font-semibold">
-                  Sincronizar pedidos do Tiny para o banco
-                </h2>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Aqui você puxa os pedidos do Tiny v3 e grava em um banco
-                  próprio (Supabase). O dashboard lê desse banco, sem bater
-                  na API do Tiny toda vez. A sincronização respeita os limites
-                  de requisição do Tiny.
+                <h2 className="text-lg font-semibold text-slate-900">Sincronização automática (Supabase)</h2>
+                <p className="text-sm text-slate-600">
+                  O Supabase pg_cron chama <code className="font-mono text-xs">public.cron_run_tiny_sync()</code> a cada 15 minutos (expressão
+                  <code className="ml-1 text-xs">*/15 * * * *</code>) e esse job aciona <code className="font-mono text-xs">POST /api/admin/cron/run-sync</code> com os
+                  defaults abaixo. Os cartões seguintes continuam disponíveis para disparos manuais mais específicos.
                 </p>
               </div>
+              {cronStatusError && <p className="text-sm text-red-500">{cronStatusError}</p>}
+            </div>
 
-              {/* Toggle auto sync */}
-              <div className="flex flex-col items-end gap-1 text-xs">
-                <span className="text-[var(--text-muted)]">
-                  Sincronização automática
-                </span>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className={`${CARD_PANEL_CLASS} p-5 space-y-4`}>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Status do cron (Supabase)</p>
+                      <p className="text-xs text-slate-500">Última execução automática registrada</p>
+                    </div>
+                    <button
+                      onClick={fetchCronStatus}
+                      className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-medium bg-slate-900/5 hover:bg-slate-900/10 text-slate-900"
+                      disabled={cronStatusLoading}
+                    >
+                      {cronStatusLoading ? 'Atualizando…' : 'Atualizar'}
+                    </button>
+                  </div>
+                  <div className="text-2xl font-semibold text-slate-900">
+                    {cronStatus?.lastRunAt ? formatDateTime(cronStatus.lastRunAt) : 'Sem registros ainda'}
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {renderCronStatusBadge(cronStatus?.lastRunOk)}
+                    {cronStatus?.cronTrigger && (
+                      <span className="text-xs text-slate-500">
+                        Trigger pg_cron em {formatDateTime(cronStatus.cronTrigger.createdAt)}
+                      </span>
+                    )}
+                  </div>
+                  {cronStatus?.lastError && (
+                    <p className="text-xs text-red-600">Último erro: {cronStatus.lastError}</p>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-white/20 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500">Defaults usados automaticamente</p>
+                  <ul className="text-xs text-slate-600 list-disc list-inside space-y-1">
+                    <li>Pedidos recentes (mode <code className="font-mono">recent</code>) olhando os últimos {cronStatus?.schedule?.defaults?.diasRecentes ?? 2} dias.</li>
+                    <li>Enrich background em sequência (itens + frete + canais + cidade/UF).</li>
+                    <li>
+                      Produtos sincronizados com limite {cronStatus?.schedule?.defaults?.produtosLimit ?? 30} e{' '}
+                      {cronStatus?.schedule?.defaults?.enrichEstoque === false ? 'sem' : 'com'} enrich de estoque.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="pt-3 border-t border-white/20 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500">Config em uso</p>
+                  {cronSettingsLoading && !cronSettings ? (
+                    <p className="text-xs text-slate-500">Carregando configurações salvas…</p>
+                  ) : (
+                    <ul className="text-xs text-slate-600 list-disc list-inside space-y-1">
+                      <li>{cronConfigInUse.cronDiasRecentOrders} dias recentes de pedidos</li>
+                      <li>Limite de {cronConfigInUse.cronProdutosLimit} produtos por rodada</li>
+                      <li>Enrich automático: {formatYesNo(cronConfigInUse.cronEnrichEnabled)}</li>
+                      <li>Sync de produtos automático: {formatYesNo(cronConfigInUse.cronProdutosEnabled)}</li>
+                      <li>Atualizar estoque dos produtos: {formatYesNo(cronConfigInUse.cronProdutosEnrichEstoque)}</li>
+                    </ul>
+                  )}
+                </div>
+
+                {cronStatus?.steps?.length ? (
+                  <div className="pt-3 border-t border-white/20 space-y-2">
+                    <p className="text-xs font-semibold text-slate-500">Última execução</p>
+                    <div className="space-y-2">
+                      {cronStatus.steps.map((step) => (
+                        <div key={step.name} className="flex items-center justify-between text-xs">
+                          <div className="text-slate-600">
+                            <span className="font-semibold text-slate-800">{CRON_STEP_LABELS[step.name]}</span>
+                            <span className="block text-[11px] text-slate-500">{step.meta?.processed ?? step.meta?.updated ?? '--'} itens</span>
+                          </div>
+                          {step.ok ? (
+                            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">OK</span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">Erro</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className={`${CARD_PANEL_CLASS} p-5 space-y-4`}>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Executar pipeline completo agora</h3>
+                  <p className="text-sm text-slate-600">
+                    Replica exatamente o que o cron automático faz (pedidos recentes → enrich → produtos) usando as MESMAS configurações salvas abaixo (dias recentes, limite de produtos, flags de enrich). Use quando precisar adiantar o processamento entre as execuções de 15 min.
+                  </p>
+                </div>
                 <button
-                  disabled={!settings || savingSettings}
-                  onClick={() =>
-                    settings &&
-                    updateSettings({
-                      auto_sync_enabled: !settings.auto_sync_enabled,
-                    })
-                  }
-                  className={
-                    'flex items-center px-3 py-1 rounded-full border text-[11px] transition-colors ' +
-                    (settings?.auto_sync_enabled
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                      : 'bg-slate-800 text-slate-200 border-slate-600')
-                  }
+                  onClick={runManualPipeline}
+                  disabled={pipelineRunning}
+                  className={`inline-flex items-center justify-center w-full px-4 py-2 rounded-full text-sm font-semibold text-white shadow-inner shadow-white/40 transition ${
+                    pipelineRunning ? 'bg-slate-400 cursor-wait' : 'bg-slate-900 hover:bg-slate-800'
+                  }`}
                 >
-                  <span className="mr-1">
-                    {settings?.auto_sync_enabled ? 'Ativada' : 'Desativada'}
-                  </span>
+                  {pipelineRunning ? 'Executando pipeline...' : 'Rodar pipeline completo agora'}
                 </button>
-                <span className="text-[10px] text-[var(--text-muted)] text-right">
-                  Em produção, a ideia é um cron chamar
-                  <br />
-                  <code className="text-[10px] text-slate-700 dark:text-slate-200">
-                    POST /api/tiny/sync {'{ mode: "recent" }'}
-                  </code>{' '}
-                  quando isso estiver ativado.
-                </span>
+                {pipelineResult?.steps && (
+                  <div className="space-y-2 text-xs text-slate-600">
+                    {pipelineResult.steps.map((step: any) => (
+                      <div key={step.name} className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800">{CRON_STEP_LABELS[step.name as CronStatusStep['name']] ?? step.name}</span>
+                        <span className={`px-2 py-1 rounded-full ${step.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                          {step.ok ? 'OK' : 'Erro'}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-slate-500">Resposta completa disponível nos logs abaixo.</p>
+                  </div>
+                )}
               </div>
             </div>
-              {/* Enriquecer últimos X pedidos / pedido específico */}
-              <div className="border-t app-border-subtle pt-3 space-y-2 text-xs">
-                <p className="text-[var(--text-muted)] font-medium">
-                  Enriquecer itens/imagens manualmente
+            <div className="glass-panel rounded-3xl border border-white/20 shadow-inner shadow-white/40 p-5 md:p-6 space-y-5">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold text-slate-900">Configurações da sincronização automática</h3>
+                <p className="text-sm text-slate-600">
+                  Valores aplicados pelo pg_cron e também pelo botão &ldquo;Rodar pipeline completo agora&rdquo;. Ajuste-os para controlar quantos dias entram na busca, se o enrich roda em sequência e se os produtos/estoque são sincronizados automaticamente.
                 </p>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <label className="text-[var(--text-muted)] text-[12px]">Últimos</label>
+              </div>
+              {cronSettingsError && <p className="text-sm text-red-500">{cronSettingsError}</p>}
+              {cronSettingsLoading && !cronFormReady && (
+                <p className="text-sm text-slate-500">Carregando configurações...</p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-slate-800">
+                    Dias recentes para sincronizar pedidos automaticamente
                     <input
                       type="number"
                       min={1}
-                      max={500}
-                      value={enrichLastNumber}
-                      onChange={(e) => setEnrichLastNumber(Number(e.target.value || '1'))}
-                      className="w-20 rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
+                      inputMode="numeric"
+                      className="mt-2 w-full rounded-2xl border border-white/30 bg-white/60 px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500/40"
+                      value={cronSettingsDraft ? cronSettingsDraft.cronDiasRecentOrders : ''}
+                      onChange={handleCronNumberChange('cronDiasRecentOrders')}
+                      disabled={!cronFormReady || cronSettingsSaving}
                     />
-                    <button
-                      onClick={async () => {
-                        setEnrichLoading(true);
-                        setEnrichError(null);
-                        setEnrichResult(null);
-                        try {
-                          // 500ms delay => ~120 req/min
-                          const res = await fetch('/api/tiny/enrich', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ mode: 'last', last: enrichLastNumber, delayMs: 500 }),
-                          });
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json?.message || json?.details || 'Erro');
-                          setEnrichResult(json);
-                        } catch (e: any) {
-                          setEnrichError(e?.message ?? 'Erro ao enriquecer');
-                        } finally {
-                          setEnrichLoading(false);
-                          carregarLogs();
-                        }
-                      }}
-                      disabled={enrichLoading}
-                      className="px-3 py-1 rounded-xl bg-emerald-500 text-slate-950 text-[11px] hover:bg-emerald-400 disabled:opacity-60"
-                    >
-                      {enrichLoading ? 'Enriquecendo…' : `Enriquecer últimos ${enrichLastNumber}`}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <label className="text-[var(--text-muted)] text-[12px]">Pedido (nº)</label>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">Usado no modo recent de pedidos. Mantenha baixo para respeitar o rate limit do Tiny.</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-slate-800">
+                    Limite de produtos por rodada (sync automático)
                     <input
-                      type="text"
-                      value={enrichNumeroPedido}
-                      onChange={(e) => setEnrichNumeroPedido(e.target.value)}
-                      placeholder="Ex: 251122F76FT7PJ ou 22844"
-                      className="w-48 rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      className="mt-2 w-full rounded-2xl border border-white/30 bg-white/60 px-4 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500/40"
+                      value={cronSettingsDraft ? cronSettingsDraft.cronProdutosLimit : ''}
+                      onChange={handleCronNumberChange('cronProdutosLimit')}
+                      disabled={!cronFormReady || cronSettingsSaving}
                     />
-                    <button
-                      onClick={async () => {
-                        if (!enrichNumeroPedido) return setEnrichError('Informe o número do pedido');
-                        setEnrichLoading(true);
-                        setEnrichError(null);
-                        setEnrichResult(null);
-                        try {
-                          const res = await fetch('/api/tiny/enrich', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ mode: 'numero', numeroPedido: enrichNumeroPedido, delayMs: 500 }),
-                          });
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json?.message || json?.details || 'Erro');
-                          setEnrichResult(json);
-                        } catch (e: any) {
-                          setEnrichError(e?.message ?? 'Erro ao enriquecer');
-                        } finally {
-                          setEnrichLoading(false);
-                          carregarLogs();
-                        }
-                      }}
-                      disabled={enrichLoading}
-                      className="px-3 py-1 rounded-xl bg-sky-500 text-slate-950 text-[11px] hover:bg-sky-400 disabled:opacity-60"
-                    >
-                      {enrichLoading ? 'Enriquecendo…' : 'Enriquecer pedido'}
-                    </button>
-                  </div>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">Quantos produtos/estoque são consultados a cada rodada automática.</p>
                 </div>
-
-                {enrichError && <p className="text-xs text-rose-500">{enrichError}</p>}
-                {enrichResult && (
-                  <div className="text-xs text-emerald-500">
-                    Enriquecimento finalizado. Resultado: {JSON.stringify(enrichResult)}
-                  </div>
-                )}
               </div>
-            {/* Janela padrão */}
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <div className="flex flex-col gap-1">
-                <label className="text-[var(--text-muted)]">
-                  Janela padrão para sync automático (dias)
+
+              <div className="space-y-3">
+                <label className="flex gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                    checked={!!cronSettingsDraft?.cronEnrichEnabled}
+                    onChange={handleCronToggleChange('cronEnrichEnabled')}
+                    disabled={!cronFormReady || cronSettingsSaving}
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Rodar enrich automaticamente?</p>
+                    <p className="text-xs text-slate-500">Executa a etapa de frete/canais/cidade assim que os pedidos recentes terminam.</p>
+                  </div>
                 </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  className="w-20 rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
-                  value={janelaPadrao}
-                  onChange={(e) => {
-                    const v = Number(e.target.value || '1');
-                    if (!settings) return;
-                    updateSettings({
-                      auto_sync_window_days: v,
-                    });
-                  }}
-                />
-              </div>
-            </div>
 
-            {/* Ações rápidas */}
-            <div className="border-t app-border-subtle pt-3 space-y-3 text-xs">
-              <p className="text-[var(--text-muted)] font-medium">
-                Ações rápidas de sincronização
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => dispararSync({ mode: 'full' })}
-                  disabled={syncLoading}
-                  className="px-4 py-2 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-100 disabled:opacity-60"
-                >
-                  Carga inicial completa (todos os pedidos)
-                </button>
-                <button
-                  onClick={() =>
-                    dispararSync({
-                      mode: 'recent',
-                      diasRecentes: janelaPadrao,
-                    })
-                  }
-                  disabled={syncLoading}
-                  className="px-4 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-xs text-slate-950 disabled:opacity-60"
-                >
-                  Sincronizar agora (últimos {janelaPadrao} dias)
-                </button>
-                <button
-                  onClick={() =>
-                    dispararSync({
-                      mode: 'repair',
-                      diasRecentes: 90,
-                    })
-                  }
-                  disabled={syncLoading}
-                  className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 text-xs text-slate-950 disabled:opacity-60"
-                >
-                  Reparar últimos 90 dias
-                </button>
-              </div>
-            </div>
-
-            {/* Sincronização por período específico */}
-            <div className="border-t app-border-subtle pt-3 space-y-2 text-xs">
-              <p className="text-[var(--text-muted)] font-medium">
-                Sincronizar por período específico
-              </p>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[var(--text-muted)]">
-                    Data inicial
-                  </label>
+                <label className="flex gap-3">
                   <input
-                    type="date"
-                    className="rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
-                    value={dataInicial}
-                    onChange={(e) => setDataInicial(e.target.value)}
+                    type="checkbox"
+                    className="mt-1 h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                    checked={!!cronSettingsDraft?.cronProdutosEnabled}
+                    onChange={handleCronToggleChange('cronProdutosEnabled')}
+                    disabled={!cronFormReady || cronSettingsSaving}
                   />
-                </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Sincronizar produtos automaticamente?</p>
+                    <p className="text-xs text-slate-500">Quando ligado, cada rodada chama /api/produtos/sync com o limite acima.</p>
+                  </div>
+                </label>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-[var(--text-muted)]">
-                    Data final
-                  </label>
+                <label className="flex gap-3">
                   <input
-                    type="date"
-                    className="rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
-                    value={dataFinal}
-                    onChange={(e) => setDataFinal(e.target.value)}
+                    type="checkbox"
+                    className="mt-1 h-5 w-5 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                    checked={!!cronSettingsDraft?.cronProdutosEnrichEstoque}
+                    onChange={handleCronToggleChange('cronProdutosEnrichEstoque')}
+                    disabled={!cronFormReady || cronSettingsSaving}
                   />
-                </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Atualizar estoque dos produtos no sync automático?</p>
+                    <p className="text-xs text-slate-500">Desative se quiser apenas atualizar catálogo sem tocar no saldo em estoque.</p>
+                  </div>
+                </label>
+              </div>
 
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-slate-500">Salve as alterações antes de rodar o pipeline manual ou aguardar o cron.</p>
                 <button
-                  onClick={() => dispararSync({ mode: 'range' })}
-                  disabled={syncLoading}
-                  className="px-4 py-2 rounded-2xl bg-sky-500 text-slate-950 text-xs font-semibold hover:bg-sky-400 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-sky-500/30"
+                  onClick={saveCronSettings}
+                  disabled={!cronFormReady || cronSettingsSaving}
+                  className={`inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold shadow-inner shadow-white/30 transition ${
+                    !cronFormReady || cronSettingsSaving
+                      ? 'bg-slate-400 text-white cursor-not-allowed'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                  }`}
                 >
-                  Sincronizar intervalo
+                  {cronSettingsSaving ? 'Salvando configurações...' : 'Salvar configurações de sincronização'}
                 </button>
               </div>
             </div>
+          </section>
 
-            {syncErro && (
-              <p className="text-xs text-rose-500">{syncErro}</p>
-            )}
-            {syncOk && (
-              <p className="text-xs text-emerald-500">{syncOk}</p>
-            )}
-
-            {ultimoJob && (
-              <div className="mt-2 text-xs text-slate-700 dark:text-slate-200 space-y-1">
-                <p className="font-semibold">Último job</p>
-                <p>
-                  ID:{' '}
-                  <span className="text-slate-500 dark:text-slate-400">
-                    {ultimoJob.id}
-                  </span>
+          <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-6 text-slate-900`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Status da sincronização Tiny</h2>
+                <p className="text-sm text-slate-600">
+                  Panorama geral dos pedidos e produtos já armazenados no Supabase.
                 </p>
-                <p>
-                  Status:{' '}
-                  <span
-                    className={
-                      ultimoJob.status === 'finished'
-                        ? 'text-emerald-500'
-                        : ultimoJob.status === 'error'
-                        ? 'text-rose-500'
-                        : 'text-sky-500'
-                    }
-                  >
-                    {ultimoJob.status}
-                  </span>
-                </p>
-                <p>
-                  Início:{' '}
-                  {new Date(
-                    ultimoJob.started_at
-                  ).toLocaleString('pt-BR')}
-                </p>
-                {ultimoJob.finished_at && (
-                  <p>
-                    Fim:{' '}
-                    {new Date(
-                      ultimoJob.finished_at
-                    ).toLocaleString('pt-BR')}
-                  </p>
-                )}
-                <p>
-                  Requisições:{' '}
-                  {ultimoJob.total_requests ?? 0} · Pedidos gravados:{' '}
-                  {ultimoJob.total_orders ?? 0}
-                </p>
-                {ultimoJob.error && (
-                  <p className="text-rose-500">
-                    Erro: {ultimoJob.error}
-                  </p>
-                )}
               </div>
-            )}
-          </div>
-
-          {/* Card: logs da sincronização */}
-          <div className="app-card p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
-                Logs da sincronização
-              </h2>
               <button
-                onClick={carregarLogs}
-                disabled={logsLoading}
-                className="px-3 py-1 rounded-2xl bg-[var(--bg-card-soft)] text-xs text-[var(--text-main)] hover:bg-slate-200/70 dark:hover:bg-slate-800/80 disabled:opacity-60"
+                onClick={fetchOverview}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900"
+                disabled={overviewLoading}
               >
-                {logsLoading ? 'Atualizando...' : 'Atualizar'}
+                {overviewLoading ? 'Atualizando…' : 'Atualizar status'}
               </button>
             </div>
 
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-[11px]">
-                <thead className="app-table-header">
-                  <tr>
-                    <th className="text-left px-2 py-1 text-[var(--text-muted)]">
-                      Horário
-                    </th>
-                    <th className="text-left px-2 py-1 text-[var(--text-muted)]">
-                      Nível
-                    </th>
-                    <th className="text-left px-2 py-1 text-[var(--text-muted)]">
-                      Mensagem
-                    </th>
-                    <th className="text-left px-2 py-1 text-[var(--text-muted)]">
-                      Meta
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr
-                      key={log.id}
-                      className="border-t app-border-subtle align-top"
-                    >
-                      <td className="px-2 py-1">
-                        {new Date(
-                          log.created_at
-                        ).toLocaleTimeString('pt-BR')}
-                      </td>
-                      <td className="px-2 py-1">
-                        <span
-                          className={
-                            log.level === 'error'
-                              ? 'text-rose-500'
-                              : log.level === 'warn'
-                              ? 'text-amber-500'
-                              : 'text-emerald-500'
-                          }
-                        >
-                          {log.level}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1">{log.message}</td>
-                      <td className="px-2 py-1 text-slate-500 dark:text-slate-400 max-w-xs truncate">
-                        {log.meta
-                          ? JSON.stringify(log.meta)
-                          : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                  {!logs.length && (
-                    <tr>
-                      <td
-                        className="px-2 py-2 text-[var(--text-muted)]"
-                        colSpan={4}
-                      >
-                        Nenhum log ainda.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            {overviewError && <p className="text-sm text-red-500">{overviewError}</p>}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-1`}>
+                <div className="text-sm text-slate-600">Pedidos</div>
+                <div className="text-3xl font-semibold text-slate-900">{overview?.orders.total ?? '—'}</div>
+                <div className="text-xs text-slate-500">{overviewLoading ? 'Carregando…' : ordersRangeLabel}</div>
+              </div>
+
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-1`}>
+                <div className="text-sm text-slate-600">Pendências</div>
+                <div className="text-lg font-semibold text-slate-900">
+                  Sem itens: {overview?.orders.withoutItems ?? '—'} • Sem frete: {overview?.orders.withoutFrete ?? '—'}
+                </div>
+                <div className="text-xs text-slate-500">Mantenha itens e frete atualizados antes dos dashboards.</div>
+              </div>
+
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-1`}>
+                <div className="text-sm text-slate-600">Produtos</div>
+                <div className="text-lg font-semibold text-slate-900">{overview?.produtos.total ?? '—'}</div>
+                <div className="text-xs text-slate-500">
+                  Última: {overview?.produtos.lastUpdatedAt ? formatDateTime(overview.produtos.lastUpdatedAt) : '—'} · Sem imagem: {overview?.produtos.withoutImage ?? '—'}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
-      {/* Card: Progresso mensal por mês */}
-      <div className="app-shell">
-        <div className="app-shell-inner max-w-5xl">
-          <div className="app-card p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">Progresso de carga mensal</h2>
-              <div className="flex items-center gap-2 text-xs">
-                <select
-                  className="rounded-xl border app-border-subtle bg-[var(--bg-card-soft)] px-3 py-1 text-xs outline-none"
-                  value={progressYear}
-                  onChange={(e) => setProgressYear(Number(e.target.value))}
-                >
-                  {Array.from({ length: 5 }, (_, i) => anoAtual - i).map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
+          </section>
+
+          <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-5 text-slate-900`}>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Calendário de sincronização</h2>
+                <p className="text-sm text-slate-600">Acompanhe o status diário e dispare sincronizações pontuais.</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleMonthNavigation(-1)}
+                    className="px-3 py-1.5 rounded-full text-sm font-medium bg-slate-900/5 hover:bg-slate-900/10 text-slate-900"
+                  >
+                    ← Mês anterior
+                  </button>
+                  <div className="text-sm font-semibold text-slate-900 capitalize whitespace-nowrap">{calendarMonthLabel}</div>
+                  <button
+                    onClick={() => handleMonthNavigation(1)}
+                    className="px-3 py-1.5 rounded-full text-sm font-medium bg-slate-900/5 hover:bg-slate-900/10 text-slate-900"
+                  >
+                    Próximo mês →
+                  </button>
+                </div>
                 <button
-                  onClick={() => carregarProgresso()}
-                  disabled={progressLoading}
-                  className="px-3 py-1 rounded-2xl bg-[var(--bg-card-soft)] text-xs text-[var(--text-main)] hover:bg-slate-200/70 dark:hover:bg-slate-800/80 disabled:opacity-60"
+                  onClick={fetchCalendar}
+                  className="px-4 py-2 rounded-full text-sm font-medium bg-slate-900 text-white hover:opacity-90"
+                  disabled={calendarLoading}
                 >
-                  {progressLoading ? 'Atualizando…' : 'Atualizar'}
+                  {calendarLoading ? 'Atualizando…' : 'Atualizar calendário'}
                 </button>
               </div>
             </div>
 
-            <p className="text-[11px] text-[var(--text-muted)]">
-              Mostra, para cada mês do ano selecionado, quantos pedidos estão
-              gravados no banco e a estimativa total no Tiny. Clique em
-              “Carregar mês” para sincronizar o período.
-            </p>
+            {calendarError && <p className="text-sm text-red-500">{calendarError}</p>}
 
-            <div className="grid gap-3 md:grid-cols-2">
-              {progress.map((m) => {
-                const total = m.tiny_total ?? 0;
-                const pct = m.percent ?? null;
-                const isCurrentMonth = m.year === anoAtual && m.month === mesAtual;
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+              {CALENDAR_STATUS_ORDER.map((status) => {
+                const meta = CALENDAR_STATUS_META[status];
                 return (
-                  <div key={`${m.year}-${m.month}`} className="p-3 rounded-2xl border app-border-subtle bg-[var(--bg-card-soft)]">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-sm font-medium">
-                        {monthLabel(m.year, m.month)}
-                        {isCurrentMonth && (
-                          <span className="ml-2 text-[10px] text-sky-500">(mês atual)</span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() =>
-                          dispararSync({
-                            mode: 'range',
-                            dataInicial: `${m.year}-${pad2(m.month)}-01`,
-                            dataFinal: m.end,
-                          })
-                        }
-                        className="px-3 py-1 rounded-xl bg-emerald-500 text-slate-950 text-[11px] hover:bg-emerald-400"
-                      >
-                        Carregar mês
-                      </button>
-                    </div>
+                  <span key={status} className="inline-flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${meta.dotClass}`} />
+                    {meta.label}
+                  </span>
+                );
+              })}
+              {calendarLoading && <span className="text-xs text-slate-500">Carregando…</span>}
+            </div>
 
-                    <div className="h-2 w-full rounded-full bg-slate-200/60 dark:bg-slate-800/60 overflow-hidden">
-                      <div
-                        className="h-full bg-sky-500"
-                        style={{ width: pct ? `${Math.min(100, Math.max(0, pct))}%` : '0%' }}
-                      />
+            <div className="grid grid-cols-7 gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {WEEKDAY_LABELS.map((label) => (
+                <div key={label} className="text-center py-1">
+                  {label}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-3">
+              {calendarCells.map((cell) => {
+                const meta = CALENDAR_STATUS_META[cell.status] ?? CALENDAR_STATUS_META.none;
+                const syncingThisDay = syncingDay === cell.isoDate;
+                const disabled = syncingThisDay || !cell.inMonth;
+                return (
+                  <div
+                    key={cell.isoDate}
+                    className={`min-h-[140px] glass-tint rounded-2xl border p-3 flex flex-col gap-2 ${meta.surfaceClass} ${cell.inMonth ? '' : 'opacity-50'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-semibold text-slate-900">{cell.dayNumber}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${meta.badgeClass}`}>
+                        {meta.label}
+                      </span>
                     </div>
-                    <div className="mt-2 text-[11px] text-[var(--text-muted)] flex items-center justify-between">
-                      <span>
-                        Banco: <span className="text-[var(--text-main)]">{m.db_count.toLocaleString('pt-BR')}</span>
-                      </span>
-                      <span>
-                        Tiny:{' '}
-                        <span className="text-[var(--text-main)]">
-                          {total ? total.toLocaleString('pt-BR') : '—'}
-                        </span>
-                        {pct !== null && (
-                          <span className="ml-2 text-sky-500 font-medium">{pct}%</span>
-                        )}
-                      </span>
+                    <p className="text-xs text-slate-500">
+                      {cell.successesCount + cell.errorsCount > 0
+                        ? [
+                            cell.successesCount > 0
+                              ? `${cell.successesCount} sucesso${cell.successesCount > 1 ? 's' : ''}`
+                              : null,
+                            cell.errorsCount > 0
+                              ? `${cell.errorsCount} erro${cell.errorsCount > 1 ? 's' : ''}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : 'Sem execuções registradas'}
+                    </p>
+                    <p
+                      className="text-[11px] text-slate-400"
+                      title={cell.lastSyncAt ? `Último sync em ${formatDateTime(cell.lastSyncAt)}` : 'Sem registros de sync'}
+                    >
+                      Último sync: {cell.lastSyncAt ? formatDateTime(cell.lastSyncAt) : '—'}
+                    </p>
+                    {cell.lastMessage && (
+                      <p className="text-[11px] text-slate-500 truncate" title={cell.lastMessage}>
+                        {cell.lastMessage}
+                      </p>
+                    )}
+                    <div className="mt-auto">
+                      <button
+                        onClick={() => syncSpecificDay(cell.isoDate)}
+                        disabled={disabled}
+                        className={`w-full text-xs font-semibold px-3 py-1.5 rounded-full transition ${disabled ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-900/5 text-slate-900 hover:bg-slate-900/10'}`}
+                      >
+                        {syncingThisDay ? 'Sincronizando…' : 'Sincronizar dia'}
+                      </button>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          </section>
 
-              {!progress.length && !progressLoading && (
-                <div className="text-xs text-[var(--text-muted)]">Sem dados de progresso para o ano selecionado.</div>
-              )}
+          <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-6 text-slate-900`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Painel de operações</h2>
+                <p className="text-sm text-slate-600">Dispare sincronizações pontuais e acompanhe o progresso.</p>
+              </div>
+              <div className="text-right text-sm text-slate-600">
+                Pedidos sem itens: {overview?.orders.withoutItems ?? '—'} • Sem frete: {overview?.orders.withoutFrete ?? '—'}
+              </div>
             </div>
 
-            {progressErro && (
-              <p className="text-xs text-rose-500">{progressErro}</p>
+            {(actionMessage || actionError) && (
+              <div className={`rounded-2xl px-4 py-3 text-sm ${actionError ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                {actionError ?? actionMessage}
+              </div>
             )}
-          </div>
+            {postSyncRunning && (
+              <p className="text-xs text-slate-500">Complementando com enrichment automático...</p>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-4`}>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Pedidos Tiny → banco</h3>
+                  <p className="text-sm text-slate-600">Sincronize pedidos por janelas curtas para evitar timeout.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs text-slate-500">Janela rápida (últimos X dias)</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-20 px-3 py-2 rounded-full bg-white/70 border border-slate-200 text-sm text-slate-900"
+                      value={recentDays}
+                      onChange={(e) => setRecentDays(Number(e.target.value) || 1)}
+                    />
+                    <button
+                      onClick={syncRecentOrders}
+                      disabled={isSyncingOrders}
+                      className={`inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-sm font-medium text-white shadow-inner shadow-white/40 transition ${isSyncingOrders ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      Sincronizar últimos {recentDays} dias
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs text-slate-500">Janela personalizada</label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        className="flex-1 px-3 py-2 rounded-2xl bg-white/70 border border-slate-200 text-sm text-slate-900"
+                        value={rangeStart}
+                        onChange={(e) => setRangeStart(e.target.value)}
+                      />
+                      <span className="text-slate-500 text-sm">até</span>
+                      <input
+                        type="date"
+                        className="flex-1 px-3 py-2 rounded-2xl bg-white/70 border border-slate-200 text-sm text-slate-900"
+                        value={rangeEnd}
+                        onChange={(e) => setRangeEnd(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      onClick={syncRangeOrders}
+                      disabled={isSyncingOrders}
+                      className={`inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isSyncingOrders ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      Sincronizar intervalo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={syncFullOrders}
+                    disabled={isSyncingOrders}
+                    className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isSyncingOrders ? 'opacity-70 cursor-wait' : ''}`}
+                  >
+                    Carga inicial completa (todos os pedidos)
+                  </button>
+                  <p className="text-xs text-slate-500">Dica: use a carga completa apenas uma vez; depois mantenha com janelas menores.</p>
+                </div>
+              </div>
+
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-4`}>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Enriquecimento (itens + frete)</h3>
+                  <p className="text-sm text-slate-600">Gere itens, frete e cidade/UF antes de liberar dashboards.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs text-slate-500">Últimos N pedidos</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-20 px-3 py-2 rounded-full bg-white/70 border border-slate-200 text-sm text-slate-900"
+                      value={enrichLastCount}
+                      onChange={(e) => setEnrichLastCount(Number(e.target.value) || 1)}
+                    />
+                    <button
+                      onClick={enrichLastOrders}
+                      disabled={isEnriching}
+                      className={`inline-flex items-center justify-center px-4 py-2 rounded-full bg-sky-600 hover:bg-sky-500 text-sm font-medium shadow-inner shadow-white/40 transition ${isEnriching ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      Enriquecer últimos {enrichLastCount}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs text-slate-500">Pedido (nº Tiny)</label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={enrichNumeroPedido}
+                      onChange={(e) => setEnrichNumeroPedido(e.target.value)}
+                      placeholder="Ex: 251122F76FT7PJ"
+                      className="px-3 py-2 rounded-2xl bg-white/70 border border-slate-200 text-sm text-slate-900"
+                    />
+                    <button
+                      onClick={enrichByNumero}
+                      disabled={isEnriching}
+                      className={`inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isEnriching ? 'opacity-70 cursor-wait' : ''}`}
+                    >
+                      Enriquecer pedido específico
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={runBackgroundEnrich}
+                  disabled={isEnriching}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isEnriching ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  Rodar enrich em background
+                </button>
+              </div>
+
+              <div className={`${CARD_PANEL_CLASS} p-4 space-y-4`}>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Produtos Tiny</h3>
+                  <p className="text-sm text-slate-600">Atualize catálogo e estoque. O token seguro é configurado apenas no servidor.</p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-xs text-slate-500">Limite (aprox. últimos X itens)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-24 px-3 py-2 rounded-full bg-white/70 border border-slate-200 text-sm text-slate-900"
+                    value={produtosDays}
+                    onChange={(e) => setProdutosDays(Number(e.target.value) || 10)}
+                  />
+                </div>
+
+                <p className="text-xs text-slate-500">
+                  O token seguro já está configurado no backend; este botão usa o endpoint admin protegido.
+                </p>
+
+                <button
+                  onClick={syncProdutos}
+                  disabled={isSyncingProdutos}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium shadow-inner shadow-white/40 transition ${isSyncingProdutos ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  Sincronizar produtos
+                </button>
+
+                <p className="text-xs text-slate-500">
+                  Total: {overview?.produtos.total ?? '—'} • Sem imagem: {overview?.produtos.withoutImage ?? '—'}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-4 text-slate-900`}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Logs da sincronização</h2>
+                <p className="text-sm text-slate-600">Use para acompanhar jobs e diagnósticos.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {LOG_FILTERS.map(({ label, value }) => (
+                  <button
+                    key={value}
+                    onClick={() => setLogFilter(value)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium border border-slate-200 ${
+                      logFilter === value ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  onClick={fetchLogs}
+                  className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-xs font-medium text-slate-900"
+                  disabled={logsLoading}
+                >
+                  {logsLoading ? 'Atualizando…' : 'Atualizar'}
+                </button>
+              </div>
+            </div>
+
+            {logsError && <p className="text-sm text-red-500">{logsError}</p>}
+
+            <div className={`${CARD_PANEL_CLASS} rounded-3xl p-4 md:p-6 overflow-x-auto`}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500 text-xs uppercase tracking-wide">
+                    <th className="py-2 pr-4">Horário</th>
+                    <th className="py-2 pr-4">Tipo</th>
+                    <th className="py-2 pr-4">Nível</th>
+                    <th className="py-2 pr-4">Mensagem</th>
+                    <th className="py-2">Meta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.length === 0 && !logsLoading && (
+                    <tr>
+                      <td colSpan={5} className="py-4 text-center text-slate-500">
+                        Nenhum log encontrado.
+                      </td>
+                    </tr>
+                  )}
+                  {logs.map((log) => (
+                    <tr key={log.id} className="border-t border-slate-200">
+                      <td className="py-3 pr-4 text-slate-700">{formatDateTime(log.createdAt)}</td>
+                      <td className="py-3 pr-4 text-slate-700">{log.type}</td>
+                      <td className="py-3 pr-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${badgeClasses(log.level)}`}>
+                          {log.level}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-4 text-slate-900">{log.message}</td>
+                      <td className="py-3 text-slate-600">
+                        {log.meta ? (
+                          <code className="text-xs break-words">
+                            {JSON.stringify(log.meta).slice(0, 160)}
+                            {JSON.stringify(log.meta).length > 160 ? '…' : ''}
+                          </code>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </div>
     </AppLayout>
   );
+}
+
+type CalendarCell = {
+  isoDate: string;
+  inMonth: boolean;
+  dayNumber: number;
+  status: CalendarDayStatus['status'];
+  lastSyncAt: string | null;
+  successesCount: number;
+  errorsCount: number;
+  lastMessage: string | null;
+};
+
+function formatMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function parseMonthKey(key: string) {
+  const [year, month] = key.split('-').map((value) => Number(value));
+  if (!Number.isNaN(year) && !Number.isNaN(month)) {
+    return new Date(year, Math.min(Math.max(month - 1, 0), 11), 1);
+  }
+  return new Date();
+}
+
+function formatCalendarLabel(date: Date) {
+  return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
+
+function buildCalendarGrid(referenceDate: Date, days: CalendarDayStatus[]): CalendarCell[] {
+  const map = new Map(days.map((day) => [day.date, day]));
+  const firstOfMonth = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  const gridStart = startOfWeek(firstOfMonth);
+  const cells: CalendarCell[] = [];
+
+  for (let slot = 0; slot < 42; slot += 1) {
+    const current = new Date(gridStart);
+    current.setDate(gridStart.getDate() + slot);
+    const isoDate = formatIsoDate(current);
+    const info = map.get(isoDate) ?? null;
+    cells.push({
+      isoDate,
+      inMonth: current.getMonth() === referenceDate.getMonth(),
+      dayNumber: current.getDate(),
+      status: info?.status ?? 'none',
+      lastSyncAt: info?.lastSyncAt ?? null,
+      successesCount: info?.successesCount ?? 0,
+      errorsCount: info?.errorsCount ?? 0,
+      lastMessage: info?.lastMessage ?? null,
+    });
+  }
+
+  return cells;
+}
+
+function startOfWeek(date: Date) {
+  const result = new Date(date);
+  const weekday = result.getDay(); // 0 = domingo
+  result.setDate(result.getDate() - weekday);
+  return result;
+}
+
+function formatIsoDate(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+type TinyConnectionCardProps = {
+  connecting: boolean;
+  onConnect: () => void;
+};
+
+function TinyConnectionCard({ connecting, onConnect }: TinyConnectionCardProps) {
+  return (
+    <div className="app-card glass-tint p-4 space-y-3">
+      <h2 className="text-sm font-semibold">Conexão com Tiny API v3</h2>
+      <p className="text-xs text-[var(--text-muted)]">
+        Clique no botão abaixo para conectar este painel à sua conta Tiny, usando o fluxo de autorização (OAuth2) da API v3.
+      </p>
+      <button
+        disabled={connecting}
+        onClick={onConnect}
+        className="px-4 py-2 rounded-2xl bg-sky-500 text-white text-xs font-semibold disabled:opacity-60 shadow-lg shadow-sky-500/40 hover:bg-sky-400"
+      >
+        {connecting ? 'Redirecionando para o Tiny...' : 'Conectar com Tiny v3'}
+      </button>
+    </div>
+  );
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('pt-BR');
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function badgeClasses(level: string) {
+  const normalized = level?.toLowerCase();
+  if (normalized === 'error') return 'bg-red-50 text-red-700 border border-red-100';
+  if (normalized === 'warn' || normalized === 'warning') return 'bg-amber-50 text-amber-700 border border-amber-100';
+  return 'bg-slate-100 text-slate-700 border border-slate-200';
 }

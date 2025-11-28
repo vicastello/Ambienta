@@ -14,6 +14,11 @@ export interface SyncSettingsRow {
   id: number;
   auto_sync_enabled: boolean;
   auto_sync_window_days: number;
+  cron_dias_recent_orders: number | null;
+  cron_produtos_limit: number | null;
+  cron_enrich_enabled: boolean | null;
+  cron_produtos_enabled: boolean | null;
+  cron_produtos_enrich_estoque: boolean | null;
   created_at: string | null; // timestamptz
   updated_at: string | null; // timestamptz
 }

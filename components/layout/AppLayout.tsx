@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/compras', label: 'Compras', icon: ShoppingCart },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
+  { href: '/configuracoes/sync', label: 'Sincronização', icon: Settings },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { callInternalJson } from '@/lib/internalApi';
+import {
+  getSyncSettings,
+  normalizeCronSettings,
+} from '@/src/repositories/syncRepository';
 import type { Database } from '@/src/types/db-public';
-
-const DEFAULT_RECENT_DAYS = 2;
-const DEFAULT_PRODUTOS_LIMIT = 30;
-const PRODUTOS_HEADER = 'X-AMBIENTA-SYNC-TOKEN';
 
 type StepName = 'orders' | 'enrich' | 'produtos';
 type StepResult = {
@@ -22,24 +23,22 @@ type CronRequestBody = {
     enabled?: boolean;
     limit?: number;
     enrichEstoque?: boolean;
-    token?: string;
+  };
+};
+
+type EffectiveCronConfig = {
+  diasRecentes: number;
+  enrichEnabled: boolean;
+  produtos: {
+    enabled: boolean;
+    limit: number;
+    enrichEstoque: boolean;
   };
 };
 
 type SyncLogsInsert = Database['public']['Tables']['sync_logs']['Insert'];
 
 export const maxDuration = 300;
-
-function resolveBaseUrl() {
-  const fromEnv = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL;
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) {
-    const normalized = vercelUrl.startsWith('http') ? vercelUrl : `https://${vercelUrl}`;
-    return normalized.replace(/\/$/, '');
-  }
-  return 'http://localhost:3000';
-}
 
 async function logStep(step: StepName, status: 'ok' | 'error', message: string, meta?: Record<string, any>) {
   const payload: SyncLogsInsert = {
@@ -56,58 +55,54 @@ async function logStep(step: StepName, status: 'ok' | 'error', message: string, 
   }
 }
 
-async function parseJsonResponse(res: Response, fallbackMessage: string) {
-  const text = await res.text();
-  let json: any = null;
-
-  if (text) {
-    try {
-      json = JSON.parse(text);
-    } catch (error) {
-      console.warn('[run-sync] Resposta não-JSON', fallbackMessage, error);
-    }
-  }
-
-  if (!res.ok) {
-    const message = json?.error || json?.message || fallbackMessage;
-    const err = new Error(message);
-    (err as any).response = json ?? text;
-    (err as any).status = res.status;
-    throw err;
-  }
-
-  return json;
-}
-
-async function callInternalJson(path: string, init?: RequestInit) {
-  const baseUrl = resolveBaseUrl();
-  const target = path.startsWith('http') ? path : `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-  const headers = new Headers(init?.headers ?? {});
-
-  if (!headers.has('Content-Type') && init?.body) {
-    headers.set('Content-Type', 'application/json');
-  }
-  headers.set('Accept', 'application/json');
-
-  const response = await fetch(target, {
-    cache: 'no-store',
-    ...init,
-    headers,
-  });
-
-  return parseJsonResponse(response, `Falha ao chamar ${path}`);
-}
-
 function sanitizeNumber(value: unknown, fallback: number) {
   const parsed = typeof value === 'string' ? Number(value) : Number(value ?? NaN);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+async function resolveCronConfig(body: CronRequestBody): Promise<EffectiveCronConfig> {
+  const settings = normalizeCronSettings(await getSyncSettings());
+
+  const diasRecentes = sanitizeNumber(body?.diasRecentes, settings.cron_dias_recent_orders);
+
+  const enrichOverride =
+    typeof body?.enrich === 'boolean'
+      ? body.enrich
+      : typeof body?.enrich === 'object' && body.enrich
+        ? body.enrich.enabled
+        : undefined;
+  const enrichEnabled =
+    typeof enrichOverride === 'boolean' ? enrichOverride : settings.cron_enrich_enabled;
+
+  const produtosOverride = body?.produtos ?? {};
+  const produtosEnabled =
+    typeof produtosOverride.enabled === 'boolean'
+      ? produtosOverride.enabled
+      : settings.cron_produtos_enabled;
+  const produtosLimit = sanitizeNumber(
+    produtosOverride.limit,
+    settings.cron_produtos_limit
+  );
+  const produtosEnrichEstoque =
+    typeof produtosOverride.enrichEstoque === 'boolean'
+      ? produtosOverride.enrichEstoque
+      : settings.cron_produtos_enrich_estoque;
+
+  return {
+    diasRecentes,
+    enrichEnabled,
+    produtos: {
+      enabled: produtosEnabled,
+      limit: produtosLimit,
+      enrichEstoque: produtosEnrichEstoque,
+    },
+  };
+}
+
 export async function POST(req: Request) {
   const body: CronRequestBody = await req.json().catch(() => ({}));
-  const diasRecentes = sanitizeNumber(body?.diasRecentes, DEFAULT_RECENT_DAYS);
-  const enrichConfig = typeof body?.enrich === 'boolean' ? { enabled: body.enrich } : body?.enrich ?? {};
-  const produtosConfig = body?.produtos ?? {};
+  const config = await resolveCronConfig(body);
+  const { diasRecentes, enrichEnabled, produtos } = config;
 
   const steps: StepResult[] = [];
 
@@ -142,8 +137,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, steps }, { status: 500 });
   }
 
-  const shouldEnrich = enrichConfig.enabled !== false;
-  if (shouldEnrich) {
+  if (enrichEnabled) {
     try {
       const enrichJson = await callInternalJson('/api/tiny/sync/enrich-background', { method: 'GET' });
       const updated = enrichJson?.updated ?? enrichJson?.enriched ?? null;
@@ -168,24 +162,15 @@ export async function POST(req: Request) {
     }
   }
 
-  const produtosEnabled = produtosConfig.enabled !== false;
-  if (produtosEnabled) {
-    const token = (produtosConfig.token ?? process.env.SYNC_PRODUTOS_SECRET ?? '').trim();
-    if (!token) {
-      const detail = 'SYNC_PRODUTOS_SECRET não configurado';
-      const failedStep: StepResult = { name: 'produtos', ok: false, detail };
-      steps.push(failedStep);
-      await logStep('produtos', 'error', 'Token ausente para sync de produtos', {});
-      return NextResponse.json({ ok: false, steps }, { status: 500 });
-    }
-
-    const limit = sanitizeNumber(produtosConfig.limit, DEFAULT_PRODUTOS_LIMIT);
-    const enrichEstoque = produtosConfig.enrichEstoque ?? true;
+  if (produtos.enabled) {
+    const { limit, enrichEstoque } = produtos;
 
     try {
       const produtosJson = await callInternalJson('/api/produtos/sync', {
         method: 'POST',
-        headers: { [PRODUTOS_HEADER]: token },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ limit, enrichEstoque, modoCron: true }),
       });
 

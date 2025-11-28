@@ -7,15 +7,14 @@ set check_function_bodies = off;
 
 -- Função chamada pelo pg_cron para acionar o backend Next.js
 create or replace function public.cron_run_tiny_sync()
+declare
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_response jsonb;
-begin
-  select net.http_post(
+
+  perform net.http_post(
     url := 'https://gestor-tiny.vercel.app/api/admin/cron/run-sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
@@ -23,15 +22,14 @@ begin
     ),
     body := '{}'::jsonb,
     timeout_milliseconds := 55000
-  )::jsonb
-  into v_response;
+  );
 
   insert into public.sync_logs (job_id, level, message, meta)
   values (
     null,
     'info',
     'cron_run_tiny_sync dispatched via pg_cron',
-    jsonb_build_object('status', v_response->>'status', 'url', 'cron_run_tiny_sync')
+    jsonb_build_object('status', 'dispatched', 'url', 'https://gestor-tiny.vercel.app/api/admin/cron/run-sync')
   );
 exception
   when others then
@@ -45,7 +43,6 @@ exception
     );
 end;
 $$;
-
 -- Remove job existente (se houver) antes de recriar
 select cron.unschedule('tiny_sync_every_15min')
 where exists (select 1 from cron.job where jobname = 'tiny_sync_every_15min');

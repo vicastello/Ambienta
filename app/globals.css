@@ -194,11 +194,9 @@
   .app-shell {
     min-height: 100vh;
     padding: 1.5rem;
-    background: linear-gradient(135deg, var(--bg-body) 0%, #ECF4F5 100%);
   }
 
   :root.dark .app-shell {
-    background: linear-gradient(150deg, #0a0f28 0%, #0c1231 100%);
   }
 
   @media (max-width: 768px) {

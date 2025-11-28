@@ -2,18 +2,16 @@
 
 ### Fluxo
 - Supabase Edge Function `cron-sync-produtos` roda a cada 5–10 minutos (scheduler do Supabase).
-- A função chama `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app/api/produtos/sync` enviando o header `X-AMBIENTA-SYNC-TOKEN`.
+- A função chama `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app/api/produtos/sync` enviando apenas o corpo JSON com `limit`, `enrichEstoque` e `modoCron`.
 - A rota `/api/produtos/sync` executa o helper compartilhado `syncProdutosFromTiny`, atualizando `public.tiny_produtos`.
 - A UI no Vercel faz polling (30s em `/produtos`, 60s em `/dashboard`) e exibe estoque quase em tempo real.
 
-### Variáveis de ambiente (mesmo segredo nos dois lados)
+### Variáveis de ambiente
 - Vercel:
   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`
   - `TINY_API_BASE_URL`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`
   - `GEMINI_API_KEY`
-  - `SYNC_PRODUTOS_SECRET` — token forte para header `X-AMBIENTA-SYNC-TOKEN` (rota `/api/produtos/sync`).
 - Supabase (projeto Ambienta):
-  - `SYNC_PRODUTOS_SECRET` — **mesmo valor** usado no Vercel.
   - `VERCEL_API_BASE_URL` — URL pública do app: `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app`.
 - Arquivos de exemplo:
   - `.env.vercel.example` (Vercel)
@@ -21,13 +19,11 @@
 
 ### Edge Function
 - Arquivo: `supabase/functions/cron-sync-produtos/index.ts`
-- Comportamento: faz `fetch` POST para `/api/produtos/sync` com `limit: 100`, `enrichEstoque: true`, header `X-AMBIENTA-SYNC-TOKEN`.
+- Comportamento: faz `fetch` POST para `/api/produtos/sync` com `limit: 100`, `enrichEstoque: true` e `modoCron: true`.
 - Resposta: 200 quando sucesso, 500 com mensagem em caso de erro/timeout.
 
 ### Proteção da rota
-- `/api/produtos/sync` só roda se o header `X-AMBIENTA-SYNC-TOKEN` corresponder a `process.env.SYNC_PRODUTOS_SECRET`.
-- Sem token ou token errado: 401.
-- **Não** commitar o valor do token; configurar no painel (Vercel e Supabase). Token deve ser forte e idêntico nos dois.
+- A rota `POST /api/produtos/sync` agora é disparada apenas a partir dos nossos handlers internos (`/api/admin/sync/produtos`, `/api/admin/cron/run-sync` e Edge Function). Não há mais header secreto e o endpoint depende das permissões internas do projeto.
 
 ### Como configurar o cron no Supabase (passo a passo)
 1. Acesse o projeto correto (Ambienta Project) no painel do Supabase.
@@ -44,7 +40,6 @@
   ```bash
   curl -X POST https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app/api/produtos/sync \
     -H "Content-Type: application/json" \
-    -H "X-AMBIENTA-SYNC-TOKEN: $SYNC_PRODUTOS_SECRET" \
     -d '{"limit":50,"enrichEstoque":true}'
   ```
   Esperado: 200 OK; `tiny_produtos` com `updated_at` recente no Supabase.
@@ -54,7 +49,7 @@
   # Em outra aba: supabase functions serve cron-sync-produtos
   curl -X POST http://localhost:54321/functions/v1/cron-sync-produtos
   ```
-  Requer `VERCEL_API_BASE_URL` e `SYNC_PRODUTOS_SECRET` configurados no ambiente local do Supabase CLI.
+  Requer `VERCEL_API_BASE_URL` configurado no ambiente local do Supabase CLI.
 
 - Teste com UI aberta:
   1) Abra `/produtos` e `/dashboard`.  
@@ -77,8 +72,6 @@
   - `TINY_CLIENT_SECRET`
   - `TINY_REDIRECT_URI`
   - `GEMINI_API_KEY`
-  - `SYNC_PRODUTOS_SECRET` (token forte; usado no header `X-AMBIENTA-SYNC-TOKEN`)
 
 - Supabase (Project env vars):
   - `VERCEL_API_BASE_URL` = `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app`
-  - `SYNC_PRODUTOS_SECRET` = mesmo valor do Vercel

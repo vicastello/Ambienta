@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { countProdutos } from '@/src/repositories/tinyProdutosRepository';
 import { syncProdutosFromTiny } from '@/src/lib/sync/produtos';
 
-const SYNC_TOKEN_HEADER = 'x-ambienta-sync-token';
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -12,12 +10,6 @@ export async function POST(req: NextRequest) {
       enrichEstoque = true,
       modoCron = false,
     } = body;
-
-    const secret = process.env.SYNC_PRODUTOS_SECRET;
-    const provided = req.headers.get(SYNC_TOKEN_HEADER);
-    if (!secret || !provided || provided !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const startedAt = Date.now();
     console.log('[sync-produtos] start', { body, modoCron });

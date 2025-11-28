@@ -1,69 +1,102 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+export type SyncOverviewResponse = {
+  orders: {
+    total: number;
+    firstDate: string | null;
+    lastDate: string | null;
+    withoutItems: number;
+    withoutFrete: number;
+  };
+  produtos: {
+    total: number;
+    lastUpdatedAt: string | null;
+    withoutImage: number;
+  };
+};
+
 export async function GET() {
   try {
-    // tiny_orders: total, firstDate, lastDate
+    const [ordersTotalRes, firstOrderRes, lastOrderRes, ordersWithItemsRes, ordersWithoutFreteRes, produtosTotalRes, produtosLastUpdatedRes, produtosWithoutImageRes] = await Promise.all([
+      supabaseAdmin.from('tiny_orders').select('id', { head: true, count: 'exact' }),
+      supabaseAdmin
+        .from('tiny_orders')
+        .select('data_criacao')
+        .order('data_criacao', { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('tiny_orders')
+        .select('data_criacao')
+        .order('data_criacao', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('tiny_orders')
+        .select('id, tiny_pedido_itens!inner(id)', { head: true, count: 'exact' }),
+      supabaseAdmin
+        .from('tiny_orders')
+        .select('id', { head: true, count: 'exact' })
+        .is('valor_frete', null),
+      supabaseAdmin.from('tiny_produtos').select('id', { head: true, count: 'exact' }),
+      supabaseAdmin
+        .from('tiny_produtos')
+        .select('updated_at')
+        .not('updated_at', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('tiny_produtos')
+        .select('id', { head: true, count: 'exact' })
+        .or('imagem_url.is.null,imagem_url.eq.')
+    ]);
 
-    // tiny_orders: total, firstDate, lastDate
-    const { data: ordersAgg, error: ordersError } = await supabaseAdmin
-      .from('tiny_orders')
-      .select('count:id, min:data_criacao, max:data_criacao')
-      .maybeSingle();
-    if (ordersError) throw ordersError;
+    if (ordersTotalRes.error) throw ordersTotalRes.error;
+    if (firstOrderRes.error) throw firstOrderRes.error;
+    if (lastOrderRes.error) throw lastOrderRes.error;
+    if (ordersWithItemsRes.error) throw ordersWithItemsRes.error;
+    if (ordersWithoutFreteRes.error) throw ordersWithoutFreteRes.error;
+    if (produtosTotalRes.error) throw produtosTotalRes.error;
+    if (produtosLastUpdatedRes.error) throw produtosLastUpdatedRes.error;
+    if (produtosWithoutImageRes.error) throw produtosWithoutImageRes.error;
 
-    // Tipos explícitos para evitar never
-    type OrdersAgg = { count: string; min: string | null; max: string | null } | null;
-    const ordersTyped = ordersAgg as OrdersAgg;
+    const ordersTotal = ordersTotalRes.count ?? 0;
+    const ordersWithItems = ordersWithItemsRes.count ?? 0;
+    const withoutItems = Math.max(ordersTotal - ordersWithItems, 0);
+    const withoutFrete = ordersWithoutFreteRes.count ?? 0;
 
-    // tiny_pedido_itens: total
-    const { data: itemsAgg, error: itemsError } = await supabaseAdmin
-      .from('tiny_pedido_itens')
-      .select('id', { count: 'exact', head: true });
-    if (itemsError) throw itemsError;
-    const itemsTotal = typeof itemsAgg === 'number' ? itemsAgg : (itemsAgg?.length ?? 0);
+    type OrderDateRow = { data_criacao: string | null } | null;
+    type ProdutoUpdateRow = { updated_at: string | null } | null;
 
-    // tiny_produtos: total, lastUpdatedAt
-    const { data: produtosAgg, error: produtosError } = await supabaseAdmin
-      .from('tiny_produtos')
-      .select('id, updated_at')
-      .order('updated_at', { ascending: false })
-      .limit(1);
-    if (produtosError) throw produtosError;
-      const produtosArr = (produtosAgg ?? []) as { updated_at?: string }[];
-      const produtosTotal = Array.isArray(produtosArr) ? produtosArr.length : 0;
-      const produtosLastUpdated = produtosArr[0]?.updated_at ?? null;
+    const firstOrderDate = (firstOrderRes.data as OrderDateRow)?.data_criacao ?? null;
+    const lastOrderDate = (lastOrderRes.data as OrderDateRow)?.data_criacao ?? null;
+    const produtosLastUpdated = (produtosLastUpdatedRes.data as ProdutoUpdateRow)?.updated_at ?? null;
 
-    // sync_settings: tiny_orders_incremental
-    const { data: settingsAgg, error: settingsError } = await supabaseAdmin
-      .from('sync_settings')
-      .select('tiny_orders_incremental')
-      .eq('key', 'tiny_orders_incremental')
-      .maybeSingle();
-    if (settingsError) throw settingsError;
+    const produtosTotal = produtosTotalRes.count ?? 0;
+    const produtosWithoutImage = produtosWithoutImageRes.count ?? 0;
 
-    const response = {
+    const overview: SyncOverviewResponse = {
       orders: {
-        total: Number(ordersTyped?.count ?? 0),
-        firstDate: ordersTyped?.min ?? null,
-        lastDate: ordersTyped?.max ?? null,
-      },
-      items: {
-        total: itemsTotal,
+        total: ordersTotal,
+        firstDate: firstOrderDate,
+        lastDate: lastOrderDate,
+        withoutItems,
+        withoutFrete,
       },
       produtos: {
         total: produtosTotal,
         lastUpdatedAt: produtosLastUpdated,
-      },
-      settings: {
-        tinyOrdersIncremental: (settingsAgg as { tiny_orders_incremental?: any } | null)?.tiny_orders_incremental ?? null,
+        withoutImage: produtosWithoutImage,
       },
     };
 
-    return NextResponse.json(response);
-  } catch (err: any) {
+    return NextResponse.json(overview);
+  } catch (error) {
+    console.error('[sync/overview] error', error);
     return NextResponse.json(
-      { error: 'Erro ao obter overview de sincronização', details: err?.message ?? String(err) },
+      { error: 'Erro ao consultar status de sincronização' },
       { status: 500 }
     );
   }
