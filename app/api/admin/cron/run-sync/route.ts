@@ -55,6 +55,23 @@ async function logStep(step: StepName, status: 'ok' | 'error', message: string, 
   }
 }
 
+function formatErrorDetail(error: unknown, fallback: string) {
+  if (!error) return fallback;
+  if (typeof error === 'string') return error;
+  if (error instanceof Error && typeof error.message === 'string') {
+    return error.message || fallback;
+  }
+  if (typeof (error as any)?.message === 'string') {
+    return (error as any).message as string;
+  }
+
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch {
+    return fallback;
+  }
+}
+
 function sanitizeNumber(value: unknown, fallback: number) {
   const parsed = typeof value === 'string' ? Number(value) : Number(value ?? NaN);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -105,6 +122,7 @@ export async function POST(req: Request) {
   const { diasRecentes, enrichEnabled, produtos } = config;
 
   const steps: StepResult[] = [];
+  let partial = false;
 
   try {
     const ordersJson = await callInternalJson('/api/tiny/sync', {
@@ -127,7 +145,7 @@ export async function POST(req: Request) {
       processed: ordersProcessed,
     });
   } catch (error: any) {
-    const detail = error?.message ?? 'Erro ao sincronizar pedidos recentes';
+    const detail = formatErrorDetail(error, 'Erro ao sincronizar pedidos recentes');
     const failedStep: StepResult = { name: 'orders', ok: false, detail };
     steps.push(failedStep);
     await logStep('orders', 'error', 'Falha ao sincronizar pedidos recentes', {
@@ -154,11 +172,11 @@ export async function POST(req: Request) {
         raw: enrichJson,
       });
     } catch (error: any) {
-      const detail = error?.message ?? 'Erro ao enriquecer pedidos';
+      const detail = formatErrorDetail(error, 'Erro ao enriquecer pedidos');
       const failedStep: StepResult = { name: 'enrich', ok: false, detail };
       steps.push(failedStep);
-      await logStep('enrich', 'error', 'Falha ao rodar enrich background', { error: detail });
-      return NextResponse.json({ ok: false, steps }, { status: 500 });
+      partial = true;
+      await logStep('enrich', 'error', 'Falha ao rodar enrich background', { detail });
     }
   }
 
@@ -188,17 +206,27 @@ export async function POST(req: Request) {
         summary: produtosJson,
       });
     } catch (error: any) {
-      const detail = error?.message ?? 'Erro ao sincronizar produtos';
+      const detail = formatErrorDetail(error, 'Erro ao sincronizar produtos');
       const failedStep: StepResult = { name: 'produtos', ok: false, detail };
       steps.push(failedStep);
+      partial = true;
       await logStep('produtos', 'error', 'Falha no sync de produtos', {
         limit,
         enrichEstoque,
-        error: detail,
+        detail,
       });
-      return NextResponse.json({ ok: false, steps }, { status: 500 });
     }
   }
 
-  return NextResponse.json({ ok: true, steps });
+  const hasFailedStep = partial || steps.some((step) => step.ok === false);
+  const responseBody: { ok: boolean; partial?: boolean; steps: StepResult[] } = {
+    ok: true,
+    steps,
+  };
+
+  if (hasFailedStep) {
+    responseBody.partial = true;
+  }
+
+  return NextResponse.json(responseBody);
 }

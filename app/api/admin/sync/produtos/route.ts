@@ -11,17 +11,19 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as {
       limit?: number;
       enrichEstoque?: boolean;
+      modoCron?: boolean;
     };
 
     const limit = sanitizeLimit(body?.limit, 30);
     const enrichEstoque = typeof body?.enrichEstoque === 'boolean' ? body.enrichEstoque : true;
+    const modoCron = typeof body?.modoCron === 'boolean' ? body.modoCron : false;
 
     const result = await callInternalJson('/api/produtos/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ limit, enrichEstoque, modoCron: false }),
+      body: JSON.stringify({ limit, enrichEstoque, modoCron }),
     });
 
     return NextResponse.json({ ok: true, result });
