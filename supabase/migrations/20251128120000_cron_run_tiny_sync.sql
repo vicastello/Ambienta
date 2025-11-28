@@ -5,16 +5,16 @@ create extension if not exists pg_cron with schema extensions;
 set search_path = public, extensions;
 set check_function_bodies = off;
 
--- Função chamada pelo pg_cron para acionar o backend Next.js
 create or replace function public.cron_run_tiny_sync()
-declare
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
-
-  perform net.http_post(
+declare
+  v_request_id bigint;
+begin
+  select net.http_post(
     url := 'https://gestor-tiny.vercel.app/api/admin/cron/run-sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
@@ -22,14 +22,18 @@ as $$
     ),
     body := '{}'::jsonb,
     timeout_milliseconds := 55000
-  );
+  )
+  into v_request_id;
 
   insert into public.sync_logs (job_id, level, message, meta)
   values (
     null,
     'info',
     'cron_run_tiny_sync dispatched via pg_cron',
-    jsonb_build_object('status', 'dispatched', 'url', 'https://gestor-tiny.vercel.app/api/admin/cron/run-sync')
+    jsonb_build_object(
+      'request_id', v_request_id,
+      'url', 'https://gestor-tiny.vercel.app/api/admin/cron/run-sync'
+    )
   );
 exception
   when others then
