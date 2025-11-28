@@ -1,5 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Produção – Supabase pg_cron
+- **Função**: `public.cron_run_tiny_sync()` (definida em `supabase/migrations/20251128120000_cron_run_tiny_sync.sql`) chama `POST https://gestor-tiny.vercel.app/api/admin/cron/run-sync` usando `net.http_post` e registra logs em `sync_logs`.
+- **Job**: `cron.schedule('tiny_sync_every_15min', '*/15 * * * *', $$select public.cron_run_tiny_sync();$$)` mantém o pipeline Tiny → Ambienta atualizado (pedidos recentes, enrich background e sync incremental de produtos) sem depender do Vercel Cron.
+- **Frequência**: altere a periodicidade executando `cron.unschedule('tiny_sync_every_15min')` seguido de um novo `cron.schedule(...)` ou ajustando a migration incremental.
+- **Vercel Cron (opcional)**: pode ser mantido apenas para tarefas diárias (ex.: refresh de token). O plano grátis da Vercel não precisa mais acionar `/api/admin/cron/run-sync`.
+- **UI manual**: os botões em Configurações continuam válidos para disparos sob demanda; eles coexistem com o job automático do Supabase.
+
 ## Getting Started
 
 First, run the development server:
