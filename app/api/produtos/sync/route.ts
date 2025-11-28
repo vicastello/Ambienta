@@ -1,59 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { countProdutos } from '@/src/repositories/tinyProdutosRepository';
-import { syncProdutosFromTiny } from '@/src/lib/sync/produtos';
+import { syncProdutosFromTiny, type SyncProdutosMode, type SyncProdutosOptions } from '@/src/lib/sync/produtos';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      limit = 100,
-      enrichEstoque = true,
-      modoCron = false,
-    } = body;
+      mode: bodyMode,
+      updatedSince,
+      limit,
+      workers,
+      enrichAtivo,
+      enrichEstoque,
+      modoCron: bodyModoCron = false,
+    } = body ?? {};
 
-    const startedAt = Date.now();
-    console.log('[sync-produtos] start', { body, modoCron });
-    const result = await syncProdutosFromTiny({ limit, enrichEstoque, modoCron });
-    const elapsed = Date.now() - startedAt;
-    console.log('[sync-produtos] finish', { elapsed, resultSummary: { ok: result.ok, timedOut: result.timedOut, totalRequests: result.totalRequests } });
-    const mode = modoCron ? 'cron' : 'manual';
+    const resolvedMode: SyncProdutosMode = bodyMode
+      ? bodyMode
+      : bodyModoCron
+        ? 'cron'
+        : 'manual';
+    const resolvedModoCron = resolvedMode === 'cron' || Boolean(bodyModoCron);
+    const resolvedEnrich = typeof enrichAtivo === 'boolean'
+      ? enrichAtivo
+      : typeof enrichEstoque === 'boolean'
+        ? enrichEstoque
+        : undefined;
 
-    if ((result as any)?.ok === false || result.timedOut) {
-      // Falha controlada ou timeout
-      const err = result as any;
-      const isProd = process.env.NODE_ENV === 'production';
-      return NextResponse.json(
-        {
-          ok: false,
-          mode,
-          timedOut: result.timedOut ?? false,
-          error: {
-            code: err.reason ?? 'timeout-or-error',
-            message: isProd
-              ? 'Internal Server Error'
-              : err.errorMessage ?? 'Timeout ou erro interno',
-          },
-          totalRequests: result.totalRequests ?? 0,
-          total429: result.total429 ?? 0,
-          windowUsagePct: result.windowUsagePct ?? 0,
-          batchUsado: result.batchUsado ?? 0,
-          workersUsados: result.workersUsados ?? 0,
-          enrichAtivo: result.enrichAtivo ?? false,
-        },
-        { status: 500 }
-      );
-    }
+    const options: SyncProdutosOptions = {
+      mode: resolvedMode,
+      modoCron: resolvedModoCron,
+      updatedSince: typeof updatedSince === 'string' ? updatedSince : undefined,
+    };
+    if (typeof limit === 'number') options.limit = limit;
+    if (typeof workers === 'number') options.workers = workers;
+    if (typeof resolvedEnrich === 'boolean') options.enrichEstoque = resolvedEnrich;
 
-    // Evitar sobrescrever ok/mode
-    const { ok, mode: _mode, ...rest } = result;
-    return NextResponse.json({ ok, mode, ...rest });
+    const result = await syncProdutosFromTiny(options);
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error('[Sync Produtos] Erro:', error);
     const isProd = process.env.NODE_ENV === 'production';
-    const payload = isProd
-      ? { error: { code: '500', message: 'Internal Server Error' } }
-      : { error: { code: '500', message: error?.message ?? 'Erro desconhecido', stack: error?.stack } };
-    return NextResponse.json(payload, { status: 500 });
+    return NextResponse.json(
+      {
+        ok: false,
+        message: isProd ? 'Internal Server Error' : error?.message ?? 'Erro desconhecido',
+        ...(isProd ? {} : { stack: error?.stack }),
+      },
+      { status: 500 }
+    );
   }
 }
 

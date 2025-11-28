@@ -116,6 +116,53 @@ await runFreteEnrichment({
 TS
 ```
 
+#### Novo endpoint administrativo (frete + itens + canal + cidade/UF)
+
+Agora é possível orquestrar tudo via `POST /api/admin/enrich-frete` com `mode: "range"`. O endpoint:
+- Sincroniza itens dos pedidos daquela janela.
+- Roda `runFreteEnrichment` invertendo a ordem (mais antigos primeiro) no intervalo.
+- Normaliza canais (incluindo "Outros") e preenche cidade/UF apenas para os pedidos na janela.
+- Registra logs no `sync_logs` com `meta.step = 'orders'` e `meta.janela = AAAA-MM-DD/AAAA-MM-DD`, garantindo visibilidade no calendário.
+
+Parâmetros aceitos:
+
+```json
+{
+  "mode": "range",
+  "dataInicial": "YYYY-MM-DD",
+  "dataFinal": "YYYY-MM-DD",
+  "limit": 80,          // opcional, máximo de pedidos por passe no frete
+  "batchSize": 8,       // opcional, tamanho do lote por passe
+  "itensDelayMs": 800,  // opcional, delay entre requisições de itens (250-5000)
+  "channelLimit": 400,  // opcional, override da busca de canais
+  "cidadeLimit": 400    // opcional, override da busca de cidade/UF
+}
+```
+
+Exemplos para o dia **24/11/2025**:
+
+```bash
+# Localhost
+curl -X POST http://localhost:3000/api/admin/enrich-frete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "range",
+    "dataInicial": "2025-11-24",
+    "dataFinal": "2025-11-24"
+  }'
+
+# Produção (Vercel)
+curl -X POST https://gestor-tiny.vercel.app/api/admin/enrich-frete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "range",
+    "dataInicial": "2025-11-24",
+    "dataFinal": "2025-11-24"
+  }'
+```
+
+> O retorno traz resumos de cada etapa (`itens`, `frete`, `canais`, `cidadeUf`) e o total de pedidos impactados. Se qualquer etapa falhar, o log correspondente aparece como `error` no calendário.
+
 ## 📊 Monitoramento
 
 ### Verificar Pedidos Sincronizados

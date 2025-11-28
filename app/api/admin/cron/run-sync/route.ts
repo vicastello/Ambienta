@@ -189,22 +189,46 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ limit, enrichEstoque, modoCron: true }),
+        body: JSON.stringify({
+          mode: 'cron',
+          modoCron: true,
+          limit,
+          enrichAtivo: enrichEstoque,
+        }),
       });
 
+      const processed = typeof produtosJson?.totalAtualizados === 'number'
+        ? produtosJson.totalAtualizados
+        : typeof produtosJson?.totalSincronizados === 'number'
+          ? produtosJson.totalSincronizados
+          : 0;
+      const produtosOk = produtosJson?.ok !== false;
+      const produtosDetail = produtosOk
+        ? 'produtos sincronizados'
+        : produtosJson?.reason ?? 'falha no sync de produtos';
       const produtosStep: StepResult = {
         name: 'produtos',
-        ok: true,
-        processed: typeof produtosJson?.totalAtualizados === 'number' ? produtosJson.totalAtualizados : undefined,
-        detail: 'produtos sincronizados',
+        ok: produtosOk,
+        processed,
+        detail: produtosDetail,
         meta: { result: produtosJson },
       };
       steps.push(produtosStep);
-      await logStep('produtos', 'ok', 'Sync de produtos executado via cron', {
-        limit,
-        enrichEstoque,
-        summary: produtosJson,
-      });
+
+      await logStep(
+        'produtos',
+        produtosOk ? 'ok' : 'error',
+        produtosOk ? 'Sync de produtos executado via cron' : 'Sync de produtos falhou via cron',
+        {
+          limit,
+          enrichEstoque,
+          summary: produtosJson,
+        }
+      );
+
+      if (!produtosOk) {
+        partial = true;
+      }
     } catch (error: any) {
       const detail = formatErrorDetail(error, 'Erro ao sincronizar produtos');
       const failedStep: StepResult = { name: 'produtos', ok: false, detail };

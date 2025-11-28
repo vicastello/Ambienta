@@ -13,17 +13,33 @@ import type { Database } from '@/src/types/db-public';
 
 type LogFn = (msg: string, meta?: Record<string, unknown>) => void;
 
+// Modos suportados pelo core: manual (UI/scripts), cron (incremental conservador) e backfill (janelas maiores).
+export type SyncProdutosMode = 'manual' | 'cron' | 'backfill';
+
+// Parâmetros principais consumidos pela sync – limites, modo, cursor e ajustes operacionais vindos da UI/cron.
 export type SyncProdutosOptions = {
   limit?: number;
   enrichEstoque?: boolean;
   modoCron?: boolean;
+  mode?: SyncProdutosMode;
+  updatedSince?: string | null;
+  workers?: number;
+  offset?: number;
+  maxPages?: number;
+  situacao?: 'A' | 'I' | 'E' | 'all';
   onLog?: LogFn;
 };
 
+// Payload rico que retornamos para APIs/UI: totais sincronizados, cursor aplicado e telemetria de execução.
 export type SyncProdutosResult = {
   totalSincronizados: number;
   totalNovos: number;
   totalAtualizados: number;
+  updatedSince: string | null;
+  latestDataAlteracao: string | null;
+  pagesProcessed: number;
+  offsetStart: number;
+  offsetEnd: number;
   stats: SyncStats;
 };
 
@@ -71,6 +87,12 @@ class RateLimiter {
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const MODE_TIMEBOX: Record<SyncProdutosMode, number> = {
+  manual: 20_000,
+  cron: 12_000,
+  backfill: 45_000,
+};
 
 // Wrapper de requisições para aplicar rate limit + backoff 429
 async function tinyRequest<T>({
@@ -120,6 +142,39 @@ function buildStats(): SyncStats {
   };
 }
 
+function formatTinyTimestamp(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+async function inferUpdatedSince(mode: SyncProdutosMode, explicit?: string | null) {
+  if (typeof explicit === 'string' && explicit.trim()) {
+    return explicit.trim();
+  }
+
+  if (mode !== 'cron') return null;
+
+  const { data } = await supabaseAdmin
+    .from('tiny_produtos')
+    .select('data_atualizacao_tiny')
+    .not('data_atualizacao_tiny', 'is', null)
+    .order('data_atualizacao_tiny', { ascending: false })
+    .limit(1);
+
+  const iso = (data as { data_atualizacao_tiny: string | null }[] | null)?.[0]?.data_atualizacao_tiny;
+  if (iso) {
+    const parsed = new Date(iso as string);
+    if (!Number.isNaN(parsed.getTime())) {
+      parsed.setMinutes(parsed.getMinutes() - 5);
+      return formatTinyTimestamp(parsed);
+    }
+  }
+
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() - 2);
+  return formatTinyTimestamp(fallback);
+}
+
 function detectPressao(stats: SyncStats, usagePct: number) {
   return stats.total429 > 0 || usagePct > 80 || stats.backoffMs > 0;
 }
@@ -127,26 +182,38 @@ function detectPressao(stats: SyncStats, usagePct: number) {
 export async function syncProdutosFromTiny(
   options: SyncProdutosOptions = {}
 ): Promise<
-  SyncProdutosResult & { ok: true; mode: 'manual' | 'cron'; timedOut: boolean; totalRequests: number; total429: number; windowUsagePct: number; batchUsado: number; workersUsados: number; enrichAtivo: boolean; }
-  | { ok: false; mode: 'manual' | 'cron'; timedOut: boolean; reason: string; errorMessage?: string; totalRequests?: number; total429?: number; windowUsagePct?: number; batchUsado?: number; workersUsados?: number; enrichAtivo?: boolean; }
+  SyncProdutosResult & { ok: true; mode: SyncProdutosMode; timedOut: boolean; totalRequests: number; total429: number; windowUsagePct: number; batchUsado: number; workersUsados: number; enrichAtivo: boolean; }
+  | { ok: false; mode: SyncProdutosMode; timedOut: boolean; reason: string; errorMessage?: string; totalRequests?: number; total429?: number; windowUsagePct?: number; batchUsado?: number; workersUsados?: number; enrichAtivo?: boolean; updatedSince?: string | null; pagesProcessed?: number; }
 > {
-  const log: LogFn = options.onLog || ((msg, meta) => console.log(`[Sync Produtos] ${msg}`, meta ?? ''));
+  const log: LogFn = options.onLog || ((msg, meta) => console.warn(`[Sync Produtos] ${msg}`, meta ?? ''));
 
   // Config base
-  let limit = options.limit ?? 100;
+  let limit = Math.max(1, options.limit ?? 100);
   let enrichEstoque = options.enrichEstoque ?? true;
   let workers = 4;
-  const mode = options.modoCron ? 'cron' : 'manual';
+  if (typeof options.workers === 'number' && Number.isFinite(options.workers)) {
+    workers = Math.max(1, Math.floor(options.workers));
+  }
+  const mode: SyncProdutosMode = options.mode ?? (options.modoCron ? 'cron' : 'manual');
   let timedOut = false;
-  const TIMEBOX_MS = 7000;
+  const TIMEBOX_MS = MODE_TIMEBOX[mode] ?? MODE_TIMEBOX.manual;
   const start = Date.now();
 
-  // Ajustes automáticos para cron
-  if (options.modoCron) {
-    limit = 8; // ultra conservador
+  // Ajustes automáticos para cron/backfill
+  if (mode === 'cron') {
+    limit = Math.min(limit, 40);
     workers = 1;
     enrichEstoque = false;
   }
+
+  if (mode === 'backfill' && typeof options.enrichEstoque !== 'boolean') {
+    // Backfill prioriza velocidade; só enriquece estoque se solicitarem explicitamente
+    enrichEstoque = false;
+  }
+
+  const offsetStart = Math.max(0, options.offset ?? 0);
+  const maxPages = mode === 'backfill' ? Math.max(1, options.maxPages ?? 5) : 1;
+  const situacaoFiltro = options.situacao && options.situacao !== 'all' ? options.situacao : 'A';
 
   const stats = buildStats();
   stats.batchUsado = limit;
@@ -162,16 +229,28 @@ export async function syncProdutosFromTiny(
     return { ok: false, mode, timedOut: false, reason: 'access-token', errorMessage: String(err), total429: stats.total429, totalRequests: stats.totalRequests, windowUsagePct: stats.windowUsagePct, batchUsado: stats.batchUsado, workersUsados: stats.workersUsados, enrichAtivo: !!enrichEstoque };
   }
 
-  let offset = 0;
-  let hasMore = true;
   let totalSincronizados = 0;
   let totalNovos = 0;
   let totalAtualizados = 0;
+  let pagesProcessed = 0;
+  let currentOffset = offsetStart;
+  const offsetSummary = { start: offsetStart, end: offsetStart };
+  const requestedUpdatedSince = await inferUpdatedSince(mode, options.updatedSince ?? null);
+  let updatedSince: string | null = requestedUpdatedSince;
 
   // Cache simples para If-Modified-Since (usando dataAlteracao da listagem)
   const lastModifiedMap = new Map<number, string>();
 
   // Função para processar uma página de produtos com paralelismo controlado
+  let latestDataAlteracao: string | null = null;
+  const updateLatestData = (value?: string | null) => {
+    if (!value) return;
+    if (!latestDataAlteracao || value > latestDataAlteracao) {
+      latestDataAlteracao = value;
+      updatedSince = value;
+    }
+  };
+
   async function processItens(itens: TinyListarProdutosResponse['itens']) {
     const queue = [...itens];
     const results: Promise<void>[] = [];
@@ -231,6 +310,8 @@ export async function syncProdutosFromTiny(
             continue;
           }
 
+           updateLatestData((produto as any)?.dataAlteracao ?? (detalhe as any)?.dataAlteracao ?? null);
+
           // Buscar o registro atual para merge se necessário
           let registroAtual: any = null;
           try {
@@ -278,6 +359,8 @@ export async function syncProdutosFromTiny(
 
           await upsertProduto(produtoData);
           totalSincronizados++;
+          if (registroAtual) totalAtualizados++;
+          else totalNovos++;
         } catch (error) {
           log(`Erro ao processar produto ${produto.id}`, { error: String(error) });
           if (stats.total429 > 0) {
@@ -294,91 +377,10 @@ export async function syncProdutosFromTiny(
     }
     await Promise.all(results);
   }
+  const situacaoParam = options.situacao === 'all' ? undefined : situacaoFiltro;
+  const maxPageAttempts = mode === 'backfill' ? maxPages : 1;
 
-  try {
-    // Só processa UMA janela/página por chamada (manual ou cron)
-    const usage = limiter.usagePct();
-    const emPressao = detectPressao(stats, usage);
-    if (emPressao) {
-      // Reduz batch e paralelismo sob pressão
-      if (limit > 25) limit = 25;
-      else if (limit > 10) limit = 10;
-      enrichEstoque = false;
-      workers = Math.max(1, Math.floor(workers / 2));
-      stats.batchUsado = limit;
-      stats.workersUsados = workers;
-      stats.enrichAtivo = enrichEstoque;
-      log(`Pressão detectada. Ajustando: limit=${limit}, workers=${workers}, enrich=${enrichEstoque}`);
-    }
-
-    const page = await tinyRequest<TinyListarProdutosResponse>({
-      fn: () => listarProdutos(accessToken!, { limit, offset, situacao: 'A' }),
-      limiter,
-      stats,
-      log,
-    });
-
-    const itens = page.itens || [];
-    if (itens.length > 0) {
-      await processItens(itens);
-    }
-    // Não paginar além de 1 janela!
-    // Se timebox estourar, interrompe processamento
-    if (timedOut) {
-      const meta = {
-        totalRequests: stats.totalRequests,
-        total429: stats.total429,
-        backoffMs: stats.backoffMs,
-        maxBackoffMs: stats.maxBackoffMs,
-        windowUsagePct: stats.windowUsagePct,
-        batchUsado: stats.batchUsado,
-        workersUsados: stats.workersUsados,
-        enrichAtivo: !!enrichEstoque,
-      };
-      log('Resumo da sync (timed out)', meta);
-      try {
-        const payload: Database['public']['Tables']['sync_logs']['Insert'] = {
-          job_id: null,
-          level: 'warn',
-          message: 'sync_produtos_timeout',
-          meta: { ...meta, mode, timedOut: true },
-        };
-        await supabaseAdmin.from('sync_logs').insert(payload as any);
-      } catch (err) {
-        log('Falha ao gravar log no Supabase', { error: String(err) });
-      }
-      return {
-        ok: false,
-        mode,
-        timedOut: true,
-        reason: 'timeout',
-        errorMessage: 'Timebox de execução excedido',
-        totalRequests: stats.totalRequests,
-        total429: stats.total429,
-        windowUsagePct: stats.windowUsagePct,
-        batchUsado: stats.batchUsado,
-        workersUsados: stats.workersUsados,
-        enrichAtivo: !!enrichEstoque,
-      };
-    }
-  } catch (err) {
-    log('Erro inesperado durante sync', { error: String(err) });
-    return {
-      ok: false,
-      mode,
-      timedOut: false,
-      reason: 'unexpected',
-      errorMessage: String(err),
-      totalRequests: stats.totalRequests,
-      total429: stats.total429,
-      windowUsagePct: stats.windowUsagePct,
-      batchUsado: stats.batchUsado,
-      workersUsados: stats.workersUsados,
-      enrichAtivo: !!enrichEstoque,
-    };
-  }
-
-  const meta = {
+  const buildMeta = (extra?: Record<string, unknown>) => ({
     totalRequests: stats.totalRequests,
     total429: stats.total429,
     backoffMs: stats.backoffMs,
@@ -389,23 +391,134 @@ export async function syncProdutosFromTiny(
     enrichAtivo: !!enrichEstoque,
     mode,
     timedOut,
+    updatedSince,
+    latestDataAlteracao,
+    pagesProcessed,
+    offsetStart: offsetSummary.start,
+    offsetEnd: offsetSummary.end,
+    limitAtual: limit,
+    workersAtuais: workers,
+    requestedUpdatedSince,
+    ...(extra ?? {}),
+  });
+
+  const persistLog = async (message: string, level: 'info' | 'warn' | 'error', extra?: Record<string, unknown>) => {
+    try {
+      const payload: Database['public']['Tables']['sync_logs']['Insert'] = {
+        job_id: null,
+        level,
+        message,
+        meta: buildMeta(extra),
+      };
+      await supabaseAdmin.from('sync_logs').insert(payload as any);
+    } catch (err) {
+      log('Falha ao gravar log no Supabase', { error: String(err) });
+    }
   };
 
-  log('Resumo da sync', meta);
+  const emitTimeout = async () => {
+    const meta = buildMeta({ reason: 'timeout' });
+    log('Resumo da sync (timeout)', meta);
+    await persistLog('sync_produtos_timeout', 'warn', { reason: 'timeout' });
+    return {
+      ok: false as const,
+      mode,
+      timedOut: true as const,
+      reason: 'timeout' as const,
+      errorMessage: 'Timebox de execução excedido',
+      totalRequests: stats.totalRequests,
+      total429: stats.total429,
+      windowUsagePct: stats.windowUsagePct,
+      batchUsado: stats.batchUsado,
+      workersUsados: stats.workersUsados,
+      enrichAtivo: !!enrichEstoque,
+      updatedSince,
+      pagesProcessed,
+    } as const;
+  };
+
+  const emitUnexpected = async (error: unknown) => {
+    log('Erro inesperado durante sync', { error: String(error) });
+    await persistLog('sync_produtos_error', 'error', { reason: 'unexpected', error: String(error) });
+    return {
+      ok: false as const,
+      mode,
+      timedOut: false,
+      reason: 'unexpected' as const,
+      errorMessage: String(error),
+      totalRequests: stats.totalRequests,
+      total429: stats.total429,
+      windowUsagePct: stats.windowUsagePct,
+      batchUsado: stats.batchUsado,
+      workersUsados: stats.workersUsados,
+      enrichAtivo: !!enrichEstoque,
+      updatedSince,
+      pagesProcessed,
+    } as const;
+  };
+
   try {
-    const payload: Database['public']['Tables']['sync_logs']['Insert'] = {
-      job_id: null,
-      level: stats.total429 > 0 ? 'warn' : 'info',
-      message: 'sync_produtos',
-      meta,
-    };
-    await supabaseAdmin.from('sync_logs').insert(payload as any);
-  } catch (err) {
-    log('Falha ao gravar log no Supabase', { error: String(err) });
+    while (!timedOut && pagesProcessed < maxPageAttempts) {
+      const usage = limiter.usagePct();
+      if (detectPressao(stats, usage)) {
+        if (limit > 50) limit = 50;
+        else if (limit > 25) limit = 25;
+        else if (limit > 10) limit = 10;
+        enrichEstoque = false;
+        workers = Math.max(1, Math.floor(workers / 2));
+        stats.batchUsado = limit;
+        stats.workersUsados = workers;
+        stats.enrichAtivo = enrichEstoque;
+        log(`Pressão detectada. Ajustando: limit=${limit}, workers=${workers}, enrich=${enrichEstoque}`);
+      }
+
+      const offsetForPage = currentOffset;
+      offsetSummary.end = offsetForPage;
+      const limitForPage = limit;
+      stats.batchUsado = limitForPage;
+
+      const page = await tinyRequest<TinyListarProdutosResponse>({
+        fn: () =>
+          listarProdutos(accessToken!, {
+            limit: limitForPage,
+            offset: offsetForPage,
+            situacao: situacaoParam,
+            dataAlteracao: requestedUpdatedSince ?? undefined,
+          }),
+        limiter,
+        stats,
+        log,
+      });
+
+      const itens = page.itens || [];
+      if (itens.length > 0) {
+        await processItens(itens);
+      }
+
+      pagesProcessed += 1;
+
+      if (timedOut) {
+        return emitTimeout();
+      }
+
+      const paginacao = page.paginacao;
+      const reachedEnd = paginacao ? paginacao.pagina >= paginacao.paginas : itens.length < limitForPage;
+      currentOffset += limitForPage;
+
+      if (mode !== 'backfill' || pagesProcessed >= maxPages || reachedEnd) {
+        break;
+      }
+    }
+  } catch (error) {
+    return emitUnexpected(error);
   }
 
+  const meta = buildMeta();
+  log('Resumo da sync', meta);
+  await persistLog('sync_produtos', stats.total429 > 0 ? 'warn' : 'info');
+
   return {
-    ok: true,
+    ok: true as const,
     mode,
     timedOut,
     totalSincronizados,
@@ -417,6 +530,11 @@ export async function syncProdutosFromTiny(
     batchUsado: stats.batchUsado,
     workersUsados: stats.workersUsados,
     enrichAtivo: !!enrichEstoque,
+    updatedSince,
+    latestDataAlteracao,
+    pagesProcessed,
+    offsetStart: offsetSummary.start,
+    offsetEnd: offsetSummary.end,
     stats,
   };
 }

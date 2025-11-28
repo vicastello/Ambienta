@@ -342,6 +342,8 @@ export default function ConfiguracoesPage() {
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isSyncingProdutos, setIsSyncingProdutos] = useState(false);
+  const [isBackfillingProdutos, setIsBackfillingProdutos] = useState(false);
+  const [produtosSyncResult, setProdutosSyncResult] = useState<any | null>(null);
   const [postSyncRunning, setPostSyncRunning] = useState(false);
   const [syncingDay, setSyncingDay] = useState<string | null>(null);
   const postSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -384,18 +386,18 @@ export default function ConfiguracoesPage() {
     return json;
   }, []);
 
-  const executeProdutosSync = useCallback(async () => {
+  const executeProdutosSync = useCallback(async (payload: Record<string, any>) => {
     const res = await fetch('/api/admin/sync/produtos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: produtosDays, enrichEstoque: true }),
+      body: JSON.stringify(payload ?? {}),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(json?.message ?? 'Falha ao sincronizar produtos');
     }
     return json;
-  }, [produtosDays]);
+  }, []);
 
   const renderCronStatusBadge = (ok?: boolean | null) => {
     if (ok === undefined || ok === null) {
@@ -540,7 +542,10 @@ export default function ConfiguracoesPage() {
     let produtosOk = false;
 
     try {
-      await executeProdutosSync();
+      const response = await executeProdutosSync({ mode: 'manual', limit: produtosDays, enrichAtivo: true });
+      if (response?.ok === false) {
+        throw new Error(response?.result?.errorMessage ?? 'Sync de produtos retornou erro');
+      }
       produtosOk = true;
     } catch (error: any) {
       hadError = true;
@@ -557,7 +562,7 @@ export default function ConfiguracoesPage() {
 
     setPostSyncRunning(false);
     refreshAll();
-  }, [executeBackgroundEnrich, executeProdutosSync, refreshAll]);
+  }, [executeBackgroundEnrich, executeProdutosSync, produtosDays, refreshAll]);
 
   const triggerPostSyncEnrichment = useCallback(() => {
     postSyncQueueRef.current = postSyncQueueRef.current
@@ -689,15 +694,39 @@ export default function ConfiguracoesPage() {
   const syncProdutos = async () => {
     setIsSyncingProdutos(true);
     try {
-      const result = await executeProdutosSync();
-      console.warn('[config] produtos sync result', result);
-      handleActionSuccess('Produtos sincronizados com sucesso.');
+      const response = await executeProdutosSync({ mode: 'manual', limit: produtosDays, enrichAtivo: true });
+      const result = response?.result ?? response;
+      setProdutosSyncResult(result ?? null);
+      if (response?.ok === false) {
+        throw new Error(result?.errorMessage ?? 'Sync de produtos retornou erro');
+      }
+      const total = result?.totalSincronizados ?? result?.totalAtualizados ?? '—';
+      handleActionSuccess(`Produtos sincronizados (total processado: ${total}).`);
     } catch (error) {
       console.error('[config] sync-produtos', error);
       setActionError('Falha ao sincronizar produtos. Veja os logs de sincronização.');
       setActionMessage(null);
     } finally {
       setIsSyncingProdutos(false);
+    }
+  };
+
+  const backfillProdutos = async () => {
+    setIsBackfillingProdutos(true);
+    try {
+      const response = await executeProdutosSync({ mode: 'backfill', backfill: true, enrichAtivo: false });
+      const result = response?.result ?? response;
+      setProdutosSyncResult(result ?? null);
+      if (response?.ok === false) {
+        throw new Error(result?.errorMessage ?? 'Backfill retornou erro');
+      }
+      handleActionSuccess('Backfill de produtos disparado. Acompanhe os logs para progresso.');
+    } catch (error) {
+      console.error('[config] backfill-produtos', error);
+      setActionError('Falha ao iniciar backfill de produtos.');
+      setActionMessage(null);
+    } finally {
+      setIsBackfillingProdutos(false);
     }
   };
 
@@ -716,6 +745,23 @@ export default function ConfiguracoesPage() {
   const calendarMonthLabel = useMemo(
     () => formatCalendarLabel(calendarMonthDate),
     [calendarMonthDate]
+  );
+
+  const overviewProdutosLastUpdated = overview?.produtos?.lastUpdatedAt ?? null;
+  const produtosCursorSource = useMemo(() => {
+    return (
+      produtosSyncResult?.latestDataAlteracao ??
+      produtosSyncResult?.updatedSince ??
+      overviewProdutosLastUpdated
+    );
+  }, [overviewProdutosLastUpdated, produtosSyncResult]);
+  const produtosCursorLabel = useMemo(() => formatTinyCursor(produtosCursorSource), [produtosCursorSource]);
+  const produtosCounts = useMemo(
+    () => ({
+      novos: produtosSyncResult?.totalNovos ?? null,
+      atualizados: produtosSyncResult?.totalAtualizados ?? null,
+    }),
+    [produtosSyncResult]
   );
 
   return (
@@ -1270,17 +1316,40 @@ export default function ConfiguracoesPage() {
                   />
                 </div>
 
+                <div className="space-y-1 text-xs text-slate-500">
+                  <p>
+                    Último cursor Tiny:
+                    <span className="ml-1 font-semibold text-slate-900">{produtosCursorLabel}</span>
+                  </p>
+                  <p>
+                    Novos: <span className="font-semibold text-slate-900">{produtosCounts.novos ?? '—'}</span> • Atualizados:
+                    <span className="ml-1 font-semibold text-slate-900">{produtosCounts.atualizados ?? '—'}</span>
+                  </p>
+                </div>
+
                 <p className="text-xs text-slate-500">
                   O token seguro já está configurado no backend; este botão usa o endpoint admin protegido.
                 </p>
 
                 <button
                   onClick={syncProdutos}
-                  disabled={isSyncingProdutos}
-                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium shadow-inner shadow-white/40 transition ${isSyncingProdutos ? 'opacity-70 cursor-wait' : ''}`}
+                  disabled={isSyncingProdutos || isBackfillingProdutos}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium shadow-inner shadow-white/40 transition ${isSyncingProdutos || isBackfillingProdutos ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   Sincronizar produtos
                 </button>
+
+                <button
+                  onClick={backfillProdutos}
+                  disabled={isBackfillingProdutos || isSyncingProdutos}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isBackfillingProdutos || isSyncingProdutos ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  Backfill de produtos
+                </button>
+
+                <p className="text-xs text-amber-600">
+                  Aviso: o modo backfill avança várias páginas e pode levar minutos. Use somente fora do horário de pico.
+                </p>
 
                 <p className="text-xs text-slate-500">
                   Total: {overview?.produtos.total ?? '—'} • Sem imagem: {overview?.produtos.withoutImage ?? '—'}
@@ -1476,6 +1545,25 @@ function formatDateTime(value: string | null) {
     dateStyle: 'short',
     timeStyle: 'short',
   });
+}
+
+function formatTinyCursor(value: string | null) {
+  if (!value) return '—';
+  let candidate = value;
+  if (candidate.includes(' ') && !candidate.includes('T')) {
+    candidate = candidate.replace(' ', 'T');
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(candidate)) {
+    candidate = `${candidate}Z`;
+  }
+  const date = new Date(candidate);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  }
+  return value;
 }
 
 function badgeClasses(level: string) {
