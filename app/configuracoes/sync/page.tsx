@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import AppLayout from "@/components/layout/AppLayout";
+import { AppLayout } from "@/components/layout/AppLayout";
 
 const OVERVIEW_URL = "/api/admin/sync/overview";
 const SYNC_PEDIDOS_URL = "/api/tiny/sync";
