@@ -7,9 +7,14 @@ export async function GET() {
 
     // tiny_orders: total, firstDate, lastDate
     const { data: ordersAgg, error: ordersError } = await supabaseAdmin
-      .rpc('tiny_orders_overview');
+      .from('tiny_orders')
+      .select('count:id, min:data_criacao, max:data_criacao')
+      .maybeSingle();
     if (ordersError) throw ordersError;
-    const orders = Array.isArray(ordersAgg) && ordersAgg.length > 0 ? ordersAgg[0] : {};
+
+    // Tipos explícitos para evitar never
+    type OrdersAgg = { count: string; min: string | null; max: string | null } | null;
+    const ordersTyped = ordersAgg as OrdersAgg;
 
     // tiny_pedido_itens: total
     const { data: itemsAgg, error: itemsError } = await supabaseAdmin
@@ -26,7 +31,7 @@ export async function GET() {
       .limit(1);
     if (produtosError) throw produtosError;
     const produtosTotal = produtosAgg?.length ?? 0;
-    const produtosLastUpdated = produtosAgg && produtosAgg[0]?.updated_at ? produtosAgg[0].updated_at : null;
+    const produtosLastUpdated = Array.isArray(produtosAgg) && produtosAgg[0]?.updated_at ? produtosAgg[0].updated_at : null;
 
     // sync_settings: tiny_orders_incremental
     const { data: settingsAgg, error: settingsError } = await supabaseAdmin
@@ -38,9 +43,9 @@ export async function GET() {
 
     const response = {
       orders: {
-        total: Number(orders?.total ?? 0),
-        firstDate: orders?.first_date ?? null,
-        lastDate: orders?.last_date ?? null,
+        total: Number(ordersTyped?.count ?? 0),
+        firstDate: ordersTyped?.min ?? null,
+        lastDate: ordersTyped?.max ?? null,
       },
       items: {
         total: itemsTotal,
@@ -50,7 +55,7 @@ export async function GET() {
         lastUpdatedAt: produtosLastUpdated,
       },
       settings: {
-        tinyOrdersIncremental: settingsAgg?.tiny_orders_incremental ?? null,
+        tinyOrdersIncremental: (settingsAgg as { tiny_orders_incremental?: any } | null)?.tiny_orders_incremental ?? null,
       },
     };
 
