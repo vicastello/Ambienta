@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import {
   listarProdutos,
   obterEstoqueProduto,
@@ -8,7 +9,12 @@ import {
   TinyListarProdutosResponse,
   TinyApiError,
 } from '@/lib/tinyApi';
-import { getTinyAccessToken, upsertProduto } from '@/src/repositories/tinyProdutosRepository';
+import {
+  getProdutosSyncCursor,
+  upsertProdutosSyncCursor,
+  type ProdutosSyncCursorRow,
+} from '@/src/repositories/produtosCursorRepository';
+import { upsertProduto, upsertProdutosEstoque } from '@/src/repositories/tinyProdutosRepository';
 import type { Database } from '@/src/types/db-public';
 
 type LogFn = (msg: string, meta?: Record<string, unknown>) => void;
@@ -28,6 +34,9 @@ export type SyncProdutosOptions = {
   maxPages?: number;
   situacao?: 'A' | 'I' | 'E' | 'all';
   onLog?: LogFn;
+  estoqueOnly?: boolean;
+  cursorKey?: string | null;
+  modeLabel?: string | null;
 };
 
 // Payload rico que retornamos para APIs/UI: totais sincronizados, cursor aplicado e telemetria de execução.
@@ -41,6 +50,11 @@ export type SyncProdutosResult = {
   offsetStart: number;
   offsetEnd: number;
   stats: SyncStats;
+  modeLabel?: string | null;
+  cursorKey?: string | null;
+  cursorInitialLatest?: string | null;
+  cursorInitialUpdatedSince?: string | null;
+  cursorAppliedUpdatedSince?: string | null;
 };
 
 type SyncStats = {
@@ -88,10 +102,45 @@ class RateLimiter {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const MODE_TIMEBOX: Record<SyncProdutosMode, number> = {
-  manual: 20_000,
-  cron: 12_000,
-  backfill: 45_000,
+const MODE_TIMEBOX: Record<SyncProdutosMode, number | null> = {
+  manual: 90_000,
+  cron: 10_000,
+  backfill: 240_000,
+};
+
+const MAX_TOKEN_REFRESH_RETRIES = 2;
+
+const formatError = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch (err) {
+    return String(error);
+  }
+};
+
+const hasTimezoneInfo = (value: string) => /[zZ]|[+-]\d\d(?::?\d\d)?$/.test(value);
+
+function parseCursorDate(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T');
+  const iso = hasTimezoneInfo(normalized) ? normalized : `${normalized}Z`;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function cursorValueToTinyTimestamp(value?: string | null) {
+  const parsed = parseCursorDate(value);
+  return parsed ? formatTinyTimestamp(parsed) : null;
+}
+
+const sanitizeCursorKey = (value?: string | null) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
 };
 
 // Wrapper de requisições para aplicar rate limit + backoff 429
@@ -183,27 +232,64 @@ export async function syncProdutosFromTiny(
   options: SyncProdutosOptions = {}
 ): Promise<
   SyncProdutosResult & { ok: true; mode: SyncProdutosMode; timedOut: boolean; totalRequests: number; total429: number; windowUsagePct: number; batchUsado: number; workersUsados: number; enrichAtivo: boolean; }
-  | { ok: false; mode: SyncProdutosMode; timedOut: boolean; reason: string; errorMessage?: string; totalRequests?: number; total429?: number; windowUsagePct?: number; batchUsado?: number; workersUsados?: number; enrichAtivo?: boolean; updatedSince?: string | null; pagesProcessed?: number; }
+  | {
+      ok: false;
+      mode: SyncProdutosMode;
+      modeLabel?: string | null;
+      timedOut: boolean;
+      reason: string;
+      errorMessage?: string;
+      totalSincronizados?: number;
+      totalNovos?: number;
+      totalAtualizados?: number;
+      totalRequests?: number;
+      total429?: number;
+      windowUsagePct?: number;
+      batchUsado?: number;
+      workersUsados?: number;
+      enrichAtivo?: boolean;
+      updatedSince?: string | null;
+      latestDataAlteracao?: string | null;
+      pagesProcessed?: number;
+      cursorKey?: string | null;
+    }
 > {
-  const log: LogFn = options.onLog || ((msg, meta) => console.warn(`[Sync Produtos] ${msg}`, meta ?? ''));
+  const mode: SyncProdutosMode = options.mode ?? (options.modoCron ? 'cron' : 'manual');
+  const resolvedModeLabelRaw = typeof options.modeLabel === 'string' ? options.modeLabel.trim() : '';
+  const modeLabel = resolvedModeLabelRaw
+    ? resolvedModeLabelRaw
+    : mode === 'cron' && options.estoqueOnly
+      ? 'cron_estoque'
+      : mode;
+  const log: LogFn = options.onLog || ((msg, meta) => console.warn(`[Sync Produtos][${modeLabel}] ${msg}`, meta ?? ''));
 
   // Config base
   let limit = Math.max(1, options.limit ?? 100);
-  let enrichEstoque = options.enrichEstoque ?? true;
+  const estoqueOnly = !!options.estoqueOnly;
+  let enrichEstoque =
+    typeof options.enrichEstoque === 'boolean'
+      ? options.enrichEstoque
+      : true;
+  if (estoqueOnly && typeof options.enrichEstoque !== 'boolean') {
+    enrichEstoque = true;
+  }
   let workers = 4;
   if (typeof options.workers === 'number' && Number.isFinite(options.workers)) {
     workers = Math.max(1, Math.floor(options.workers));
   }
-  const mode: SyncProdutosMode = options.mode ?? (options.modoCron ? 'cron' : 'manual');
   let timedOut = false;
-  const TIMEBOX_MS = MODE_TIMEBOX[mode] ?? MODE_TIMEBOX.manual;
+  const timeboxMs = MODE_TIMEBOX[mode];
+  const hasTimebox = typeof timeboxMs === 'number' && timeboxMs > 0;
+  const resolvedTimeboxMs = hasTimebox ? (timeboxMs as number) : null;
   const start = Date.now();
 
   // Ajustes automáticos para cron/backfill
   if (mode === 'cron') {
-    limit = Math.min(limit, 40);
+    limit = Math.min(limit, estoqueOnly ? 50 : 40);
     workers = 1;
-    enrichEstoque = false;
+    if (!estoqueOnly && typeof options.enrichEstoque !== 'boolean') {
+      enrichEstoque = false;
+    }
   }
 
   if (mode === 'backfill' && typeof options.enrichEstoque !== 'boolean') {
@@ -220,29 +306,104 @@ export async function syncProdutosFromTiny(
   stats.workersUsados = workers;
   stats.enrichAtivo = enrichEstoque;
 
-  const limiter = new RateLimiter(1300); // 1300 req/min (folga sobre 1400)
-  let accessToken: string | null = null;
-  try {
-    accessToken = await getTinyAccessToken();
-  } catch (err) {
-    log('Erro ao obter accessToken', { error: String(err) });
-    return { ok: false, mode, timedOut: false, reason: 'access-token', errorMessage: String(err), total429: stats.total429, totalRequests: stats.totalRequests, windowUsagePct: stats.windowUsagePct, batchUsado: stats.batchUsado, workersUsados: stats.workersUsados, enrichAtivo: !!enrichEstoque };
+  const cursorKey = sanitizeCursorKey(options.cursorKey);
+  let cursorRow: ProdutosSyncCursorRow | null = null;
+  let cursorDerivedUpdatedSince: string | null = null;
+
+  if (cursorKey) {
+    try {
+      cursorRow = await getProdutosSyncCursor(cursorKey);
+      cursorDerivedUpdatedSince = cursorValueToTinyTimestamp(
+        cursorRow?.latest_data_alteracao ?? cursorRow?.updated_since ?? null
+      );
+    } catch (err) {
+      log('Falha ao carregar cursor do catálogo', { cursorKey, error: formatError(err) });
+    }
   }
 
+  const cursorInitialUpdatedSince = cursorRow?.updated_since ?? null;
+  const cursorInitialLatest = cursorRow?.latest_data_alteracao ?? null;
+
+  const limiter = new RateLimiter(1300); // 1300 req/min (folga sobre 1400)
+  let accessToken: string | null = null;
+  const tokenRefreshState = { attempts: 0 };
   let totalSincronizados = 0;
   let totalNovos = 0;
   let totalAtualizados = 0;
+
+  const renewAccessToken = async (context: string, countTowardsLimit: boolean) => {
+    if (countTowardsLimit && tokenRefreshState.attempts >= MAX_TOKEN_REFRESH_RETRIES) {
+      throw new Error('Limite de tentativas de renovação do token do Tiny atingido');
+    }
+
+    if (countTowardsLimit) {
+      tokenRefreshState.attempts += 1;
+    }
+
+    log('Obtendo token do Tiny', { context, attempt: tokenRefreshState.attempts });
+    accessToken = await getAccessTokenFromDbOrRefresh();
+  };
+
+  const callTinyWithAuthRetry = async <T>(executor: () => Promise<T>, context: string): Promise<T> => {
+    while (true) {
+      try {
+        return await executor();
+      } catch (error) {
+        if (error instanceof TinyApiError && error.status === 401) {
+          log('Tiny retornou 401, tentando renovar token', { context });
+          try {
+            await renewAccessToken(`401-${context}`, true);
+          } catch (refreshErr) {
+            log('Falha ao renovar token após 401', { context, error: formatError(refreshErr) });
+            throw refreshErr;
+          }
+          continue;
+        }
+        throw error;
+      }
+    }
+  };
+
+  try {
+    await renewAccessToken('initial', false);
+  } catch (err) {
+    log('Erro ao obter accessToken', { error: formatError(err) });
+    return {
+      ok: false,
+      mode,
+      modeLabel,
+      timedOut: false,
+      reason: 'access-token',
+      errorMessage: formatError(err),
+      totalSincronizados,
+      totalNovos,
+      totalAtualizados,
+      total429: stats.total429,
+      totalRequests: stats.totalRequests,
+      windowUsagePct: stats.windowUsagePct,
+      batchUsado: stats.batchUsado,
+      workersUsados: stats.workersUsados,
+      enrichAtivo: !!enrichEstoque,
+      cursorKey,
+    };
+  }
+
   let pagesProcessed = 0;
   let currentOffset = offsetStart;
   const offsetSummary = { start: offsetStart, end: offsetStart };
-  const requestedUpdatedSince = await inferUpdatedSince(mode, options.updatedSince ?? null);
+  const explicitUpdatedSince = typeof options.updatedSince === 'string' && options.updatedSince.trim()
+    ? options.updatedSince.trim()
+    : null;
+  let requestedUpdatedSince = explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null;
+  if (!requestedUpdatedSince) {
+    requestedUpdatedSince = await inferUpdatedSince(mode, null);
+  }
+  const cursorAppliedUpdatedSince = cursorKey ? (explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null) : null;
   let updatedSince: string | null = requestedUpdatedSince;
-
-  // Cache simples para If-Modified-Since (usando dataAlteracao da listagem)
-  const lastModifiedMap = new Map<number, string>();
 
   // Função para processar uma página de produtos com paralelismo controlado
   let latestDataAlteracao: string | null = null;
+  let cursorPersistedLatest: string | null = cursorInitialLatest;
   const updateLatestData = (value?: string | null) => {
     if (!value) return;
     if (!latestDataAlteracao || value > latestDataAlteracao) {
@@ -258,50 +419,46 @@ export async function syncProdutosFromTiny(
 
     const runWorker = async () => {
       while (queue.length) {
-        // Timebox: interrompe processamento se passar do tempo
-        const elapsed = Date.now() - start;
-        if (elapsed > TIMEBOX_MS) {
-          timedOut = true;
-          break;
-        }
         const produto = queue.shift();
         if (!produto) break;
         const produtoId = produto.id;
         const headers: Record<string, string> = {};
-        if (produto?.dataAlteracao) {
-          headers['If-Modified-Since'] = produto.dataAlteracao;
-          lastModifiedMap.set(produtoId ?? -1, produto.dataAlteracao);
-        } else if (produtoId && lastModifiedMap.has(produtoId)) {
-          headers['If-Modified-Since'] = lastModifiedMap.get(produtoId)!;
-        }
 
         try {
-          const detalhe = await tinyRequest<TinyProdutoDetalhado>({
-            fn: () =>
-              obterProduto(accessToken!, produto.id ?? 0, {
-                headers,
-                allowNotModified: true,
-              }),
-            limiter,
-            stats,
-            log,
-          });
-
-          let estoqueDetalhado: TinyEstoqueProduto | null = null;
-          if (enrichEstoque) {
-            try {
-              estoqueDetalhado = await tinyRequest<TinyEstoqueProduto>({
+          const detalhe = await callTinyWithAuthRetry(
+            () =>
+              tinyRequest<TinyProdutoDetalhado>({
                 fn: () =>
-                  obterEstoqueProduto(accessToken!, produto.id ?? 0, {
+                  obterProduto(accessToken!, produto.id ?? 0, {
                     headers,
                     allowNotModified: true,
                   }),
                 limiter,
                 stats,
                 log,
-              });
+              }),
+            `produto-${produtoId}-detalhe`
+          );
+
+          let estoqueDetalhado: TinyEstoqueProduto | null = null;
+          if (enrichEstoque) {
+            try {
+              estoqueDetalhado = await callTinyWithAuthRetry(
+                () =>
+                  tinyRequest<TinyEstoqueProduto>({
+                    fn: () =>
+                      obterEstoqueProduto(accessToken!, produto.id ?? 0, {
+                        headers,
+                        allowNotModified: true,
+                      }),
+                    limiter,
+                    stats,
+                    log,
+                  }),
+                `produto-${produtoId}-estoque`
+              );
             } catch (err) {
-              log(`Erro ao buscar estoque do produto ${produto.id}`, { error: String(err) });
+              log(`Erro ao buscar estoque do produto ${produto.id}`, { error: formatError(err) });
             }
           }
 
@@ -310,7 +467,7 @@ export async function syncProdutosFromTiny(
             continue;
           }
 
-           updateLatestData((produto as any)?.dataAlteracao ?? (detalhe as any)?.dataAlteracao ?? null);
+          updateLatestData((produto as any)?.dataAlteracao ?? (detalhe as any)?.dataAlteracao ?? null);
 
           // Buscar o registro atual para merge se necessário
           let registroAtual: any = null;
@@ -357,12 +514,26 @@ export async function syncProdutosFromTiny(
             ...(typeof registroAtual?.raw_payload !== 'undefined' && { raw_payload: detalhe }),
           };
 
-          await upsertProduto(produtoData);
+          if (estoqueOnly) {
+            await upsertProdutosEstoque([
+              {
+                id_produto_tiny: produtoData.id_produto_tiny,
+                saldo: produtoData.saldo,
+                reservado: produtoData.reservado,
+                disponivel: produtoData.disponivel,
+                preco: produtoData.preco,
+                preco_promocional: produtoData.preco_promocional,
+                data_atualizacao_tiny: produtoData.data_atualizacao_tiny,
+              },
+            ]);
+          } else {
+            await upsertProduto(produtoData);
+          }
           totalSincronizados++;
           if (registroAtual) totalAtualizados++;
           else totalNovos++;
         } catch (error) {
-          log(`Erro ao processar produto ${produto.id}`, { error: String(error) });
+          log(`Erro ao processar produto ${produto.id}`, { error: formatError(error) });
           if (stats.total429 > 0) {
             // Pressão: reduzir workers para 1
             currentWorkers = 1;
@@ -381,6 +552,9 @@ export async function syncProdutosFromTiny(
   const maxPageAttempts = mode === 'backfill' ? maxPages : 1;
 
   const buildMeta = (extra?: Record<string, unknown>) => ({
+    totalSincronizados,
+    totalNovos,
+    totalAtualizados,
     totalRequests: stats.totalRequests,
     total429: stats.total429,
     backoffMs: stats.backoffMs,
@@ -390,6 +564,7 @@ export async function syncProdutosFromTiny(
     workersUsados: stats.workersUsados,
     enrichAtivo: !!enrichEstoque,
     mode,
+    estoqueOnly,
     timedOut,
     updatedSince,
     latestDataAlteracao,
@@ -399,33 +574,65 @@ export async function syncProdutosFromTiny(
     limitAtual: limit,
     workersAtuais: workers,
     requestedUpdatedSince,
+    modeLabel,
+    cursorKey,
+    cursorInitialUpdatedSince,
+    cursorInitialLatest,
+    cursorDerivedUpdatedSince,
+    cursorAppliedUpdatedSince,
+    cursorPersistedLatest,
     ...(extra ?? {}),
   });
 
-  const persistLog = async (message: string, level: 'info' | 'warn' | 'error', extra?: Record<string, unknown>) => {
+  const persistLog = async (level: 'info' | 'warn' | 'error', extra?: Record<string, unknown>) => {
     try {
       const payload: Database['public']['Tables']['sync_logs']['Insert'] = {
         job_id: null,
         level,
-        message,
+        message: 'sync_produtos',
         meta: buildMeta(extra),
       };
       await supabaseAdmin.from('sync_logs').insert(payload as any);
     } catch (err) {
-      log('Falha ao gravar log no Supabase', { error: String(err) });
+      log('Falha ao gravar log no Supabase', { error: formatError(err) });
+    }
+  };
+
+  const persistCursorState = async (reason: 'success' | 'timeout' | 'error') => {
+    if (!cursorKey) return;
+    const nextLatest = latestDataAlteracao ?? cursorPersistedLatest ?? null;
+    const nextUpdatedSince = latestDataAlteracao ?? requestedUpdatedSince ?? cursorInitialUpdatedSince ?? cursorInitialLatest ?? null;
+    if (!nextLatest && !nextUpdatedSince) return;
+    try {
+      const saved = await upsertProdutosSyncCursor(cursorKey, {
+        updated_since: nextUpdatedSince,
+        latest_data_alteracao: nextLatest,
+      });
+      cursorPersistedLatest = saved?.latest_data_alteracao ?? cursorPersistedLatest ?? null;
+    } catch (err) {
+      log('Falha ao atualizar cursor do catálogo', {
+        cursorKey,
+        reason,
+        error: formatError(err),
+      });
     }
   };
 
   const emitTimeout = async () => {
     const meta = buildMeta({ reason: 'timeout' });
     log('Resumo da sync (timeout)', meta);
-    await persistLog('sync_produtos_timeout', 'warn', { reason: 'timeout' });
+    await persistLog('warn', { reason: 'timeout', errorMessage: 'Timebox de execução excedido' });
+    await persistCursorState('timeout');
     return {
       ok: false as const,
       mode,
+      modeLabel,
       timedOut: true as const,
       reason: 'timeout' as const,
       errorMessage: 'Timebox de execução excedido',
+      totalSincronizados,
+      totalNovos,
+      totalAtualizados,
       totalRequests: stats.totalRequests,
       total429: stats.total429,
       windowUsagePct: stats.windowUsagePct,
@@ -433,19 +640,27 @@ export async function syncProdutosFromTiny(
       workersUsados: stats.workersUsados,
       enrichAtivo: !!enrichEstoque,
       updatedSince,
+      latestDataAlteracao,
       pagesProcessed,
+      cursorKey,
     } as const;
   };
 
   const emitUnexpected = async (error: unknown) => {
-    log('Erro inesperado durante sync', { error: String(error) });
-    await persistLog('sync_produtos_error', 'error', { reason: 'unexpected', error: String(error) });
+    const description = formatError(error);
+    log('Erro inesperado durante sync', { error: description });
+    await persistLog('error', { reason: 'unexpected', errorMessage: description });
+    await persistCursorState('error');
     return {
       ok: false as const,
       mode,
+      modeLabel,
       timedOut: false,
       reason: 'unexpected' as const,
-      errorMessage: String(error),
+      errorMessage: description,
+      totalSincronizados,
+      totalNovos,
+      totalAtualizados,
       totalRequests: stats.totalRequests,
       total429: stats.total429,
       windowUsagePct: stats.windowUsagePct,
@@ -453,7 +668,9 @@ export async function syncProdutosFromTiny(
       workersUsados: stats.workersUsados,
       enrichAtivo: !!enrichEstoque,
       updatedSince,
+      latestDataAlteracao,
       pagesProcessed,
+      cursorKey,
     } as const;
   };
 
@@ -477,18 +694,22 @@ export async function syncProdutosFromTiny(
       const limitForPage = limit;
       stats.batchUsado = limitForPage;
 
-      const page = await tinyRequest<TinyListarProdutosResponse>({
-        fn: () =>
-          listarProdutos(accessToken!, {
-            limit: limitForPage,
-            offset: offsetForPage,
-            situacao: situacaoParam,
-            dataAlteracao: requestedUpdatedSince ?? undefined,
+      const page = await callTinyWithAuthRetry(
+        () =>
+          tinyRequest<TinyListarProdutosResponse>({
+            fn: () =>
+              listarProdutos(accessToken!, {
+                limit: limitForPage,
+                offset: offsetForPage,
+                situacao: situacaoParam,
+                dataAlteracao: requestedUpdatedSince ?? undefined,
+              }),
+            limiter,
+            stats,
+            log,
           }),
-        limiter,
-        stats,
-        log,
-      });
+        'listar-produtos'
+      );
 
       const itens = page.itens || [];
       if (itens.length > 0) {
@@ -497,7 +718,8 @@ export async function syncProdutosFromTiny(
 
       pagesProcessed += 1;
 
-      if (timedOut) {
+      if (hasTimebox && resolvedTimeboxMs && Date.now() - start > resolvedTimeboxMs) {
+        timedOut = true;
         return emitTimeout();
       }
 
@@ -515,11 +737,13 @@ export async function syncProdutosFromTiny(
 
   const meta = buildMeta();
   log('Resumo da sync', meta);
-  await persistLog('sync_produtos', stats.total429 > 0 ? 'warn' : 'info');
+  await persistLog(stats.total429 > 0 ? 'warn' : 'info', { reason: 'completed' });
+  await persistCursorState('success');
 
   return {
     ok: true as const,
     mode,
+    modeLabel,
     timedOut,
     totalSincronizados,
     totalNovos,
@@ -535,6 +759,10 @@ export async function syncProdutosFromTiny(
     pagesProcessed,
     offsetStart: offsetSummary.start,
     offsetEnd: offsetSummary.end,
+    cursorKey,
+    cursorInitialLatest,
+    cursorInitialUpdatedSince,
+    cursorAppliedUpdatedSince,
     stats,
   };
 }

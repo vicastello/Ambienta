@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    const rows = (data ?? []) as RawLogRow[];
+    const rows = (data ?? []) as unknown as RawLogRow[];
     const normalized: SyncLogEntry[] = rows.map((log) => {
       const meta = (log.meta as Json | null) as Record<string, any> | null;
       const jobParams = (log.sync_jobs?.params as Json | null) as

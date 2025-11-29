@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import type { Database, Json, TinyProdutosRow } from '@/src/types/db-public';
+import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
+import type { TinyProdutosRow } from '@/src/types/db-public';
 
 export type ListProdutosParams = {
   search?: string;
@@ -33,21 +34,12 @@ export async function listProdutos({
   const { data, error, count } = await query;
   if (error) throw error;
 
-  return { produtos: (data || []) as TinyProdutosRow[], total: count || 0 };
+  return { produtos: (data || []) as unknown as TinyProdutosRow[], total: count || 0 };
 }
 
 export async function getTinyAccessToken() {
-  const { data, error } = await supabaseAdmin
-    .from('tiny_tokens')
-    .select('access_token')
-    .single<Database['public']['Tables']['tiny_tokens']['Row']>();
-
-  if (error) throw error;
-  if (!data?.access_token) {
-    throw new Error('Token do Tiny não encontrado');
-  }
-
-  return data.access_token as string;
+  // Proxy para manter compatibilidade com chamadas antigas.
+  return getAccessTokenFromDbOrRefresh();
 }
 
 export async function upsertProduto(
@@ -60,6 +52,42 @@ export async function upsertProduto(
       produtoData as any,
       { onConflict: 'id_produto_tiny', ignoreDuplicates: false }
     );
+
+  if (error) throw error;
+}
+
+export type TinyProdutoEstoqueUpsert = {
+  id_produto_tiny: number;
+  saldo?: number | null;
+  reservado?: number | null;
+  disponivel?: number | null;
+  preco?: number | null;
+  preco_promocional?: number | null;
+  data_atualizacao_tiny?: string | null;
+};
+
+export async function upsertProdutosEstoque(
+  produtos: TinyProdutoEstoqueUpsert[]
+) {
+  if (!produtos.length) return;
+
+  const admin = supabaseAdmin as any;
+  const payload = produtos.map((produto) => ({
+    id_produto_tiny: produto.id_produto_tiny,
+    saldo: produto.saldo ?? null,
+    reservado: produto.reservado ?? null,
+    disponivel: produto.disponivel ?? null,
+    preco: produto.preco ?? null,
+    preco_promocional: produto.preco_promocional ?? null,
+    data_atualizacao_tiny: produto.data_atualizacao_tiny ?? null,
+  }));
+
+  const { error } = await admin
+    .from('tiny_produtos')
+    .upsert(payload as any, {
+      onConflict: 'id_produto_tiny',
+      ignoreDuplicates: false,
+    });
 
   if (error) throw error;
 }

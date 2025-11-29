@@ -64,7 +64,7 @@ type CronStatusResponse = {
     enabled: boolean;
     expression: string;
     description: string;
-    defaults: { diasRecentes: number; produtosLimit: number; enrichEstoque: boolean };
+    defaults: { diasRecentes: number; produtosLimit: number; enrichEstoque: boolean; estoqueOnly?: boolean };
   };
   config?: CronStatusConfig;
 };
@@ -343,6 +343,7 @@ export default function ConfiguracoesPage() {
   const [isEnriching, setIsEnriching] = useState(false);
   const [isSyncingProdutos, setIsSyncingProdutos] = useState(false);
   const [isBackfillingProdutos, setIsBackfillingProdutos] = useState(false);
+  const [isSyncingEstoqueOnly, setIsSyncingEstoqueOnly] = useState(false);
   const [produtosSyncResult, setProdutosSyncResult] = useState<any | null>(null);
   const [postSyncRunning, setPostSyncRunning] = useState(false);
   const [syncingDay, setSyncingDay] = useState<string | null>(null);
@@ -542,7 +543,12 @@ export default function ConfiguracoesPage() {
     let produtosOk = false;
 
     try {
-      const response = await executeProdutosSync({ mode: 'manual', limit: produtosDays, enrichAtivo: true });
+      const response = await executeProdutosSync({
+        mode: 'manual',
+        limit: produtosDays,
+        enrichAtivo: true,
+        modeLabel: 'manual_post_sync',
+      });
       if (response?.ok === false) {
         throw new Error(response?.result?.errorMessage ?? 'Sync de produtos retornou erro');
       }
@@ -694,7 +700,13 @@ export default function ConfiguracoesPage() {
   const syncProdutos = async () => {
     setIsSyncingProdutos(true);
     try {
-      const response = await executeProdutosSync({ mode: 'manual', limit: produtosDays, enrichAtivo: true });
+      const response = await executeProdutosSync({
+        mode: 'manual',
+        limit: produtosDays,
+        enrichEstoque: true,
+        enrichAtivo: true,
+        modeLabel: 'manual_full_catalog',
+      });
       const result = response?.result ?? response;
       setProdutosSyncResult(result ?? null);
       if (response?.ok === false) {
@@ -711,10 +723,45 @@ export default function ConfiguracoesPage() {
     }
   };
 
+  const syncEstoqueOnlyNow = async () => {
+    const estoqueLimit = Math.max(1, Math.min(produtosDays || 40, 50));
+    setIsSyncingEstoqueOnly(true);
+    try {
+      const response = await executeProdutosSync({
+        mode: 'manual',
+        limit: estoqueLimit,
+        estoqueOnly: true,
+        enrichEstoque: true,
+        enrichAtivo: true,
+        workers: 1,
+        modeLabel: 'manual_estoque_only',
+      });
+      const result = response?.result ?? response;
+      setProdutosSyncResult(result ?? null);
+      if (response?.ok === false) {
+        throw new Error(result?.errorMessage ?? 'Atualização de estoque retornou erro');
+      }
+      const total = result?.totalSincronizados ?? result?.totalAtualizados ?? '—';
+      handleActionSuccess(`Estoque atualizado (lote processado: ${total}).`);
+    } catch (error) {
+      console.error('[config] sync-estoque-only', error);
+      setActionError('Falha ao atualizar estoque. Consulte os logs.');
+      setActionMessage(null);
+    } finally {
+      setIsSyncingEstoqueOnly(false);
+    }
+  };
+
   const backfillProdutos = async () => {
     setIsBackfillingProdutos(true);
     try {
-      const response = await executeProdutosSync({ mode: 'backfill', backfill: true, enrichAtivo: false });
+      const response = await executeProdutosSync({
+        mode: 'backfill',
+        backfill: true,
+        enrichEstoque: false,
+        enrichAtivo: false,
+        modeLabel: 'manual_backfill',
+      });
       const result = response?.result ?? response;
       setProdutosSyncResult(result ?? null);
       if (response?.ok === false) {
@@ -779,7 +826,7 @@ export default function ConfiguracoesPage() {
                 <p className="text-sm text-slate-600">
                   O Supabase pg_cron chama <code className="font-mono text-xs">public.cron_run_tiny_sync()</code> a cada 15 minutos (expressão
                   <code className="ml-1 text-xs">*/15 * * * *</code>) e esse job aciona <code className="font-mono text-xs">POST /api/admin/cron/run-sync</code> com os
-                  defaults abaixo. Os cartões seguintes continuam disponíveis para disparos manuais mais específicos.
+                  defaults abaixo. Essa rotina foca em manter estoque/preço atualizados; o cadastro completo (nome, categoria, mídia) segue disponível via botões manuais ou jobs diários.
                 </p>
               </div>
               {cronStatusError && <p className="text-sm text-red-500">{cronStatusError}</p>}
@@ -823,8 +870,8 @@ export default function ConfiguracoesPage() {
                     <li>Pedidos recentes (mode <code className="font-mono">recent</code>) olhando os últimos {cronStatus?.schedule?.defaults?.diasRecentes ?? 2} dias.</li>
                     <li>Enrich background em sequência (itens + frete + canais + cidade/UF).</li>
                     <li>
-                      Produtos sincronizados com limite {cronStatus?.schedule?.defaults?.produtosLimit ?? 30} e{' '}
-                      {cronStatus?.schedule?.defaults?.enrichEstoque === false ? 'sem' : 'com'} enrich de estoque.
+                      Estoque/preço dos produtos (Tiny v3) atualizado em lotes de {cronStatus?.schedule?.defaults?.produtosLimit ?? 30}{' '}
+                      itens com workers=1 e modo estoque-only; o cadastro completo (nome, categorias, imagens) deve ser rodado manualmente ou via job diário.
                     </li>
                   </ul>
                 </div>
@@ -838,8 +885,8 @@ export default function ConfiguracoesPage() {
                       <li>{cronConfigInUse.cronDiasRecentOrders} dias recentes de pedidos</li>
                       <li>Limite de {cronConfigInUse.cronProdutosLimit} produtos por rodada</li>
                       <li>Enrich automático: {formatYesNo(cronConfigInUse.cronEnrichEnabled)}</li>
-                      <li>Sync de produtos automático: {formatYesNo(cronConfigInUse.cronProdutosEnabled)}</li>
-                      <li>Atualizar estoque dos produtos: {formatYesNo(cronConfigInUse.cronProdutosEnrichEstoque)}</li>
+                      <li>Rodada automática de estoque: {formatYesNo(cronConfigInUse.cronProdutosEnabled)}</li>
+                      <li>Consultar estoque detalhado do Tiny (enrich): {formatYesNo(cronConfigInUse.cronProdutosEnrichEstoque)}</li>
                     </ul>
                   )}
                 </div>
@@ -1302,7 +1349,9 @@ export default function ConfiguracoesPage() {
               <div className={`${CARD_PANEL_CLASS} p-4 space-y-4`}>
                 <div>
                   <h3 className="text-base font-semibold text-slate-900">Produtos Tiny</h3>
-                  <p className="text-sm text-slate-600">Atualize catálogo e estoque. O token seguro é configurado apenas no servidor.</p>
+                  <p className="text-sm text-slate-600">
+                    O pg_cron atualiza estoque/preço (Tiny v3) a cada 15 minutos com lotes pequenos. Use estes botões para forçar uma rodada de estoque agora ou para sincronizar o cadastro completo/backfill quando incluir novos produtos.
+                  </p>
                 </div>
 
                 <div className="space-y-3">
@@ -1332,17 +1381,28 @@ export default function ConfiguracoesPage() {
                 </p>
 
                 <button
-                  onClick={syncProdutos}
-                  disabled={isSyncingProdutos || isBackfillingProdutos}
-                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium shadow-inner shadow-white/40 transition ${isSyncingProdutos || isBackfillingProdutos ? 'opacity-70 cursor-wait' : ''}`}
+                  onClick={syncEstoqueOnlyNow}
+                  disabled={isSyncingEstoqueOnly || isSyncingProdutos || isBackfillingProdutos}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-sm font-medium text-white shadow-inner shadow-white/40 transition ${isSyncingEstoqueOnly || isSyncingProdutos || isBackfillingProdutos ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                  Sincronizar produtos
+                  Atualizar estoque agora
+                </button>
+                <p className="text-[11px] text-slate-500">
+                  Atualiza apenas saldo/reservado/disponível e preços para até 40 itens por rodada (workers=1) usando modo estoque-only.
+                </p>
+
+                <button
+                  onClick={syncProdutos}
+                  disabled={isSyncingProdutos || isBackfillingProdutos || isSyncingEstoqueOnly}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white shadow-inner shadow-white/40 transition ${isSyncingProdutos || isBackfillingProdutos || isSyncingEstoqueOnly ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  Sincronizar produtos (cadastro completo)
                 </button>
 
                 <button
                   onClick={backfillProdutos}
-                  disabled={isBackfillingProdutos || isSyncingProdutos}
-                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isBackfillingProdutos || isSyncingProdutos ? 'opacity-70 cursor-wait' : ''}`}
+                  disabled={isBackfillingProdutos || isSyncingProdutos || isSyncingEstoqueOnly}
+                  className={`w-full inline-flex items-center justify-center px-4 py-2 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-sm font-medium text-slate-900 ${isBackfillingProdutos || isSyncingProdutos || isSyncingEstoqueOnly ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   Backfill de produtos
                 </button>

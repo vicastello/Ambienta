@@ -6,6 +6,31 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+type GenericSupabaseSchema = {
+  Tables: Record<
+    string,
+    {
+      Row: Record<string, unknown>;
+      Insert: Record<string, unknown>;
+      Update: Record<string, unknown>;
+      Relationships: Array<{
+        foreignKeyName: string;
+        columns: string[];
+        referencedRelation: string;
+        referencedColumns: string[];
+      }>;
+    }
+  >;
+  Views: Record<string, unknown>;
+  Functions: Record<
+    string,
+    {
+      Args: Record<string, unknown>;
+      Returns: unknown;
+    }
+  >;
+};
+
 /* ============================================================================
  * ROW TYPES (1:1 com as tabelas do Postgres)
  * ========================================================================== */
@@ -134,6 +159,13 @@ export interface TinyTokensRow {
   updated_at: string | null; // timestamptz
 }
 
+export interface ProdutosSyncCursorRow {
+  cursor_key: string;
+  updated_since: string | null; // timestamptz
+  latest_data_alteracao: string | null; // timestamptz
+  updated_at: string; // timestamptz
+}
+
 /* ============================================================================
  * INSERT / UPDATE TYPES
  * ========================================================================== */
@@ -219,11 +251,20 @@ export type TinyTokensInsert = Omit<
 
 export type TinyTokensUpdate = Partial<TinyTokensRow>;
 
+export type ProdutosSyncCursorInsert = {
+  cursor_key: string;
+  updated_since?: string | null;
+  latest_data_alteracao?: string | null;
+  updated_at?: string;
+};
+
+export type ProdutosSyncCursorUpdate = Partial<ProdutosSyncCursorRow>;
+
 /* ============================================================================
  * DATABASE SHAPE PARA SUPABASE CLIENT
  * ========================================================================== */
 
-export type DatabasePublicSchema = {
+export type DatabasePublicSchema = GenericSupabaseSchema & {
   Tables: {
     sync_settings: {
       Row: SyncSettingsRow;
@@ -308,7 +349,14 @@ export type DatabasePublicSchema = {
       Update: TinyTokensUpdate;
       Relationships: [];
     };
+    produtos_sync_cursor: {
+      Row: ProdutosSyncCursorRow;
+      Insert: ProdutosSyncCursorInsert;
+      Update: ProdutosSyncCursorUpdate;
+      Relationships: [];
+    };
   };
+  Views: Record<string, never>;
   Functions: {
     orders_metrics: {
       Args: {
@@ -339,6 +387,8 @@ export type DatabasePublicSchema = {
       Returns: unknown;
     };
   };
+  Enums: Record<string, never>;
+  CompositeTypes: Record<string, never>;
 };
 
 export type Database = {

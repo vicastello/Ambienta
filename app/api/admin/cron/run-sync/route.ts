@@ -23,6 +23,7 @@ type CronRequestBody = {
     enabled?: boolean;
     limit?: number;
     enrichEstoque?: boolean;
+    estoqueOnly?: boolean;
   };
 };
 
@@ -33,6 +34,7 @@ type EffectiveCronConfig = {
     enabled: boolean;
     limit: number;
     enrichEstoque: boolean;
+    estoqueOnly: boolean;
   };
 };
 
@@ -103,7 +105,13 @@ async function resolveCronConfig(body: CronRequestBody): Promise<EffectiveCronCo
   const produtosEnrichEstoque =
     typeof produtosOverride.enrichEstoque === 'boolean'
       ? produtosOverride.enrichEstoque
-      : settings.cron_produtos_enrich_estoque;
+      : typeof settings.cron_produtos_enrich_estoque === 'boolean'
+        ? !!settings.cron_produtos_enrich_estoque
+        : undefined;
+  const produtosEstoqueOnly =
+    typeof produtosOverride.estoqueOnly === 'boolean'
+      ? produtosOverride.estoqueOnly
+      : true;
 
   return {
     diasRecentes,
@@ -111,7 +119,8 @@ async function resolveCronConfig(body: CronRequestBody): Promise<EffectiveCronCo
     produtos: {
       enabled: produtosEnabled,
       limit: produtosLimit,
-      enrichEstoque: produtosEnrichEstoque,
+      enrichEstoque: typeof produtosEnrichEstoque === 'boolean' ? produtosEnrichEstoque : produtosEstoqueOnly,
+      estoqueOnly: produtosEstoqueOnly,
     },
   };
 }
@@ -181,7 +190,17 @@ export async function POST(req: Request) {
   }
 
   if (produtos.enabled) {
-    const { limit, enrichEstoque } = produtos;
+    const { limit, enrichEstoque, estoqueOnly } = produtos;
+    const cronPayload = {
+      mode: 'cron' as const,
+      modoCron: true,
+      limit,
+      workers: 1,
+      estoqueOnly,
+      enrichEstoque: enrichEstoque ?? true,
+      enrichAtivo: enrichEstoque ?? true,
+      modeLabel: 'cron_estoque',
+    };
 
     try {
       const produtosJson = await callInternalJson('/api/produtos/sync', {
@@ -189,12 +208,7 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          mode: 'cron',
-          modoCron: true,
-          limit,
-          enrichAtivo: enrichEstoque,
-        }),
+        body: JSON.stringify(cronPayload),
       });
 
       const processed = typeof produtosJson?.totalAtualizados === 'number'
@@ -211,7 +225,7 @@ export async function POST(req: Request) {
         ok: produtosOk,
         processed,
         detail: produtosDetail,
-        meta: { result: produtosJson },
+        meta: { result: produtosJson, mode: 'cron_estoque', estoqueOnly },
       };
       steps.push(produtosStep);
 
@@ -222,7 +236,9 @@ export async function POST(req: Request) {
         {
           limit,
           enrichEstoque,
+          estoqueOnly,
           summary: produtosJson,
+          mode: 'cron_estoque',
         }
       );
 
@@ -237,6 +253,7 @@ export async function POST(req: Request) {
       await logStep('produtos', 'error', 'Falha no sync de produtos', {
         limit,
         enrichEstoque,
+        estoqueOnly,
         detail,
       });
     }

@@ -95,6 +95,7 @@ export async function GET() {
           diasRecentes: cronDefaults.cron_dias_recent_orders,
           produtosLimit: cronDefaults.cron_produtos_limit,
           enrichEstoque: cronDefaults.cron_produtos_enrich_estoque,
+          estoqueOnly: true,
         },
       },
       config: cronDefaults,

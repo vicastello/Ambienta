@@ -62,5 +62,5 @@ export async function listConsumoPeriodo(startIso: string) {
     .neq('tiny_orders.situacao', 2);
 
   if (error) throw error;
-  return (data || []) as ConsumoRow[];
+  return (data || []) as unknown as ConsumoRow[];
 }

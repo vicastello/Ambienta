@@ -126,8 +126,6 @@ async function runManualRangeEnrichment(params: RangeParams) {
   const canaisResult = await normalizeMissingOrderChannels({
     includeOutros: true,
     limit: channelLimit,
-    startDate,
-    endDate,
   });
   await logRangeEvent('info', 'Canais normalizados (manual)', {
     janela,
@@ -136,8 +134,6 @@ async function runManualRangeEnrichment(params: RangeParams) {
 
   const cidadeResult = await enrichCidadeUfMissing({
     limit: cidadeLimit,
-    startDate,
-    endDate,
   });
   await logRangeEvent('info', 'Cidade/UF enriquecidos (manual)', {
     janela,

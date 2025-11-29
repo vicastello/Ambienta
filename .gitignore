@@ -39,3 +39,24 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Logs e temporários
+dev-cron.log
+*.log
+*.tmp
+tmp_schema.sql
+tmp/
+archive/
+supabase/.temp/
+**/.DS_Store
+
+# Backups locais pesados
+supabase-backup-antes-sync/
+
+# Estado interno do Supabase CLI
+supabase/.branches/
+supabase/.temp/
+
+# Arquivos/artefatos que não devem ser versionados
+ecommerce-
+numeroPedidoEcommerce.eq.

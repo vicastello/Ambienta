@@ -7,6 +7,13 @@ type AdminSyncBody = {
   limit?: number;
   workers?: number;
   updatedSince?: string;
+  estoqueOnly?: boolean;
+  enrichEstoque?: boolean;
+  enrichAtivo?: boolean;
+  modeLabel?: string;
+  cursorKey?: string | null;
+  useCursor?: boolean;
+  disableCursor?: boolean;
 };
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value));
@@ -17,17 +24,55 @@ export async function POST(req: Request) {
     const backfillRequested = body.backfill === true;
     const resolvedMode: AdminSyncBody['mode'] = backfillRequested ? 'backfill' : body.mode ?? 'manual';
 
+    const estoqueOnly = body.estoqueOnly === true;
+    const explicitEnrich = typeof body.enrichEstoque === 'boolean'
+      ? body.enrichEstoque
+      : typeof body.enrichAtivo === 'boolean'
+        ? body.enrichAtivo
+        : undefined;
+    const resolvedEnrich =
+      typeof explicitEnrich === 'boolean'
+        ? explicitEnrich
+        : estoqueOnly
+          ? true
+          : true;
+
+    const explicitModeLabel = typeof body.modeLabel === 'string' ? body.modeLabel.trim() : '';
+    const resolvedModeLabel = explicitModeLabel
+      ? explicitModeLabel
+      : resolvedMode === 'cron' && estoqueOnly
+        ? 'cron_estoque'
+        : resolvedMode;
+
+    const cleanedCursorKey = typeof body.cursorKey === 'string' && body.cursorKey.trim().length
+      ? body.cursorKey.trim()
+      : undefined;
+    const cursorToggle = typeof body.useCursor === 'boolean'
+      ? body.useCursor
+      : resolvedMode === 'backfill' || backfillRequested;
+    const cursorDisabled = body.disableCursor === true || body.cursorKey === null;
+    const resolvedCursorKey = cursorDisabled
+      ? undefined
+      : cursorToggle
+        ? cleanedCursorKey ?? 'catalog'
+        : undefined;
+    const finalCursorKey = body.cursorKey === null ? null : resolvedCursorKey;
+
     const payload: Record<string, unknown> = {
       mode: resolvedMode,
       updatedSince: typeof body.updatedSince === 'string' ? body.updatedSince : undefined,
       limit: Number.isFinite(toNumber(body.limit)) ? Number(toNumber(body.limit)) : undefined,
       workers: Number.isFinite(toNumber(body.workers)) ? Number(toNumber(body.workers)) : undefined,
       modoCron: resolvedMode === 'cron',
-      enrichAtivo: true,
+      estoqueOnly: estoqueOnly || undefined,
+      enrichEstoque: resolvedEnrich,
+      enrichAtivo: resolvedEnrich,
+      modeLabel: resolvedModeLabel,
+      cursorKey: finalCursorKey,
     };
 
     const bodyCleaned = Object.fromEntries(
-      Object.entries(payload).filter(([, value]) => value !== undefined && value !== null)
+      Object.entries(payload).filter(([, value]) => value !== undefined)
     );
 
     const result = await callInternalJson('/api/produtos/sync', {
