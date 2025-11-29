@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
 import type { Json } from '@/src/types/db-public';
 
 export type CalendarDayStatus = {
@@ -72,10 +73,10 @@ export async function GET(req: NextRequest) {
       },
       days,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[sync/calendar] error', error);
     return NextResponse.json(
-      { error: 'Erro ao consultar calendário de sincronização' },
+      { error: getErrorMessage(error) || 'Erro ao consultar calendário de sincronização' },
       { status: 500 }
     );
   }
@@ -153,7 +154,7 @@ function getMonthRange(monthParam: string | null) {
 }
 
 function resolveLogDays(meta: Json | null, createdAt: string) {
-  const metaObj = (meta as Record<string, any> | null) ?? null;
+  const metaObj = isRecord(meta) ? meta : null;
   const days = new Set<string>();
 
   const janelaIni = parseMetaDate(metaObj?.janelaIni);
@@ -214,4 +215,8 @@ function formatDateKey(year: number, monthIndex: number, day: number) {
     String(monthIndex + 1).padStart(2, '0'),
     String(day).padStart(2, '0'),
   ].join('-');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

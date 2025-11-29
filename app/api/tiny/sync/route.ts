@@ -1,35 +1,64 @@
-// @ts-nocheck
-/* eslint-disable */
-// app/api/tiny/sync/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { listarPedidosTiny, listarPedidosTinyPorPeriodo, TinyPedidoListaItem, TinyApiError } from '@/lib/tinyApi';
-import { runTinyOrdersIncrementalSync } from '@/src/services/tinySyncService';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
-import { extrairDataISO, normalizarCanalTiny, parseValorTiny } from '@/lib/tinyMapping';
 import processJob from '@/lib/syncProcessor';
+import { runTinyOrdersIncrementalSync } from '@/src/services/tinySyncService';
+import { getErrorMessage } from '@/lib/errors';
+import type { Database, Json } from '@/src/types/db-public';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type SyncMode = 'full' | 'range' | 'recent' | 'repair';
+type SyncMode = 'full' | 'range' | 'recent' | 'repair' | 'incremental';
 
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type SyncRequestBody = {
+  mode?: string;
+  diasRecentes?: number | string;
+  dataInicial?: string;
+  dataFinal?: string;
+  background?: boolean | string;
+};
+
+type SyncJobsInsert = Database['public']['Tables']['sync_jobs']['Insert'];
+type SyncLogsInsert = Database['public']['Tables']['sync_logs']['Insert'];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const parseBooleanish = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return value.toLowerCase() === 'true';
+  }
+  return false;
+};
+
+const parseNumber = (value: unknown, fallback = 0): number => {
+  const num = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const isSyncMode = (mode: string | undefined): mode is SyncMode =>
+  mode === 'full' ||
+  mode === 'range' ||
+  mode === 'recent' ||
+  mode === 'repair' ||
+  mode === 'incremental';
 
 async function logJob(
   jobId: string,
   level: 'info' | 'warn' | 'error',
   message: string,
-  meta?: any
+  meta?: Json
 ) {
-  await supabaseAdmin.from('sync_logs').insert({
+  const payload: SyncLogsInsert = {
     job_id: jobId,
     level,
     message,
     meta: meta ?? null,
-  });
+  };
+
+  await supabaseAdmin.from('sync_logs').insert(payload);
 }
 
 function runJobInBackground(jobId: string) {
@@ -45,7 +74,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const cookieStore = await cookies();
-    let accessToken = cookieStore.get('tiny_access_token')?.value || null;
+    let accessToken = cookieStore.get('tiny_access_token')?.value ?? null;
 
     // se não há cookie (ou expirou), tenta usar token persistido + refresh no servidor
     if (!accessToken) {
@@ -59,15 +88,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = await req.json().catch(() => ({}));
-    const mode: SyncMode = (body.mode as SyncMode) || 'range';
-        if (mode === 'incremental') {
-          const result = await runTinyOrdersIncrementalSync();
-          return NextResponse.json(result);
-        }
-    const diasRecentesBody = Number(body.diasRecentes ?? 0);
-    const dataInicialParam = body.dataInicial as string | undefined;
-    const dataFinalParam = body.dataFinal as string | undefined;
+    const rawBody = await req.json().catch(() => null);
+    const body: SyncRequestBody = isRecord(rawBody) ? (rawBody as SyncRequestBody) : {};
+    const rawMode = typeof body.mode === 'string' ? body.mode : undefined;
+    const mode: SyncMode = isSyncMode(rawMode) ? rawMode : 'range';
+    if (mode === 'incremental') {
+      const result = await runTinyOrdersIncrementalSync();
+      return NextResponse.json(result);
+    }
+
+    const diasRecentesBody = parseNumber(body.diasRecentes);
+    const dataInicialParam = typeof body.dataInicial === 'string' ? body.dataInicial : undefined;
+    const dataFinalParam = typeof body.dataFinal === 'string' ? body.dataFinal : undefined;
 
     const hoje = new Date();
 
@@ -107,24 +139,34 @@ export async function POST(req: NextRequest) {
     }
 
     // cria job (se background=true, só enfileira como 'queued')
-    const background = body.background === true || body.background === 'true';
+    const background = parseBooleanish(body.background);
 
-    const jobPayload: any = {
+    const jobPayload: SyncJobsInsert = {
+      id: crypto.randomUUID(),
       status: 'queued',
-      params: { mode, dataInicial: dataInicialISO, dataFinal: dataFinalISO },
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      total_requests: null,
+      total_orders: null,
+      error: null,
+      params: {
+        mode,
+        dataInicial: dataInicialISO,
+        dataFinal: dataFinalISO,
+      } as Json,
     };
 
     const { data: jobInsert, error: jobError } = await supabaseAdmin
       .from('sync_jobs')
       .insert(jobPayload)
-      .select('*')
+      .select('id')
       .single();
 
     if (jobError || !jobInsert) {
       throw new Error('Não foi possível criar o job de sync.');
     }
 
-    jobId = jobInsert.id as string;
+    jobId = jobInsert.id;
 
     await logJob(jobId, 'info', 'Job criado', {
       mode,
@@ -145,7 +187,8 @@ export async function POST(req: NextRequest) {
     await logJob(jobId, 'info', 'Processando job em background', { background: true });
     runJobInBackground(jobId);
     return NextResponse.json({ jobId, queued: true, processedInApp: false, runningInBackground: true });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = getErrorMessage(err);
     console.error('[API] /api/tiny/sync erro', err);
 
     if (jobId) {
@@ -154,22 +197,21 @@ export async function POST(req: NextRequest) {
         .update({
           status: 'error',
           finished_at: new Date().toISOString(),
-          error: err?.message ?? 'Erro desconhecido',
+          error: message ?? 'Erro desconhecido',
         })
         .eq('id', jobId);
 
       await logJob(jobId, 'error', 'Job finalizado com erro', {
-        error: err?.message ?? 'Erro desconhecido',
+        error: message ?? 'Erro desconhecido',
       });
     }
 
     return NextResponse.json(
       {
         message: 'Erro ao executar sincronização com Tiny.',
-        details: err?.message ?? 'Erro desconhecido',
+        details: message ?? 'Erro desconhecido',
       },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck

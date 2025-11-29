@@ -1,11 +1,18 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
 
 const TOKEN_URL = process.env.TINY_TOKEN_URL ?? 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';
 const CLIENT_ID = process.env.TINY_CLIENT_ID;
 const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET;
+
+type TinyTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
 
 /**
  * POST /api/tiny/auth/refresh
@@ -18,7 +25,7 @@ export async function POST(request: Request) {
     // 1. Buscar refresh_token atual
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from('tiny_tokens')
-      .select('*')
+      .select('id, access_token, refresh_token, expires_at, scope, token_type')
       .eq('id', 1)
       .maybeSingle();
 
@@ -81,9 +88,9 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    let json: any;
+    let parsed: unknown;
     try {
-      json = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch (e) {
       console.error('[refresh] Resposta inválida:', text);
       return NextResponse.json({ 
@@ -92,9 +99,20 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
+    if (!parsed || typeof parsed !== 'object') {
+      return NextResponse.json({ success: false, error: 'Resposta inválida do servidor Tiny' }, { status: 500 });
+    }
+
+    const json = parsed as TinyTokenResponse;
+
+    if (!json.access_token) {
+      return NextResponse.json({ success: false, error: 'Tiny não retornou access_token' }, { status: 500 });
+    }
+
     // 3. Salvar novos tokens
     const nowMs = Date.now();
-    const expiresAt = nowMs + ((json.expires_in ?? 0) - 60) * 1000;
+    const expiresInSeconds = typeof json.expires_in === 'number' ? json.expires_in : 0;
+    const expiresAt = nowMs + Math.max(0, (expiresInSeconds - 60) * 1000);
 
     const { error: updateErr } = await supabaseAdmin
       .from('tiny_tokens')
@@ -125,8 +143,8 @@ export async function POST(request: Request) {
       level: 'info',
       message: 'Token Tiny renovado manualmente',
       meta: { 
-        expires_in: json.expires_in,
-        scope: json.scope 
+        expires_in: expiresInSeconds,
+        scope: json.scope ?? null,
       }
     });
 
@@ -134,14 +152,14 @@ export async function POST(request: Request) {
       success: true, 
       message: 'Token renovado com sucesso',
       expires_at: new Date(expiresAt).toISOString(),
-      scope: json.scope
+      scope: json.scope ?? null,
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[refresh] Erro inesperado:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message || 'Erro inesperado ao renovar token' 
+      error: getErrorMessage(error) || 'Erro inesperado ao renovar token' 
     }, { status: 500 });
   }
 }
@@ -155,7 +173,7 @@ export async function GET() {
   try {
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from('tiny_tokens')
-      .select('*')
+      .select('id, access_token, refresh_token, expires_at, scope, token_type')
       .eq('id', 1)
       .maybeSingle();
 
@@ -176,30 +194,28 @@ export async function GET() {
     }
 
     const now = Date.now();
-    const isValid = tokenRow.access_token && 
-                    typeof tokenRow.expires_at === 'number' && 
-                    tokenRow.expires_at > now;
+    const expiresAtMs = typeof tokenRow.expires_at === 'number' ? tokenRow.expires_at : null;
+    const isValid = Boolean(tokenRow.access_token) && typeof expiresAtMs === 'number' && expiresAtMs > now;
 
-    const expiresIn = tokenRow.expires_at ? 
-                      Math.floor((tokenRow.expires_at - now) / 1000) : 
-                      null;
+    const expiresIn = typeof expiresAtMs === 'number'
+      ? Math.floor((expiresAtMs - now) / 1000)
+      : null;
 
     return NextResponse.json({
       success: true,
       connected: !!tokenRow.refresh_token,
       tokenValid: isValid,
-      expiresAt: tokenRow.expires_at ? new Date(tokenRow.expires_at).toISOString() : null,
+      expiresAt: typeof expiresAtMs === 'number' ? new Date(expiresAtMs).toISOString() : null,
       expiresIn: expiresIn, // segundos
       scope: tokenRow.scope,
       needsAuth: !tokenRow.refresh_token,
       needsRefresh: !isValid && !!tokenRow.refresh_token
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: getErrorMessage(error) || 'Erro ao consultar tokens' 
     }, { status: 500 });
   }
 }
-// @ts-nocheck

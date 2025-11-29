@@ -1,5 +1,3 @@
-// @ts-nocheck
-/* eslint-disable */
 /**
  * Endpoint para aplicar a migração de produtos
  * 
@@ -10,12 +8,18 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/src/types/db-public";
 import * as fs from "fs";
 import * as path from "path";
+import { getErrorMessage } from "@/lib/errors";
+import type { Database } from "@/src/types/db-public";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+type StatementResult =
+  | { statement: string; status: "success" }
+  | { statement: string; status: "skipped" }
+  | { statement: string; status: "error"; error: string };
 
 export async function POST() {
   try {
@@ -43,7 +47,7 @@ export async function POST() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0 && !s.startsWith("--"));
 
-    const results = [];
+    const results: StatementResult[] = [];
 
     for (const statement of statements) {
       try {
@@ -55,7 +59,7 @@ export async function POST() {
 
         // Tentar executar
         const { error } = await supabase.rpc("exec_sql", {
-          query: statement + ";",
+          query: statement.endsWith(";") ? statement : `${statement};`,
         });
 
         if (error) {
@@ -70,11 +74,11 @@ export async function POST() {
             status: "success",
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         results.push({
           statement: statement.substring(0, 50) + "...",
           status: "error",
-          error: err.message,
+          error: getErrorMessage(err) || "Erro desconhecido",
         });
       }
     }
@@ -93,11 +97,11 @@ export async function POST() {
           ? "Migração aplicada com sucesso!"
           : `${errorCount} comandos falharam. Por favor, execute o SQL manualmente no Supabase Dashboard.`,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Erro ao aplicar migração:", error);
     return NextResponse.json(
       {
-        error: error.message,
+        error: getErrorMessage(error) || "Erro desconhecido",
         hint: "Execute o SQL manualmente no Supabase Dashboard (SQL Editor)",
       },
       { status: 500 }

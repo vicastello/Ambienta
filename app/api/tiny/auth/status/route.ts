@@ -1,8 +1,7 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
+import { getErrorMessage } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,7 +9,11 @@ export async function GET(req: NextRequest) {
     const cookieExpiresAtStr = req.cookies.get('tiny_expires_at')?.value || null;
 
     // read DB tokens too
-    const { data: tokenRow, error: tokenErr } = await supabaseAdmin.from('tiny_tokens').select('*').eq('id', 1).maybeSingle();
+    const { data: tokenRow, error: tokenErr } = await supabaseAdmin
+      .from('tiny_tokens')
+      .select('id, access_token, refresh_token, expires_at, scope, token_type')
+      .eq('id', 1)
+      .maybeSingle();
 
     if (tokenErr) {
       console.error('[auth/status] erro ao ler tiny_tokens', tokenErr);
@@ -29,7 +32,7 @@ export async function GET(req: NextRequest) {
     let serverConnected = false;
     try {
       const at = await getAccessTokenFromDbOrRefresh();
-      serverConnected = !!at;
+      serverConnected = Boolean(at);
     } catch (e) {
       serverConnected = false;
     }
@@ -45,15 +48,14 @@ export async function GET(req: NextRequest) {
         expiresAt: dbExpiresAt,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
       {
         connected: false,
         message: 'Erro interno ao ler status do Tiny.',
-        details: String(err),
+        details: getErrorMessage(err) || 'Erro desconhecido',
       },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck

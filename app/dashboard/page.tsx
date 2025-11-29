@@ -1,6 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
+  Info,
+  Package,
+  ShoppingCart,
+  Sparkles,
+  Target,
+  TrendingUp,
+  X,
+} from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { BrazilSalesMap } from '@/components/BrazilSalesMap';
@@ -8,133 +21,24 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Legend,
+  Cell,
   Label,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Cell,
 } from 'recharts';
-import {
-  ShoppingCart,
-  TrendingUp,
-  BarChart3,
-  ArrowUpRight,
-  ArrowDownRight,
-  X,
-  Sparkles,
-  AlertTriangle,
-  Target,
-  Info,
-  Package,
-} from 'lucide-react';
-
-// Custom Tooltip com Blur
-function CustomTooltip({ active, payload, label, formatter }: any) {
-  if (!active || !payload) return null;
-
-  return (
-    <div
-      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
-      style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-        color: 'var(--text-main)',
-        fontSize: '11px',
-        zIndex: 9999,
-      }}
-    >
-      <p style={{ margin: '0 0 4px 0' }}>
-        {label ? `Dia ${label}` : 'Data'}
-      </p>
-      {payload.map((entry: any, index: number) => (
-        <p key={index} style={{ margin: '2px 0', color: entry.color }}>
-          <strong>{entry.name}:</strong> {formatter ? formatter(entry.value) : entry.value}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function CustomPieTooltip({ active, payload }: any) {
-  if (!active || !payload || !payload[0]) return null;
-
-  const data = payload[0].payload;
-
-  return (
-    <div
-      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
-      style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-        color: 'var(--text-main)',
-        fontSize: '11px',
-        zIndex: 9999,
-      }}
-    >
-      <p style={{ margin: '0 0 4px 0', fontWeight: 600 }}>
-        {data.name}
-      </p>
-      <p style={{ margin: '2px 0', color: payload[0].fill }}>
-        <strong>Faturamento:</strong> {payload[0].value?.toLocaleString?.('pt-BR', {
-          style: 'currency',
-          currency: 'BRL',
-        }) || payload[0].value}
-      </p>
-      <p style={{ margin: '2px 0', fontSize: '10px', color: 'var(--text-muted)' }}>
-        ({data.pedidos} pedidos)
-      </p>
-    </div>
-  );
-}
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = '#009DA8';
-const AMBIENTA_LIGHT = '#00B5C3';
-const AMBIENTA_DARK = '#006E76';
 const COLORS_PALETTE = [AMBIENTA_PRIMARY, '#22c55e', '#f97316', '#0ea5e9', '#a855f7'];
 const GLOBAL_INTERVAL_DAYS = 30;
 const SPARK_WINDOW_DAYS = 7;
 const PIE_LABEL_RAD = Math.PI / 180;
 const DASHBOARD_AUTO_REFRESH_MS = 60_000; // polling leve para dados mais frescos
-
-const renderChannelPercentLabel = (props: any) => {
-  const { cx, cy, midAngle, outerRadius, percent: slicePercent, payload } = props ?? {};
-  const resolvedPercent =
-    typeof slicePercent === 'number'
-      ? slicePercent
-      : typeof payload?.percentage === 'number'
-        ? payload.percentage / 100
-        : 0;
-  if (!cx || !cy || !outerRadius || resolvedPercent <= 0 || resolvedPercent * 100 < 4) {
-    return null;
-  }
-  const radius = Number(outerRadius) * 1.12;
-  const x = cx + radius * Math.cos(-midAngle * PIE_LABEL_RAD);
-  const y = cy + radius * Math.sin(-midAngle * PIE_LABEL_RAD);
-
-  return (
-    <text
-      x={x}
-      y={y}
-      fill="var(--text-main)"
-      fontSize={12}
-      fontWeight={600}
-      textAnchor={x > cx ? 'start' : 'end'}
-      dominantBaseline="central"
-      opacity={resolvedPercent > 0 ? 0.9 : 0}
-    >
-      {(resolvedPercent * 100).toFixed(0)}%
-    </text>
-  );
-};
 
 type DiaResumo = {
   data: string;
@@ -270,7 +174,6 @@ type SavedFilters = {
 };
 
 const FILTERS_STORAGE_KEY = 'tiny_dash_filters_v1';
-const COLORS = COLORS_PALETTE;
 const DASHBOARD_CACHE_PREFIX = 'tiny_dash_state_v1';
 const RESUMO_CACHE_PREFIX = `${DASHBOARD_CACHE_PREFIX}:resumo`;
 const GLOBAL_CACHE_PREFIX = `${DASHBOARD_CACHE_PREFIX}:global`;
@@ -294,6 +197,151 @@ const MARKETPLACE_COLORS: Record<string, string> = {
 type CacheEntry<T> = {
   data: T;
   timestamp: number;
+};
+
+type ChartTooltipValue = number | string;
+type ChartTooltipPayload = {
+  value?: ChartTooltipValue;
+  name?: string;
+  color?: string;
+  fill?: string;
+  payload?: Record<string, unknown> | null;
+};
+type CustomTooltipFormatter = (value: ChartTooltipValue) => ReactNode;
+
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: ChartTooltipPayload[];
+  label?: string | number;
+  formatter?: CustomTooltipFormatter;
+};
+
+type CustomPieTooltipProps = {
+  active?: boolean;
+  payload?: ChartTooltipPayload[];
+};
+
+type ChannelPercentLabelProps = {
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  outerRadius?: number;
+  percent?: number;
+  payload?: { percentage?: number };
+};
+
+type LabelViewBox = {
+  cx?: number;
+  cy?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+};
+
+const formatTooltipCurrency: CustomTooltipFormatter = (value) =>
+  typeof value === 'number' ? formatBRL(value) : String(value);
+
+// Custom Tooltip com Blur
+function CustomTooltip({ active, payload, label, formatter }: CustomTooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div
+      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
+      style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        color: 'var(--text-main)',
+        fontSize: '11px',
+        zIndex: 9999,
+      }}
+    >
+      <p style={{ margin: '0 0 4px 0' }}>{label ? `Dia ${label}` : 'Data'}</p>
+      {payload.map((entry, index) => {
+        const rawValue = entry?.value;
+        const formattedValue =
+          formatter && (typeof rawValue === 'number' || typeof rawValue === 'string')
+            ? formatter(rawValue)
+            : rawValue;
+        return (
+          <p key={entry?.name ?? index} style={{ margin: '2px 0', color: entry?.color }}>
+            <strong>{entry?.name}:</strong> {formattedValue}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function CustomPieTooltip({ active, payload }: CustomPieTooltipProps) {
+  if (!active || !payload?.length || !payload[0]) return null;
+
+  const [first] = payload;
+  const data = (first?.payload as { name?: string; pedidos?: number }) ?? {};
+  const value = first?.value;
+  const formattedValue =
+    typeof value === 'number'
+      ? value.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        })
+      : value;
+
+  return (
+    <div
+      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
+      style={{
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        color: 'var(--text-main)',
+        fontSize: '11px',
+        zIndex: 9999,
+      }}
+    >
+      <p style={{ margin: '0 0 4px 0', fontWeight: 600 }}>{data.name}</p>
+      <p style={{ margin: '2px 0', color: first?.fill }}>
+        <strong>Faturamento:</strong> {formattedValue}
+      </p>
+      <p style={{ margin: '2px 0', fontSize: '10px', color: 'var(--text-muted)' }}>
+        ({data.pedidos ?? 0} pedidos)
+      </p>
+    </div>
+  );
+}
+
+const renderChannelPercentLabel = ({ cx, cy, midAngle, outerRadius, percent: slicePercent, payload }: ChannelPercentLabelProps) => {
+  const resolvedPercent =
+    typeof slicePercent === 'number'
+      ? slicePercent
+      : typeof payload?.percentage === 'number'
+        ? payload.percentage / 100
+        : 0;
+  if (!cx || !cy || !outerRadius || typeof midAngle !== 'number' || resolvedPercent <= 0 || resolvedPercent * 100 < 4) {
+    return null;
+  }
+  const radius = Number(outerRadius ?? 0) * 1.12;
+  const x = cx + radius * Math.cos(-midAngle * PIE_LABEL_RAD);
+  const y = cy + radius * Math.sin(-midAngle * PIE_LABEL_RAD);
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="var(--text-main)"
+      fontSize={12}
+      fontWeight={600}
+      textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central"
+      opacity={resolvedPercent > 0 ? 0.9 : 0}
+    >
+      {(resolvedPercent * 100).toFixed(0)}%
+    </text>
+  );
 };
 
 function loadSavedFilters(): SavedFilters | null {
@@ -373,6 +421,18 @@ function formatBRL(valor: number | null | undefined) {
   });
 }
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === 'string') {
+      return maybeMessage;
+    }
+  }
+  return '';
+};
+
 function labelSituacao(s: number) {
   const mapa: Record<number, string> = {
     8: 'Dados incompletos',
@@ -424,20 +484,6 @@ function diffDays(startIso: string, endIso: string): number {
   return Math.floor(diff / (24 * 60 * 60 * 1000));
 }
 
-function formatDateTime(dateString: string): string {
-  try {
-    return new Date(dateString).toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return dateString;
-  }
-}
-
 function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
 }
@@ -480,7 +526,6 @@ export default function DashboardPage() {
   const [erroChart, setErroChart] = useState<string | null>(null);
   const [complementLoading, setComplementLoading] = useState<boolean>(false);
   const [complementMsg, setComplementMsg] = useState<string | null>(null);
-  const [lastSync, setLastSync] = useState<string | null>(null);
   const [autoComplementedRanges, setAutoComplementedRanges] = useState<Record<string, boolean>>({});
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [loadingInsights, setLoadingInsights] = useState<boolean>(false);
@@ -583,9 +628,9 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
   async function carregarResumo() {
     if (!filtersLoaded) return;
     const requestId = ++resumoRequestId.current;
+    const { inicio, fim } = resolverIntervalo();
 
     try {
-      const { inicio, fim } = resolverIntervalo();
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cachedResumo = safeReadCache<DashboardResumo>(cacheKey);
       if (cachedResumo) {
@@ -635,12 +680,12 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
           }
           setComplementLoading(false);
         }
-      } catch (e) {
+      } catch {
         // swallow
       }
-    } catch (e: any) {
+    } catch (error) {
       if (requestId === resumoRequestId.current) {
-        setErro(e?.message ?? 'Erro inesperado ao carregar dashboard');
+        setErro(getErrorMessage(error) || 'Erro inesperado ao carregar dashboard');
       }
     } finally {
       if (requestId === resumoRequestId.current) {
@@ -675,9 +720,9 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
         setResumoGlobal(parsedGlobal);
       }
       safeWriteCache(cacheKey, parsedGlobal);
-    } catch (e: any) {
+    } catch (error) {
       if (requestId === globalRequestId.current) {
-        setErroGlobal(e?.message ?? 'Erro inesperado ao carregar visão consolidada');
+        setErroGlobal(getErrorMessage(error) || 'Erro inesperado ao carregar visão consolidada');
       }
     } finally {
       if (requestId === globalRequestId.current) {
@@ -705,7 +750,7 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
         .slice(0, 4);
       setTopSituacoesMes(top);
       setSituacoesMes(parsed.periodoAtual.pedidosPorSituacao ?? []);
-    } catch (e) {
+    } catch {
       setTopSituacoesMes([]);
       setSituacoesMes([]);
     } finally {
@@ -741,24 +786,24 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
   useEffect(() => {
     if (!filtersLoaded) return;
     carregarResumo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarResumo
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     if (!filtersLoaded) return;
     carregarResumoGlobal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- efeito depende apenas de filtros para evitar loop com carregarResumoGlobal
   }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     if (!filtersLoaded) return;
     carregarTopSituacoesMes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarTopSituacoesMes
   }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     carregarResumoInsightsBase();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- carregamento único da base de insights
   }, []);
 
   useEffect(() => {
@@ -769,18 +814,8 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
       carregarTopSituacoesMes();
     }, DASHBOARD_AUTO_REFRESH_MS);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar intervalo a cada render
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
-
-  useEffect(() => {
-    fetchLastSync();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    fetchRecentOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -804,23 +839,10 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
   useEffect(() => {
     if (!insightsBaseline) return;
     gerarInsights(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- evita dependência recursiva com gerarInsights
   }, [insightsBaseline]);
 
-  // Removed auto-refresh - only refresh on page reload or manual action
-
-  async function fetchLastSync() {
-    try {
-      const res = await fetch('/api/tiny/sync/last-updated', { cache: 'no-store' });
-      const j = await res.json();
-      if (res.ok && j?.lastUpdated) setLastSync(j.lastUpdated);
-      else setLastSync(null);
-    } catch (e) {
-      setLastSync(null);
-    }
-  }
-
-  async function fetchRecentOrders() {
+  const fetchRecentOrders = useCallback(async () => {
     try {
       setLoadingRecentOrders(true);
       const today = new Date();
@@ -846,7 +868,11 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
     } finally {
       setLoadingRecentOrders(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    fetchRecentOrders();
+  }, [fetchRecentOrders]);
 
   function resolverIntervaloChart(): { inicio: string; fim: string } {
     const hojeIso = isoToday();
@@ -918,12 +944,12 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
           }
           setComplementLoading(false);
         }
-      } catch (e) {
+      } catch {
         // swallow
       }
-    } catch (e: any) {
+    } catch (error) {
       if (requestId === chartRequestId.current) {
-        setErroChart(e?.message ?? 'Erro inesperado ao carregar gráfico');
+        setErroChart(getErrorMessage(error) || 'Erro inesperado ao carregar gráfico');
       }
     } finally {
       if (requestId === chartRequestId.current) {
@@ -934,7 +960,7 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
 
   useEffect(() => {
     carregarResumoChart();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar chart request a cada render
   }, [chartPreset, chartCustomStart, chartCustomEnd]);
 
   async function handleComplementChart() {
@@ -952,8 +978,8 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
       }
       setComplementMsg('Complemento realizado.');
       setTimeout(() => setComplementMsg(null), 6_000);
-    } catch (e: any) {
-      setComplementMsg(e?.message ?? 'Erro inesperado ao complementar.');
+    } catch (error) {
+      setComplementMsg(getErrorMessage(error) || 'Erro inesperado ao complementar.');
     } finally {
       setComplementLoading(false);
       setTimeout(() => setComplementMsg(null), 6_000);
@@ -1010,8 +1036,8 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
           )
         );
       }
-    } catch (e: any) {
-      setErroInsights(e?.message ?? 'Erro inesperado ao gerar insights');
+    } catch (error) {
+      setErroInsights(getErrorMessage(error) || 'Erro inesperado ao gerar insights');
     } finally {
       setLoadingInsights(false);
     }
@@ -1156,8 +1182,6 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
     return { abs, perc };
   }, [resumo]);
 
-  const { inicio: intervaloInicio, fim: intervaloFim } = resolverIntervalo();
-  const diasIntervalo = 1 + Math.max(diffDays(intervaloInicio, intervaloFim), 0);
   const resumoAtual = resumo?.periodoAtual;
   const resumoGlobalAtual = resumoGlobal?.periodoAtual;
 
@@ -1397,7 +1421,7 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                       <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
                       <XAxis dataKey="label" hide />
                       <YAxis hide />
-                      <Tooltip content={<CustomTooltip formatter={formatBRL} />} />
+                      <Tooltip content={<CustomTooltip formatter={formatTooltipCurrency} />} />
                       <Area type="monotone" dataKey="value" stroke="#a855f7" fill="url(#microSpark)" strokeWidth={3} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -1689,7 +1713,7 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} />
                     <XAxis dataKey="data" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis yAxisId="values" ticks={chartTicks} hide />
-                    <Tooltip content={<CustomTooltip formatter={formatBRL} />} />
+                    <Tooltip content={<CustomTooltip formatter={formatTooltipCurrency} />} />
                     <Legend wrapperStyle={{ fontSize: '12px' }} />
                     <Area yAxisId="values" type="monotone" dataKey="anterior" name="Período anterior" stroke="#a5b4fc" fill="url(#colorAnterior)" strokeWidth={3} strokeDasharray="6 6" />
                     <Area yAxisId="values" type="monotone" dataKey="atual" name="Período atual" stroke={AMBIENTA_PRIMARY} fill="url(#colorAtual)" strokeWidth={3} />
@@ -1735,9 +1759,19 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                                 position="center"
                                 content={({ viewBox }) => {
                                   if (!viewBox) return null;
-                                  const vb = viewBox as any;
-                                  const cx = typeof vb.cx === 'number' ? vb.cx : (typeof vb.x === 'number' && typeof vb.width === 'number' ? vb.x + vb.width / 2 : 0);
-                                  const cy = typeof vb.cy === 'number' ? vb.cy : (typeof vb.y === 'number' && typeof vb.height === 'number' ? vb.y + vb.height / 2 : 0);
+                                  const vb = viewBox as LabelViewBox;
+                                  const cx =
+                                    typeof vb.cx === 'number'
+                                      ? vb.cx
+                                      : typeof vb.x === 'number' && typeof vb.width === 'number'
+                                        ? vb.x + vb.width / 2
+                                        : 0;
+                                  const cy =
+                                    typeof vb.cy === 'number'
+                                      ? vb.cy
+                                      : typeof vb.y === 'number' && typeof vb.height === 'number'
+                                        ? vb.y + vb.height / 2
+                                        : 0;
                                   return (
                                     <g>
                                       <text x={cx} y={cy - 6} textAnchor="middle" fill="var(--text-muted)" fontSize={12} fontWeight={500}>
@@ -1832,11 +1866,15 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                             >
                               <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
                                 {produto.imagemUrl ? (
-                                  <img
-                                    src={produto.imagemUrl}
-                                    alt={produto.descricao}
-                                    className="absolute inset-0 w-full h-full object-cover"
-                                  />
+                                  <>
+                                    {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
+                                    <img
+                                      src={produto.imagemUrl}
+                                      alt={produto.descricao}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  </>
                                 ) : (
                                   <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
                                     {getInitials(produto.descricao)}
@@ -1881,11 +1919,15 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                             >
                               <div className="relative w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
                                 {produto.imagemUrl ? (
-                                  <img
-                                    src={produto.imagemUrl}
-                                    alt={produto.descricao}
-                                    className="absolute inset-0 w-full h-full object-cover"
-                                  />
+                                  <>
+                                    {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
+                                    <img
+                                      src={produto.imagemUrl}
+                                      alt={produto.descricao}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  </>
                                 ) : (
                                   <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
                                     {getInitials(produto.descricao)}
@@ -2013,7 +2055,7 @@ function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
                   </div>
                   <div className="max-h-[360px] overflow-y-auto divide-y divide-white/40 dark:divide-white/10">
                     {vendasPorDiaOrdenadas.map((linha, idx) => {
-                      const [y, m, d] = linha.data.split('-');
+                      const [, m, d] = linha.data.split('-');
                       const dataBR = d && m ? `${d}/${m}` : linha.data;
                       const weekday = (() => {
                         const dt = new Date(`${linha.data}T00:00:00`);

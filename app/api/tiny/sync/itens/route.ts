@@ -1,22 +1,34 @@
-// @ts-nocheck
-/* eslint-disable */
-// app/api/tiny/sync/itens/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import { sincronizarItensPorPedidos } from '@/lib/pedidoItensHelper';
+import { getErrorMessage } from '@/lib/errors';
+
+type SyncItensBody = {
+  tinyId?: number | string;
+  tinyIds?: Array<number | string>;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const tinyId: number | null = body.tinyId ?? null;
-    const tinyIdsBody: any[] | undefined = Array.isArray(body.tinyIds) ? body.tinyIds : undefined;
+    const rawBody = await req.json().catch(() => null);
+    const body: SyncItensBody = isRecord(rawBody) ? (rawBody as SyncItensBody) : {};
+    const tinyId = body.tinyId;
+    const tinyIdsBody = Array.isArray(body.tinyIds) ? body.tinyIds : undefined;
 
     const tinyIds: number[] = [];
-    if (typeof tinyId === 'number') tinyIds.push(tinyId);
+    const tinyIdNumber = typeof tinyId === 'number' ? tinyId : typeof tinyId === 'string' ? Number(tinyId) : null;
+    if (Number.isFinite(tinyIdNumber)) {
+      tinyIds.push(Number(tinyIdNumber));
+    }
     if (tinyIdsBody) {
       for (const val of tinyIdsBody) {
-        const n = Number(val);
-        if (Number.isFinite(n)) tinyIds.push(n);
+        const parsed = typeof val === 'number' ? val : typeof val === 'string' ? Number(val) : NaN;
+        if (Number.isFinite(parsed)) {
+          tinyIds.push(Number(parsed));
+        }
       }
     }
 
@@ -28,18 +40,18 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await getAccessTokenFromDbOrRefresh();
-    const result = await sincronizarItensPorPedidos(accessToken!, tinyIds);
+    const result = await sincronizarItensPorPedidos(accessToken, tinyIds);
 
     return NextResponse.json({
       success: true,
       input: { tinyIds },
       result,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error) ?? 'Erro ao sincronizar itens';
     return NextResponse.json(
-      { error: error?.message ?? 'Erro ao sincronizar itens' },
+      { error: message },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck

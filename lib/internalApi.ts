@@ -9,7 +9,7 @@ export function resolveBaseUrl() {
   return 'http://localhost:3000';
 }
 
-export async function callInternalJson(path: string, init?: RequestInit) {
+export async function callInternalJson<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const target = buildInternalUrl(path);
   const headers = new Headers(init?.headers ?? {});
 
@@ -24,7 +24,7 @@ export async function callInternalJson(path: string, init?: RequestInit) {
     headers,
   });
 
-  return parseJsonResponse(response, `Falha ao chamar ${path}`);
+  return parseJsonResponse<T>(response, `Falha ao chamar ${path}`);
 }
 
 function buildInternalUrl(path: string) {
@@ -33,9 +33,9 @@ function buildInternalUrl(path: string) {
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-async function parseJsonResponse(res: Response, fallbackMessage: string) {
+async function parseJsonResponse<T>(res: Response, fallbackMessage: string): Promise<T> {
   const text = await res.text();
-  let json: any = null;
+  let json: unknown = null;
 
   if (text) {
     try {
@@ -46,12 +46,23 @@ async function parseJsonResponse(res: Response, fallbackMessage: string) {
   }
 
   if (!res.ok) {
-    const message = json?.error || json?.message || fallbackMessage;
-    const err = new Error(message);
-    (err as any).response = json ?? text;
-    (err as any).status = res.status;
+    const errorBody = json as Record<string, unknown> | null;
+    const errorText = errorBody && typeof errorBody === 'object'
+      ? (() => {
+          const rawError = (errorBody as { error?: unknown }).error;
+          if (typeof rawError === 'string' && rawError.trim()) return rawError;
+          const rawMessage = (errorBody as { message?: unknown }).message;
+          if (typeof rawMessage === 'string' && rawMessage.trim()) return rawMessage;
+          return null;
+        })()
+      : null;
+    const message = errorText || fallbackMessage;
+    type HttpError = Error & { response?: unknown; status?: number };
+    const err: HttpError = new Error(message);
+    err.response = json ?? text;
+    err.status = res.status;
     throw err;
   }
 
-  return json;
+  return json as T;
 }

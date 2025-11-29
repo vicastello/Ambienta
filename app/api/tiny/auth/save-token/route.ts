@@ -1,7 +1,14 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
+
+type SaveTokenPayload = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
 
 /**
  * POST /api/tiny/auth/save-token
@@ -11,8 +18,15 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { access_token, refresh_token, expires_in, scope, token_type } = body;
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      rawBody = null;
+    }
+    const body = isRecord(rawBody) ? (rawBody as SaveTokenPayload) : null;
+
+    const { access_token, refresh_token, expires_in, scope, token_type } = body ?? {};
 
     if (!access_token || !refresh_token || !expires_in) {
       return NextResponse.json(
@@ -21,11 +35,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const expiresAt = Date.now() + (expires_in - 60) * 1000;
+    const parsedExpires = typeof expires_in === 'number' ? expires_in : Number(expires_in);
+    if (!Number.isFinite(parsedExpires)) {
+      return NextResponse.json(
+        { success: false, error: 'expires_in precisa ser numérico' },
+        { status: 400 }
+      );
+    }
+
+    const expiresAt = Date.now() + Math.max(0, (parsedExpires - 60) * 1000);
 
     console.log('[save-token] Salvando token no DB...');
 
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('tiny_tokens')
       .upsert(
         {
@@ -42,19 +64,22 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error('[save-token] ❌ DB Error:', error);
       return NextResponse.json(
-        { success: false, error: error.message, details: error },
+        { success: false, error: error.message },
         { status: 500 }
       );
     }
 
     console.log('[save-token] ✅ Token salvo com sucesso!');
-    return NextResponse.json({ success: true, data });
-  } catch (e) {
+    return NextResponse.json({ success: true });
+  } catch (e: unknown) {
     console.error('[save-token] ❌ Exception:', e);
     return NextResponse.json(
-      { success: false, error: String(e) },
+      { success: false, error: getErrorMessage(e) || 'Erro desconhecido' },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

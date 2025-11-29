@@ -7,9 +7,10 @@ export interface TinyPaginacao {
 }
 // Resposta da listagem de pedidos Tiny v3
 export interface TinyListarPedidosResponse {
-  itens: any[];
+  itens: TinyPedidoListaItem[];
   total?: number;
-  [key: string]: any;
+  paginacao?: TinyPaginacao;
+  [key: string]: unknown;
 }
 // Parâmetros genéricos para GETs na Tiny API
 export type TinyGetParams = Record<string, string | number | boolean | undefined>;

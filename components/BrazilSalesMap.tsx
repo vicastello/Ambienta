@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, type CSSProperties } from "react";
 import { createPortal } from 'react-dom';
 import { VectorMap } from "@south-paw/react-vector-maps";
 // Substitui o JSON local por fonte oficial do mapa
@@ -10,6 +10,91 @@ import { VectorMap } from "@south-paw/react-vector-maps";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import Brazil from "@svg-maps/brazil";
+
+type TooltipPoint = { x: number; y: number };
+
+type BrazilSvgLayer = {
+  id?: string | number;
+  name?: string;
+  label?: string;
+  path?: string;
+  d?: string;
+};
+
+type BrazilSvgSource = {
+  label?: string;
+  name?: string;
+  viewBox?: string;
+  locations?: BrazilSvgLayer[];
+  layers?: BrazilSvgLayer[];
+};
+
+type BrazilMapLayer = {
+  id: string;
+  name: string;
+  d: string;
+};
+
+type BrazilMapData = {
+  id: string;
+  name: string;
+  viewBox: string;
+  layers: BrazilMapLayer[];
+};
+
+type PointerEventLike = {
+  currentTarget?: EventTarget | null;
+  target?: EventTarget | null;
+  clientX?: number;
+  clientY?: number;
+  nativeEvent?: { clientX?: number; clientY?: number } | null;
+  pointerType?: string;
+};
+
+type LayerPayload = {
+  id?: string;
+  properties?: { id?: string; code?: string; geoId?: string };
+  feature?: { id?: string; properties?: { id?: string; code?: string } };
+  layerId?: string;
+};
+
+type NormalizedLayerEvent = {
+  id: string | null;
+  clientX?: number;
+  clientY?: number;
+  pointerType?: string;
+  currentTarget: EventTarget | null;
+};
+
+const isPointerEventLike = (value: unknown): value is PointerEventLike =>
+  typeof value === 'object' && value !== null && (
+    'currentTarget' in value || 'clientX' in value || 'nativeEvent' in value
+  );
+
+const isLayerPayload = (value: unknown): value is LayerPayload => typeof value === 'object' && value !== null;
+
+const extractIdFromTarget = (target: EventTarget | null | undefined): string | null => {
+  if (!target) return null;
+  const candidate = target as { id?: unknown; dataset?: DOMStringMap };
+  if (typeof candidate.id === 'string' && candidate.id.trim()) return candidate.id;
+  const datasetId = candidate.dataset?.id;
+  return typeof datasetId === 'string' && datasetId.trim() ? datasetId : null;
+};
+
+const extractIdFromPayload = (payload?: LayerPayload | null): string | null => {
+  if (!payload) return null;
+  return (
+    payload.id ??
+    payload.layerId ??
+    payload.properties?.id ??
+    payload.properties?.code ??
+    payload.properties?.geoId ??
+    payload.feature?.id ??
+    payload.feature?.properties?.id ??
+    payload.feature?.properties?.code ??
+    null
+  );
+};
 
 export type VendasUF = {
   uf: string; // ex: 'SP'
@@ -30,8 +115,8 @@ function interpolateColor(from: string, to: string, t: number) {
   const f = from.match(/#([\da-f]{2})([\da-f]{2})([\da-f]{2})/i);
   const t2 = to.match(/#([\da-f]{2})([\da-f]{2})([\da-f]{2})/i);
   if (!f || !t2) return from;
-  const [_, fr, fg, fb] = f as unknown as string[];
-  const [__, tr, tg, tb] = t2 as unknown as string[];
+  const [, fr, fg, fb] = f as unknown as string[];
+  const [, tr, tg, tb] = t2 as unknown as string[];
   const ir = Math.round(parseInt(fr, 16) + (parseInt(tr, 16) - parseInt(fr, 16)) * tt);
   const ig = Math.round(parseInt(fg, 16) + (parseInt(tg, 16) - parseInt(fg, 16)) * tt);
   const ib = Math.round(parseInt(fb, 16) + (parseInt(tb, 16) - parseInt(fb, 16)) * tt);
@@ -51,91 +136,89 @@ export function BrazilSalesMap({
   topCidades,
   className,
 }: {
-  dataUF: VendasUF[];
-  topCidades: VendasCidade[];
+  dataUF?: VendasUF[] | null;
+  topCidades?: VendasCidade[] | null;
   className?: string;
 }) {
   const [hoverInfo, setHoverInfo] = useState<{ uf: string; name?: string } | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [tooltipTarget, setTooltipTarget] = useState<{ x: number; y: number } | null>(null);
-  const tooltipPosRef = React.useRef<{ x: number; y: number } | null>(null);
-  const [animatedPos, setAnimatedPos] = useState<{ x: number; y: number } | null>(null);
+  const [tooltipTarget, setTooltipTarget] = useState<TooltipPoint | null>(null);
+  const tooltipPosRef = React.useRef<TooltipPoint | null>(null);
+  const [animatedPos, setAnimatedPos] = useState<TooltipPoint | null>(null);
   // Hover UX control
   const showTimerRef = React.useRef<number | null>(null);
   const hideTimerRef = React.useRef<number | null>(null);
   const lastHoverRef = React.useRef<{ uf: string; name?: string } | null>(null);
   const [selectedUF, setSelectedUF] = useState<string | null>(null);
   const selectedPathRef = React.useRef<SVGElement | null>(null);
+  const clearHoverTimers = React.useCallback(() => {
+    const pendingShow = showTimerRef.current;
+    const pendingHide = hideTimerRef.current;
+    if (pendingShow) window.clearTimeout(pendingShow);
+    if (pendingHide) window.clearTimeout(pendingHide);
+  }, []);
   // Constrói o objeto de mapa no formato do VectorMap a partir do pacote @svg-maps/brazil
-  const mapData = React.useMemo(() => {
-    const src: any = (Brazil as any) || {};
-    const locations: any[] = src.locations || src.layers || [];
-    const layers = locations
-      .map((loc: any) => {
-        const rawId = String(loc.id || "");
-        // Garante prefixo BR- para compatibilidade com idToUF e seletores CSS
-        const id = /^br[-_]/i.test(rawId) ? rawId : `BR-${rawId.toUpperCase()}`;
+  const mapData = React.useMemo<BrazilMapData>(() => {
+    const src = (Brazil as BrazilSvgSource) ?? {};
+    const rawLayers = Array.isArray(src.locations) && src.locations.length ? src.locations : src.layers ?? [];
+    const layers: BrazilMapLayer[] = rawLayers
+      .map((loc): BrazilMapLayer | null => {
+        if (!loc) return null;
+        const rawId = String(loc.id ?? "");
+        const normalizedId = /^br[-_]/i.test(rawId) ? rawId : `BR-${rawId.toUpperCase()}`;
         const name = loc.name || loc.label || "";
         const d = loc.path || loc.d || "";
-        return d ? { id, name, d } : null;
+        return d ? { id: normalizedId, name, d } : null;
       })
-      .filter(Boolean);
+      .filter((layer): layer is BrazilMapLayer => Boolean(layer));
     return {
       id: "brazil",
       name: src.label || src.name || "Brazil",
       viewBox: src.viewBox || "0 0 613 639",
       layers,
-    } as { id: string; name: string; viewBox: string; layers: Array<{ id: string; name: string; d: string }>; };
+    };
   }, []);
   // Map id -> name for quick lookup in event handlers
   const nameById = React.useMemo(() => {
-    const m = new Map<string, string>();
-    ((mapData as any)?.layers || []).forEach((l: any) => m.set(String(l.id), l.name || ""));
-    return m;
+    const lookup = new Map<string, string>();
+    mapData.layers.forEach((layer) => lookup.set(layer.id, layer.name));
+    return lookup;
   }, [mapData]);
 
   // Normaliza diferentes assinaturas que bibliotecas de mapas podem chamar os handlers:
   // - (event)
   // - (payload, event)
   // - (event, payload)
-  function normalizeLayerEvent(args: any[]) {
-    const a0 = args[0];
-    const a1 = args[1];
+  function normalizeLayerEvent(args: unknown[]): NormalizedLayerEvent {
+    const [first, second] = args;
     let id: string | null = null;
-    let clientX: number | undefined = undefined;
-    let clientY: number | undefined = undefined;
-    let pointerType: string | undefined = undefined;
+    let clientX: number | undefined;
+    let clientY: number | undefined;
+    let pointerType: string | undefined;
     let currentTarget: EventTarget | null = null;
 
-    // If first argument looks like a DOM Event
-    if (a0 && typeof a0 === 'object' && ('currentTarget' in a0 || 'clientX' in a0 || 'nativeEvent' in a0)) {
-      const ev: any = a0;
-      currentTarget = ev?.currentTarget ?? null;
-      id = ev?.currentTarget?.id ?? ev?.target?.id ?? ev?.id ?? null;
-      // some map libraries put the layer id on dataset or a custom prop
-      if (!id && ev?.target?.dataset) id = ev.target.dataset.id ?? id;
-      clientX = ev?.clientX ?? ev?.nativeEvent?.clientX ?? undefined;
-      clientY = ev?.clientY ?? ev?.nativeEvent?.clientY ?? undefined;
-      pointerType = ev?.pointerType ?? undefined;
+    if (isPointerEventLike(first)) {
+      currentTarget = first.currentTarget ?? null;
+      id = extractIdFromTarget(first.currentTarget) ?? extractIdFromTarget(first.target) ?? null;
+      clientX = first.clientX ?? first.nativeEvent?.clientX ?? undefined;
+      clientY = first.clientY ?? first.nativeEvent?.clientY ?? undefined;
+      pointerType = first.pointerType ?? undefined;
       return { id, clientX, clientY, pointerType, currentTarget };
     }
 
-    // If first arg is a payload (map layer) and second is an event
-    if (a0 && typeof a0 === 'object') {
-      const payload: any = a0;
-      id = payload?.id ?? payload?.properties?.id ?? payload?.feature?.id ?? payload?.layerId ?? payload?.properties?.geoId ?? null;
-      // some payloads include nested feature properties
-      if (!id && payload?.feature?.properties) id = payload.feature.properties.id ?? payload.feature.properties.code ?? null;
+    if (isLayerPayload(first)) {
+      id = extractIdFromPayload(first);
     }
-    if (a1 && typeof a1 === 'object') {
-      const ev: any = a1;
-      clientX = ev?.clientX ?? ev?.nativeEvent?.clientX ?? undefined;
-      clientY = ev?.clientY ?? ev?.nativeEvent?.clientY ?? undefined;
-      pointerType = ev?.pointerType ?? undefined;
+    if (isPointerEventLike(second)) {
+      clientX = second.clientX ?? second.nativeEvent?.clientX ?? undefined;
+      clientY = second.clientY ?? second.nativeEvent?.clientY ?? undefined;
+      pointerType = second.pointerType ?? undefined;
+      currentTarget = second.currentTarget ?? null;
+      if (!id) id = extractIdFromTarget(second.currentTarget) ?? extractIdFromTarget(second.target) ?? null;
     }
 
-    // If id looks like a bare UF (e.g. 'SP'), normalize to `BR-SP` for idToUF
-    if (id && /^[A-Za-z]{2}$/.test(String(id))) id = `BR-${String(id).toUpperCase()}`;
+    if (id && /^[A-Za-z]{2}$/.test(id)) {
+      id = `BR-${id.toUpperCase()}`;
+    }
 
     return { id, clientX, clientY, pointerType, currentTarget };
   }
@@ -171,12 +254,7 @@ export function BrazilSalesMap({
   }, [tooltipTarget]);
 
   // Clear pending hover timers on unmount
-  React.useEffect(() => {
-    return () => {
-      if (showTimerRef.current) window.clearTimeout(showTimerRef.current);
-      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
-    };
-  }, []);
+  React.useEffect(() => clearHoverTimers, [clearHoverTimers]);
   const [cachedMapa, setCachedMapa] = useState<{
     mapaVendasUF?: VendasUF[];
     mapaVendasCidade?: VendasCidade[];
@@ -205,8 +283,8 @@ export function BrazilSalesMap({
 
   // Prefer data passed by the page (which will reflect filters) and only
   // fallback to a cached /data/mapa-vendas.json when no prop is provided.
-  const effectiveDataUF = dataUF !== undefined && dataUF !== null ? dataUF : (cachedMapa?.mapaVendasUF ?? []);
-  const effectiveTopCidades = topCidades !== undefined && topCidades !== null ? topCidades : (cachedMapa?.mapaVendasCidade ?? []);
+  const effectiveDataUF = useMemo(() => dataUF ?? cachedMapa?.mapaVendasUF ?? [], [dataUF, cachedMapa]);
+  const effectiveTopCidades = useMemo(() => topCidades ?? cachedMapa?.mapaVendasCidade ?? [], [topCidades, cachedMapa]);
 
   const mapaUF = useMemo(() => {
     const map = new Map<string, VendasUF>();
@@ -233,11 +311,11 @@ export function BrazilSalesMap({
     <div className={className}>
       <div className="relative w-full bg-white/0" style={{ aspectRatio: "4/3" }}>
         <VectorMap
-          {...(mapData as any)}
+          {...mapData}
           className="rvm-svg w-full h-full"
           layerProps={{
             // Normalize different handler signatures used by map libraries and browsers
-            onPointerEnter: (...args: any[]) => {
+            onPointerEnter: (...args: unknown[]) => {
               const { id, clientX, clientY, pointerType, currentTarget } = normalizeLayerEvent(args);
               if (pointerType && pointerType !== 'mouse' && pointerType !== 'pen') return;
               const uf = idToUF(id);
@@ -247,9 +325,9 @@ export function BrazilSalesMap({
                 let pos = null;
                 if (typeof clientX === 'number' && typeof clientY === 'number') {
                   pos = { x: clientX, y: clientY };
-                } else if (currentTarget && (currentTarget as Element).getBoundingClientRect) {
+                } else if (currentTarget instanceof Element) {
                   try {
-                    const r = (currentTarget as Element).getBoundingClientRect();
+                    const r = currentTarget.getBoundingClientRect();
                     pos = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
                   } catch {}
                 }
@@ -261,15 +339,15 @@ export function BrazilSalesMap({
                 setHoverInfo({ uf, name });
               }
             },
-            onPointerMove: (...args: any[]) => {
+            onPointerMove: (...args: unknown[]) => {
               const { id, clientX, clientY, pointerType, currentTarget } = normalizeLayerEvent(args);
               if (pointerType && pointerType !== 'mouse' && pointerType !== 'pen') return;
               let pos = null;
               if (typeof clientX === 'number' && typeof clientY === 'number') {
                 pos = { x: clientX, y: clientY };
-              } else if (currentTarget && (currentTarget as Element).getBoundingClientRect) {
+              } else if (currentTarget instanceof Element) {
                 try {
-                  const r = (currentTarget as Element).getBoundingClientRect();
+                  const r = currentTarget.getBoundingClientRect();
                   pos = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
                 } catch {}
               }
@@ -285,14 +363,14 @@ export function BrazilSalesMap({
                 setHoverInfo({ uf, name });
               }
             },
-            onPointerLeave: (...args: any[]) => {
+            onPointerLeave: () => {
               setHoverInfo(null);
               setTooltipTarget(null);
               setAnimatedPos(null);
             },
             // Mouse fallback for older browsers and libraries which call mouse handlers
-            onMouseEnter: (...args: any[]) => {
-              const { id, clientX, clientY, currentTarget } = normalizeLayerEvent(args);
+            onMouseEnter: (...args: unknown[]) => {
+              const { id, clientX, clientY } = normalizeLayerEvent(args);
               const uf = idToUF(id);
               const name = id ? nameById.get(id) : undefined;
               if (uf) {
@@ -301,15 +379,15 @@ export function BrazilSalesMap({
                 if (typeof clientX !== 'number' || typeof clientY !== 'number') {
                   try {
                     const el = id ? document.getElementById(id) : null;
-                    if (el && typeof (el as HTMLElement).getBoundingClientRect === 'function') {
-                      const r = (el as HTMLElement).getBoundingClientRect();
+                    if (el) {
+                      const r = el.getBoundingClientRect();
                       const cx = r.left + r.width / 2;
                       const cy = r.top + r.height / 2;
                       setTooltipTarget({ x: cx, y: cy });
                       tooltipPosRef.current = { x: cx, y: cy };
                       setAnimatedPos({ x: cx, y: cy });
                     }
-                  } catch (err) {
+                  } catch {
                     // ignore
                   }
                 } else {
@@ -320,7 +398,7 @@ export function BrazilSalesMap({
                 if (!hoverInfo) setHoverInfo({ uf, name });
               }
             },
-            onMouseMove: (...args: any[]) => {
+            onMouseMove: (...args: unknown[]) => {
               const { clientX, clientY } = normalizeLayerEvent(args);
               // diagnostics removed
               if (typeof clientX === 'number' && typeof clientY === 'number') setTooltipTarget({ x: clientX, y: clientY });
@@ -330,7 +408,7 @@ export function BrazilSalesMap({
               setTooltipTarget(null);
               setAnimatedPos(null);
             },
-            onFocus: (...args: any[]) => {
+            onFocus: (...args: unknown[]) => {
               const { id } = normalizeLayerEvent(args);
               const uf = idToUF(id);
               const name = id ? nameById.get(id) : undefined;
@@ -339,20 +417,20 @@ export function BrazilSalesMap({
             onBlur: () => {
               setHoverInfo(null);
             },
-            onClick: (...args: any[]) => {
+            onClick: (...args: unknown[]) => {
               const { id, clientX, clientY } = normalizeLayerEvent(args);
               const el = id ? document.getElementById(id) : null;
               const uf = idToUF(id);
               const prevId = selectedPathRef.current?.id || null;
               // toggle selection by id to avoid cross-type ref issues
               if (prevId && id && prevId === id) {
-                const prevEl = document.getElementById(prevId) as HTMLElement | null;
+                const prevEl = document.getElementById(prevId);
                 if (prevEl) prevEl.removeAttribute('aria-selected');
                 selectedPathRef.current = null;
                 setSelectedUF(null);
               } else {
                 if (prevId) {
-                  const prevEl = document.getElementById(prevId) as HTMLElement | null;
+                  const prevEl = document.getElementById(prevId);
                   if (prevEl) prevEl.removeAttribute('aria-selected');
                 }
                 if (el && uf) {
@@ -368,7 +446,7 @@ export function BrazilSalesMap({
                   setTooltipTarget({ x: clientX, y: clientY });
                 } else if (el) {
                   try {
-                    const r = (el as HTMLElement).getBoundingClientRect();
+                    const r = el.getBoundingClientRect();
                     setTooltipTarget({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
                   } catch {}
                 }
@@ -378,21 +456,21 @@ export function BrazilSalesMap({
                 }, 40);
               }
             },
-            onKeyDown: (e: any) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                const el = e.currentTarget as HTMLElement | null;
+            onKeyDown: (event: React.KeyboardEvent<SVGElement>) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                const el = event.currentTarget as SVGElement | null;
                 const id = el?.id || null;
                 const uf = idToUF(id);
                 const prevId = selectedPathRef.current?.id || null;
                 if (prevId && id && prevId === id) {
-                  const prevEl = document.getElementById(prevId) as HTMLElement | null;
+                  const prevEl = document.getElementById(prevId);
                   if (prevEl) prevEl.removeAttribute('aria-selected');
                   selectedPathRef.current = null;
                   setSelectedUF(null);
                 } else {
                   if (prevId) {
-                    const prevEl = document.getElementById(prevId) as HTMLElement | null;
+                    const prevEl = document.getElementById(prevId);
                     if (prevEl) prevEl.removeAttribute('aria-selected');
                   }
                   if (el && uf) {
@@ -420,8 +498,8 @@ export function BrazilSalesMap({
         {/* Overlay colors by UF using CSS fills (generate selectors for multiple casing variants) */}
         <style jsx global>{`
           .rvm-svg path { transition: fill 0.15s ease; }
-          ${(((mapData as any)?.layers) || [])
-            .map((layer: any) => {
+          ${mapData.layers
+            .map((layer) => {
               const rawId = String(layer.id);
               const idLower = rawId.toLowerCase();
               const idUpper = rawId.toUpperCase();
@@ -454,7 +532,7 @@ export function BrazilSalesMap({
         {typeof document !== 'undefined' && hoverInfo && animatedPos && (() => {
           const left = typeof window !== 'undefined' ? Math.max(8, Math.min(animatedPos.x + 16, window.innerWidth - 260)) : (animatedPos.x + 16);
           const top = typeof window !== 'undefined' ? Math.max(8, Math.min(animatedPos.y + 16, window.innerHeight - 120)) : (animatedPos.y + 16);
-          const tooltipStyle: any = { position: 'fixed', zIndex: 11000, pointerEvents: 'none', left, top, transition: 'left 0.08s linear, top 0.08s linear' };
+          const tooltipStyle: CSSProperties = { position: 'fixed', zIndex: 11000, pointerEvents: 'none', left, top, transition: 'left 0.08s linear, top 0.08s linear' };
           return createPortal(
             <div style={tooltipStyle}>
             <div className="rounded-md px-3 py-2 text-xs shadow-lg" style={{
@@ -493,7 +571,7 @@ export function BrazilSalesMap({
               <div className="font-semibold text-slate-900 dark:text-white">{selectedUF}</div>
               <button onClick={() => {
                 if (selectedPathRef.current) {
-                  const el = document.getElementById(selectedPathRef.current.id) as HTMLElement | null;
+                  const el = document.getElementById(selectedPathRef.current.id);
                   if (el) el.removeAttribute('aria-selected');
                 }
                 selectedPathRef.current = null;

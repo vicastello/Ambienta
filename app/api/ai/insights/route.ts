@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getErrorMessage } from '@/lib/errors';
+
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite-001';
 const apiVersion = process.env.GEMINI_API_VERSION || 'v1';
 const apiBaseUrl = process.env.GEMINI_API_BASE_URL || 'https://generativelanguage.googleapis.com';
+
+type InsightsPayload = {
+  resumoAtual?: unknown;
+  resumoGlobal?: unknown;
+  filtrosVisuais?: Record<string, unknown>;
+  contexto?: string;
+  visaoFiltrada?: unknown;
+};
+
+type GeminiGenerateResponse = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string | null }> | null } | null;
+  }>;
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +29,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json().catch(() => null);
+    const rawBody = await req.json().catch(() => null);
+    const body = isRecord(rawBody) ? (rawBody as InsightsPayload) : null;
+
     if (!body || !body.resumoAtual) {
       return NextResponse.json(
         { message: 'Payload inválido. Envie resumoAtual e filtros.' },
@@ -59,11 +77,7 @@ export async function POST(req: NextRequest) {
       throw new Error(`Gemini respondeu ${response.status}: ${errorText}`);
     }
 
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-    };
+    const data: GeminiGenerateResponse = await response.json();
 
     const candidateParts = data.candidates?.flatMap((candidate) =>
       (candidate.content?.parts ?? []).map((part) => part.text ?? '')
@@ -72,14 +86,18 @@ export async function POST(req: NextRequest) {
     const text = (candidateParts ?? []).join('\n').trim();
 
     return NextResponse.json({ insights: text });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[API] Erro em /api/ai/insights', err);
     return NextResponse.json(
       {
         message: 'Erro ao gerar insights inteligentes',
-        details: err?.message ?? 'Erro desconhecido',
+        details: getErrorMessage(err) || 'Erro desconhecido',
       },
       { status: 500 }
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

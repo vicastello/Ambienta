@@ -1,7 +1,14 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
+
+type TinyTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
 
 const TOKEN_URL = process.env.TINY_TOKEN_URL ?? 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';
 const CLIENT_ID = process.env.TINY_CLIENT_ID;
@@ -34,7 +41,7 @@ export async function GET(request: Request) {
     // 1. Buscar token atual
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from('tiny_tokens')
-      .select('*')
+      .select('id, access_token, refresh_token, expires_at, scope, token_type')
       .eq('id', 1)
       .maybeSingle();
 
@@ -58,11 +65,12 @@ export async function GET(request: Request) {
     // 2. Verificar se precisa renovar (renova se falta menos de 4 horas)
     const now = Date.now();
     const fourHours = 4 * 60 * 60 * 1000;
-    const needsRefresh = !tokenRow.expires_at || 
-                         (tokenRow.expires_at - now) < fourHours;
+    const expiresAtTimestamp = tokenRow.expires_at ?? 0;
+    const expiresInMs = expiresAtTimestamp - now;
+    const needsRefresh = !tokenRow.expires_at || expiresInMs < fourHours;
 
     if (!needsRefresh) {
-      const expiresIn = Math.floor((tokenRow.expires_at - now) / 1000 / 60);
+      const expiresIn = Math.floor(expiresInMs / 1000 / 60);
       console.log(`[cron-refresh] Token ainda válido por ${expiresIn} minutos, pulando...`);
       return NextResponse.json({ 
         success: true,
@@ -117,9 +125,9 @@ export async function GET(request: Request) {
       }, { status: 500 });
     }
 
-    let json: any;
+    let parsed: unknown;
     try {
-      json = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch (e) {
       console.error('[cron-refresh] Resposta inválida:', text);
       return NextResponse.json({ 
@@ -128,9 +136,20 @@ export async function GET(request: Request) {
       }, { status: 500 });
     }
 
+    if (!parsed || typeof parsed !== 'object') {
+      return NextResponse.json({ success: false, error: 'Resposta inválida' }, { status: 500 });
+    }
+
+    const json = parsed as TinyTokenResponse;
+
+    if (!json.access_token) {
+      return NextResponse.json({ success: false, error: 'Resposta sem access_token' }, { status: 500 });
+    }
+
     // 4. Salvar novos tokens
     const nowMs = Date.now();
-    const expiresAt = nowMs + ((json.expires_in ?? 0) - 60) * 1000;
+    const expiresInSeconds = typeof json.expires_in === 'number' ? json.expires_in : 0;
+    const expiresAt = nowMs + Math.max(0, (expiresInSeconds - 60) * 1000);
 
     const { error: updateErr } = await supabaseAdmin
       .from('tiny_tokens')
@@ -161,7 +180,7 @@ export async function GET(request: Request) {
       level: 'info',
       message: 'Token Tiny renovado automaticamente pelo cron',
       meta: { 
-        expires_in: json.expires_in,
+          expires_in: expiresInSeconds,
         expires_at: new Date(expiresAt).toISOString()
       }
     });
@@ -172,23 +191,23 @@ export async function GET(request: Request) {
       success: true, 
       message: 'Token renovado automaticamente',
       expires_at: new Date(expiresAt).toISOString(),
-      expires_in_hours: Math.floor(json.expires_in / 3600)
+      expires_in_hours: expiresInSeconds > 0 ? Math.floor(expiresInSeconds / 3600) : null
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[cron-refresh] Erro inesperado:', error);
+    const message = getErrorMessage(error) || 'Erro desconhecido';
     
     await supabaseAdmin.from('sync_logs').insert({
       job_id: null,
       level: 'error',
       message: 'Erro inesperado no cron de renovação de token',
-      meta: { error: error.message }
+      meta: { error: message }
     });
 
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: message 
     }, { status: 500 });
   }
 }
-// @ts-nocheck

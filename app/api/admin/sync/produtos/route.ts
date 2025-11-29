@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { callInternalJson } from '@/lib/internalApi';
+import { getErrorMessage } from '@/lib/errors';
 
 type AdminSyncBody = {
   mode?: 'manual' | 'cron' | 'backfill';
@@ -18,9 +19,20 @@ type AdminSyncBody = {
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value));
 
+type ProdutosSyncResponse = {
+  ok?: boolean;
+  [key: string]: unknown;
+};
+
 export async function POST(req: Request) {
   try {
-    const body = ((await req.json().catch(() => ({}))) ?? {}) as AdminSyncBody;
+    let rawBody: unknown = {};
+    try {
+      rawBody = await req.json();
+    } catch {
+      rawBody = {};
+    }
+    const body = isRecord(rawBody) ? (rawBody as AdminSyncBody) : {};
     const backfillRequested = body.backfill === true;
     const resolvedMode: AdminSyncBody['mode'] = backfillRequested ? 'backfill' : body.mode ?? 'manual';
 
@@ -75,7 +87,7 @@ export async function POST(req: Request) {
       Object.entries(payload).filter(([, value]) => value !== undefined)
     );
 
-    const result = await callInternalJson('/api/produtos/sync', {
+    const result = await callInternalJson<ProdutosSyncResponse>('/api/produtos/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -83,12 +95,16 @@ export async function POST(req: Request) {
       body: JSON.stringify(bodyCleaned),
     });
 
-    return NextResponse.json({ ok: Boolean(result?.ok), result });
-  } catch (error: any) {
-    const detail = error?.message ?? 'Erro inesperado';
+    return NextResponse.json({ ok: result.ok !== false, result });
+  } catch (error: unknown) {
+    const detail = getErrorMessage(error) || 'Erro inesperado';
     return NextResponse.json(
       { ok: false, message: 'Falha ao sincronizar produtos', detail },
       { status: 500 }
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

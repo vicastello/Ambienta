@@ -1,12 +1,10 @@
-// @ts-nocheck
-/* eslint-disable */
-// app/api/tiny/sync/enrich-background/route.ts
 import { NextResponse } from 'next/server';
 import { runFreteEnrichment } from '@/lib/freteEnricher';
 import { normalizeMissingOrderChannels } from '@/lib/channelNormalizer';
 import { sincronizarItensAutomaticamente } from '@/lib/pedidoItensHelper';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import { enrichCidadeUfMissing } from '@/lib/cidadeUfEnricher';
+import { getErrorMessage } from '@/lib/errors';
 
 export const maxDuration = 300;
 
@@ -45,11 +43,11 @@ export async function GET() {
       channel,
       cidadeUf,
     });
-  } catch (error) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error) ?? 'Unknown error';
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { error: message },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck

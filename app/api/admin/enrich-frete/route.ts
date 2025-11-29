@@ -5,7 +5,8 @@ import { normalizeMissingOrderChannels } from '@/lib/channelNormalizer';
 import { enrichCidadeUfMissing } from '@/lib/cidadeUfEnricher';
 import { sincronizarItensPorPedidos } from '@/lib/pedidoItensHelper';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
-import type { Database } from '@/src/types/db-public';
+import { getErrorMessage } from '@/lib/errors';
+import type { Database, Json } from '@/src/types/db-public';
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_ITENS_DELAY_MS = 800;
@@ -18,12 +19,31 @@ type TinyOrdersTinyIdRow = Pick<
 
 type SyncLogsInsert = Database['public']['Tables']['sync_logs']['Insert'];
 
+type EnrichFretePayload = {
+  mode?: string;
+  dataInicial?: string;
+  dataFinal?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  batchSize?: number;
+  itensDelayMs?: number;
+  channelLimit?: number;
+  cidadeLimit?: number;
+};
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
+    let rawBody: unknown = {};
+    try {
+      rawBody = await req.json();
+    } catch {
+      rawBody = {};
+    }
+    const body = (rawBody && typeof rawBody === 'object') ? (rawBody as EnrichFretePayload) : {};
     const mode = String(body?.mode ?? 'frete').toLowerCase();
     const startDate = normalizeDateInput(body?.dataInicial ?? body?.startDate);
     const endDate = normalizeDateInput(body?.dataFinal ?? body?.endDate);
@@ -73,11 +93,13 @@ export async function POST(req: NextRequest) {
       enriched: result.updated,
       total: result.processed,
     });
-  } catch (error: any) {
-    const status = error?.status ?? 500;
+  } catch (error: unknown) {
+    const status = typeof error === 'object' && error && 'status' in error && typeof (error as { status?: unknown }).status === 'number'
+      ? (error as { status: number }).status
+      : 500;
     console.error('[admin/enrich-frete] erro', error);
     return NextResponse.json(
-      { error: error?.message ?? 'Erro interno' },
+      { error: getErrorMessage(error) || 'Erro interno' },
       { status }
     );
   }
@@ -99,7 +121,9 @@ async function runManualRangeEnrichment(params: RangeParams) {
   const timeoutHandle = setTimeout(() => {
     console.warn('[admin/enrich-frete] Range enrichment approaching timeout', janela);
   }, MAX_DURATION_MS - 5000);
-  (timeoutHandle as any)?.unref?.();
+  if (typeof timeoutHandle === 'object' && timeoutHandle && 'unref' in timeoutHandle && typeof (timeoutHandle as { unref?: () => void }).unref === 'function') {
+    (timeoutHandle as { unref: () => void }).unref();
+  }
 
   await logRangeEvent('info', 'Enriquecimento manual iniciado', {
     janela,
@@ -162,7 +186,7 @@ async function syncItensForRange(tinyIds: number[], delayMs: number, janela: str
   const safeDelay = Math.max(250, Math.min(delayMs, 5000));
   try {
     const accessToken = await getAccessTokenFromDbOrRefresh();
-    const result = await sincronizarItensPorPedidos(accessToken!, tinyIds, {
+    const result = await sincronizarItensPorPedidos(accessToken, tinyIds, {
       delayMs: safeDelay,
       retries: 1,
     });
@@ -174,10 +198,10 @@ async function syncItensForRange(tinyIds: number[], delayMs: number, janela: str
     });
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     await logRangeEvent('error', 'Erro ao sincronizar itens para janela manual', {
       janela,
-      error: error?.message ?? String(error),
+      error: getErrorMessage(error) || 'Erro desconhecido',
     });
     throw error;
   }
@@ -202,7 +226,7 @@ async function fetchTinyIdsForRange(startDate: string, endDate: string) {
   return Array.from(new Set(ids));
 }
 
-async function logRangeEvent(level: 'info' | 'warn' | 'error', message: string, meta: Record<string, any>) {
+async function logRangeEvent(level: 'info' | 'warn' | 'error', message: string, meta: Record<string, unknown>) {
   try {
     const payload: SyncLogsInsert = {
       job_id: null,
@@ -211,11 +235,11 @@ async function logRangeEvent(level: 'info' | 'warn' | 'error', message: string, 
       meta: {
         step: 'orders',
         ...meta,
-      },
+      } as Json,
     };
 
-    await supabaseAdmin.from('sync_logs').insert(payload as any);
-  } catch (error) {
+    await supabaseAdmin.from('sync_logs').insert(payload);
+  } catch (error: unknown) {
     console.error('[admin/enrich-frete] erro ao gravar sync_logs', error);
   }
 }

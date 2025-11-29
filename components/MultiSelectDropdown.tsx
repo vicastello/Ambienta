@@ -94,6 +94,11 @@ export function MultiSelectDropdown({
 
   return (
     <>
+      {label && (
+        <div className="mb-1 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+          {label}
+        </div>
+      )}
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
@@ -139,6 +144,7 @@ export function MultiSelectDropdown({
               <button
                 onClick={() => {
                   onChange([]);
+                  onClear();
                   setIsOpen(false);
                 }}
                 className="text-xs px-3 py-1 rounded-full bg-transparent text-[var(--text-muted)] hover:bg-slate-200/40 dark:hover:bg-slate-800/60"

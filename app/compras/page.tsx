@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Loader2, RefreshCcw, Save, FileDown } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getErrorMessage } from '@/lib/errors';
 
 type Sugestao = {
   id_produto_tiny: number;
@@ -32,7 +33,7 @@ export default function ComprasPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [observacoes, setObservacoes] = useState<Record<number, string>>({});
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setErro(null);
     try {
@@ -43,17 +44,16 @@ export default function ComprasPage() {
       if (!res.ok) throw new Error('Erro ao carregar sugestões');
       const json = await res.json();
       setDados(json.produtos || []);
-    } catch (e: any) {
-      setErro(e?.message || 'Erro inesperado');
+    } catch (error: unknown) {
+      setErro(getErrorMessage(error) ?? 'Erro inesperado');
     } finally {
       setLoading(false);
     }
-  };
+  }, [periodDays, targetMonths]);
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void load();
+  }, [load]);
 
   const salvarProduto = async (id: number, fornecedor: string | null, embalagem: number) => {
     setSavingId(id);
@@ -68,8 +68,8 @@ export default function ComprasPage() {
         }),
       });
       if (!res.ok) throw new Error('Erro ao salvar');
-    } catch (e: any) {
-      alert(e?.message || 'Erro ao salvar produto');
+    } catch (error: unknown) {
+      alert(getErrorMessage(error) ?? 'Erro ao salvar produto');
     } finally {
       setSavingId(null);
     }

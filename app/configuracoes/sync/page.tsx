@@ -1,6 +1,10 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { getErrorMessage } from "@/lib/errors";
+import type { SyncOverviewResponse } from "@/app/api/admin/sync/overview/route";
+import type { SyncProdutosResult } from "@/src/lib/sync/produtos";
+import type { FreteEnrichmentResult } from "@/lib/freteEnricher";
 
 const OVERVIEW_URL = "/api/admin/sync/overview";
 const SYNC_PEDIDOS_URL = "/api/tiny/sync";
@@ -11,46 +15,53 @@ const glass =
   "bg-[rgba(255,255,255,0.12)] backdrop-blur-xl border border-[rgba(255,255,255,0.18)] rounded-3xl shadow-lg p-6 mb-8";
 const accent = "text-[#009ca6] border-[#009ca6]";
 
+type SyncPedidosResponse = {
+  result?: {
+    totalOrders?: number;
+  };
+};
+
 export default function SyncConfigPage() {
-  const [overview, setOverview] = useState<any>(null);
+  const [overview, setOverview] = useState<SyncOverviewResponse | null>(null);
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [errOverview, setErrOverview] = useState<string | null>(null);
 
   // Pedidos
   const [diasPedidos, setDiasPedidos] = useState(30);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
-  const [resultPedidos, setResultPedidos] = useState<any>(null);
+  const [resultPedidos, setResultPedidos] = useState<SyncPedidosResponse | null>(null);
   const [errPedidos, setErrPedidos] = useState<string | null>(null);
 
   // Enrich
   const [loadingEnrich, setLoadingEnrich] = useState(false);
-  const [resultEnrich, setResultEnrich] = useState<any>(null);
+  const [resultEnrich, setResultEnrich] = useState<FreteEnrichmentResult | null>(null);
   const [errEnrich, setErrEnrich] = useState<string | null>(null);
 
   // Produtos
   const [diasProdutos, setDiasProdutos] = useState(30);
   const [loadingProdutos, setLoadingProdutos] = useState(false);
-  const [resultProdutos, setResultProdutos] = useState<any>(null);
+  const [resultProdutos, setResultProdutos] = useState<SyncProdutosResult | null>(null);
   const [errProdutos, setErrProdutos] = useState<string | null>(null);
 
   // Carregar overview
-  const fetchOverview = async () => {
+  const fetchOverview = useCallback(async () => {
     setLoadingOverview(true);
     setErrOverview(null);
     try {
       const res = await fetch(OVERVIEW_URL);
       if (!res.ok) throw new Error("Erro ao buscar overview");
-      setOverview(await res.json());
-    } catch (e: any) {
-      setErrOverview(e.message);
+      const data = (await res.json()) as SyncOverviewResponse;
+      setOverview(data);
+    } catch (error: unknown) {
+      setErrOverview(getErrorMessage(error));
     } finally {
       setLoadingOverview(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchOverview();
-  }, []);
+    void fetchOverview();
+  }, [fetchOverview]);
 
   // Handlers
   const syncPedidos = async () => {
@@ -66,9 +77,9 @@ export default function SyncConfigPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Erro ao sincronizar pedidos");
       setResultPedidos(data);
-      fetchOverview();
-    } catch (e: any) {
-      setErrPedidos(e.message);
+      void fetchOverview();
+    } catch (error: unknown) {
+      setErrPedidos(getErrorMessage(error));
     } finally {
       setLoadingPedidos(false);
     }
@@ -84,10 +95,10 @@ export default function SyncConfigPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Erro ao rodar enrich");
-      setResultEnrich(data);
-      fetchOverview();
-    } catch (e: any) {
-      setErrEnrich(e.message);
+      setResultEnrich(data as FreteEnrichmentResult);
+      void fetchOverview();
+    } catch (error: unknown) {
+      setErrEnrich(getErrorMessage(error));
     } finally {
       setLoadingEnrich(false);
     }
@@ -103,22 +114,35 @@ export default function SyncConfigPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode: "recent", diasRecentes: diasProdutos }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || "Erro ao sincronizar produtos");
-      setResultProdutos(data);
-      fetchOverview();
-    } catch (e: any) {
-      setErrProdutos(e.message);
+      const data = (await res.json()) as SyncProdutosResult | { message?: string };
+      if (!res.ok) {
+        const message = typeof (data as { message?: string }).message === "string"
+          ? (data as { message?: string }).message
+          : "Erro ao sincronizar produtos";
+        throw new Error(message);
+      }
+      setResultProdutos(data as SyncProdutosResult);
+      void fetchOverview();
+    } catch (error: unknown) {
+      setErrProdutos(getErrorMessage(error));
     } finally {
       setLoadingProdutos(false);
     }
   };
+
+  const remainingEnrich = resultEnrich?.remaining ?? 0;
 
   return (
     <AppLayout>
       <div className="min-h-screen w-full flex flex-col items-center justify-start py-12 px-2 bg-gradient-to-br from-[#e0f7fa] via-[#f5fafd] to-[#e0f7fa]">
         <h1 className="text-3xl font-bold mb-8 text-[#009ca6] drop-shadow-sm">Sincronização Tiny / Ambienta</h1>
         <div className="w-full max-w-3xl space-y-8">
+          {errOverview && (
+            <div className="text-red-600 text-sm text-center">{errOverview}</div>
+          )}
+          {loadingOverview && (
+            <div className="text-sm text-gray-600 text-center">Atualizando overview...</div>
+          )}
           {/* Card 1 – Pedidos Tiny */}
           <div className={glass}>
             <h2 className="text-xl font-medium mb-2">Pedidos Tiny</h2>
@@ -167,7 +191,7 @@ export default function SyncConfigPage() {
             {resultEnrich && <div className="text-green-700 mb-2">Rodada concluída! {resultEnrich?.processed ? `Pedidos processados: ${resultEnrich.processed}` : null}</div>}
             <div className="text-sm text-gray-700 mt-2">
               Rode isso em sequência até o overview mostrar tudo ok.<br />
-              {resultEnrich?.remaining > 0 && <span className="text-[#009ca6]">Ainda faltam {resultEnrich.remaining} pedidos para enriquecer.</span>}
+              {remainingEnrich > 0 && <span className="text-[#009ca6]">Ainda faltam {remainingEnrich} pedidos para enriquecer.</span>}
             </div>
           </div>
 

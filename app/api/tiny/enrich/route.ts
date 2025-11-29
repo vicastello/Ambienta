@@ -1,9 +1,8 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import { sincronizarItensPorPedidos } from '@/lib/pedidoItensHelper';
+import { getErrorMessage } from '@/lib/errors';
 
 type Body = {
   mode?: 'last' | 'numero';
@@ -16,7 +15,13 @@ type Body = {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as Body;
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      rawBody = {};
+    }
+    const body = isRecord(rawBody) ? (rawBody as Body) : {};
 
     let tinyIds: number[] = [];
 
@@ -30,29 +35,38 @@ export async function POST(req: NextRequest) {
         .order('data_criacao', { ascending: false })
         .limit(Math.max(1, Math.min(1000, last)));
 
-      tinyIds = (data ?? []).map((r: any) => Number(r.tiny_id)).filter(Boolean);
+      tinyIds = (data ?? [])
+        .map((row) => row.tiny_id)
+        .filter((value): value is number => typeof value === 'number');
     } else if (body.mode === 'numero' && body.numeroPedido) {
-      const numero = String(body.numeroPedido);
-      // Try to find by local numero_pedido first
-      const { data } = await supabaseAdmin
-        .from('tiny_orders')
-        .select('id, tiny_id, numero_pedido')
-        .eq('numero_pedido', numero)
-        .limit(1);
+      const numeroStr = String(body.numeroPedido);
+      const numeroValue = Number(numeroStr);
+      let data: { tiny_id: number | null }[] | null = null;
+
+      if (Number.isFinite(numeroValue)) {
+        const selectResult = await supabaseAdmin
+          .from('tiny_orders')
+          .select('id, tiny_id, numero_pedido')
+          .eq('numero_pedido', numeroValue)
+          .limit(1);
+        data = selectResult.data;
+      }
 
       if (!data || data.length === 0) {
         // Fallback: search by raw JSON field if present (ecommerce.numeroPedidoEcommerce)
         const { data: data2 } = await supabaseAdmin
           .from('tiny_orders')
           .select('id, tiny_id, raw')
-          .filter("raw->>ecommerce", 'cs', numero)
+          .filter('raw->>ecommerce', 'cs', numeroStr)
           .limit(1);
 
         if (data2 && data2.length) {
-          tinyIds = [Number(data2[0].tiny_id)];
+          const candidate = data2[0].tiny_id;
+          if (typeof candidate === 'number') tinyIds = [candidate];
         }
       } else {
-        tinyIds = [Number((data as any)[0].tiny_id)];
+        const candidate = data[0].tiny_id;
+        if (typeof candidate === 'number') tinyIds = [candidate];
       }
     }
 
@@ -71,9 +85,12 @@ export async function POST(req: NextRequest) {
     const result = await sincronizarItensPorPedidos(accessToken, tinyIds, { delayMs });
 
     return NextResponse.json({ success: true, tinyIds, result });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[API] /api/tiny/enrich erro', err);
-    return NextResponse.json({ message: 'Erro ao enriquecer pedidos.', details: err?.message }, { status: 500 });
+    return NextResponse.json({ message: 'Erro ao enriquecer pedidos.', details: getErrorMessage(err) || 'Erro desconhecido' }, { status: 500 });
   }
 }
-// @ts-nocheck
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

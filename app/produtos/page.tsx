@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   Loader2,
@@ -35,6 +35,12 @@ type ProdutosResponse = {
   offset: number;
 };
 
+type ProdutosErrorResponse = {
+  message?: string;
+  error?: string;
+  details?: string;
+};
+
 const TIPO_CONFIG: Record<string, { label: string; color: string }> = {
   S: { label: "Simples", color: "bg-blue-100 text-blue-700" },
   K: { label: "Kit", color: "bg-purple-100 text-purple-700" },
@@ -53,6 +59,16 @@ const PRODUTOS_CACHE_TTL_MS = 60_000;
 const buildProdutosCacheKey = (params: URLSearchParams) => `produtos:${params.toString()}`;
 const PRODUTOS_AUTO_REFRESH_MS = 30_000; // polling leve para aproximar "tempo real"
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "object" && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") return maybeMessage;
+  }
+  return "";
+};
+
 export default function ProdutosPage() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [total, setTotal] = useState(0);
@@ -65,7 +81,7 @@ export default function ProdutosPage() {
   const produtosRequestId = useRef(0);
   const limit = 50;
 
-  async function fetchProdutos() {
+  const fetchProdutos = useCallback(async () => {
     const requestId = ++produtosRequestId.current;
     setLoading(true);
     try {
@@ -88,11 +104,13 @@ export default function ProdutosPage() {
         ttlMs: PRODUTOS_CACHE_TTL_MS,
         fetcher: async () => {
           const res = await fetch(`/api/produtos?${params}`);
-          const json: ProdutosResponse = await res.json();
+          const json = (await res.json()) as ProdutosResponse | ProdutosErrorResponse;
           if (!res.ok) {
-            throw new Error((json as any)?.message ?? "Erro ao buscar produtos");
+            const errorPayload = json as ProdutosErrorResponse;
+            const errorMessage = errorPayload.message || errorPayload.error || errorPayload.details || "Erro ao buscar produtos";
+            throw new Error(errorMessage);
           }
-          return json;
+          return json as ProdutosResponse;
         },
         onUpdate: applyData,
       });
@@ -105,7 +123,7 @@ export default function ProdutosPage() {
         setLoading(false);
       }
     }
-  }
+  }, [search, situacao, page, limit]);
 
   async function syncProdutos() {
     if (syncing) return;
@@ -132,9 +150,9 @@ export default function ProdutosPage() {
       } else {
         alert("Erro: " + (data.error || "Erro desconhecido"));
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Erro ao sincronizar:", error);
-      alert("Erro: " + error.message);
+      alert("Erro: " + (getErrorMessage(error) || "Erro desconhecido"));
     } finally {
       setSyncing(false);
     }
@@ -142,7 +160,7 @@ export default function ProdutosPage() {
 
   useEffect(() => {
     fetchProdutos();
-  }, [search, situacao, page]);
+  }, [fetchProdutos]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -150,7 +168,7 @@ export default function ProdutosPage() {
       fetchProdutos();
     }, PRODUTOS_AUTO_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [search, situacao, page]);
+  }, [fetchProdutos]);
 
   const formatBRL = (value: number | null) => {
     if (value === null) return "—";
@@ -384,6 +402,7 @@ export default function ProdutosPage() {
                           <td className="px-6 py-4">
                             <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                               {produto.imagem_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={produto.imagem_url}
                                   alt={produto.nome}

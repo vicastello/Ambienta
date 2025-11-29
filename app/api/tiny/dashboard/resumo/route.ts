@@ -1,11 +1,18 @@
-// @ts-nocheck
-/* eslint-disable */
 // app/api/tiny/dashboard/resumo/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { listarPedidosTiny, listarPedidosTinyPorPeriodo, TinyApiError, TinyPedidoListaItem } from '@/lib/tinyApi';
+
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
-import { extrairDataISO, normalizarCanalTiny, parseValorTiny, descricaoSituacao, TODAS_SITUACOES } from '@/lib/tinyMapping';
+import { getErrorMessage } from '@/lib/errors';
+import {
+  descricaoSituacao,
+  extrairDataISO,
+  normalizarCanalTiny,
+  parseValorTiny,
+  TODAS_SITUACOES,
+  extractCidadeUfFromRaw,
+} from '@/lib/tinyMapping';
+import type { Json, TinyOrdersRow, TinyPedidoItensRow, TinyProdutosRow } from '@/src/types/db-public';
 
 type DiaResumo = {
   data: string; // yyyy-mm-dd
@@ -66,26 +73,68 @@ type ProdutoResumo = {
   disponivel?: number | null;
 };
 
-type TinyPedidoItemRow = {
-  id_pedido: number;
-  id_produto_tiny: number | null;
-  codigo_produto: string | null;
-  nome_produto: string | null;
-  quantidade: number | null;
-  valor_unitario: number | null;
-  valor_total: number | null;
+type TinyPedidoItemWithProduto = Pick<
+  TinyPedidoItensRow,
+  | 'id_pedido'
+  | 'id_produto_tiny'
+  | 'codigo_produto'
+  | 'nome_produto'
+  | 'quantidade'
+  | 'valor_unitario'
+  | 'valor_total'
+  | 'info_adicional'
+> & {
   valorUnitario?: number | null;
   valorTotal?: number | null;
   valor?: number | null;
-  info_adicional?: string | null;
-  tiny_produtos?: {
-    nome?: string | null;
-    codigo?: string | null;
-    imagem_url?: string | null;
-  } | null;
+  tiny_produtos?: Pick<TinyProdutosRow, 'nome' | 'codigo' | 'imagem_url'> | null;
 };
 
-type PedidoItensMap = Map<number, TinyPedidoItemRow[]>;
+type PedidoItensMap = Map<number, TinyPedidoItemWithProduto[]>;
+
+type OrderSummaryRow = Pick<
+  TinyOrdersRow,
+  'id' | 'tiny_id' | 'data_criacao' | 'valor' | 'valor_frete' | 'situacao' | 'canal' | 'raw' | 'inserted_at'
+>;
+
+type TinyPedidoRaw = Record<string, unknown> & {
+  itens?: unknown;
+  itensPedido?: unknown;
+  cliente?: Record<string, unknown>;
+};
+
+type TinyRawItem = Record<string, unknown> & {
+  quantidade?: unknown;
+  valorUnitario?: unknown;
+  valor_unitario?: unknown;
+  valor?: unknown;
+  valor_total?: unknown;
+  valorTotal?: unknown;
+  produto?: Record<string, unknown> | null;
+};
+
+type TinyOrderRawPayload = Record<string, unknown> & {
+  valorTotalPedido?: string | number | null;
+  valor?: string | number | null;
+  valorFrete?: string | number | null;
+  valorTotalProdutos?: string | number | null;
+  itens?: unknown;
+  pedido?: TinyPedidoRaw;
+  cliente?: Record<string, unknown> & {
+    endereco?: Record<string, unknown>;
+    enderecoEntrega?: Record<string, unknown>;
+    uf?: string | null;
+    estado?: string | null;
+    estadoUF?: string | null;
+    ufCliente?: string | null;
+    cidade?: string | null;
+    municipio?: string | null;
+  };
+  enderecoEntrega?: Record<string, unknown>;
+  entrega?: Record<string, unknown> & { endereco?: Record<string, unknown> };
+  destinatario?: Record<string, unknown> & { endereco?: Record<string, unknown> };
+  transportador?: Record<string, unknown> & { valorFrete?: string | number | null; valor_frete?: string | number | null };
+};
 
 type DashboardResposta = {
   periodoAtual: PeriodoResumo;
@@ -107,7 +156,16 @@ const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETI
 const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
 
-function toNumber(value: any): number {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const asTinyOrderRaw = (value: Json | null): TinyOrderRawPayload | null =>
+  isRecord(value) ? (value as TinyOrderRawPayload) : null;
+
+const asTinyItem = (value: unknown): TinyRawItem | null =>
+  isRecord(value) ? (value as TinyRawItem) : null;
+
+function toNumber(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const normalized = value.replace?.(',', '.') ?? value;
@@ -117,36 +175,66 @@ function toNumber(value: any): number {
   return 0;
 }
 
-function extrairItens(raw: any): any[] {
-  if (!raw) return [];
-  if (Array.isArray(raw.itens)) return raw.itens;
-  if (Array.isArray(raw?.pedido?.itens)) return raw.pedido.itens;
-  if (Array.isArray(raw?.pedido?.itensPedido)) return raw.pedido.itensPedido;
+const toParseableNumber = (value: unknown): string | number | null =>
+  typeof value === 'string' || typeof value === 'number' ? value : null;
+
+function extrairItens(raw: Json | null): TinyRawItem[] {
+  const payload = asTinyOrderRaw(raw);
+  if (!payload) return [];
+
+  const pedido = payload.pedido as TinyPedidoRaw | undefined;
+  const fontes = [payload.itens, pedido?.itens, pedido?.itensPedido];
+
+  for (const fonte of fontes) {
+    if (!Array.isArray(fonte)) continue;
+    const itens: TinyRawItem[] = [];
+    for (const item of fonte) {
+      const parsed = asTinyItem(item);
+      if (parsed) itens.push(parsed);
+    }
+    if (itens.length) return itens;
+  }
+
   return [];
 }
 
-function registrarProduto(map: Map<string, ProdutoResumo>, item: any) {
+function registrarProduto(map: Map<string, ProdutoResumo>, item: TinyRawItem | null) {
   if (!item) return;
-  const produto = item.produto ?? {};
-  const produtoId = typeof produto.id === 'number' ? produto.id : null;
-  const descricao = produto.descricao ?? produto.nome ?? 'Produto sem nome';
-  const sku = produto.sku ?? produto.codigo ?? null;
-  const key = produtoId ? `id:${produtoId}` : `${descricao}-${sku ?? ''}`;
-  const quantidade = toNumber(item.quantidade);
-  const valorUnitario = parseValorTiny(item.valorUnitario ?? item.valor_unitario ?? item.valor ?? null);
-  const receita = parseValorTiny(item.valor_total ?? item.valorTotal ?? null) || quantidade * valorUnitario;
-  const imagemUrl =
-    produto.imagemPrincipal?.url ??
-    produto.imagemPrincipal ??
-    produto.imagem ??
-    produto.foto ??
-    produto.imagem_url ??
+  const produtoRaw = isRecord(item.produto) ? item.produto : {};
+  const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
+  const descricaoBase =
+    (typeof produtoRaw.descricao === 'string' && produtoRaw.descricao.trim()) ||
+    (typeof produtoRaw.nome === 'string' && produtoRaw.nome.trim()) ||
+    'Produto sem nome';
+  const skuCandidate =
+    (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
+    (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
     null;
+  const key = produtoId ? `id:${produtoId}` : `${descricaoBase}-${skuCandidate ?? ''}`;
+  const quantidade = toNumber(item.quantidade);
+  const valorUnitario = parseValorTiny(
+    toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
+  );
+  const receita =
+    parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+    quantidade * valorUnitario;
+
+  const imagemPrincipal = produtoRaw.imagemPrincipal;
+  let imagemUrl: string | null = null;
+  if (isRecord(imagemPrincipal)) {
+    const urlValue = imagemPrincipal.url;
+    imagemUrl = typeof urlValue === 'string' ? urlValue : null;
+  } else if (typeof imagemPrincipal === 'string') {
+    imagemUrl = imagemPrincipal;
+  }
+  if (!imagemUrl && typeof produtoRaw.imagem === 'string') imagemUrl = produtoRaw.imagem;
+  if (!imagemUrl && typeof produtoRaw.foto === 'string') imagemUrl = produtoRaw.foto;
+  if (!imagemUrl && typeof produtoRaw.imagem_url === 'string') imagemUrl = produtoRaw.imagem_url;
 
   const atual = map.get(key) ?? {
     produtoId,
-    sku: sku ?? undefined,
-    descricao,
+    sku: skuCandidate ?? undefined,
+    descricao: descricaoBase,
     quantidade: 0,
     receita: 0,
     imagemUrl: imagemUrl ?? undefined,
@@ -164,14 +252,24 @@ function registrarProduto(map: Map<string, ProdutoResumo>, item: any) {
   map.set(key, atual);
 }
 
-function registrarProdutoPersistido(map: Map<string, ProdutoResumo>, item: TinyPedidoItemRow) {
+function registrarProdutoPersistido(
+  map: Map<string, ProdutoResumo>,
+  item: TinyPedidoItemWithProduto | null
+) {
   if (!item) return;
   const quantidade = toNumber(item.quantidade);
   if (quantidade <= 0) return;
-  const valorUnitario = parseValorTiny(item.valor_unitario ?? item.valorUnitario ?? item.valor ?? null);
-  const receita = parseValorTiny(item.valor_total ?? item.valorTotal ?? null) || quantidade * valorUnitario;
+  const valorUnitario = parseValorTiny(
+    toParseableNumber(item.valor_unitario ?? item.valorUnitario ?? item.valor)
+  );
+  const receita =
+    parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+    quantidade * valorUnitario;
 
-  const descricao = item.nome_produto ?? item.tiny_produtos?.nome ?? 'Sem descrição';
+  const descricao =
+    (typeof item.nome_produto === 'string' && item.nome_produto) ||
+    item.tiny_produtos?.nome ||
+    'Sem descrição';
   const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
   const imagemUrl = item.tiny_produtos?.imagem_url ?? null;
   const produtoId = item.id_produto_tiny;
@@ -228,11 +326,12 @@ async function carregarItensPorPedido(orderIds: number[]): Promise<PedidoItensMa
       throw error;
     }
 
-    for (const row of data ?? []) {
-      const pedidoId = (row as TinyPedidoItemRow).id_pedido;
+    const typedRows = ((data ?? []) as unknown) as TinyPedidoItemWithProduto[];
+    for (const row of typedRows) {
+      const pedidoId = row.id_pedido;
       if (typeof pedidoId !== 'number') continue;
       const lista = mapa.get(pedidoId) ?? [];
-      lista.push(row as TinyPedidoItemRow);
+      lista.push(row);
       mapa.set(pedidoId, lista);
     }
   }
@@ -284,29 +383,30 @@ function clampMinutes(value: number): number {
 // Extrai valores bruto/líquido/frete do JSON bruto do Tiny
 // Usa valorTotalPedido (bruto), valorTotalProdutos (líquido), frete = diferença
 function extrairValoresDoTiny(
-  raw: any,
+  rawInput: Json | TinyOrderRawPayload | null,
   fallbacks?: { valorBruto?: number; valorFrete?: number }
 ): { bruto: number; liquido: number; frete: number } {
   const fallbackBruto = fallbacks?.valorBruto ?? 0;
   const fallbackFrete = fallbacks?.valorFrete ?? 0;
 
-  if (!raw && !fallbackBruto && !fallbackFrete) {
+  if (!rawInput && !fallbackBruto && !fallbackFrete) {
     return { bruto: 0, liquido: 0, frete: 0 };
   }
 
   try {
+    const raw = isRecord(rawInput) ? (rawInput as TinyOrderRawPayload) : null;
     const bruto = parseValorTiny(
-      (raw?.valorTotalPedido ?? raw?.valor ?? fallbackBruto) as any
+      toParseableNumber(raw?.valorTotalPedido ?? raw?.valor ?? fallbackBruto)
     );
 
     let frete = 0;
     let liquido = 0;
 
     if (raw && raw.valorFrete !== undefined && raw.valorFrete !== null) {
-      frete = parseValorTiny(raw.valorFrete);
+      frete = parseValorTiny(toParseableNumber(raw.valorFrete));
       liquido = bruto > 0 ? Math.max(0, bruto - frete) : 0;
     } else if (raw && raw.valorTotalProdutos !== undefined && raw.valorTotalProdutos !== null) {
-      liquido = parseValorTiny(raw.valorTotalProdutos);
+      liquido = parseValorTiny(toParseableNumber(raw.valorTotalProdutos));
       frete = bruto > 0 && liquido > 0 ? Math.max(0, bruto - liquido) : 0;
     } else if (fallbackFrete > 0) {
       frete = fallbackFrete;
@@ -329,7 +429,7 @@ function extrairValoresDoTiny(
 }
 
 // Função legada mantida para compatibilidade
-function extrairFrete(raw: any): number {
+function extrairFrete(raw: Json | TinyOrderRawPayload | null): number {
   const { frete } = extrairValoresDoTiny(raw);
   return frete;
 }
@@ -441,7 +541,7 @@ export async function GET(req: NextRequest) {
       rangeStart: number,
       rangeEnd: number,
       attempt = 1
-    ): Promise<any[]> => {
+    ): Promise<OrderSummaryRow[]> => {
       const { data, error } = await supabaseAdmin
         .from('tiny_orders')
         .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at')
@@ -463,28 +563,29 @@ export async function GET(req: NextRequest) {
         throw error;
       }
 
-      return data ?? [];
+      return (data ?? []) as OrderSummaryRow[];
     };
 
     const fetchAllOrdersForPeriod = async (dataInicial: string, dataFinal: string) => {
-      const allOrdersForPeriod: any[] = [];
+      const allOrdersForPeriod: OrderSummaryRow[] = [];
       let offset = 0;
       let hasMore = true;
 
       while (hasMore && offset < SUPABASE_MAX_ROWS) {
         const rangeStart = offset;
         const rangeEnd = Math.min(rangeStart + SUPABASE_PAGE_SIZE - 1, SUPABASE_MAX_ROWS - 1);
-        let pageOrders: any[] = [];
+        let pageOrders: OrderSummaryRow[] = [];
 
         try {
           pageOrders = await fetchPageWithRetry(dataInicial, dataFinal, rangeStart, rangeEnd);
-        } catch (err: any) {
+        } catch (err) {
           console.error('[API] Supabase page fetch erro', {
             rangeStart,
             rangeEnd,
-            message: err?.message,
+            message: err instanceof Error ? err.message : 'Erro desconhecido',
           });
-          throw new Error('Erro ao carregar pedidos do banco: ' + (err?.message ?? 'Erro desconhecido'));
+          const message = err instanceof Error ? err.message : 'Erro desconhecido';
+          throw new Error('Erro ao carregar pedidos do banco: ' + message);
         }
 
         if (!pageOrders.length) {
@@ -503,8 +604,12 @@ export async function GET(req: NextRequest) {
     const ordersAnterior = await fetchAllOrdersForPeriod(dataInicialAnteriorISO, dataFinalAnteriorISO);
     const ordersAtual = await fetchAllOrdersForPeriod(dataInicialISO, dataFinalISO);
 
-    const idsAnterior = ordersAnterior.map((p: any) => p.id).filter((id: any) => typeof id === 'number');
-    const idsAtual = ordersAtual.map((p: any) => p.id).filter((id: any) => typeof id === 'number');
+    const idsAnterior = ordersAnterior
+      .map((p) => p.id)
+      .filter((id): id is number => typeof id === 'number');
+    const idsAtual = ordersAtual
+      .map((p) => p.id)
+      .filter((id): id is number => typeof id === 'number');
     const [itensPorPedidoAnterior, itensPorPedidoAtual] = await Promise.all([
       carregarItensPorPedido(idsAnterior),
       carregarItensPorPedido(idsAtual),
@@ -551,18 +656,18 @@ export async function GET(req: NextRequest) {
 
     // Processa período anterior
     for (const p of ordersAnterior ?? []) {
-      const data = p.data_criacao as string | null;
+      const data = p.data_criacao;
       if (!data) continue;
 
       const valorFallback = parseValorTiny(p.valor);
-      const freteFallback = parseValorTiny((p as any).valor_frete ?? null);
-      const { bruto, liquido, frete } = extrairValoresDoTiny((p as any).raw, {
+      const freteFallback = parseValorTiny(p.valor_frete);
+      const { bruto, liquido, frete } = extrairValoresDoTiny(p.raw, {
         valorBruto: valorFallback,
         valorFrete: freteFallback,
       });
       const valor = bruto > 0 ? bruto : valorFallback;
       const situacao = typeof p.situacao === 'number' ? p.situacao : -1;
-      const canal = normalizarCanalTiny((p as any).canal ?? null);
+      const canal = normalizarCanalTiny(p.canal);
 
       // Registra canais e situações disponíveis
       canaisDisponiveisSet.add(canal);
@@ -603,7 +708,7 @@ export async function GET(req: NextRequest) {
 
       // demais métricas seguem filtros aplicados
 
-      const itensPersistidos = itensPorPedidoAnterior.get(p.id) ?? [];
+      const itensPersistidos = p.id ? itensPorPedidoAnterior.get(p.id) ?? [] : [];
       if (itensPersistidos.length) {
         for (const item of itensPersistidos) {
           const qtdProduto = toNumber(item?.quantidade);
@@ -611,7 +716,7 @@ export async function GET(req: NextRequest) {
           registrarProdutoPersistido(mapaProdutoAnterior, item);
         }
       } else {
-        const itensAnterior = extrairItens((p as any).raw);
+        const itensAnterior = extrairItens(p.raw);
         if (itensAnterior.length) {
           for (const item of itensAnterior) {
             const qtdProduto = toNumber(item?.quantidade);
@@ -624,18 +729,18 @@ export async function GET(req: NextRequest) {
 
     // Processa período atual
     for (const p of ordersAtual ?? []) {
-      const data = p.data_criacao as string | null;
+      const data = p.data_criacao;
       if (!data) continue;
 
       const valorFallback = parseValorTiny(p.valor);
-      const freteFallback = parseValorTiny((p as any).valor_frete ?? null);
-      const { bruto, liquido, frete } = extrairValoresDoTiny((p as any).raw, {
+      const freteFallback = parseValorTiny(p.valor_frete);
+      const { bruto, liquido, frete } = extrairValoresDoTiny(p.raw, {
         valorBruto: valorFallback,
         valorFrete: freteFallback,
       });
       const valor = bruto > 0 ? bruto : valorFallback;
       const situacao = typeof p.situacao === 'number' ? p.situacao : -1;
-      const canal = normalizarCanalTiny((p as any).canal ?? null);
+      const canal = normalizarCanalTiny(p.canal);
 
       // Registra canais e situações disponíveis
       canaisDisponiveisSet.add(canal);
@@ -681,20 +786,9 @@ export async function GET(req: NextRequest) {
       mapaCanalAtual.set(canal, canalInfo);
 
       // Agregação geográfica por UF e Cidade (melhor esforço a partir do raw)
-      try {
-        const raw: any = (p as any).raw || {};
-        const endereco =
-          raw?.cliente?.endereco ||
-          raw?.cliente?.enderecoEntrega ||
-          raw?.enderecoEntrega ||
-          raw?.entrega?.endereco ||
-          raw?.destinatario?.endereco ||
-          raw?.pedido?.cliente?.endereco ||
-          null;
-        const ufRaw: string | null = (endereco?.uf ?? endereco?.estado ?? endereco?.estadoUF ?? endereco?.ufCliente ?? raw?.cliente?.uf ?? raw?.cliente?.estado ?? null) as any;
-        const cidadeRaw: string | null = (endereco?.cidade ?? endereco?.municipio ?? raw?.cliente?.cidade ?? null) as any;
-        const uf = typeof ufRaw === 'string' ? ufRaw.trim().toUpperCase().slice(0, 2) : null;
-        const cidade = typeof cidadeRaw === 'string' ? cidadeRaw.trim() : null;
+      const rawPayload = asTinyOrderRaw(p.raw);
+      if (rawPayload) {
+        const { cidade, uf } = extractCidadeUfFromRaw(rawPayload);
 
         if (uf) {
           const infoUF = mapaUFAtual.get(uf) ?? { totalValor: 0, totalPedidos: 0 };
@@ -705,18 +799,21 @@ export async function GET(req: NextRequest) {
 
         if (cidade) {
           const keyCidade = `${cidade.toLowerCase()}|${uf ?? ''}`;
-          const infoCid = mapaCidadeAtual.get(keyCidade) ?? { uf: uf ?? null, totalValor: 0, totalPedidos: 0 };
+          const infoCid =
+            mapaCidadeAtual.get(keyCidade) ?? {
+              uf: uf ?? null,
+              totalValor: 0,
+              totalPedidos: 0,
+            };
           infoCid.totalValor += valor;
           infoCid.totalPedidos += 1;
           mapaCidadeAtual.set(keyCidade, infoCid);
         }
-      } catch {
-        // ignore erros de parsing geográfico
       }
 
       // demais métricas seguem filtros aplicados
 
-      const itensPersistidos = itensPorPedidoAtual.get(p.id) ?? [];
+      const itensPersistidos = p.id ? itensPorPedidoAtual.get(p.id) ?? [] : [];
       if (itensPersistidos.length) {
         for (const item of itensPersistidos) {
           const qtdProduto = toNumber(item?.quantidade);
@@ -724,7 +821,7 @@ export async function GET(req: NextRequest) {
           registrarProdutoPersistido(mapaProdutoAtual, item);
         }
       } else {
-        const itensAtuais = extrairItens((p as any).raw);
+        const itensAtuais = extrairItens(p.raw);
         if (itensAtuais.length) {
           for (const item of itensAtuais) {
             const qtdProduto = toNumber(item?.quantidade);
@@ -916,15 +1013,19 @@ export async function GET(req: NextRequest) {
 
     for (const order of ordersAnteriorCards) {
       if (aplicarCorteHoraAnteriorCards) {
-        const minutosInsercao = minutesOfDayInTimeZone((order as any).inserted_at, DEFAULT_REPORT_TIMEZONE);
-        if (minutosInsercao !== null && minutosInsercao > (horaComparacaoMinutos as number)) {
+        const minutosInsercao = minutesOfDayInTimeZone(order.inserted_at, DEFAULT_REPORT_TIMEZONE);
+        if (
+          minutosInsercao !== null &&
+          horaComparacaoMinutos !== null &&
+          minutosInsercao > horaComparacaoMinutos
+        ) {
           continue;
         }
       }
       const data = extrairDataISO(order.data_criacao);
       const valor = parseValorTiny(order.valor);
-      const freteFallback = parseValorTiny((order as any).valor_frete ?? null);
-      const { bruto, liquido, frete } = extrairValoresDoTiny((order as any).raw, {
+      const freteFallback = parseValorTiny(order.valor_frete);
+      const { bruto, liquido, frete } = extrairValoresDoTiny(order.raw, {
         valorBruto: valor,
         valorFrete: freteFallback,
       });
@@ -1014,15 +1115,14 @@ export async function GET(req: NextRequest) {
     };
 
     return NextResponse.json(resposta);
-  } catch (err: any) {
-    console.error('[API] Erro em /api/tiny/dashboard/resumo', err);
+  } catch (error) {
+    console.error('[API] Erro em /api/tiny/dashboard/resumo', error);
     return NextResponse.json(
       {
         message: 'Erro ao montar resumo do dashboard',
-        details: err?.message ?? 'Erro desconhecido',
+        details: getErrorMessage(error) ?? 'Erro desconhecido',
       },
       { status: 500 }
     );
   }
 }
-// @ts-nocheck

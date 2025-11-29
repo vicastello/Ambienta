@@ -67,8 +67,12 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   }, []);
 
   useEffect(() => {
-    setIsMobileMenuOpen(false);
-    setIsHovered(false);
+    if (typeof window === 'undefined') return undefined;
+    const raf = window.requestAnimationFrame(() => {
+      setIsMobileMenuOpen(false);
+      setIsHovered(false);
+    });
+    return () => window.cancelAnimationFrame(raf);
   }, [pathname]);
 
   useEffect(() => {

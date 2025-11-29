@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getSyncSettings, normalizeCronSettings } from '@/src/repositories/syncRepository';
+import { getErrorMessage } from '@/lib/errors';
 import type { Database } from '@/src/types/db-public';
 
 type StepName = 'orders' | 'enrich' | 'produtos';
 type SyncLogsRow = Database['public']['Tables']['sync_logs']['Row'];
+type SelectedLogFields = Pick<SyncLogsRow, 'id' | 'created_at' | 'level' | 'message' | 'meta'>;
 
 type StepSnapshot = {
   id: string;
@@ -12,17 +14,17 @@ type StepSnapshot = {
   created_at: string;
   level: string;
   message: string;
-  meta: Record<string, any> | null;
+  meta: Record<string, unknown> | null;
   ok: boolean;
 };
 
 const STEP_ORDER: StepName[] = ['orders', 'enrich', 'produtos'];
 const RUN_WINDOW_MS = 5 * 60 * 1000; // 5 minutos para agrupar passos da mesma execução
 
-type LogWithMeta = SyncLogsRow & { meta: Record<string, any> };
+type LogWithMeta = SelectedLogFields & { meta: Record<string, unknown> };
 
-function hasObjectMeta(log: SyncLogsRow | undefined | null): log is LogWithMeta {
-  return !!log && !!log.meta && typeof log.meta === 'object' && !Array.isArray(log.meta);
+function hasObjectMeta(log: SelectedLogFields | undefined | null): log is LogWithMeta {
+  return Boolean(log && log.meta && typeof log.meta === 'object' && !Array.isArray(log.meta));
 }
 
 export async function GET() {
@@ -37,13 +39,14 @@ export async function GET() {
       throw error;
     }
 
-    const entries: LogWithMeta[] = ((data ?? []) as SyncLogsRow[]).filter((log) => hasObjectMeta(log));
+    const entries: LogWithMeta[] = (data ?? []).filter((log) => hasObjectMeta(log));
     const cronDefaults = normalizeCronSettings(await getSyncSettings());
     const referenceOrder = entries.find((log) => log.meta?.step === 'orders');
-    const referenceTimestamp = referenceOrder ? new Date(referenceOrder.created_at).getTime() : null;
+    const referenceTimestamp = referenceOrder ? new Date(referenceOrder.created_at).getTime() : undefined;
+    const hasReferenceTimestamp = typeof referenceTimestamp === 'number' && Number.isFinite(referenceTimestamp);
 
     const runEntries: Partial<Record<StepName, StepSnapshot>> = {};
-    if (referenceOrder && Number.isFinite(referenceTimestamp)) {
+    if (referenceOrder && hasReferenceTimestamp && typeof referenceTimestamp === 'number') {
       runEntries.orders = {
         id: String(referenceOrder.id),
         name: 'orders',
@@ -55,12 +58,13 @@ export async function GET() {
       };
 
       for (const entry of entries) {
-        const step = entry.meta?.step as StepName | undefined;
+        const stepValue = entry.meta?.step;
+        const step = typeof stepValue === 'string' ? (stepValue as StepName) : undefined;
         if (!step) continue;
         if (runEntries[step]) continue;
         const createdAtMs = new Date(entry.created_at).getTime();
         if (!Number.isFinite(createdAtMs)) continue;
-        if (Math.abs(createdAtMs - (referenceTimestamp as number)) <= RUN_WINDOW_MS) {
+        if (Math.abs(createdAtMs - referenceTimestamp) <= RUN_WINDOW_MS) {
           runEntries[step] = {
             id: String(entry.id),
             name: step,
@@ -100,10 +104,10 @@ export async function GET() {
       },
       config: cronDefaults,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[cron-status] erro', error);
     return NextResponse.json(
-      { error: error?.message ?? 'Erro ao consultar status do cron' },
+      { error: getErrorMessage(error) || 'Erro ao consultar status do cron' },
       { status: 500 }
     );
   }

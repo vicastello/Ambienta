@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { callInternalJson } from '@/lib/internalApi';
+import { getErrorMessage } from '@/lib/errors';
 import {
   getSyncSettings,
   normalizeCronSettings,
 } from '@/src/repositories/syncRepository';
-import type { Database } from '@/src/types/db-public';
+import type { Database, Json } from '@/src/types/db-public';
 
 type StepName = 'orders' | 'enrich' | 'produtos';
 type StepResult = {
@@ -13,7 +14,7 @@ type StepResult = {
   ok: boolean;
   processed?: number;
   detail?: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 };
 
 type CronRequestBody = {
@@ -39,34 +40,47 @@ type EffectiveCronConfig = {
 };
 
 type SyncLogsInsert = Database['public']['Tables']['sync_logs']['Insert'];
+type LogMeta = Record<string, unknown>;
+
+type OrdersSyncResponse = {
+  jobId?: string;
+  result?: { totalOrders?: number; total?: number } | null;
+  totalOrders?: number;
+};
+
+type EnrichBackgroundResponse = {
+  updated?: number;
+  enriched?: number;
+};
+
+type ProdutosSyncCronResponse = {
+  ok?: boolean;
+  reason?: string;
+  totalAtualizados?: number;
+  totalSincronizados?: number;
+};
 
 export const maxDuration = 300;
 
-async function logStep(step: StepName, status: 'ok' | 'error', message: string, meta?: Record<string, any>) {
+async function logStep(step: StepName, status: 'ok' | 'error', message: string, meta?: LogMeta) {
+  const metaPayload = { step, status, ...(meta ?? {}) };
   const payload: SyncLogsInsert = {
     job_id: null,
     level: status === 'ok' ? 'info' : 'error',
     message,
-    meta: { step, status, ...(meta ?? {}) },
+    meta: metaPayload as Json,
   };
 
   try {
-    await supabaseAdmin.from('sync_logs').insert(payload as any);
-  } catch (error) {
+    await supabaseAdmin.from('sync_logs').insert(payload);
+  } catch (error: unknown) {
     console.error('[run-sync] Falha ao registrar sync_logs', error);
   }
 }
 
 function formatErrorDetail(error: unknown, fallback: string) {
-  if (!error) return fallback;
-  if (typeof error === 'string') return error;
-  if (error instanceof Error && typeof error.message === 'string') {
-    return error.message || fallback;
-  }
-  if (typeof (error as any)?.message === 'string') {
-    return (error as any).message as string;
-  }
-
+  const message = getErrorMessage(error);
+  if (message) return message;
   try {
     return JSON.stringify(error, null, 2);
   } catch {
@@ -126,7 +140,13 @@ async function resolveCronConfig(body: CronRequestBody): Promise<EffectiveCronCo
 }
 
 export async function POST(req: Request) {
-  const body: CronRequestBody = await req.json().catch(() => ({}));
+  let rawBody: unknown = {};
+  try {
+    rawBody = await req.json();
+  } catch {
+    rawBody = {};
+  }
+  const body = isRecord(rawBody) ? (rawBody as CronRequestBody) : {};
   const config = await resolveCronConfig(body);
   const { diasRecentes, enrichEnabled, produtos } = config;
 
@@ -134,7 +154,7 @@ export async function POST(req: Request) {
   let partial = false;
 
   try {
-    const ordersJson = await callInternalJson('/api/tiny/sync', {
+    const ordersJson = await callInternalJson<OrdersSyncResponse>('/api/tiny/sync', {
       method: 'POST',
       body: JSON.stringify({ mode: 'recent', diasRecentes }),
     });
@@ -153,7 +173,7 @@ export async function POST(req: Request) {
       jobId: ordersJson?.jobId ?? null,
       processed: ordersProcessed,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     const detail = formatErrorDetail(error, 'Erro ao sincronizar pedidos recentes');
     const failedStep: StepResult = { name: 'orders', ok: false, detail };
     steps.push(failedStep);
@@ -166,7 +186,9 @@ export async function POST(req: Request) {
 
   if (enrichEnabled) {
     try {
-      const enrichJson = await callInternalJson('/api/tiny/sync/enrich-background', { method: 'GET' });
+      const enrichJson = await callInternalJson<EnrichBackgroundResponse>('/api/tiny/sync/enrich-background', {
+        method: 'GET',
+      });
       const updated = enrichJson?.updated ?? enrichJson?.enriched ?? null;
       const enrichStep: StepResult = {
         name: 'enrich',
@@ -180,7 +202,7 @@ export async function POST(req: Request) {
         updated,
         raw: enrichJson,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       const detail = formatErrorDetail(error, 'Erro ao enriquecer pedidos');
       const failedStep: StepResult = { name: 'enrich', ok: false, detail };
       steps.push(failedStep);
@@ -203,7 +225,7 @@ export async function POST(req: Request) {
     };
 
     try {
-      const produtosJson = await callInternalJson('/api/produtos/sync', {
+      const produtosJson = await callInternalJson<ProdutosSyncCronResponse>('/api/produtos/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -245,7 +267,7 @@ export async function POST(req: Request) {
       if (!produtosOk) {
         partial = true;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       const detail = formatErrorDetail(error, 'Erro ao sincronizar produtos');
       const failedStep: StepResult = { name: 'produtos', ok: false, detail };
       steps.push(failedStep);
@@ -270,4 +292,8 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json(responseBody);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

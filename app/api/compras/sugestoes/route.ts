@@ -1,26 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listProdutosAtivosSimples } from '@/src/repositories/tinyProdutosRepository';
-import { listConsumoPeriodo } from '@/src/repositories/tinyPedidoItensRepository';
-
-type ProdutoRow = {
-  id_produto_tiny: number;
-  codigo: string | null;
-  nome: string | null;
-  gtin: string | null;
-  saldo: number | null;
-  reservado: number | null;
-  disponivel: number | null;
-  fornecedor_codigo: string | null;
-  embalagem_qtd: number | null;
-  tipo: string | null;
-  situacao: string | null;
-};
+import { listProdutosAtivosSimples, type ProdutoBaseRow } from '@/src/repositories/tinyProdutosRepository';
+import { listConsumoPeriodo, type ConsumoRow } from '@/src/repositories/tinyPedidoItensRepository';
+import { getErrorMessage } from '@/lib/errors';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const periodDays = Number(searchParams.get('periodDays') || '60'); // base para consumo
-    const targetMonths = Number(searchParams.get('targetMonths') || '2'); // horizonte de compra
+    const periodDaysParam = Number(searchParams.get('periodDays') ?? '60');
+    const periodDays = Number.isFinite(periodDaysParam) && periodDaysParam > 0 ? periodDaysParam : 60;
+    const targetMonthsParam = Number(searchParams.get('targetMonths') ?? '2');
+    const targetMonths = Number.isFinite(targetMonthsParam) && targetMonthsParam > 0 ? targetMonthsParam : 2;
 
     const startIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -28,7 +17,7 @@ export async function GET(req: NextRequest) {
     const consumos = await listConsumoPeriodo(startIso);
 
     const consumoPorProduto = new Map<number, number>();
-    consumos.forEach((item) => {
+    consumos.forEach((item: ConsumoRow) => {
       if (!item.id_produto_tiny || item.quantidade == null) return;
       const prev = consumoPorProduto.get(item.id_produto_tiny) || 0;
       consumoPorProduto.set(item.id_produto_tiny, prev + Number(item.quantidade));
@@ -36,7 +25,7 @@ export async function GET(req: NextRequest) {
 
     const periodMonths = periodDays / 30;
 
-    const result = (produtos as ProdutoRow[]).map((p) => {
+    const result = produtos.map((p: ProdutoBaseRow) => {
       const consumoPeriodo = consumoPorProduto.get(p.id_produto_tiny) || 0;
       const consumoMensal = consumoPeriodo / periodMonths;
       const estoqueDisponivel =
@@ -66,10 +55,11 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ periodDays, targetMonths, produtos: result });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = getErrorMessage(error) ?? 'Erro ao gerar sugestões';
     console.error('[API Compras/Sugestoes] Erro:', error);
     return NextResponse.json(
-      { error: error?.message || 'Erro ao gerar sugestões' },
+      { error: message },
       { status: 500 }
     );
   }

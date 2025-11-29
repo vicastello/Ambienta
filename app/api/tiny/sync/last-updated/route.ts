@@ -1,7 +1,9 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
+import type { Database } from '@/src/types/db-public';
+
+type TinyOrdersRow = Database['public']['Tables']['tiny_orders']['Row'];
 
 export async function GET() {
   try {
@@ -14,10 +16,11 @@ export async function GET() {
 
     if (error) throw error;
 
-    const last = (data as any)?.updated_at ?? (data as any)?.inserted_at ?? null;
+    const row = data as (Pick<TinyOrdersRow, 'updated_at' | 'inserted_at'> | null);
+    const last = row?.updated_at ?? row?.inserted_at ?? null;
     return NextResponse.json({ ok: true, lastUpdated: last });
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, message: err?.message ?? String(err) }, { status: 500 });
+  } catch (err: unknown) {
+    const message = getErrorMessage(err) ?? 'Erro ao buscar última atualização';
+    return NextResponse.json({ ok: false, message }, { status: 500 });
   }
 }
-// @ts-nocheck

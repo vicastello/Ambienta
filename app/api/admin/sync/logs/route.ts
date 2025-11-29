@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
 import type { Json } from '@/src/types/db-public';
 
 export type SyncLogEntry = {
@@ -8,7 +9,7 @@ export type SyncLogEntry = {
   level: string;
   type: string;
   message: string;
-  meta: Record<string, any> | null;
+  meta: Record<string, unknown> | null;
   jobId: string | null;
 };
 
@@ -34,9 +35,7 @@ export async function GET(req: NextRequest) {
     const limitParam = Number(searchParams.get('limit') ?? '50');
     const limit = Math.min(Math.max(limitParam, 1), 200);
     const requestedType = (searchParams.get('type') ?? 'all').toLowerCase();
-    const typeParam: LogTypeFilter = LOG_TYPES.includes(requestedType as any)
-      ? (requestedType as LogTypeFilter)
-      : 'all';
+    const typeParam: LogTypeFilter = isLogType(requestedType) ? requestedType : 'all';
 
     const fetchLimit = Math.min(limit * 3, 200);
     const { data, error } = await supabaseAdmin
@@ -51,10 +50,8 @@ export async function GET(req: NextRequest) {
 
     const rows = (data ?? []) as unknown as RawLogRow[];
     const normalized: SyncLogEntry[] = rows.map((log) => {
-      const meta = (log.meta as Json | null) as Record<string, any> | null;
-      const jobParams = (log.sync_jobs?.params as Json | null) as
-        | Record<string, any>
-        | null;
+      const meta = toRecord(log.meta);
+      const jobParams = toRecord(log.sync_jobs?.params ?? null);
 
       const resolvedType = inferLogType({ meta, jobParams });
 
@@ -74,18 +71,18 @@ export async function GET(req: NextRequest) {
       : normalized;
 
     return NextResponse.json({ logs: filtered.slice(0, limit) });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('[sync/logs] error', error);
     return NextResponse.json(
-      { error: 'Erro ao consultar logs de sincronização' },
+      { error: getErrorMessage(error) || 'Erro ao consultar logs de sincronização' },
       { status: 500 }
     );
   }
 }
 
 type InferLogInput = {
-  meta: Record<string, any> | null;
-  jobParams: Record<string, any> | null;
+  meta: Record<string, unknown> | null;
+  jobParams: Record<string, unknown> | null;
 };
 
 function inferLogType({ meta, jobParams }: InferLogInput): LogTypeFilter {
@@ -112,4 +109,14 @@ function normalizeType(raw: string): LogTypeFilter {
   if (value.includes('enrich') || value.includes('item')) return 'enrich';
   if (value.includes('order') || value.includes('pedido')) return 'orders';
   return 'orders';
+}
+
+function isLogType(value: string): value is (typeof LOG_TYPES)[number] {
+  return (LOG_TYPES as readonly string[]).includes(value);
+}
+
+function toRecord(value: Json | null): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

@@ -5,6 +5,17 @@ import { useEffect, useState } from 'react';
 type ThemeMode = 'light' | 'dark' | 'system';
 const STORAGE_KEY = 'theme-mode';
 
+const resolveInitialMode = (): ThemeMode => {
+  if (typeof window === 'undefined') return 'system';
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    if (stored === 'light' || stored === 'dark' || stored === 'system') return stored;
+  } catch {
+    // ignore read errors and fall back to system
+  }
+  return 'system';
+};
+
 function applyTheme(mode: ThemeMode) {
   if (typeof window === 'undefined') return;
 
@@ -24,28 +35,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 export function ThemeToggle() {
-  const [mode, setMode] = useState<ThemeMode>('system');
-
-  // carrega tema salvo / sistema
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY) as
-        | ThemeMode
-        | null;
-
-      if (stored === 'light' || stored === 'dark' || stored === 'system') {
-        setMode(stored);
-        applyTheme(stored);
-      } else {
-        setMode('system');
-        applyTheme('system');
-      }
-    } catch {
-      // ignora erro de localStorage
-    }
-  }, []);
+  const [mode, setMode] = useState<ThemeMode>(resolveInitialMode);
 
   // salva sempre que mudar
   useEffect(() => {

@@ -1,10 +1,17 @@
-// @ts-nocheck
-/* eslint-disable */
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { getErrorMessage } from '@/lib/errors';
 
 const TOKEN_URL =
   'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';
+
+type TinyOAuthCallbackResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -64,9 +71,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  let json: any;
+  let parsed: unknown;
   try {
-    json = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch (e) {
     console.error('[Tiny OAuth callback] Não consegui fazer parse do JSON:', text);
     return NextResponse.json(
@@ -80,7 +87,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (!json.access_token || !json.refresh_token || !json.expires_in) {
+  if (!parsed || typeof parsed !== 'object') {
+    return NextResponse.json(
+      {
+        ok: false,
+        step: 'parse_response',
+        message: 'Resposta do Tiny não é um JSON válido.',
+        raw: text,
+      },
+      { status: 500 }
+    );
+  }
+
+  const json = parsed as TinyOAuthCallbackResponse;
+
+  if (typeof json.access_token !== 'string' || typeof json.refresh_token !== 'string' || typeof json.expires_in !== 'number') {
     console.error('[Tiny OAuth callback] Resposta inesperada:', json);
     return NextResponse.json(
       {
@@ -94,7 +115,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const expiresAt = now + (json.expires_in - 60) * 1000; // 1 min de margem
+  const expiresAt = now + Math.max(0, (json.expires_in - 60) * 1000); // 1 min de margem
 
   console.log('[Tiny OAuth callback] Tokens recebidos, salvando em cookies.');
 
@@ -104,7 +125,7 @@ export async function GET(req: NextRequest) {
   // cookies HTTP-only com os tokens
   response.cookies.set('tiny_access_token', json.access_token, {
     httpOnly: true,
-    secure: false, // em produção = true com HTTPS
+    secure: false,
     sameSite: 'lax',
     path: '/',
     maxAge: json.expires_in, // segundos
@@ -129,7 +150,7 @@ export async function GET(req: NextRequest) {
   // persist tokens in DB for worker use (upsert)
   console.log('[Tiny OAuth callback] Iniciando upsert do token...');
   try {
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('tiny_tokens')
       .upsert(
         {
@@ -158,7 +179,7 @@ export async function GET(req: NextRequest) {
     }
   } catch (e) {
     console.error('[Tiny OAuth callback] ❌ Exception ao salvar tokens no DB:', e);
-    response.cookies.set('oauth_error', `Exception: ${String(e)}`, {
+    response.cookies.set('oauth_error', `Exception: ${getErrorMessage(e) || 'Erro desconhecido'}`, {
       httpOnly: false,
       path: '/',
     });
@@ -166,4 +187,3 @@ export async function GET(req: NextRequest) {
 
   return response;
 }
-// @ts-nocheck

@@ -76,6 +76,13 @@ type OrdersResponse = {
   warnings?: string[];
 };
 
+type OrdersErrorResponse = {
+  details?: string;
+  message?: string;
+  error?: string;
+  warnings?: string[];
+};
+
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const isoDaysAgo = (days: number) => {
   const date = new Date();
@@ -93,6 +100,16 @@ const formatDate = (value: string | null) =>
         month: "short",
       })
     : "—";
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "object" && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string") return maybeMessage;
+  }
+  return "";
+};
 
 const PEDIDOS_FILTERS_STORAGE_KEY = "tiny_pedidos_filters_v1";
 const ORDERS_CACHE_TTL_MS = 60_000;
@@ -144,7 +161,6 @@ export default function PedidosPage() {
     by: "numero_pedido",
     dir: "desc",
   });
-  const [isMobile, setIsMobile] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filtersLoaded, setFiltersLoaded] = useState(false);
   const ordersRequestId = useRef(0);
@@ -178,7 +194,7 @@ export default function PedidosPage() {
       setPageMeta({ total: json.pageInfo.total, totalPages: json.pageInfo.totalPages });
       if (json.pageInfo.page !== page) setPage(json.pageInfo.page);
       if (json.pageInfo.pageSize !== pageSize) setPageSize(json.pageInfo.pageSize);
-      if ((json as any)?.warnings?.includes('orders_metrics_function_missing')) {
+      if (json.warnings?.includes("orders_metrics_function_missing")) {
         setWarning('Execute a migração 010_create_orders_metrics_function.sql (supabase db push) para habilitar os indicadores completos desta página.');
       } else {
         setWarning(null);
@@ -191,18 +207,20 @@ export default function PedidosPage() {
         ttlMs: ORDERS_CACHE_TTL_MS,
         fetcher: async () => {
           const response = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
-          const json = (await response.json()) as OrdersResponse;
+          const json = (await response.json()) as OrdersResponse | OrdersErrorResponse;
           if (!response.ok) {
-            throw new Error((json as any)?.details ?? "Erro ao carregar pedidos");
+            const errorPayload = json as OrdersErrorResponse;
+            const errorMessage = errorPayload.details || errorPayload.error || errorPayload.message || "Erro ao carregar pedidos";
+            throw new Error(errorMessage);
           }
-          return json;
+          return json as OrdersResponse;
         },
         onUpdate: (fresh) => applyResponse(fresh),
       });
       applyResponse(data);
-    } catch (err: any) {
+    } catch (error) {
       if (ordersRequestId.current === requestId) {
-        setError(err?.message ?? "Erro desconhecido");
+        setError(getErrorMessage(error) || "Erro desconhecido");
       }
     } finally {
       if (ordersRequestId.current === requestId) {
@@ -213,7 +231,7 @@ export default function PedidosPage() {
 
   useEffect(() => {
     fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar fetchOrders a cada render
   }, [page, pageSize, debouncedSearch, selectedStatuses, selectedChannels, dateRange, sort]);
 
   useEffect(() => {
@@ -238,7 +256,7 @@ export default function PedidosPage() {
         }
         if (typeof parsed.pageSize === "number") setPageSize(parsed.pageSize);
       }
-    } catch (e) {
+    } catch {
       // ignore parse errors
     } finally {
       setFiltersLoaded(true);
@@ -258,7 +276,7 @@ export default function PedidosPage() {
     };
     try {
       window.localStorage.setItem(PEDIDOS_FILTERS_STORAGE_KEY, JSON.stringify(toStore));
-    } catch (e) {
+    } catch {
       // ignore write errors
     }
   }, [filtersLoaded, search, selectedStatuses, selectedChannels, datePreset, dateRange, sort, pageSize]);
@@ -267,12 +285,9 @@ export default function PedidosPage() {
     if (typeof window === "undefined") return;
     const mq = window.matchMedia("(max-width: 1024px)");
     const handler = (event: MediaQueryListEvent) => {
-      setIsMobile(event.matches);
-      if (!event.matches) setShowFilters(true);
-      else setShowFilters(false);
+      setShowFilters(!event.matches);
     };
-    setIsMobile(mq.matches);
-    setShowFilters(!mq.matches ? true : false);
+    setShowFilters(!mq.matches);
     if (typeof mq.addEventListener === "function") mq.addEventListener("change", handler);
     else mq.addListener(handler);
     return () => {

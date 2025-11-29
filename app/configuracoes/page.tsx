@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import type { CalendarDayStatus } from '@/app/api/admin/sync/calendar/route';
+import type { SyncProdutosResult } from '@/src/lib/sync/produtos';
 
 type SyncOverviewResponse = {
   orders: {
@@ -19,13 +20,20 @@ type SyncOverviewResponse = {
   };
 };
 
+type JsonRecord = Record<string, unknown>;
+
+type SyncMeta = JsonRecord & {
+  processed?: number;
+  updated?: number;
+};
+
 type SyncLogEntry = {
   id: string;
   createdAt: string;
   level: string;
   type: string;
   message: string;
-  meta: Record<string, any> | null;
+  meta: JsonRecord | null;
   jobId: string | null;
 };
 
@@ -34,7 +42,7 @@ type CronStatusStep = {
   createdAt: string;
   level: string;
   message: string;
-  meta: Record<string, any> | null;
+  meta: SyncMeta | null;
   ok: boolean;
 };
 
@@ -67,6 +75,25 @@ type CronStatusResponse = {
     defaults: { diasRecentes: number; produtosLimit: number; enrichEstoque: boolean; estoqueOnly?: boolean };
   };
   config?: CronStatusConfig;
+};
+
+type ExtendedSyncProdutosResult = SyncProdutosResult & {
+  errorMessage?: string;
+};
+
+type ProdutosSyncResponse = JsonRecord & {
+  ok?: boolean;
+  result?: ExtendedSyncProdutosResult | null;
+};
+
+type PipelineStepSummary = {
+  name: CronStatusStep['name'] | string;
+  ok?: boolean | null;
+  meta?: SyncMeta | null;
+} & JsonRecord;
+
+type CronRunSummary = JsonRecord & {
+  steps?: PipelineStepSummary[];
 };
 type LogFilter = 'all' | 'orders' | 'enrich' | 'produtos';
 
@@ -120,6 +147,30 @@ const CRON_SETTINGS_DEFAULTS: CronSettingsState = {
   cronProdutosEnrichEstoque: true,
 };
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (typeof error === 'object' && error !== null) {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === 'string') {
+      return maybeMessage;
+    }
+  }
+  return '';
+};
+
+const formatJobId = (payload: JsonRecord | null | undefined): string => {
+  if (!payload) return 'n/d';
+  const value = (payload as { jobId?: unknown }).jobId;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return value.toString();
+  return 'n/d';
+};
+
 export default function ConfiguracoesPage() {
   const [connecting, setConnecting] = useState(false);
   const handleConnectTiny = () => {
@@ -141,10 +192,10 @@ export default function ConfiguracoesPage() {
         throw new Error(json?.error ?? 'Erro ao consultar overview');
       }
       setOverview(json);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] overview', error);
       setOverview(null);
-      setOverviewError(error?.message ?? 'Erro ao carregar status');
+      setOverviewError(getErrorMessage(error) || 'Erro ao carregar status');
     } finally {
       setOverviewLoading(false);
     }
@@ -207,10 +258,10 @@ export default function ConfiguracoesPage() {
         throw new Error(json?.error ?? 'Erro ao consultar logs');
       }
       setLogs(json.logs ?? []);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] logs', error);
       setLogs([]);
-      setLogsError(error?.message ?? 'Erro ao carregar logs');
+      setLogsError(getErrorMessage(error) || 'Erro ao carregar logs');
     } finally {
       setLogsLoading(false);
     }
@@ -230,10 +281,10 @@ export default function ConfiguracoesPage() {
         throw new Error(json?.error ?? 'Erro ao consultar calendário');
       }
       setCalendarDays(json.days ?? []);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] calendar', error);
       setCalendarDays([]);
-      setCalendarError(error?.message ?? 'Erro ao carregar calendário');
+      setCalendarError(getErrorMessage(error) || 'Erro ao carregar calendário');
     } finally {
       setCalendarLoading(false);
     }
@@ -248,16 +299,16 @@ export default function ConfiguracoesPage() {
         throw new Error(json?.error ?? 'Erro ao consultar status do cron');
       }
       setCronStatus(json);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] cron-status', error);
       setCronStatus(null);
-      setCronStatusError(error?.message ?? 'Erro ao consultar status automático');
+      setCronStatusError(getErrorMessage(error) || 'Erro ao consultar status automático');
     } finally {
       setCronStatusLoading(false);
     }
   }, []);
 
-  const normalizeCronSettingsResponse = useCallback((payload: Record<string, any> | null | undefined): CronSettingsState => {
+  const normalizeCronSettingsResponse = useCallback((payload: JsonRecord | null | undefined): CronSettingsState => {
     const positive = (value: unknown, fallback: number) => {
       const parsed = typeof value === 'string' ? Number(value) : Number(value ?? NaN);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -293,11 +344,11 @@ export default function ConfiguracoesPage() {
       const normalized = normalizeCronSettingsResponse(json);
       setCronSettings(normalized);
       setCronSettingsDraft(normalized);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] cron-settings', error);
       setCronSettings(null);
       setCronSettingsDraft(null);
-      setCronSettingsError(error?.message ?? 'Erro ao carregar configurações automáticas');
+      setCronSettingsError(getErrorMessage(error) || 'Erro ao carregar configurações automáticas');
     } finally {
       setCronSettingsLoading(false);
     }
@@ -344,12 +395,12 @@ export default function ConfiguracoesPage() {
   const [isSyncingProdutos, setIsSyncingProdutos] = useState(false);
   const [isBackfillingProdutos, setIsBackfillingProdutos] = useState(false);
   const [isSyncingEstoqueOnly, setIsSyncingEstoqueOnly] = useState(false);
-  const [produtosSyncResult, setProdutosSyncResult] = useState<any | null>(null);
+  const [produtosSyncResult, setProdutosSyncResult] = useState<ExtendedSyncProdutosResult | null>(null);
   const [postSyncRunning, setPostSyncRunning] = useState(false);
   const [syncingDay, setSyncingDay] = useState<string | null>(null);
   const postSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [pipelineRunning, setPipelineRunning] = useState(false);
-  const [pipelineResult, setPipelineResult] = useState<any>(null);
+  const [pipelineResult, setPipelineResult] = useState<CronRunSummary | null>(null);
   const refreshAll = useCallback(() => {
     fetchOverview();
     fetchLogs();
@@ -359,7 +410,7 @@ export default function ConfiguracoesPage() {
   }, [fetchOverview, fetchLogs, fetchCalendar, fetchCronStatus, fetchCronSettings]);
 
   const postJson = useCallback(
-    async (url: string, body: Record<string, any>, extraHeaders?: HeadersInit) => {
+    async (url: string, body?: JsonRecord, extraHeaders?: HeadersInit): Promise<JsonRecord> => {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
         ...extraHeaders,
@@ -373,7 +424,7 @@ export default function ConfiguracoesPage() {
       if (!res.ok) {
         throw new Error(json?.details ?? json?.message ?? json?.error ?? 'Erro inesperado');
       }
-      return json;
+      return json as JsonRecord;
     },
     []
   );
@@ -387,7 +438,7 @@ export default function ConfiguracoesPage() {
     return json;
   }, []);
 
-  const executeProdutosSync = useCallback(async (payload: Record<string, any>) => {
+  const executeProdutosSync = useCallback(async (payload: JsonRecord): Promise<ProdutosSyncResponse> => {
     const res = await fetch('/api/admin/sync/produtos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -397,7 +448,7 @@ export default function ConfiguracoesPage() {
     if (!res.ok) {
       throw new Error(json?.message ?? 'Falha ao sincronizar produtos');
     }
-    return json;
+    return json as ProdutosSyncResponse;
   }, []);
 
   const renderCronStatusBadge = (ok?: boolean | null) => {
@@ -460,7 +511,7 @@ export default function ConfiguracoesPage() {
     setPipelineResult(null);
     try {
       const result = await postJson('/api/admin/cron/run-sync', {});
-      setPipelineResult(result);
+      setPipelineResult(result as CronRunSummary);
       handleActionSuccess('Pipeline completo executado manualmente.');
     } catch (error) {
       handleActionError(error);
@@ -478,8 +529,8 @@ export default function ConfiguracoesPage() {
     [refreshAll]
   );
 
-  const handleActionError = useCallback((error: any) => {
-    setActionError(error?.message ?? 'Erro ao executar ação');
+  const handleActionError = useCallback((error: unknown) => {
+    setActionError(getErrorMessage(error) || 'Erro ao executar ação');
     setActionMessage(null);
   }, []);
 
@@ -515,9 +566,9 @@ export default function ConfiguracoesPage() {
       setCronSettings(normalized);
       setCronSettingsDraft(normalized);
       handleActionSuccess('Configurações automáticas salvas.');
-    } catch (error: any) {
+    } catch (error) {
       console.error('[config] save-cron-settings', error);
-      setCronSettingsError(error?.message ?? 'Erro ao salvar configurações automáticas');
+      setCronSettingsError(getErrorMessage(error) || 'Erro ao salvar configurações automáticas');
       handleActionError(error);
     } finally {
       setCronSettingsSaving(false);
@@ -535,9 +586,9 @@ export default function ConfiguracoesPage() {
     try {
       await executeBackgroundEnrich();
       freteOk = true;
-    } catch (error: any) {
+    } catch (error) {
       hadError = true;
-      setActionError(error?.message ?? 'Erro ao enriquecer frete automaticamente');
+      setActionError(getErrorMessage(error) || 'Erro ao enriquecer frete automaticamente');
     }
 
     let produtosOk = false;
@@ -553,9 +604,9 @@ export default function ConfiguracoesPage() {
         throw new Error(response?.result?.errorMessage ?? 'Sync de produtos retornou erro');
       }
       produtosOk = true;
-    } catch (error: any) {
+    } catch (error) {
       hadError = true;
-      setActionError(error?.message ?? 'Erro ao sincronizar produtos automaticamente');
+      setActionError(getErrorMessage(error) || 'Erro ao sincronizar produtos automaticamente');
     }
 
     if (!hadError && freteOk) {
@@ -588,7 +639,7 @@ export default function ConfiguracoesPage() {
         mode: 'recent',
         diasRecentes: recentDays,
       });
-      handleActionSuccess(`Sync de ${recentDays} dias disparada (job ${result.jobId ?? 'n/d'})`);
+      handleActionSuccess(`Sync de ${recentDays} dias disparada (job ${formatJobId(result)})`);
       await triggerPostSyncEnrichment();
     } catch (error) {
       handleActionError(error);
@@ -601,7 +652,7 @@ export default function ConfiguracoesPage() {
     setIsSyncingOrders(true);
     try {
       const result = await postJson('/api/tiny/sync', { mode: 'full' });
-      handleActionSuccess(`Carga completa disparada (job ${result.jobId ?? 'n/d'})`);
+      handleActionSuccess(`Carga completa disparada (job ${formatJobId(result)})`);
       await triggerPostSyncEnrichment();
     } catch (error) {
       handleActionError(error);
@@ -622,7 +673,7 @@ export default function ConfiguracoesPage() {
         dataInicial: rangeStart,
         dataFinal: rangeEnd,
       });
-      handleActionSuccess(`Janela ${rangeStart} → ${rangeEnd} sincronizada (job ${result.jobId ?? 'n/d'})`);
+      handleActionSuccess(`Janela ${rangeStart} → ${rangeEnd} sincronizada (job ${formatJobId(result)})`);
       await triggerPostSyncEnrichment();
     } catch (error) {
       handleActionError(error);
@@ -639,7 +690,7 @@ export default function ConfiguracoesPage() {
         dataInicial: isoDate,
         dataFinal: isoDate,
       });
-      handleActionSuccess(`Dia ${formatDate(isoDate)} sincronizado (job ${result.jobId ?? 'n/d'})`);
+      handleActionSuccess(`Dia ${formatDate(isoDate)} sincronizado (job ${formatJobId(result)})`);
       await triggerPostSyncEnrichment();
     } catch (error) {
       handleActionError(error);
@@ -707,12 +758,12 @@ export default function ConfiguracoesPage() {
         enrichAtivo: true,
         modeLabel: 'manual_full_catalog',
       });
-      const result = response?.result ?? response;
-      setProdutosSyncResult(result ?? null);
+      const resultPayload = (response?.result ?? response) as ExtendedSyncProdutosResult | null;
+      setProdutosSyncResult(resultPayload);
       if (response?.ok === false) {
-        throw new Error(result?.errorMessage ?? 'Sync de produtos retornou erro');
+        throw new Error(resultPayload?.errorMessage ?? 'Sync de produtos retornou erro');
       }
-      const total = result?.totalSincronizados ?? result?.totalAtualizados ?? '—';
+      const total = resultPayload?.totalSincronizados ?? resultPayload?.totalAtualizados ?? '—';
       handleActionSuccess(`Produtos sincronizados (total processado: ${total}).`);
     } catch (error) {
       console.error('[config] sync-produtos', error);
@@ -736,12 +787,12 @@ export default function ConfiguracoesPage() {
         workers: 1,
         modeLabel: 'manual_estoque_only',
       });
-      const result = response?.result ?? response;
-      setProdutosSyncResult(result ?? null);
+      const resultPayload = (response?.result ?? response) as ExtendedSyncProdutosResult | null;
+      setProdutosSyncResult(resultPayload);
       if (response?.ok === false) {
-        throw new Error(result?.errorMessage ?? 'Atualização de estoque retornou erro');
+        throw new Error(resultPayload?.errorMessage ?? 'Atualização de estoque retornou erro');
       }
-      const total = result?.totalSincronizados ?? result?.totalAtualizados ?? '—';
+      const total = resultPayload?.totalSincronizados ?? resultPayload?.totalAtualizados ?? '—';
       handleActionSuccess(`Estoque atualizado (lote processado: ${total}).`);
     } catch (error) {
       console.error('[config] sync-estoque-only', error);
@@ -762,10 +813,10 @@ export default function ConfiguracoesPage() {
         enrichAtivo: false,
         modeLabel: 'manual_backfill',
       });
-      const result = response?.result ?? response;
-      setProdutosSyncResult(result ?? null);
+      const resultPayload = (response?.result ?? response) as ExtendedSyncProdutosResult | null;
+      setProdutosSyncResult(resultPayload);
       if (response?.ok === false) {
-        throw new Error(result?.errorMessage ?? 'Backfill retornou erro');
+        throw new Error(resultPayload?.errorMessage ?? 'Backfill retornou erro');
       }
       handleActionSuccess('Backfill de produtos disparado. Acompanhe os logs para progresso.');
     } catch (error) {
@@ -931,14 +982,24 @@ export default function ConfiguracoesPage() {
                 </button>
                 {pipelineResult?.steps && (
                   <div className="space-y-2 text-xs text-slate-600">
-                    {pipelineResult.steps.map((step: any) => (
-                      <div key={step.name} className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-800">{CRON_STEP_LABELS[step.name as CronStatusStep['name']] ?? step.name}</span>
-                        <span className={`px-2 py-1 rounded-full ${step.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                          {step.ok ? 'OK' : 'Erro'}
-                        </span>
-                      </div>
-                    ))}
+                    {pipelineResult.steps.map((step) => {
+                      const label = CRON_STEP_LABELS[step.name as CronStatusStep['name']] ?? step.name;
+                      const stepOk = step.ok !== false;
+                      return (
+                        <div key={step.name} className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-800">{label}</span>
+                          <span
+                            className={`px-2 py-1 rounded-full ${
+                              stepOk
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                : 'bg-red-50 text-red-700 border border-red-100'
+                            }`}
+                          >
+                            {stepOk ? 'OK' : 'Erro'}
+                          </span>
+                        </div>
+                      );
+                    })}
                     <p className="text-[11px] text-slate-500">Resposta completa disponível nos logs abaixo.</p>
                   </div>
                 )}
