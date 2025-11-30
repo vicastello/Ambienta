@@ -53,6 +53,7 @@ export async function salvarItensPedido(
             : []) as any[];
 
     if (itens.length === 0) {
+      console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`);
       return 0; // Pedido sem itens
     }
 
@@ -68,14 +69,6 @@ export async function salvarItensPedido(
         valor_unitario: Number(item.valorUnitario || 0),
         valor_total: Number(item.valorTotal || 0),
         info_adicional: item.informacoesAdicionais || null,
-        // Campos adicionais relevantes do item Tiny v3
-        unidade: produto.unidade || item.unidade || null,
-        ncm: produto.ncm || null,
-        gtin: produto.gtin || null,
-        preco: produto.preco || null,
-        preco_promocional: produto.precoPromocional || null,
-        // Se existir coluna para JSON completo, salvar
-        ...(typeof produto.raw_payload !== 'undefined' ? { raw_payload: produto } : { raw_payload: produto }),
       };
     });
 
@@ -91,7 +84,7 @@ export async function salvarItensPedido(
 
     return itens.length;
   } catch (error: any) {
-    console.error(`[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`, error.message);
+    console.error(`[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`, error.message || error);
     return null;
   }
 }
@@ -139,11 +132,11 @@ export async function sincronizarItensPorPedidos(
   accessToken: string,
   tinyIds: Array<number | null | undefined>,
   options?: { delayMs?: number; retries?: number; force?: boolean }
-): Promise<{ processados: number; sucesso: number; totalItens: number }> {
+): Promise<{ processados: number; sucesso: number; falhas: number; totalItens: number }> {
   const uniqueTinyIds = Array.from(new Set(tinyIds.filter((id): id is number => Boolean(id))));
 
   if (!uniqueTinyIds.length) {
-    return { processados: 0, sucesso: 0, totalItens: 0 };
+    return { processados: 0, sucesso: 0, falhas: 0, totalItens: 0 };
   }
 
   // Buscar os pedidos locais correspondentes
@@ -153,7 +146,7 @@ export async function sincronizarItensPorPedidos(
     .in('tiny_id', uniqueTinyIds);
 
   if (!pedidos || pedidos.length === 0) {
-    return { processados: 0, sucesso: 0, totalItens: 0 };
+    return { processados: 0, sucesso: 0, falhas: 0, totalItens: 0 };
   }
 
   const pedidoIds = pedidos.map((p) => p.id);
@@ -173,7 +166,7 @@ export async function sincronizarItensPorPedidos(
     : pedidos.filter((p) => pedidosSemItensIds.includes(p.id));
 
   if (!pedidosSemItens.length) {
-    return { processados: pedidos.length, sucesso: 0, totalItens: 0 };
+    return { processados: pedidos.length, sucesso: 0, falhas: 0, totalItens: 0 };
   }
 
   if (options?.force) {
@@ -204,9 +197,11 @@ export async function sincronizarItensPorPedidos(
     restantes = await buscarPedidosSemItens(pedidosSemItens.map((p) => p.id));
   }
 
+  const falhas = pedidosSemItens.length - resultado.sucesso;
   return {
     processados: pedidos.length,
     sucesso: resultado.sucesso,
+    falhas,
     totalItens: resultado.totalItens,
   };
 }
