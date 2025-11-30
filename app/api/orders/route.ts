@@ -35,7 +35,7 @@ type PedidoSelectRow = Pick<
 
 type PedidoItemWithProduto = Pick<
   TinyPedidoItensRow,
-  "id_pedido" | "quantidade" | "nome_produto"
+  "id_pedido" | "quantidade" | "nome_produto" | "codigo_produto"
 > & {
   tiny_produtos?: Pick<TinyProdutosRow, "imagem_url"> | null;
 };
@@ -182,7 +182,7 @@ export async function GET(req: NextRequest) {
     if (orderIds.length) {
       const { data: itensData, error: itensError } = await supabaseAdmin
         .from("tiny_pedido_itens")
-        .select("id_pedido, quantidade, nome_produto, tiny_produtos(imagem_url)")
+        .select("id_pedido, quantidade, nome_produto, codigo_produto, tiny_produtos(imagem_url)")
         .in("id_pedido", orderIds);
 
       if (itensError) {
@@ -203,11 +203,39 @@ export async function GET(req: NextRequest) {
         return acc;
       }, {});
 
+      // Fallback: buscar imagem pelo código do produto, caso a relação tiny_produtos esteja vazia
+      const codigosParaBuscar = new Set<string>();
+      for (const row of itensRows) {
+        if (row.tiny_produtos?.imagem_url) continue;
+        if (typeof row.codigo_produto === "string" && row.codigo_produto.trim()) {
+          codigosParaBuscar.add(row.codigo_produto.trim());
+        }
+      }
+
+      let imagemPorCodigo: Record<string, string> = {};
+      if (codigosParaBuscar.size) {
+        const { data: produtosPorCodigo, error: produtosCodigoError } = await supabaseAdmin
+          .from("tiny_produtos")
+          .select("codigo, imagem_url")
+          .in("codigo", Array.from(codigosParaBuscar));
+        if (produtosCodigoError) {
+          throw produtosCodigoError;
+        }
+        imagemPorCodigo = (produtosPorCodigo ?? []).reduce<Record<string, string>>((acc, row) => {
+          const codigo = typeof row.codigo === "string" ? row.codigo.trim() : "";
+          if (codigo && row.imagem_url) acc[codigo] = row.imagem_url;
+          return acc;
+        }, {});
+      }
+
       for (const row of itensRows) {
         const idPedido = row.id_pedido;
         if (typeof idPedido !== "number") continue;
         if (primeiraImagemMap[idPedido]) continue;
-        const imagem = row.tiny_produtos?.imagem_url ?? null;
+        const codigo = typeof row.codigo_produto === "string" ? row.codigo_produto.trim() : "";
+        const imagemFromProduto = row.tiny_produtos?.imagem_url ?? null;
+        const imagemFromCodigo = codigo ? imagemPorCodigo[codigo] ?? null : null;
+        const imagem = imagemFromProduto ?? imagemFromCodigo ?? null;
         if (imagem) {
           primeiraImagemMap[idPedido] = imagem;
         }
