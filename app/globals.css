@@ -372,6 +372,33 @@
 
 :root.dark .glass-tint { background: linear-gradient(150deg, rgba(16, 22, 50, 0.54), rgba(16, 22, 50, 0.46)); }
 
+@media (prefers-reduced-transparency: reduce), (prefers-reduced-motion: reduce) {
+  .glass-panel,
+  .glass-row,
+  .app-card,
+  .glass-tint,
+  .product-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  :root.dark .glass-panel,
+  :root.dark .glass-row,
+  :root.dark .app-card,
+  :root.dark .glass-tint,
+  :root.dark .product-card {
+    background: rgba(10, 12, 24, 0.62);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  body {
+    transform: translateZ(0);
+  }
+}
+
 .scrollbar-hide {
   scrollbar-width: none;
 }
