@@ -795,13 +795,13 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
 
 function SummaryCard({ label, value, helper, icon }: { label: string; value: string; helper: string; icon: ReactNode }) {
   return (
-    <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/80 dark:bg-slate-900/70 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs uppercase tracking-[0.25em] text-muted">{label}</p>
-        <span className="text-[var(--accent)]">{icon}</span>
+    <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/92 dark:bg-slate-900/75 shadow-[0_18px_60px_-45px_rgba(15,23,42,0.55)] backdrop-blur-xl p-5 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500 dark:text-slate-300">{label}</p>
+        <span className="text-[var(--accent)] bg-[var(--accent)]/10 rounded-full p-2">{icon}</span>
       </div>
-      <p className="text-2xl font-semibold text-[var(--text-main)]">{value}</p>
-      <p className="text-[11px] text-muted">{helper}</p>
+      <p className="text-2xl font-semibold text-[var(--text-main)] leading-tight">{value}</p>
+      <p className="text-[12px] text-muted">{helper}</p>
     </div>
   );
 }
