@@ -54,7 +54,7 @@ export function ThemeToggle() {
         Aparência
       </span>
 
-      <div className="inline-flex rounded-full border border-slate-200/70 bg-white/80 text-[11px] shadow-sm overflow-hidden dark:border-slate-600/70 dark:bg-slate-900/80">
+      <div className="inline-flex rounded-full border border-slate-200/70 bg-white/80 text-[11px] overflow-hidden dark:border-slate-600/70 dark:bg-slate-900/80">
         <button
           type="button"
           onClick={() => setMode('light')}

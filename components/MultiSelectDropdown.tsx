@@ -113,7 +113,7 @@ export function MultiSelectDropdown({
         ReactDOM.createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] bg-white/60 dark:bg-slate-950/60 border border-white/40 dark:border-slate-700/40 rounded-2xl shadow-lg"
+            className="fixed z-[9999] bg-white/60 dark:bg-slate-950/60 border border-white/40 dark:border-slate-700/40 rounded-2xl"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,

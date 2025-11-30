@@ -2,8 +2,27 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
 import Image from 'next/image';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/src/types/db-public';
+
+let cachedSupabase: SupabaseClient<Database> | null = null;
+
+async function getSupabaseClient() {
+  if (!cachedSupabase) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase env vars ausentes');
+    }
+
+    cachedSupabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+  }
+
+  return cachedSupabase;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +36,7 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMsg(null);
 
+    const supabase = await getSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -97,7 +117,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-full font-semibold bg-[var(--accent)] text-white shadow-[0_14px_35px_rgba(0,157,168,0.35)] hover:opacity-90 transition disabled:opacity-60"
+            className="w-full py-3 rounded-full font-semibold bg-[var(--accent)] text-white hover:opacity-90 transition disabled:opacity-60"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

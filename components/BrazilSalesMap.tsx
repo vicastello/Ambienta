@@ -521,11 +521,11 @@ export function BrazilSalesMap({
 
         {/* Extra SVG selection/hover styles for glassy highlight (borderless) */}
         <style jsx global>{`
-          .rvm-svg path { transition: fill 0.18s ease, filter 0.14s ease, transform 0.12s ease; stroke: none !important; pointer-events: auto !important; }
+          .rvm-svg path { transition: fill 0.18s ease, transform 0.12s ease; stroke: none !important; pointer-events: auto !important; }
           .rvm-svg, .rvm-svg svg { pointer-events: auto !important; }
           .rvm-svg { position: relative; }
-          .rvm-svg path:hover { filter: drop-shadow(0 12px 30px rgba(0,110,118,0.12)); transform: translateY(-2px) scale(1.01); }
-          .rvm-svg path[aria-selected="true"] { filter: drop-shadow(0 18px 44px rgba(0,110,118,0.16)); transform: translateY(-4px) scale(1.02); }
+          .rvm-svg path:hover { transform: translateY(-2px) scale(1.01); }
+          .rvm-svg path[aria-selected="true"] { transform: translateY(-4px) scale(1.02); }
           .rvm-svg path[aria-selected="true"] ~ g, .rvm-svg path[aria-selected="true"] { outline: none; }
         `}</style>
         {/* Tooltip rendered into document.body via portal so it's not affected by ancestor transforms/stacking contexts */}
@@ -535,13 +535,12 @@ export function BrazilSalesMap({
           const tooltipStyle: CSSProperties = { position: 'fixed', zIndex: 11000, pointerEvents: 'none', left, top, transition: 'left 0.08s linear, top 0.08s linear' };
           return createPortal(
             <div style={tooltipStyle}>
-            <div className="rounded-md px-3 py-2 text-xs shadow-lg" style={{
+            <div className="rounded-md px-3 py-2 text-xs" style={{
               background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.28))',
               // no solid border around the tooltip itself to keep glassy feel
               border: '1px solid rgba(255,255,255,0.06)',
               backdropFilter: 'blur(8px) saturate(110%)',
               WebkitBackdropFilter: 'blur(8px) saturate(110%)',
-              boxShadow: '0 8px 30px rgba(8,15,22,0.08)'
             }}>
               <div className="font-semibold text-slate-900 dark:text-white">{hoverInfo.name || hoverInfo.uf}</div>
               <div className="text-slate-600 dark:text-slate-300">
@@ -564,8 +563,7 @@ export function BrazilSalesMap({
             background: 'linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0.22))',
             border: '1px solid rgba(255,255,255,0.12)',
             backdropFilter: 'blur(10px) saturate(120%)',
-            WebkitBackdropFilter: 'blur(10px) saturate(120%)',
-            boxShadow: '0 12px 40px rgba(7,18,26,0.12)'
+            WebkitBackdropFilter: 'blur(10px) saturate(120%)'
           }}>
             <div className="flex items-center justify-between">
               <div className="font-semibold text-slate-900 dark:text-white">{selectedUF}</div>

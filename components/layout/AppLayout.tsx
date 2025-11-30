@@ -129,7 +129,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {/* Mobile backdrop */}
       {isMobile && (
         <div
-          className={`fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 ${
+          className={`fixed inset-0 z-40 bg-slate-900/60 transition-opacity duration-300 ${
             isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           onClick={() => setIsMobileMenuOpen(false)}
@@ -147,7 +147,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
         onMouseLeave={() => !isMobile && setIsHovered(false)}
       >
         {/* Glassmorphism background */}
-        <div className="absolute inset-0 glass-panel border-r border-white/50 dark:border-slate-800/50" />
+        <div className="absolute inset-0 glass-panel glass-tint border-r border-white/50 dark:border-slate-800/50" />
 
         <div className="relative h-full flex flex-col">
           {/* Header */}
@@ -185,8 +185,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
                   }}
                   className={`group relative flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200 ${
                     active
-                      ? 'bg-gradient-to-r from-[#009DA8]/15 via-[#00B5C3]/10 to-transparent text-[#009DA8] dark:text-[#00B5C3] shadow-md shadow-[#009DA8]/15'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-white/60 hover:text-slate-900 dark:hover:bg-slate-800/60'
+                      ? 'bg-gradient-to-r from-[#009DA8]/15 via-[#00B5C3]/10 to-transparent text-[#009DA8] dark:text-[#00B5C3]'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 hover:text-slate-900 dark:hover:bg-slate-800/60'
                   }`}
                 >
                   {/* Active indicator */}
@@ -258,11 +258,11 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
       {/* Mobile top bar */}
           {isMobile && (
-          <div className="lg:hidden fixed top-0 inset-x-0 z-40 px-4 py-3 grid grid-cols-3 items-center glass-panel border-b border-white/60 dark:border-slate-800/60">
+          <div className="lg:hidden fixed top-0 inset-x-0 z-40 px-4 py-3 grid grid-cols-3 items-center glass-panel glass-tint border-b border-white/60 dark:border-slate-800/60">
             <div className="flex justify-start">
               <button
                 onClick={() => setIsMobileMenuOpen((open) => !open)}
-                className="rounded-2xl border border-white/60 dark:border-slate-800/70 bg-white/70 dark:bg-slate-800/70 p-2 text-slate-700 dark:text-slate-200 shadow-sm"
+                className="rounded-2xl border border-white/40 dark:border-slate-800/70 bg-white/70 dark:bg-slate-800/70 p-2 text-slate-700 dark:text-slate-200"
                 aria-label="Abrir menu"
               >
                 {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -320,7 +320,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
           <div className="relative z-10 space-y-6">
             {title && (
-              <header className="rounded-[32px] shadow-inner shadow-white/40 border border-white/50 dark:border-slate-800/50 glass-panel shadow-[0_15px_45px_rgba(15,23,42,0.12)] px-6 py-5 flex flex-col gap-2">
+              <header className="rounded-[32px] border border-white/40 dark:border-slate-800/50 glass-panel glass-tint px-6 py-5 flex flex-col gap-2">
                 <p className="text-xs uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Painel</p>
                 <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400">Acompanhe a saúde do seu e-commerce em uma experiência visual inspirada em apps iOS.</p>
@@ -337,7 +337,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
       {/* Bottom nav (mobile) */}
       {isMobile && (
-        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-panel border-t border-white/60 dark:border-slate-800/60 shadow-[0_-10px_30px_rgba(15,23,42,0.18)]">
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-panel glass-tint border-t border-white/40 dark:border-slate-800/60">
           <div className="grid grid-cols-4 gap-1 px-2 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2">
             {MOBILE_NAV_ITEMS.map((item) => {
               const active = pathname === item.href;

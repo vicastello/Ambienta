@@ -23,6 +23,12 @@
 - Client components fetch through the APIs above (avoid direct Supabase in the UI); filters/cache keys are persisted (e.g., `tiny_dash_filters_v1`). Reuse `MultiSelectDropdown`, `BrazilSalesMap`, existing glassmorphism/gradient styles from `globals.css`.
 - Map Tiny payloads with `tinyMapping` helpers (`normalizarCanalTiny`, `descricaoSituacao`, `parseValorTiny`, `extrairDataISO`, `TODAS_SITUACOES`) to keep status/channel labels consistent.
 
+## Runtime & Performance
+- `app/dashboard/DashboardClient.tsx` cacheia resumo/global/situações/gráficos em `localStorage` (`tiny_dash_state_v1:*`) via `readCacheEntry` + `isCacheEntryFresh`. Use esses helpers e honre os TTLs (~90–180 s) quando criar novos cards ou ajustes para não saturar `/api/tiny/dashboard/resumo`.
+- Listas com paginação (pedidos, produtos etc.) devem passar por `lib/staleCache.ts` (`staleWhileRevalidate`) e manter debounces/search-submit existentes em vez de refazer `fetch` com `cache: 'no-store'` a cada digitação.
+- O PDF de compras (`jspdf` + `jspdf-autotable`) carrega dinamicamente; preserve o botão com spinner “Gerando…”/estado desabilitado para evitar cliques duplicados e mantenha o debounce de 350 ms ao recalcular sugestões.
+- Ao adicionar novos fluxos client-heavy, priorize compartilhar requisições já existentes, checar caches antes de buscar novamente e respeitar os auto-refresh intervals configurados.
+
 ## Scripts & Ops
 - Historical imports/backfills: `npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD` (also enriches frete/canais); other ops scripts live in `scripts/README.md` and are mainly for historical enrichment now that new pedidos already come enriched (frete + canal).
 - Dev loop: `npm run dev` plus `npm run dev:cron` (or `npm run dev:full` with `concurrently`); logs go to `sync_logs` and `dev-cron.log`. Apply SQL in `supabase/migrations/` for pg_cron/pg_net jobs and `migrations/` for schema via the helper scripts if needed.
@@ -31,5 +37,6 @@
 - Required env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`; optional: `TINY_TOKEN_URL`, `PROCESS_IN_APP`, `PROCESS_BATCH_DAYS`, `FRETE_ENRICH_MAX_PASSES`, `ENABLE_INLINE_FRETE_ENRICHMENT`, `CHANNEL_NORMALIZE_MAX_PASSES/BATCH`, `GEMINI_API_KEY`/`GOOGLE_GEMINI_API_KEY`, `GEMINI_API_BASE_URL`, `GEMINI_API_VERSION`, `CRON_SECRET`.
 - Respect Tiny rate limits: keep batch sizes/delays from `runFreteEnrichment`, `sincronizarItensPorPedidos`, and Tiny list helpers or you’ll 429. When writing `tiny_orders`, go through `upsertOrdersPreservingEnriched` to avoid wiping enriched frete/canal/cidade/uf.
 - Supabase cron/trigger SQL hardcodes `https://gestor-tiny.vercel.app`; update those migrations if the production domain changes.
+- Backups locais seguem o padrão `backup-gestor-tiny-YYYYMMDD.tar.gz` (excluir `.git`, `node_modules`, `.next` e tarballs anteriores). Dumps de banco vivem em `supabase-export/` ou são gerados via `supabase db dump/export`; não versione arquivos gigantes.
 
 Feedback welcome—if anything is unclear or missing, please shout and we’ll refine.
