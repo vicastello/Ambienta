@@ -269,10 +269,9 @@ export async function syncProdutosFromTiny(
   let enrichEstoque =
     typeof options.enrichEstoque === 'boolean'
       ? options.enrichEstoque
-      : true;
-  if (estoqueOnly && typeof options.enrichEstoque !== 'boolean') {
-    enrichEstoque = true;
-  }
+      : estoqueOnly
+        ? true
+        : false;
   let workers = 4;
   if (typeof options.workers === 'number' && Number.isFinite(options.workers)) {
     workers = Math.max(1, Math.floor(options.workers));
@@ -287,14 +286,6 @@ export async function syncProdutosFromTiny(
   if (mode === 'cron') {
     limit = Math.min(limit, estoqueOnly ? 50 : 40);
     workers = 1;
-    if (!estoqueOnly && typeof options.enrichEstoque !== 'boolean') {
-      enrichEstoque = false;
-    }
-  }
-
-  if (mode === 'backfill' && typeof options.enrichEstoque !== 'boolean') {
-    // Backfill prioriza velocidade; só enriquece estoque se solicitarem explicitamente
-    enrichEstoque = false;
   }
 
   const offsetStart = Math.max(0, options.offset ?? 0);
