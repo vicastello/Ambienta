@@ -49,3 +49,22 @@ export async function upsertProdutosSyncCursor(
   if (error) throw error;
   return data as ProdutosSyncCursorRow;
 }
+
+export async function resetProdutosSyncCursor(cursorKey: string): Promise<ProdutosSyncCursorRow | null> {
+  const before = await getProdutosSyncCursor(cursorKey);
+
+  const { data, error } = await supabaseAdmin
+    .from(PRODUTOS_CURSOR_TABLE)
+    .update({
+      updated_since: null,
+      latest_data_alteracao: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('cursor_key', cursorKey)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  const after = data ? (data as ProdutosSyncCursorRow) : null;
+  return after ?? null;
+}
