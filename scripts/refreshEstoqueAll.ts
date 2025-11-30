@@ -2,7 +2,9 @@
 // Uso: LIMIT=200 OFFSET=0 BATCH=10 DELAY=300 RETRIES429=3 npx tsx scripts/refreshEstoqueAll.ts
 
 import { config as loadEnv } from 'dotenv';
-loadEnv({ path: '.env.local' });
+import path from 'path';
+
+loadEnv({ path: path.resolve(__dirname, '..', '.env.local') });
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
 import { obterEstoqueProduto, TinyApiError } from '../lib/tinyApi';
