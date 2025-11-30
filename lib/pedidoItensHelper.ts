@@ -9,6 +9,11 @@ import { supabaseAdmin } from './supabaseAdmin';
 import { obterPedidoDetalhado } from './tinyApi';
 import { getErrorMessage } from './errors';
 
+const toNumberOrNull = (value: any): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
 interface PedidoItemData {
   id_pedido: number;
   id_produto_tiny: number | null;
@@ -56,17 +61,17 @@ export async function salvarItensPedido(
 
       const itensParaSalvar = itensRaw.map((item) => {
         const produto = (item as any).produto || item;
-        const qtd = Number(item.quantidade ?? 0);
-        const valorUnit = Number(item.valorUnitario ?? 0);
-        const valorTot = Number(item.valorTotal ?? valorUnit * qtd);
+        const qtd = toNumberOrNull(item.quantidade) ?? 0;
+        const valorUnit = toNumberOrNull(item.valorUnitario) ?? 0;
+        const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
         return {
           id_pedido: idPedidoLocal,
-          id_produto_tiny: produto.id ?? item.idProduto ?? null,
+          id_produto_tiny: toNumberOrNull(produto.id ?? item.idProduto),
           codigo_produto: produto.codigo ?? item.codigo ?? null,
           nome_produto: produto.descricao ?? produto.nome ?? item.descricao ?? 'Sem descrição',
-          quantidade: Number.isFinite(qtd) ? qtd : 0,
-          valor_unitario: Number.isFinite(valorUnit) ? valorUnit : 0,
-          valor_total: Number.isFinite(valorTot) ? valorTot : 0,
+          quantidade: qtd ?? 0,
+          valor_unitario: valorUnit ?? 0,
+          valor_total: valorTot ?? 0,
           info_adicional: item.informacoesAdicionais || null,
         };
       });
@@ -120,14 +125,17 @@ export async function salvarItensPedido(
     // Preparar dados - API retorna produto.id, produto.codigo, etc
     const itensParaSalvar: any[] = itens.map((item) => {
       const produto = (item as any).produto || item;
+      const qtd = toNumberOrNull(item.quantidade) ?? 0;
+      const valorUnit = toNumberOrNull(item.valorUnitario) ?? 0;
+      const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
       return {
         id_pedido: idPedidoLocal,
-        id_produto_tiny: produto.id || item.idProduto || null,
+        id_produto_tiny: toNumberOrNull(produto.id ?? item.idProduto),
         codigo_produto: produto.codigo || item.codigo || null,
         nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
-        quantidade: Number(item.quantidade || 0),
-        valor_unitario: Number(item.valorUnitario || 0),
-        valor_total: Number(item.valorTotal || 0),
+        quantidade: qtd,
+        valor_unitario: valorUnit,
+        valor_total: valorTot,
         info_adicional: item.informacoesAdicionais || null,
       };
     });
