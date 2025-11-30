@@ -438,7 +438,7 @@ export default function PedidosClient() {
   );
 
   return (
-    <div className="space-y-8 pb-14 max-w-[1440px] mx-auto px-4 lg:px-6">
+    <div className="space-y-8 pb-16 max-w-[1440px] mx-auto px-4 lg:px-8">
       {/* Intro banner (matching dashboard hero) */}
       <section className="rounded-[32px] border border-white/60 dark:border-white/10 bg-white/60 dark:bg-slate-900/50 shadow-[0_22px_70px_-48px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5 md:p-6">
         <p className="text-[12px] uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">Painel</p>
@@ -448,7 +448,7 @@ export default function PedidosClient() {
         </p>
       </section>
 
-      <section className="rounded-[36px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
+      <section className="rounded-[38px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/90 dark:border-white/10 shadow-[0_30px_90px_-45px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
@@ -804,10 +804,10 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
 
 function SummaryCard({ label, value, helper, icon }: { label: string; value: string; helper: string; icon: ReactNode }) {
   return (
-    <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/92 dark:bg-slate-900/75 shadow-[0_18px_60px_-45px_rgba(15,23,42,0.55)] backdrop-blur-xl p-5 space-y-2">
+    <div className="rounded-[32px] border border-white/80 dark:border-white/12 bg-white/96 dark:bg-slate-900/80 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl px-5 py-6 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500 dark:text-slate-300">{label}</p>
-        <span className="text-[var(--accent)] bg-[var(--accent)]/10 rounded-full p-2">{icon}</span>
+        <p className="text-[11px] uppercase tracking-[0.26em] text-slate-500 dark:text-slate-300">{label}</p>
+        <span className="text-[var(--accent)] bg-[var(--accent)]/12 rounded-full p-2">{icon}</span>
       </div>
       <p className="text-2xl font-semibold text-[var(--text-main)] leading-tight">{value}</p>
       <p className="text-[12px] text-muted">{helper}</p>
