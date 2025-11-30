@@ -439,7 +439,7 @@ export default function PedidosClient() {
 
   return (
     <div className="space-y-8 pb-10">
-      <section className="rounded-[36px] bg-gradient-to-r from-sky-50 via-indigo-50 to-white dark:from-slate-800 dark:via-slate-900 dark:to-slate-900 p-8 relative overflow-hidden">
+      <section className="rounded-[32px] bg-gradient-to-br from-white/90 via-white/80 to-sky-50/70 dark:from-slate-900/85 dark:via-slate-900/75 dark:to-slate-900/65 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
@@ -451,7 +451,7 @@ export default function PedidosClient() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={fetchOrders}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/20 bg-white/80 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/20 bg-white/90 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white shadow-sm"
             >
               <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Atualizar lista
             </button>
@@ -459,7 +459,7 @@ export default function PedidosClient() {
               href="https://erp.tiny.com.br/vendas#list"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold shadow-sm"
             >
               <ExternalLink className="w-4 h-4" /> Ver no Tiny
             </a>
