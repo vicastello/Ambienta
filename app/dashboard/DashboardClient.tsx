@@ -23,44 +23,11 @@ import {
   X,
 } from 'lucide-react';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
-import dynamic from 'next/dynamic';
+import { BrazilSalesMap } from '@/components/BrazilSalesMap';
+import { ChannelDistributionChart } from './components/charts/ChannelDistributionChart';
+import { DailyRevenueChart } from './components/charts/DailyRevenueChart';
 import type { CustomTooltipFormatter } from './components/charts/ChartTooltips';
-
-const BrazilSalesMap = dynamic(
-  () => import('@/components/BrazilSalesMap').then((mod) => mod.BrazilSalesMap),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-[420px] rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-slate-800/70 flex items-center justify-center text-sm text-slate-500 dark:text-slate-400">
-        Carregando mapa de vendas…
-      </div>
-    ),
-  }
-);
-
-const MicroTrendChart = dynamic(
-  () => import('./components/charts/MicroTrendChart').then((mod) => mod.MicroTrendChart),
-  {
-    ssr: false,
-    loading: () => <div className="h-32 w-full animate-pulse rounded-2xl bg-white/60 dark:bg-slate-900/30" />,
-  }
-);
-
-const DailyRevenueChart = dynamic(
-  () => import('./components/charts/DailyRevenueChart').then((mod) => mod.DailyRevenueChart),
-  {
-    ssr: false,
-    loading: () => <div className="h-80 w-full animate-pulse rounded-[32px] bg-white/60 dark:bg-slate-900/30" />,
-  }
-);
-
-const ChannelDistributionChart = dynamic(
-  () => import('./components/charts/ChannelDistributionChart').then((mod) => mod.ChannelDistributionChart),
-  {
-    ssr: false,
-    loading: () => <div className="relative h-72 w-full animate-pulse rounded-[36px] bg-white/60 dark:bg-slate-900/30 sm:h-80" />,
-  }
-);
+import { MicroTrendChart } from './components/charts/MicroTrendChart';
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = '#009DA8';
