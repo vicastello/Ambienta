@@ -567,7 +567,7 @@ export async function syncProdutosFromTiny(
     }
     await Promise.all(results);
   }
-  const situacaoParam = options.situacao === 'all' ? undefined : situacaoFiltro;
+  const situacaoParam = options.situacao === 'all' ? undefined : (situacaoFiltro as 'A' | 'I' | 'E' | undefined);
   const maxPageAttempts = mode === 'backfill' ? maxPages : 1;
 
   const buildMeta = (extra?: Record<string, unknown>) => ({
