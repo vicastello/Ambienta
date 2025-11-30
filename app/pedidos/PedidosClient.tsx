@@ -439,7 +439,7 @@ export default function PedidosClient() {
 
   return (
     <div className="space-y-8 pb-12 max-w-[1400px] mx-auto px-4 lg:px-6">
-      <section className="rounded-[36px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
+      <section className="rounded-[36px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
@@ -497,12 +497,12 @@ export default function PedidosClient() {
           )}
         </div>
 
-        <aside className="hidden lg:block rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
+        <aside className="hidden lg:block rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
           {filtersPanel}
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
+          <div className="rounded-[32px] bg-white/96 dark:bg-slate-900/78 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
@@ -542,7 +542,7 @@ export default function PedidosClient() {
             </div>
           </div>
 
-          <div className="rounded-[36px] bg-white/95 dark:bg-slate-900/80 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] overflow-hidden backdrop-blur-xl">
+          <div className="rounded-[36px] bg-white/96 dark:bg-slate-900/82 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] overflow-hidden backdrop-blur-xl">
             {loading ? (
               <div className="flex items-center justify-center py-16 text-muted text-sm gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" /> Carregando pedidos...
@@ -551,7 +551,7 @@ export default function PedidosClient() {
               <div className="text-center py-16 text-muted text-sm">Nenhum pedido encontrado com os filtros atuais.</div>
             ) : (
               <>
-                <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr] bg-slate-50 dark:bg-slate-800 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1fr] bg-white/70 dark:bg-slate-800/70 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">
                   <div className="px-6 py-4 flex items-center gap-2">
                     Pedido / Cliente
                     <button onClick={() => onSort("numero_pedido")}>
@@ -635,7 +635,7 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
   const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <article className="p-4 flex flex-col gap-3 rounded-3xl border border-white/60 dark:border-slate-800/60 bg-white/92 dark:bg-slate-900/75 shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl">
+    <article className="p-4 flex flex-col gap-3 rounded-3xl border border-white/70 dark:border-slate-800/60 bg-white/96 dark:bg-slate-900/78 shadow-[0_18px_60px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl">
       <div className="flex items-start gap-3">
         <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
           {order.primeiraImagem ? (
@@ -717,7 +717,7 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
   const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <article className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm hover:bg-white/60 dark:hover:bg-slate-800/50 transition">
+    <article className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm hover:bg-white/70 dark:hover:bg-slate-800/60 transition">
       <div className="px-6 py-4 space-y-1">
         <div className="flex items-center gap-3">
           <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
