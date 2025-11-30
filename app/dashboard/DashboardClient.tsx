@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -424,6 +432,13 @@ export default function DashboardClient() {
   const [erroInsights, setErroInsights] = useState<string | null>(null);
   const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const [insightsBaseline, setInsightsBaseline] = useState<DashboardResumo | null>(null);
+  const [isFilterPending, startTransition] = useTransition();
+  const deferredResumo = useDeferredValue(resumo);
+  const deferredResumoGlobal = useDeferredValue(resumoGlobal);
+  const deferredResumoChart = useDeferredValue(resumoChart);
+  const dashboardSource = deferredResumo ?? resumo;
+  const dashboardGlobalSource = deferredResumoGlobal ?? resumoGlobal;
+  const dashboardChartSource = deferredResumoChart ?? resumoChart;
 
   type RecentOrder = {
     tinyId: number;
@@ -438,6 +453,44 @@ export default function DashboardClient() {
   };
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [loadingRecentOrders, setLoadingRecentOrders] = useState<boolean>(false);
+
+  const handlePresetChange = (value: DatePreset) => {
+    startTransition(() => {
+      setPreset(value);
+      if (value !== 'custom') {
+        setCustomStart(null);
+        setCustomEnd(null);
+      }
+    });
+  };
+
+  const handleCustomStartChange = (value: string | null) => {
+    startTransition(() => setCustomStart(value));
+  };
+
+  const handleCustomEndChange = (value: string | null) => {
+    startTransition(() => setCustomEnd(value));
+  };
+
+  const handleChannelsChange = (values: string[]) => {
+    startTransition(() => setCanaisSelecionados(values));
+  };
+
+  const handleSituationsChange = (values: number[]) => {
+    startTransition(() => setSituacoesSelecionadas(values));
+  };
+
+  const handleChartPresetChange = (value: ChartPreset) => {
+    startTransition(() => setChartPreset(value));
+  };
+
+  const handleChartCustomStartChange = (value: string | null) => {
+    startTransition(() => setChartCustomStart(value));
+  };
+
+  const handleChartCustomEndChange = (value: string | null) => {
+    startTransition(() => setChartCustomEnd(value));
+  };
 
   // Refs para evitar chamadas simultâneas
   const resumoRequestId = useRef(0);
@@ -938,11 +991,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       if (!autoTrigger) setInsights([]);
       setLoadingInsights(true);
       setErroInsights(null);
-      const payload = {
-        resumoAtual: insightsBaseline,
-        resumoGlobal: null,
-        visaoFiltrada: resumo,
-        filtrosVisuais: {
+          const payload = {
+            resumoAtual: insightsBaseline,
+            resumoGlobal: null,
+            visaoFiltrada: dashboardSource,
+            filtrosVisuais: {
           preset,
           customStart,
           customEnd,
@@ -1039,30 +1092,31 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   }
 
   const chartData = useMemo(() => {
-    if (!resumoChart) return [];
+    if (!dashboardChartSource) return [];
+    const source = dashboardChartSource;
     const mapaAtual = new Map<string, number>();
     const mapaAnterior = new Map<string, number>();
-    resumoChart.periodoAtual.vendasPorDia.forEach((d) => mapaAtual.set(d.data, d.totalDia));
-    resumoChart.periodoAnterior.vendasPorDia.forEach((d) => mapaAnterior.set(d.data, d.totalDia));
+    source.periodoAtual.vendasPorDia.forEach((d) => mapaAtual.set(d.data, d.totalDia));
+    source.periodoAnterior.vendasPorDia.forEach((d) => mapaAnterior.set(d.data, d.totalDia));
     let dates: string[] = [];
     if (chartPreset === 'month') {
-      let cursor = resumoChart.periodoAnterior.dataInicial;
+      let cursor = source.periodoAnterior.dataInicial;
       const diasSet = new Set<string>();
-      while (cursor <= resumoChart.periodoAnterior.dataFinal) {
+      while (cursor <= source.periodoAnterior.dataFinal) {
         const dia = cursor.split('-')[2];
         diasSet.add(dia);
         cursor = addDays(cursor, 1);
       }
-      cursor = resumoChart.periodoAtual.dataInicial;
-      while (cursor <= resumoChart.periodoAtual.dataFinal) {
+      cursor = source.periodoAtual.dataInicial;
+      while (cursor <= source.periodoAtual.dataFinal) {
         const dia = cursor.split('-')[2];
         diasSet.add(dia);
         cursor = addDays(cursor, 1);
       }
       dates = Array.from(diasSet).sort((a, b) => Number(a) - Number(b));
     } else {
-      let cursor = resumoChart.periodoAtual.dataInicial;
-      while (cursor <= resumoChart.periodoAtual.dataFinal) {
+      let cursor = source.periodoAtual.dataInicial;
+      while (cursor <= source.periodoAtual.dataFinal) {
         dates.push(cursor);
         cursor = addDays(cursor, 1);
       }
@@ -1072,19 +1126,19 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       let dataAtual: string;
       if (chartPreset === 'month') {
         diaDoMes = dateOrDay.padStart(2, '0');
-        dataAtual = resumoChart.periodoAtual.dataInicial.slice(0, 8) + diaDoMes;
+        dataAtual = source.periodoAtual.dataInicial.slice(0, 8) + diaDoMes;
       } else {
         dataAtual = dateOrDay;
         diaDoMes = dateOrDay.split('-')[2];
       }
-      const dataAnteriorCorrespondente = resumoChart.periodoAnterior.dataInicial.slice(0, 8) + diaDoMes;
+      const dataAnteriorCorrespondente = source.periodoAnterior.dataInicial.slice(0, 8) + diaDoMes;
       return {
         data: diaDoMes,
         atual: mapaAtual.get(dataAtual) ?? 0,
         anterior: mapaAnterior.get(dataAnteriorCorrespondente) ?? 0,
       };
     });
-  }, [resumoChart, chartPreset]);
+  }, [dashboardChartSource, chartPreset]);
 
   const chartTicks = useMemo(() => {
     if (!chartData.length) return [0, 1000];
@@ -1097,9 +1151,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   }, [chartData]);
 
   const canaisData = useMemo(() => {
-    if (!resumo) return [];
-    const total = resumo.canais.reduce((acc, canal) => acc + (canal.totalValor || 0), 0);
-    return resumo.canais
+    if (!dashboardSource) return [];
+    const total = dashboardSource.canais.reduce((acc, canal) => acc + (canal.totalValor || 0), 0);
+    return dashboardSource.canais
       .map((c, idx) => {
         const name = c.canal || 'Outros';
         const baseColor = MARKETPLACE_COLORS[name] ?? COLORS_PALETTE[idx % COLORS_PALETTE.length];
@@ -1112,23 +1166,23 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         };
       })
       .sort((a, b) => b.value - a.value);
-  }, [resumo]);
+  }, [dashboardSource]);
 
   const totalCanaisValue = useMemo(() => {
     return canaisData.reduce((acc, canal) => acc + (canal.value ?? 0), 0);
   }, [canaisData]);
 
   const variacaoValorCards = useMemo(() => {
-    if (!resumo) return { abs: 0, perc: 0 };
-    const atual = resumo.periodoAtual.totalValor;
-    const ant = resumo.periodoAnteriorCards.totalValor;
+    if (!dashboardSource) return { abs: 0, perc: 0 };
+    const atual = dashboardSource.periodoAtual.totalValor;
+    const ant = dashboardSource.periodoAnteriorCards.totalValor;
     const abs = atual - ant;
     const perc = ant > 0 ? (atual / ant - 1) * 100 : 0;
     return { abs, perc };
-  }, [resumo]);
+  }, [dashboardSource]);
 
-  const resumoAtual = resumo?.periodoAtual;
-  const resumoGlobalAtual = resumoGlobal?.periodoAtual;
+  const resumoAtual = dashboardSource?.periodoAtual;
+  const resumoGlobalAtual = dashboardGlobalSource?.periodoAtual;
 
   const sparkData = useMemo(() => {
     if (!resumoGlobalAtual) return [];
@@ -1176,7 +1230,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const mediaDiaria = diasMonitorados > 0 ? resumoGlobalAtual.totalValor / diasMonitorados : 0;
     const fretePerc = resumoGlobalAtual.totalValor > 0 ? (resumoGlobalAtual.totalFreteTotal / resumoGlobalAtual.totalValor) * 100 : 0;
     const melhorDia = [...resumoGlobalAtual.vendasPorDia].sort((a, b) => b.totalDia - a.totalDia)[0];
-    const melhorCanal = [...(resumo?.canais ?? [])].sort((a, b) => b.totalValor - a.totalValor)[0];
+    const melhorCanal = [...(dashboardSource?.canais ?? [])].sort((a, b) => b.totalValor - a.totalValor)[0];
 
     return [
       {
@@ -1200,7 +1254,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         helper: `${melhorCanal.canal} · ${melhorCanal.totalPedidos} pedidos`,
       },
     ].filter(Boolean) as Array<{ label: string; value: string; helper: string }>;
-  }, [resumoGlobalAtual, resumo]);
+  }, [resumoGlobalAtual, dashboardSource]);
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
   const totalProdutosVendidos = resumoAtual?.totalProdutosVendidos ?? 0;
@@ -1221,45 +1275,55 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
               <div className="grid grid-cols-3 gap-2 w-full min-w-0 max-w-full md:flex md:flex-nowrap md:justify-end md:overflow-visible">
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                   <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Período</p>
-                  <MultiSelectDropdown
-                    label="Período"
-                    options={[
-                      { value: 'today', label: 'Hoje' },
-                      { value: 'yesterday', label: 'Ontem' },
-                      { value: '7d', label: '7 dias' },
-                      { value: 'month', label: 'Mês atual' },
-                      { value: '3m', label: '3 meses' },
-                      { value: 'year', label: 'Ano' },
-                      { value: 'custom', label: 'Personalizado' },
-                    ]}
-                    selected={[preset]}
-                    onChange={(values) => setPreset(values[0] as DatePreset)}
-                    onClear={() => setPreset('month')}
-                    singleSelect
-                    displayFormatter={(values, options) => {
-                      if (!values.length) return 'Selecione...';
+                    <MultiSelectDropdown
+                      label="Período"
+                      options={[
+                        { value: 'today', label: 'Hoje' },
+                        { value: 'yesterday', label: 'Ontem' },
+                        { value: '7d', label: '7 dias' },
+                        { value: 'month', label: 'Mês atual' },
+                        { value: '3m', label: '3 meses' },
+                        { value: 'year', label: 'Ano' },
+                        { value: 'custom', label: 'Personalizado' },
+                      ]}
+                      selected={[preset]}
+                      onChange={(values) => handlePresetChange(values[0] as DatePreset)}
+                      onClear={() => handlePresetChange('month')}
+                      singleSelect
+                      displayFormatter={(values, options) => {
+                        if (!values.length) return 'Selecione...';
                       const option = options.find((opt) => opt.value === values[0]);
                       return option?.label ?? 'Selecione...';
                     }}
                     />
                     {preset === 'custom' && (
                       <div className="mt-3 flex items-center gap-2 text-xs">
-                        <input type="date" className="app-input flex-1" value={customStart ?? ''} onChange={(e) => setCustomStart(e.target.value || null)} />
+                        <input
+                          type="date"
+                          className="app-input flex-1"
+                          value={customStart ?? ''}
+                          onChange={(e) => handleCustomStartChange(e.target.value || null)}
+                        />
                         <span className="text-slate-400">a</span>
-                        <input type="date" className="app-input flex-1" value={customEnd ?? ''} onChange={(e) => setCustomEnd(e.target.value || null)} />
+                        <input
+                          type="date"
+                          className="app-input flex-1"
+                          value={customEnd ?? ''}
+                          onChange={(e) => handleCustomEndChange(e.target.value || null)}
+                        />
                       </div>
                     )}
                   </div>
 
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                     <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Canais</p>
-                    {resumo ? (
+                    {dashboardSource ? (
                       <MultiSelectDropdown
                         label="Canais"
-                        options={resumo.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
+                        options={dashboardSource.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
                         selected={canaisSelecionados}
-                        onChange={(values) => setCanaisSelecionados(values as string[])}
-                        onClear={() => setCanaisSelecionados([])}
+                        onChange={(values) => handleChannelsChange(values as string[])}
+                        onClear={() => handleChannelsChange([])}
                       />
                     ) : (
                       <p className="text-xs text-slate-400">Carregando…</p>
@@ -1268,19 +1332,22 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                     <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Situações</p>
-                    {resumo ? (
+                    {dashboardSource ? (
                       <MultiSelectDropdown
                         label="Situações"
-                        options={resumo.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
+                        options={dashboardSource.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
                         selected={situacoesSelecionadas}
-                        onChange={(values) => setSituacoesSelecionadas(values as number[])}
-                        onClear={() => setSituacoesSelecionadas([])}
+                        onChange={(values) => handleSituationsChange(values as number[])}
+                        onClear={() => handleSituationsChange([])}
                       />
                     ) : (
                       <p className="text-xs text-slate-400">Carregando…</p>
                     )}
                   </div>
-                </div>
+              </div>
+              {isFilterPending && (
+                <p className="text-xs text-slate-400 mt-1">Aplicando filtros…</p>
+              )}
 
               <div className="grid gap-5 md:grid-cols-2">
               <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 space-y-5 sm:space-y-6">
@@ -1525,7 +1592,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
           </div>
         )}
 
-        {!loading && !erro && resumo && resumoAtual && (
+        {!loading && !erro && dashboardSource && resumoAtual && (
           <div className="space-y-8">
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1554,7 +1621,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
                   {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
                 </p>
-                <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - resumo.periodoAnteriorCards.totalPedidos}</p>
+                  <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - dashboardSource.periodoAnteriorCards.totalPedidos}</p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1574,7 +1641,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
-                <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - resumo.periodoAnteriorCards.ticketMedio)}</p>
+                <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - dashboardSource.periodoAnteriorCards.ticketMedio)}</p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1597,7 +1664,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   {[['today', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['month', 'Mês']].map(([key, label]) => (
                     <button
                       key={key}
-                      onClick={() => setChartPreset(key as ChartPreset)}
+                      onClick={() => handleChartPresetChange(key as ChartPreset)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
                         chartPreset === key ? 'bg-[#009DA8] text-white' : 'bg-white/60 text-slate-500'
                       }`}
@@ -1614,13 +1681,23 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   </button>
                 </div>
               </div>
-              {chartPreset === 'custom' && (
-                <div className="flex items-center gap-2 mb-4 text-xs">
-                  <input type="date" className="app-input flex-1" value={chartCustomStart ?? ''} onChange={(e) => setChartCustomStart(e.target.value || null)} />
-                  <span className="text-slate-400">até</span>
-                  <input type="date" className="app-input flex-1" value={chartCustomEnd ?? ''} onChange={(e) => setChartCustomEnd(e.target.value || null)} />
-                </div>
-              )}
+                {chartPreset === 'custom' && (
+                  <div className="flex items-center gap-2 mb-4 text-xs">
+                    <input
+                      type="date"
+                      className="app-input flex-1"
+                      value={chartCustomStart ?? ''}
+                      onChange={(e) => handleChartCustomStartChange(e.target.value || null)}
+                    />
+                    <span className="text-slate-400">até</span>
+                    <input
+                      type="date"
+                      className="app-input flex-1"
+                      value={chartCustomEnd ?? ''}
+                      onChange={(e) => handleChartCustomEndChange(e.target.value || null)}
+                    />
+                  </div>
+                )}
               {loadingChart && <p className="text-xs text-slate-400 mb-2">Carregando…</p>}
               {erroChart && <p className="text-xs text-rose-500 mb-2">{erroChart}</p>}
               {complementMsg && <p className="text-xs text-slate-400 mb-2">{complementMsg}</p>}
@@ -1666,8 +1743,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <div className="grid gap-3 md:gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] w-full min-w-0">
                     <div className="min-w-0">
                       {(() => {
-                        const vendasUF = resumo?.mapaVendasUF ?? [];
-                        const vendasCidade = resumo?.mapaVendasCidade ?? [];
+                        const vendasUF = dashboardSource?.mapaVendasUF ?? [];
+                        const vendasCidade = dashboardSource?.mapaVendasCidade ?? [];
                         if (!vendasUF.length) return <p className="text-sm text-slate-400">Sem dados suficientes para o mapa neste período.</p>;
                         return (
                           <BrazilSalesMap dataUF={vendasUF} topCidades={vendasCidade.slice(0, 10)} />
@@ -1678,7 +1755,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                         <div>
                           <p className="text-xs uppercase tracking-[0.3em] text-slate-400 mb-2">Estados</p>
                           <div className="space-y-2">
-                            {((resumo?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
+                            {((dashboardSource?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
                               <div key={uf.uf} className="flex items-center justify-between rounded-xl glass-panel glass-tint border border-white/60 dark:border-white/10 px-3 py-2">
                                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{uf.uf}</div>
                                 <div className="text-right text-xs">
@@ -1687,7 +1764,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                 </div>
                               </div>
                             ))}
-                            {(!resumo?.mapaVendasUF || resumo.mapaVendasUF.length === 0) && (
+                            {(!dashboardSource?.mapaVendasUF || dashboardSource.mapaVendasUF.length === 0) && (
                               <p className="text-xs text-slate-400">Nenhum estado com vendas.</p>
                             )}
                           </div>
