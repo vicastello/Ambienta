@@ -11,9 +11,9 @@
     --glass-blur-2: 28px;
     --glass-blur-3: 34px;
     /* Cores base – modo claro */
-    --bg-body: #F5F7FA;
-    --bg-card: rgba(255, 255, 255, 0.6);
-    --bg-card-soft: rgba(255, 255, 255, 0.4);
+    --bg-body: #f0ece8;
+    --bg-card: rgba(255, 255, 255, 0.48);
+    --bg-card-soft: rgba(255, 255, 255, 0.32);
     --border-subtle: rgba(255, 255, 255, 0.4);
     --text-main: #020617;
     --text-muted: #6B7280;
@@ -74,18 +74,6 @@
     -webkit-backdrop-filter: blur(24px) saturate(1.05);
   }
 
-  .dark .liquid-orb.orb-1 {
-    background: radial-gradient(circle at 30% 30%, rgba(88, 125, 255, 0.6), rgba(70, 102, 194, 0.28));
-  }
-
-  .dark .liquid-orb.orb-2 {
-    background: radial-gradient(circle at 40% 40%, rgba(255, 132, 196, 0.45), rgba(140, 52, 120, 0.2));
-  }
-
-  .dark .liquid-orb.orb-3 {
-    background: radial-gradient(circle at 50% 50%, rgba(12, 173, 158, 0.48), rgba(12, 173, 158, 0.18));
-  }
-
   /* Liquid glass background (fixo, não se move com scroll) */
   .liquid-bg {
     position: relative;
@@ -99,13 +87,13 @@
     position: fixed;
     inset: -20%;
     background:
-      radial-gradient(circle at 18% 18%, rgba(231, 237, 247, 0.85), rgba(231, 237, 247, 0.35) 36%, transparent 64%),
-      radial-gradient(circle at 80% 16%, rgba(212, 222, 236, 0.75), rgba(212, 222, 236, 0.25) 34%, transparent 60%),
-      radial-gradient(circle at 22% 82%, rgba(217, 229, 240, 0.7), rgba(217, 229, 240, 0.22) 38%, transparent 62%),
-      radial-gradient(circle at 78% 82%, rgba(237, 236, 229, 0.65), rgba(230, 227, 218, 0.28) 40%, transparent 66%);
-    filter: blur(22px);
-    opacity: 0.55;
-    z-index: -3;
+      radial-gradient(circle at 18% 18%, rgba(255, 246, 250, 0.92), rgba(255, 246, 250, 0.4) 36%, transparent 66%),
+      radial-gradient(circle at 80% 16%, rgba(237, 230, 235, 0.8), rgba(226, 217, 223, 0.3) 34%, transparent 60%),
+      radial-gradient(circle at 24% 78%, rgba(217, 216, 212, 0.72), rgba(202, 200, 196, 0.34) 38%, transparent 62%),
+      radial-gradient(circle at 72% 84%, rgba(236, 230, 222, 0.62), rgba(222, 214, 204, 0.28) 40%, transparent 66%);
+    filter: blur(24px);
+    opacity: 0.66;
+    z-index: -5;
     pointer-events: none;
   }
 
@@ -113,45 +101,11 @@
     content: '';
     position: fixed;
     inset: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.16));
-    backdrop-filter: blur(28px) saturate(1.12);
-    -webkit-backdrop-filter: blur(28px) saturate(1.12);
-    z-index: -2;
+    background: linear-gradient(135deg, rgba(255, 247, 252, 0.18), rgba(222, 220, 216, 0.22));
+    backdrop-filter: blur(28px) saturate(1.1);
+    -webkit-backdrop-filter: blur(28px) saturate(1.1);
+    z-index: -4;
     pointer-events: none;
-  }
-
-  .liquid-orb {
-    position: fixed;
-    border-radius: 9999px;
-    filter: blur(28px);
-    opacity: 0.45;
-    mix-blend-mode: screen;
-    pointer-events: none;
-    z-index: -1;
-  }
-
-  .liquid-orb.orb-1 {
-    width: 360px;
-    height: 360px;
-    top: -40px;
-    right: 8%;
-    background: radial-gradient(circle at 30% 30%, rgba(208, 217, 232, 0.7), rgba(183, 194, 212, 0.22));
-  }
-
-  .liquid-orb.orb-2 {
-    width: 300px;
-    height: 300px;
-    bottom: 10%;
-    left: 10%;
-    background: radial-gradient(circle at 40% 40%, rgba(226, 226, 220, 0.65), rgba(203, 202, 195, 0.18));
-  }
-
-  .liquid-orb.orb-3 {
-    width: 260px;
-    height: 260px;
-    bottom: 18%;
-    right: 18%;
-    background: radial-gradient(circle at 50% 50%, rgba(186, 205, 210, 0.58), rgba(150, 176, 182, 0.2));
   }
 
   /* Corrige utilitários translucidos no modo escuro (cards herdados com bg-white/xx) */
@@ -200,7 +154,7 @@
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.2),
       inset 0 0 24px rgba(255, 255, 255, 0.12),
-      0 15px 45px rgba(15, 23, 42, 0.08);
+      0 15px 45px rgba(160, 163, 168, 0.08);
   }
 .app-card {
   border-radius: 2rem;
@@ -372,7 +326,7 @@
 
 /* Tons suaves para sobreposição translúcida (gradiente até transparente) */
 .glass-tint {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 0 18px rgba(103, 132, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 0 18px rgba(206, 190, 187, 0.20);
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.26));
   backdrop-filter: blur(24px) saturate(1.1);
 }

@@ -121,10 +121,6 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
   return (
     <div className="liquid-bg min-h-screen flex">
-      {/* Static background orbs for liquid glass effect */}
-      <div className="liquid-orb orb-1" aria-hidden />
-      <div className="liquid-orb orb-2" aria-hidden />
-      <div className="liquid-orb orb-3" aria-hidden />
 
       {/* Mobile backdrop */}
       {isMobile && (
