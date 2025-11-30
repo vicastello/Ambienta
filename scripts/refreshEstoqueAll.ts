@@ -72,15 +72,29 @@ async function main() {
         try {
           requests += 1;
           const estoque = await obterEstoqueProduto(token, produto.id_produto_tiny, {});
-          await upsertProdutosEstoque([
-            {
-              id_produto_tiny: produto.id_produto_tiny,
+          const { data: existing } = await supabaseAdmin
+            .from('tiny_produtos')
+            .select('id')
+            .eq('id_produto_tiny', produto.id_produto_tiny)
+            .limit(1);
+          if (!existing || !existing.length) {
+            console.warn(`Produto ${produto.id_produto_tiny} não existe no catálogo local. Pulando.`);
+            success += 1; // não contar como falha para não abortar loop
+            break;
+          }
+          const { error: updErr } = await supabaseAdmin
+            .from('tiny_produtos')
+            .update({
               saldo: (estoque as any)?.saldo ?? null,
               reservado: (estoque as any)?.reservado ?? null,
               disponivel: (estoque as any)?.disponivel ?? null,
               data_atualizacao_tiny: (estoque as any)?.dataAlteracao ?? null,
-            },
-          ]);
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id_produto_tiny', produto.id_produto_tiny);
+          if (updErr) {
+            throw updErr;
+          }
           success += 1;
           break;
         } catch (err: any) {
