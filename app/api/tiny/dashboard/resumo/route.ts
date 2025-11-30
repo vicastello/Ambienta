@@ -882,11 +882,11 @@ export async function GET(req: NextRequest) {
       .map((p) => p.sku)
       .filter((sku): sku is string => !!sku);
 
-    const estoqueLookup: Record<string, { saldo: number | null; reservado: number | null; disponivel: number | null }> = {};
+    const estoqueLookup: Record<string, { saldo: number | null; reservado: number | null; disponivel: number | null; imagemUrl: string | null }> = {};
     try {
       const query = supabaseAdmin
         .from('tiny_produtos')
-        .select('id_produto_tiny,codigo,saldo,reservado,disponivel');
+        .select('id_produto_tiny,codigo,saldo,reservado,disponivel,imagem_url');
 
       if (produtosParaEnriquecerIds.length) {
         query.in('id_produto_tiny', produtosParaEnriquecerIds);
@@ -903,6 +903,7 @@ export async function GET(req: NextRequest) {
             saldo: p.saldo ?? null,
             reservado: p.reservado ?? null,
             disponivel: p.disponivel ?? null,
+            imagemUrl: p.imagem_url ?? null,
           };
           if (keyId) estoqueLookup[keyId] = payload;
           if (keySku) estoqueLookup[keySku] = payload;
@@ -926,6 +927,7 @@ export async function GET(req: NextRequest) {
           saldo: found.saldo,
           reservado: found.reservado,
           disponivel: found.disponivel,
+          imagemUrl: prod.imagemUrl ?? found.imagemUrl ?? undefined,
         };
       });
 
