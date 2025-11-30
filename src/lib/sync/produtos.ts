@@ -272,6 +272,13 @@ export async function syncProdutosFromTiny(
       : estoqueOnly
         ? true
         : false;
+  console.log('[syncProdutosFromTiny] resolved options', {
+    enrichEstoque,
+    optionsEnrich: options.enrichEstoque,
+    estoqueOnly,
+    mode,
+    modeLabel,
+  });
   let workers = 4;
   if (typeof options.workers === 'number' && Number.isFinite(options.workers)) {
     workers = Math.max(1, Math.floor(options.workers));

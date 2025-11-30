@@ -62,6 +62,18 @@ export async function POST(req: Request) {
         : undefined;
     const finalCursorKey = body.cursorKey === null ? null : resolvedCursorKey;
 
+    console.log('[admin/sync/produtos] incoming body', body);
+    console.log('[admin/sync/produtos] resolved options', {
+      resolvedMode,
+      resolvedEnrich,
+      estoqueOnly,
+      limit: Number.isFinite(toNumber(body.limit)) ? Number(toNumber(body.limit)) : 10,
+      workers: Number.isFinite(toNumber(body.workers)) ? Number(toNumber(body.workers)) : 1,
+      modeLabel: resolvedModeLabel,
+      cursorKey: finalCursorKey,
+      modoCron: true,
+    });
+
     const result = await syncProdutosFromTiny({
       mode: resolvedMode,
       modoCron: true,
