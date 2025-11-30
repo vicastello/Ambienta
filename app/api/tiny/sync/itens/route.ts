@@ -42,7 +42,9 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await getAccessTokenFromDbOrRefresh();
+    console.log('[sync/itens] start', { tinyIds, force });
     const result = await sincronizarItensPorPedidos(accessToken, tinyIds, { force });
+    console.log('[sync/itens] result', result);
 
     return NextResponse.json({
       success: true,

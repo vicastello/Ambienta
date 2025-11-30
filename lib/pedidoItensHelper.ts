@@ -117,7 +117,9 @@ export async function salvarItensPedido(
             : []) as any[];
 
     if (itens.length === 0) {
-      console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`);
+      console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`, {
+        keys: Object.keys(pedidoDetalhado || {}),
+      });
       const fallbackCount = await fallbackFromRaw();
       return fallbackCount;
     }
@@ -152,7 +154,10 @@ export async function salvarItensPedido(
 
     return itens.length;
   } catch (error: any) {
-    console.error(`[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`, error.message || error);
+    console.error(
+      `[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`,
+      error?.message || error
+    );
     const fallbackCount = await fallbackFromRaw();
     return fallbackCount;
   }
