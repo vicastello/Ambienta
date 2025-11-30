@@ -647,8 +647,13 @@ export async function syncProdutosFromTiny(
 
   const emitUnexpected = async (error: unknown) => {
     const description = formatError(error);
-    log('Erro inesperado durante sync', { error: description });
-    await persistLog('error', { reason: 'unexpected', errorMessage: description });
+    const tinyMeta =
+      error instanceof TinyApiError
+        ? { tinyStatus: error.status, tinyBody: error.body }
+        : {};
+    console.error('[syncProdutosFromTiny] erro inesperado', { error: description, ...tinyMeta });
+    log('Erro inesperado durante sync', { error: description, ...tinyMeta });
+    await persistLog('error', { reason: 'unexpected', errorMessage: description, ...tinyMeta });
     await persistCursorState('error');
     return {
       ok: false as const,
