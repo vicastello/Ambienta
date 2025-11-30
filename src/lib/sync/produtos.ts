@@ -751,7 +751,7 @@ export async function syncProdutosFromTiny(
     windowUsagePct: stats.windowUsagePct,
     batchUsado: stats.batchUsado,
     workersUsados: stats.workersUsados,
-    enrichAtivo: !!enrichEstoque,
+    enrichAtivo: enrichEstoque,
     updatedSince,
     latestDataAlteracao,
     pagesProcessed,
@@ -761,6 +761,9 @@ export async function syncProdutosFromTiny(
     cursorInitialLatest,
     cursorInitialUpdatedSince,
     cursorAppliedUpdatedSince,
-    stats,
+    stats: {
+      ...stats,
+      enrichAtivo: enrichEstoque,
+    },
   };
 }
