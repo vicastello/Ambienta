@@ -47,52 +47,25 @@ async function main() {
   for (const id of ids) {
     let attempts = 0;
     try {
-      while (true) {
+      let done = false;
+      let detalhe: any = null;
+      let estoque: any = null;
+
+      while (!done) {
         try {
-          const detalhe: any = await obterProduto(token, id, {});
-          let estoque: any = null;
+          detalhe = await obterProduto(token, id, {});
           try {
             estoque = await obterEstoqueProduto(token, id, {});
           } catch (err) {
             console.warn('Estoque falhou para', id, err);
           }
-          const detalheEstoque = detalhe?.estoque || {};
-          const estOk = estoque || {};
-          const detalhePrecos = detalhe?.precos || {};
-          const dims = detalhe?.dimensoes || {};
-          const produtoData: any = {
-            id_produto_tiny: id,
-            codigo: detalhe?.codigo ?? null,
-            nome: detalhe?.nome ?? detalhe?.descricao ?? null,
-            unidade: detalhe?.unidade ?? null,
-            preco: detalhePrecos?.preco ?? null,
-            preco_promocional: detalhePrecos?.precoPromocional ?? null,
-            situacao: detalhe?.situacao ?? null,
-            tipo: detalhe?.tipo ?? null,
-            gtin: detalhe?.gtin ?? null,
-            imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
-            saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
-            reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
-            disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
-            descricao: detalhe?.descricao ?? null,
-            ncm: detalhe?.ncm ?? null,
-            origem: detalhe?.origem ?? null,
-            peso_liquido: dims?.pesoLiquido ?? null,
-            peso_bruto: dims?.pesoBruto ?? null,
-            data_criacao_tiny: detalhe?.dataCriacao ?? null,
-            data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
-          };
-          await upsertProduto(produtoData);
-          console.log('Upsert OK', id, 'imagem:', produtoData.imagem_url);
-          break;
+          done = true;
         } catch (err: any) {
-          // Renovar token em caso de 401
           if (err?.status === 401) {
             console.warn('Token expirado, renovando...');
             token = await getAccessTokenFromDbOrRefresh();
             continue;
           }
-          // Tentar novamente em caso de 429
           if (err?.status === 429 && attempts < maxRetries) {
             attempts += 1;
             const backoff = 1000 * attempts;
@@ -103,6 +76,7 @@ async function main() {
           throw err;
         }
       }
+
       const detalheEstoque = detalhe?.estoque || {};
       const estOk = estoque || {};
       const detalhePrecos = detalhe?.precos || {};
