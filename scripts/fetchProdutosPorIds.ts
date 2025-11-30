@@ -4,14 +4,27 @@
 import { config as loadEnv } from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { parse as parseEnv } from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-loadEnv({ path: path.resolve(__dirname, '..', '.env.local') });
+const envPath = path.resolve(__dirname, '..', '.env.local');
+loadEnv({ path: envPath });
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  try {
+    const parsed = parseEnv(readFileSync(envPath, 'utf8'));
+    for (const [k, v] of Object.entries(parsed)) {
+      if (!process.env[k]) process.env[k] = v;
+    }
+  } catch (err) {
+    console.warn('Não foi possível carregar .env.local manualmente', err);
+  }
+}
 
-import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
-import { obterProduto, obterEstoqueProduto } from '../lib/tinyApi';
-import { upsertProduto } from '../src/repositories/tinyProdutosRepository';
+const { getAccessTokenFromDbOrRefresh } = await import('../lib/tinyAuth');
+const { obterProduto, obterEstoqueProduto } = await import('../lib/tinyApi');
+const { upsertProduto } = await import('../src/repositories/tinyProdutosRepository');
 
 const parseIds = (): number[] => {
   const envIds = process.env.TARGET_IDS || '';
