@@ -266,6 +266,7 @@ export async function syncProdutosFromTiny(
   // Config base
   let limit = Math.max(1, options.limit ?? 100);
   const estoqueOnly = !!options.estoqueOnly;
+  const explicitEnrich = typeof options.enrichEstoque === 'boolean' ? options.enrichEstoque : undefined;
   let enrichEstoque =
     typeof options.enrichEstoque === 'boolean'
       ? options.enrichEstoque
@@ -679,7 +680,10 @@ export async function syncProdutosFromTiny(
         if (limit > 50) limit = 50;
         else if (limit > 25) limit = 25;
         else if (limit > 10) limit = 10;
-        enrichEstoque = false;
+        // Só desligar enrich se NÃO veio explicitamente true
+        if (explicitEnrich !== true) {
+          enrichEstoque = false;
+        }
         workers = Math.max(1, Math.floor(workers / 2));
         stats.batchUsado = limit;
         stats.workersUsados = workers;
