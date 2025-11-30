@@ -174,15 +174,17 @@ export async function GET(req: NextRequest) {
       throw error;
     }
 
-    const rows = (data ?? []) as PedidoSelectRow[];
-    const orderIds = rows.map((order) => order.id);
-    let itensPorPedido: Record<number, number> = {};
-    const primeiraImagemMap: Record<number, string | null> = {};
+  const rows = (data ?? []) as PedidoSelectRow[];
+  const orderIds = rows.map((order) => order.id);
+  let itensPorPedido: Record<number, number> = {};
+  const primeiraImagemMap: Record<number, string | null> = {};
+  const codigosFromRaw: Set<string> = new Set();
+  const idsFromRaw: Set<number> = new Set();
 
-    if (orderIds.length) {
-      const { data: itensData, error: itensError } = await supabaseAdmin
-        .from("tiny_pedido_itens")
-        .select("id_pedido, quantidade, nome_produto, codigo_produto, tiny_produtos(imagem_url)")
+  if (orderIds.length) {
+    const { data: itensData, error: itensError } = await supabaseAdmin
+      .from("tiny_pedido_itens")
+      .select("id_pedido, quantidade, nome_produto, codigo_produto, tiny_produtos(imagem_url)")
         .in("id_pedido", orderIds);
 
       if (itensError) {
@@ -239,19 +241,82 @@ export async function GET(req: NextRequest) {
         if (imagem) {
           primeiraImagemMap[idPedido] = imagem;
         }
+    }
+  }
+
+  // Coleta códigos/ids de produto presentes no raw para fallback de imagem
+  for (const order of rows) {
+    const rawRecord = toJsonRecord(order.raw) ?? {};
+    const itens = extractItens(rawRecord);
+    for (const item of itens) {
+      const produto = extractProduto(item);
+      if (!produto) continue;
+      const codigo = toStringOrNull(produto.codigo ?? produto.sku ?? produto.codigoProduto ?? produto.codigo_produto);
+      const idProd =
+        typeof (produto as any).id === "number"
+          ? (produto as any).id
+          : typeof (produto as any).idProduto === "number"
+            ? (produto as any).idProduto
+            : null;
+      if (codigo) codigosFromRaw.add(codigo);
+      if (idProd) idsFromRaw.add(idProd);
+    }
+  }
+
+  let imagemPorCodigo: Record<string, string> = {};
+  let imagemPorId: Record<number, string> = {};
+  if (codigosFromRaw.size || idsFromRaw.size) {
+    const { data: produtosFallback, error: produtosFallbackError } = await supabaseAdmin
+      .from("tiny_produtos")
+      .select("id_produto_tiny, codigo, imagem_url")
+      .or([
+        codigosFromRaw.size ? `codigo.in.(${Array.from(codigosFromRaw).map((c) => `"${c}"`).join(",")})` : "",
+        idsFromRaw.size ? `id_produto_tiny.in.(${Array.from(idsFromRaw).join(",")})` : "",
+      ].filter(Boolean).join(","));
+
+    if (produtosFallbackError) {
+      throw produtosFallbackError;
+    }
+
+    imagemPorCodigo = (produtosFallback ?? []).reduce<Record<string, string>>((acc, row) => {
+      const codigo = typeof row.codigo === "string" ? row.codigo.trim() : "";
+      if (codigo && row.imagem_url) acc[codigo] = row.imagem_url;
+      return acc;
+    }, {});
+
+    imagemPorId = (produtosFallback ?? []).reduce<Record<number, string>>((acc, row) => {
+      if (typeof row.id_produto_tiny === "number" && row.imagem_url) {
+        acc[row.id_produto_tiny] = row.imagem_url;
+      }
+      return acc;
+    }, {});
+  }
+
+  const orders = rows.map((order) => {
+    const rawRecord = toJsonRecord(order.raw) ?? {};
+    const itens = extractItens(rawRecord);
+    const firstItem = itens[0] ?? null;
+    const produto = extractProduto(firstItem);
+    const imagemFromRaw = extractImagemFromProduto(produto);
+    const imagemFromItens = primeiraImagemMap[order.id] ?? null;
+    let imagem = imagemFromItens ?? imagemFromRaw;
+
+    if (!imagem && produto) {
+      const codigo = toStringOrNull((produto as any).codigo ?? (produto as any).sku ?? (produto as any).codigoProduto);
+      const idProd =
+        typeof (produto as any).id === "number"
+          ? (produto as any).id
+          : typeof (produto as any).idProduto === "number"
+            ? (produto as any).idProduto
+            : null;
+      if (codigo && imagemPorCodigo[codigo]) {
+        imagem = imagemPorCodigo[codigo];
+      } else if (idProd && imagemPorId[idProd]) {
+        imagem = imagemPorId[idProd];
       }
     }
 
-    const orders = rows.map((order) => {
-      const rawRecord = toJsonRecord(order.raw) ?? {};
-      const itens = extractItens(rawRecord);
-      const firstItem = itens[0] ?? null;
-      const produto = extractProduto(firstItem);
-      const imagemFromRaw = extractImagemFromProduto(produto);
-      const imagemFromItens = primeiraImagemMap[order.id] ?? null;
-      const imagem = imagemFromItens ?? imagemFromRaw;
-
-      const valor = Number(order.valor ?? 0);
+    const valor = Number(order.valor ?? 0);
       const valorFrete = Number(order.valor_frete ?? 0);
       const pedidoRecord = toJsonRecord(rawRecord.pedido);
       const ecommerceRecord = toJsonRecord(rawRecord.ecommerce);
