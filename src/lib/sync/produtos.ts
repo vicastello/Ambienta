@@ -287,7 +287,12 @@ export async function syncProdutosFromTiny(
   let timedOut = false;
   const timeboxMs = MODE_TIMEBOX[mode];
   const hasTimebox = typeof timeboxMs === 'number' && timeboxMs > 0;
-  const resolvedTimeboxMs = hasTimebox ? (timeboxMs as number) : null;
+  const resolvedTimeboxMs =
+    estoqueOnly && mode === 'manual'
+      ? 240_000
+      : hasTimebox
+        ? (timeboxMs as number)
+        : null;
   const start = Date.now();
 
   // Ajustes automáticos para cron/backfill
@@ -298,7 +303,11 @@ export async function syncProdutosFromTiny(
 
   const offsetStart = Math.max(0, options.offset ?? 0);
   const maxPages = mode === 'backfill' ? Math.max(1, options.maxPages ?? 5) : 1;
-  const situacaoFiltro = options.situacao && options.situacao !== 'all' ? options.situacao : 'A';
+  const situacaoFiltro = estoqueOnly
+    ? 'all'
+    : options.situacao && options.situacao !== 'all'
+      ? options.situacao
+      : 'A';
 
   const stats = buildStats();
   stats.batchUsado = limit;
@@ -323,7 +332,7 @@ export async function syncProdutosFromTiny(
   const cursorInitialUpdatedSince = cursorRow?.updated_since ?? null;
   const cursorInitialLatest = cursorRow?.latest_data_alteracao ?? null;
 
-  const limiter = new RateLimiter(1300); // 1300 req/min (folga sobre 1400)
+  const limiter = new RateLimiter(estoqueOnly ? 800 : 1300); // Estoque-only recebe mais 429, usa limite mais conservador
   let accessToken: string | null = null;
   const tokenRefreshState = { attempts: 0 };
   let totalSincronizados = 0;
