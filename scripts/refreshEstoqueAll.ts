@@ -4,12 +4,27 @@
 import { config as loadEnv } from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { parse as parseEnv } from 'dotenv';
 
 // Em ESM/tsx, precisamos resolver __dirname manualmente
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-loadEnv({ path: path.resolve(__dirname, '..', '.env.local') });
+const envPath = path.resolve(__dirname, '..', '.env.local');
+loadEnv({ path: envPath });
+
+// Se ainda faltarem variáveis, tenta parse manual do .env.local
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  try {
+    const parsed = parseEnv(readFileSync(envPath, 'utf8'));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!process.env[key]) process.env[key] = value;
+    }
+  } catch (err) {
+    console.warn('Não foi possível carregar .env.local manualmente', err);
+  }
+}
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
 import { obterEstoqueProduto, TinyApiError } from '../lib/tinyApi';
