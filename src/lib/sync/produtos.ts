@@ -390,9 +390,20 @@ export async function syncProdutosFromTiny(
   let pagesProcessed = 0;
   let currentOffset = offsetStart;
   const offsetSummary = { start: offsetStart, end: offsetStart };
-  const explicitUpdatedSince = typeof options.updatedSince === 'string' && options.updatedSince.trim()
-    ? options.updatedSince.trim()
-    : null;
+  const normalizeUpdatedSince = (value: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    // Se vier só data (YYYY-MM-DD), completar com hora para evitar erro de validação no Tiny
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return `${trimmed} 00:00:00`;
+    }
+    return trimmed;
+  };
+
+  const explicitUpdatedSince = normalizeUpdatedSince(
+    typeof options.updatedSince === 'string' ? options.updatedSince : null
+  );
   let requestedUpdatedSince = explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null;
   if (!requestedUpdatedSince) {
     requestedUpdatedSince = await inferUpdatedSince(mode, null);
