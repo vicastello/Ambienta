@@ -7,6 +7,7 @@
 
 import { supabaseAdmin } from './supabaseAdmin';
 import { obterPedidoDetalhado } from './tinyApi';
+import { getErrorMessage } from './errors';
 
 interface PedidoItemData {
   id_pedido: number;
@@ -28,6 +29,64 @@ export async function salvarItensPedido(
   idPedidoTiny: number,
   idPedidoLocal: number
 ): Promise<number | null> {
+  const fallbackFromRaw = async (): Promise<number | null> => {
+    try {
+      const { data: pedidoLocal, error: rawErr } = await supabaseAdmin
+        .from('tiny_orders')
+        .select('raw')
+        .eq('id', idPedidoLocal)
+        .maybeSingle();
+      if (rawErr) {
+        console.error(`[Itens Pedido] Falha ao buscar raw do pedido ${idPedidoTiny}`, rawErr);
+        return null;
+      }
+      const raw = pedidoLocal?.raw as any;
+      if (!raw || typeof raw !== 'object') return null;
+
+      const itensRaw =
+        (Array.isArray((raw as any).itens)
+          ? (raw as any).itens
+          : Array.isArray((raw as any).pedido?.itens)
+            ? (raw as any).pedido.itens
+            : Array.isArray((raw as any).pedido?.itensPedido)
+              ? (raw as any).pedido.itensPedido
+              : []) as any[];
+
+      if (!itensRaw.length) return null;
+
+      const itensParaSalvar = itensRaw.map((item) => {
+        const produto = (item as any).produto || item;
+        const qtd = Number(item.quantidade ?? 0);
+        const valorUnit = Number(item.valorUnitario ?? 0);
+        const valorTot = Number(item.valorTotal ?? valorUnit * qtd);
+        return {
+          id_pedido: idPedidoLocal,
+          id_produto_tiny: produto.id ?? item.idProduto ?? null,
+          codigo_produto: produto.codigo ?? item.codigo ?? null,
+          nome_produto: produto.descricao ?? produto.nome ?? item.descricao ?? 'Sem descrição',
+          quantidade: Number.isFinite(qtd) ? qtd : 0,
+          valor_unitario: Number.isFinite(valorUnit) ? valorUnit : 0,
+          valor_total: Number.isFinite(valorTot) ? valorTot : 0,
+          info_adicional: item.informacoesAdicionais || null,
+        };
+      });
+
+      const { error: insertErr } = await supabaseAdmin
+        .from('tiny_pedido_itens')
+        .insert(itensParaSalvar);
+      if (insertErr) {
+        console.error(`[Itens Pedido] Erro ao salvar itens (fallback raw) do pedido ${idPedidoTiny}:`, insertErr);
+        return null;
+      }
+
+      console.warn(`[Itens Pedido] Usou fallback do raw para salvar itens do pedido ${idPedidoTiny}`);
+      return itensParaSalvar.length;
+    } catch (err) {
+      console.error(`[Itens Pedido] Erro no fallback raw do pedido ${idPedidoTiny}:`, getErrorMessage(err));
+      return null;
+    }
+  };
+
   try {
     // Verificar se já tem itens
     const { count: existentes } = await supabaseAdmin
@@ -54,7 +113,8 @@ export async function salvarItensPedido(
 
     if (itens.length === 0) {
       console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`);
-      return 0; // Pedido sem itens
+      const fallbackCount = await fallbackFromRaw();
+      return fallbackCount;
     }
 
     // Preparar dados - API retorna produto.id, produto.codigo, etc
@@ -85,7 +145,8 @@ export async function salvarItensPedido(
     return itens.length;
   } catch (error: any) {
     console.error(`[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`, error.message || error);
-    return null;
+    const fallbackCount = await fallbackFromRaw();
+    return fallbackCount;
   }
 }
 
