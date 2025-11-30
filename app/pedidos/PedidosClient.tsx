@@ -439,17 +439,9 @@ export default function PedidosClient() {
 
   return (
     <div className="space-y-8 pb-16 max-w-[1440px] mx-auto px-4 lg:px-8">
-      {/* Intro banner (matching dashboard hero) */}
-      <section className="rounded-[32px] border border-white/60 dark:border-white/10 bg-white/60 dark:bg-slate-900/50 shadow-[0_22px_70px_-48px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5 md:p-6">
-        <p className="text-[12px] uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">Painel</p>
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Pedidos</h2>
-        <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
-          Acompanhe a saúde do seu e-commerce em uma experiência visual inspirada em apps iOS.
-        </p>
-      </section>
-
-      <section className="rounded-[38px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/90 dark:border-white/10 shadow-[0_30px_90px_-45px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <section className="rounded-[38px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 md:p-8 relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 opacity-40 bg-gradient-to-br from-[#fff9fe] via-transparent to-[#e0e0dd]" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
             <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Pedidos sincronizados</h1>
@@ -460,7 +452,7 @@ export default function PedidosClient() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={fetchOrders}
-              className="inline-flex items-center gap-2 rounded-full border border-white/70 dark:border-white/20 bg-white/90 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)]"
+              className="inline-flex items-center gap-2 rounded-full border border-white/70 dark:border-white/20 bg-white/80 dark:bg-white/5 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white"
             >
               <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Atualizar lista
             </button>
@@ -468,7 +460,7 @@ export default function PedidosClient() {
               href="https://erp.tiny.com.br/vendas#list"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)]"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold"
             >
               <ExternalLink className="w-4 h-4" /> Ver no Tiny
             </a>
@@ -476,13 +468,13 @@ export default function PedidosClient() {
         </div>
 
         {warning && (
-          <div className="mt-6 flex items-start gap-2 rounded-3xl border border-amber-200/60 bg-white/70 px-4 py-3 text-sm text-amber-700">
+          <div className="relative mt-6 flex items-start gap-2 rounded-3xl border border-amber-200/60 bg-white/70 px-4 py-3 text-sm text-amber-700">
             <Filter className="w-4 h-4 mt-0.5" />
             <p>{warning}</p>
           </div>
         )}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="relative mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard label="Faturamento bruto" value={formatCurrency(metrics.totalBruto)} helper="Receita no período" icon={<CalendarDays className="w-4 h-4" />} />
           <SummaryCard label="Ticket médio" value={formatCurrency(metrics.ticketMedio)} helper="Baseado nos filtros" icon={<Filter className="w-4 h-4" />} />
           <SummaryCard label="Frete" value={formatCurrency(metrics.totalFrete)} helper="Somatório de fretes" icon={<Truck className="w-4 h-4" />} />
@@ -494,24 +486,24 @@ export default function PedidosClient() {
         <div className="lg:hidden space-y-3">
           <button
             onClick={() => setShowFilters((open) => !open)}
-            className="w-full flex items-center justify-between rounded-3xl border border-white/70 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/70 px-4 py-3 text-sm font-semibold shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl"
+            className="w-full flex items-center justify-between rounded-3xl glass-panel glass-tint border border-white/60 dark:border-white/10 px-4 py-3 text-sm font-semibold"
           >
             Filtros e período
             <span className="text-xs text-muted">{showFilters ? "Ocultar" : "Exibir"}</span>
           </button>
           {showFilters && (
-            <div className="rounded-[28px] bg-white/96 dark:bg-slate-900/80 border border-white/70 dark:border-slate-800/70 shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5 space-y-6">
+            <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 space-y-6">
               {filtersPanel}
             </div>
           )}
         </div>
 
-        <aside className="hidden lg:block rounded-[32px] bg-white/96 dark:bg-slate-900/78 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
+        <aside className="hidden lg:block rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 space-y-6">
           {filtersPanel}
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[32px] bg-white/96 dark:bg-slate-900/80 border border-white/80 dark:border-white/12 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
@@ -551,7 +543,7 @@ export default function PedidosClient() {
             </div>
           </div>
 
-          <div className="rounded-[36px] bg-white/96 dark:bg-slate-900/82 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] overflow-hidden backdrop-blur-xl">
+          <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 overflow-hidden">
             {loading ? (
               <div className="flex items-center justify-center py-16 text-muted text-sm gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" /> Carregando pedidos...
@@ -604,7 +596,7 @@ export default function PedidosClient() {
             </div>
           )}
 
-          <footer className="rounded-[32px] bg-white/92 dark:bg-slate-900/75 border border-white/40 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <footer className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <p className="text-xs text-muted">
               Exibindo {(orders.length && (page - 1) * pageSize + 1) || 0}–
               {(page - 1) * pageSize + orders.length} de {pageMeta.total} pedidos
@@ -644,7 +636,7 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
   const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <article className="p-4 flex flex-col gap-3 rounded-3xl border border-white/70 dark:border-slate-800/60 bg-white/96 dark:bg-slate-900/78 shadow-[0_18px_60px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl">
+    <article className="glass-panel glass-tint p-4 flex flex-col gap-3 rounded-3xl border border-white/60 dark:border-white/10">
       <div className="flex items-start gap-3">
         <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
           {order.primeiraImagem ? (
@@ -688,22 +680,22 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+        <div className="rounded-2xl border border-white/50 dark:border-white/10 bg-white/30 dark:bg-white/5 px-3 py-2">
           <p className="uppercase tracking-[0.15em] text-[10px] text-muted">Total</p>
           <p className="font-semibold text-[var(--text-main)]">{formatCurrency(order.valor)}</p>
         </div>
-        <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+        <div className="rounded-2xl border border-white/50 dark:border-white/10 bg-white/30 dark:bg-white/5 px-3 py-2">
           <p className="uppercase tracking-[0.15em] text-[10px] text-muted">Frete</p>
-          <p className="font-semibold text-[var(--text-main)]">{formatCurrency(order.valorFrete)}</p>
-          <p className="text-[11px] text-muted">Líquido {formatCurrency(order.valorLiquido)}</p>
+            <p className="font-semibold text-[var(--text-main)]">{formatCurrency(order.valorFrete)}</p>
+            <p className="text-[11px] text-muted">Líquido: {formatCurrency(order.valorLiquido)}</p>
         </div>
-        <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2 flex items-center justify-between gap-2">
+        <div className="rounded-2xl border border-white/50 dark:border-white/10 bg-white/30 dark:bg-white/5 px-3 py-2 flex items-center justify-between gap-2">
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold ${channelColor}`}>
             {order.canal}
           </span>
           {order.itensQuantidade ? <span className="text-[10px] text-muted">{order.itensQuantidade} itens</span> : null}
         </div>
-        <div className="rounded-2xl border border-white/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-800/70 px-3 py-2">
+        <div className="rounded-2xl border border-white/50 dark:border-white/10 bg-white/30 dark:bg-white/5 px-3 py-2">
           {order.dataPrevista && (
             <p className="text-[11px] text-muted flex items-center gap-1">
               <Clock className="w-3 h-3" /> Previsto {formatDate(order.dataPrevista)}
@@ -804,7 +796,7 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
 
 function SummaryCard({ label, value, helper, icon }: { label: string; value: string; helper: string; icon: ReactNode }) {
   return (
-    <div className="rounded-[32px] border border-white/80 dark:border-white/12 bg-white/96 dark:bg-slate-900/80 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl px-5 py-6 space-y-3">
+    <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 px-5 py-6 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-[11px] uppercase tracking-[0.26em] text-slate-500 dark:text-slate-300">{label}</p>
         <span className="text-[var(--accent)] bg-[var(--accent)]/12 rounded-full p-2">{icon}</span>
