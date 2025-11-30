@@ -439,10 +439,10 @@ export default function PedidosClient() {
 
   return (
     <div className="space-y-8 pb-12 max-w-[1400px] mx-auto px-4 lg:px-6">
-      <section className="rounded-[32px] bg-gradient-to-br from-white/90 via-white/80 to-sky-50/70 dark:from-slate-900/85 dark:via-slate-900/75 dark:to-slate-900/65 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
+      <section className="rounded-[36px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
+          <div className="space-y-1">
+            <p className="text-[11px] uppercase tracking-[0.35em] text-slate-500 dark:text-slate-400">Painel diário</p>
             <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Pedidos sincronizados</h1>
             <p className="text-sm text-slate-600 dark:text-slate-300">
               {pageMeta.total.toLocaleString("pt-BR") || "0"} pedidos encontrados para o intervalo selecionado.
@@ -451,7 +451,7 @@ export default function PedidosClient() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={fetchOrders}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/20 bg-white/90 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white shadow-sm"
+              className="inline-flex items-center gap-2 rounded-full border border-white/70 dark:border-white/20 bg-white/90 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-white shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)]"
             >
               <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Atualizar lista
             </button>
@@ -459,7 +459,7 @@ export default function PedidosClient() {
               href="https://erp.tiny.com.br/vendas#list"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold shadow-sm"
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold shadow-[0_10px_30px_-20px_rgba(15,23,42,0.6)]"
             >
               <ExternalLink className="w-4 h-4" /> Ver no Tiny
             </a>
@@ -497,12 +497,12 @@ export default function PedidosClient() {
           )}
         </div>
 
-        <aside className="hidden lg:block rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/50 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl p-6 space-y-6">
+        <aside className="hidden lg:block rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
           {filtersPanel}
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[32px] bg-white/92 dark:bg-slate-900/75 border border-white/50 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl p-5">
+          <div className="rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
@@ -542,7 +542,7 @@ export default function PedidosClient() {
             </div>
           </div>
 
-          <div className="rounded-[36px] bg-white dark:bg-slate-900 border border-white/60 dark:border-white/10 overflow-hidden">
+          <div className="rounded-[36px] bg-white/95 dark:bg-slate-900/80 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] overflow-hidden backdrop-blur-xl">
             {loading ? (
               <div className="flex items-center justify-center py-16 text-muted text-sm gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" /> Carregando pedidos...
@@ -635,7 +635,7 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
   const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <article className="p-4 flex flex-col gap-3">
+    <article className="p-4 flex flex-col gap-3 rounded-3xl border border-white/60 dark:border-slate-800/60 bg-white/92 dark:bg-slate-900/75 shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl">
       <div className="flex items-start gap-3">
         <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
           {order.primeiraImagem ? (
@@ -717,7 +717,7 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
   const channelColor = CHANNEL_COLORS[order.canal] ?? "bg-slate-100 text-slate-600";
 
   return (
-    <article className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm">
+    <article className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm hover:bg-white/60 dark:hover:bg-slate-800/50 transition">
       <div className="px-6 py-4 space-y-1">
         <div className="flex items-center gap-3">
           <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
