@@ -6,8 +6,9 @@
  */
 
 import { supabaseAdmin } from './supabaseAdmin';
-import { obterPedidoDetalhado } from './tinyApi';
+import { obterPedidoDetalhado, obterProduto, obterEstoqueProduto } from './tinyApi';
 import { getErrorMessage } from './errors';
+import { upsertProduto } from '@/src/repositories/tinyProdutosRepository';
 
 const toNumberOrNull = (value: any): number | null => {
   const n = Number(value);
@@ -34,6 +35,55 @@ export async function salvarItensPedido(
   idPedidoTiny: number,
   idPedidoLocal: number
 ): Promise<number | null> {
+  const ensureProdutosNoCatalog = async (ids: number[]) => {
+    if (!ids.length) return;
+    const { data: existentes } = await supabaseAdmin
+      .from('tiny_produtos')
+      .select('id_produto_tiny')
+      .in('id_produto_tiny', ids);
+    const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
+    const faltantes = ids.filter((id) => !setExistentes.has(id));
+    for (const id of faltantes) {
+      try {
+        const detalhe: any = await obterProduto(accessToken, id, {});
+        let estoque: any = null;
+        try {
+          estoque = await obterEstoqueProduto(accessToken, id, {});
+        } catch (err) {
+          console.warn('[Itens Pedido] Estoque falhou para produto', id, err);
+        }
+        const detalheEstoque = detalhe?.estoque || {};
+        const estOk = estoque || {};
+        const detalhePrecos = detalhe?.precos || {};
+        const dims = detalhe?.dimensoes || {};
+        const produtoData: any = {
+          id_produto_tiny: id,
+          codigo: detalhe?.codigo ?? null,
+          nome: detalhe?.nome ?? detalhe?.descricao ?? null,
+          unidade: detalhe?.unidade ?? null,
+          preco: detalhePrecos?.preco ?? null,
+          preco_promocional: detalhePrecos?.precoPromocional ?? null,
+          situacao: detalhe?.situacao ?? null,
+          tipo: detalhe?.tipo ?? null,
+          gtin: detalhe?.gtin ?? null,
+          imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
+          saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
+          reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
+          disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
+          descricao: detalhe?.descricao ?? null,
+          ncm: detalhe?.ncm ?? null,
+          origem: detalhe?.origem ?? null,
+          peso_liquido: dims?.pesoLiquido ?? null,
+          peso_bruto: dims?.pesoBruto ?? null,
+          data_criacao_tiny: detalhe?.dataCriacao ?? null,
+          data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
+        };
+        await upsertProduto(produtoData);
+      } catch (err) {
+        console.error('[Itens Pedido] Falha ao upsert produto faltante', id, err);
+      }
+    }
+  };
   const fallbackFromRaw = async (): Promise<number | null> => {
     try {
       const { data: pedidoLocal, error: rawErr } = await supabaseAdmin
@@ -57,7 +107,7 @@ export async function salvarItensPedido(
               ? (raw as any).pedido.itensPedido
               : []) as any[];
 
-    if (!itensRaw.length) return null;
+      if (!itensRaw.length) return null;
 
       const itensParaSalvar = itensRaw.map((item) => {
         const produto = (item as any).produto || item;
@@ -81,16 +131,7 @@ export async function salvarItensPedido(
         .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
         .filter((v): v is number => !!v);
       if (idsTiny.length) {
-        const { data: existentes } = await supabaseAdmin
-          .from('tiny_produtos')
-          .select('id_produto_tiny')
-          .in('id_produto_tiny', idsTiny);
-        const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
-        for (const row of itensParaSalvar) {
-          if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
-            row.id_produto_tiny = null;
-          }
-        }
+        await ensureProdutosNoCatalog(idsTiny);
       }
 
       const { error: insertErr } = await supabaseAdmin
@@ -164,6 +205,7 @@ export async function salvarItensPedido(
       .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
       .filter((v): v is number => !!v);
     if (idsTiny.length) {
+      await ensureProdutosNoCatalog(idsTiny);
       const { data: existentes } = await supabaseAdmin
         .from('tiny_produtos')
         .select('id_produto_tiny')
