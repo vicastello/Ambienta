@@ -22,10 +22,6 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
   }
 }
 
-const { getAccessTokenFromDbOrRefresh } = await import('../lib/tinyAuth');
-const { obterProduto, obterEstoqueProduto } = await import('../lib/tinyApi');
-const { upsertProduto } = await import('../src/repositories/tinyProdutosRepository');
-
 const parseIds = (): number[] => {
   const envIds = process.env.TARGET_IDS || '';
   return envIds
@@ -35,6 +31,10 @@ const parseIds = (): number[] => {
 };
 
 async function main() {
+  const { getAccessTokenFromDbOrRefresh } = await import('../lib/tinyAuth');
+  const { obterProduto, obterEstoqueProduto } = await import('../lib/tinyApi');
+  const { upsertProduto } = await import('../src/repositories/tinyProdutosRepository');
+
   const ids = parseIds();
   if (!ids.length) {
     console.error('Defina TARGET_IDS com IDs do Tiny separados por vírgula');
