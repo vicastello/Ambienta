@@ -438,7 +438,7 @@ export default function PedidosClient() {
   );
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-8 pb-12 max-w-[1400px] mx-auto px-4 lg:px-6">
       <section className="rounded-[32px] bg-gradient-to-br from-white/90 via-white/80 to-sky-50/70 dark:from-slate-900/85 dark:via-slate-900/75 dark:to-slate-900/65 border border-white/60 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -497,12 +497,12 @@ export default function PedidosClient() {
           )}
         </div>
 
-        <aside className="hidden lg:block rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/50 dark:border-white/10 p-6 space-y-6">
+        <aside className="hidden lg:block rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/50 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl p-6 space-y-6">
           {filtersPanel}
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/30 dark:border-white/5 p-5">
+          <div className="rounded-[32px] bg-white/92 dark:bg-slate-900/75 border border-white/50 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
@@ -595,7 +595,7 @@ export default function PedidosClient() {
             </div>
           )}
 
-          <footer className="rounded-[32px] bg-white/90 dark:bg-slate-900/70 border border-white/40 dark:border-white/10 px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <footer className="rounded-[32px] bg-white/92 dark:bg-slate-900/75 border border-white/40 dark:border-white/10 shadow-[0_20px_70px_-50px_rgba(15,23,42,0.55)] backdrop-blur-xl px-6 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <p className="text-xs text-muted">
               Exibindo {(orders.length && (page - 1) * pageSize + 1) || 0}–
               {(page - 1) * pageSize + orders.length} de {pageMeta.total} pedidos
