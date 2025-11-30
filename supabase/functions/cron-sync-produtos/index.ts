@@ -6,7 +6,10 @@ serve(async (req) => {
   const baseUrl = Deno.env.get('VERCEL_API_BASE_URL'); // ex.: https://seu-app.vercel.app
 
   if (!baseUrl) {
-    return new Response('Missing VERCEL_API_BASE_URL', { status: 500 });
+    return new Response(JSON.stringify({ ok: false, error: 'Missing VERCEL_API_BASE_URL' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/produtos/sync`;
@@ -28,6 +31,7 @@ serve(async (req) => {
 
     if (!res.ok) {
       const text = await res.text();
+      console.error(`cron-sync-produtos failed: ${res.status} ${res.statusText} - ${text.slice(0, 500)}`);
       return new Response(
         `Erro ao chamar ${targetUrl}: ${res.status} ${res.statusText} - ${text}`,
         { status: 500 }
@@ -35,9 +39,16 @@ serve(async (req) => {
     }
 
     const body = await res.text();
-    return new Response(body || 'OK', { status: 200 });
+    return new Response(JSON.stringify({ ok: true, result: body || 'OK' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return new Response(`Falha ao chamar sync: ${message}`, { status: 500 });
+    console.error(`cron-sync-produtos exception: ${message}`);
+    return new Response(JSON.stringify({ ok: false, error: message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 });

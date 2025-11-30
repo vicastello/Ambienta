@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { callInternalJson } from '@/lib/internalApi';
 import { getErrorMessage } from '@/lib/errors';
+import { syncProdutosFromTiny } from '@/src/lib/sync/produtos';
 
 type AdminSyncBody = {
   mode?: 'manual' | 'cron' | 'backfill';
@@ -19,11 +19,6 @@ type AdminSyncBody = {
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value));
 
-type ProdutosSyncResponse = {
-  ok?: boolean;
-  [key: string]: unknown;
-};
-
 export async function POST(req: Request) {
   try {
     let rawBody: unknown = {};
@@ -33,28 +28,25 @@ export async function POST(req: Request) {
       rawBody = {};
     }
     const body = isRecord(rawBody) ? (rawBody as AdminSyncBody) : {};
-    const backfillRequested = body.backfill === true;
-    const resolvedMode: AdminSyncBody['mode'] = backfillRequested ? 'backfill' : body.mode ?? 'manual';
 
+    const backfillRequested = body.backfill === true;
+    const resolvedMode: AdminSyncBody['mode'] = backfillRequested ? 'backfill' : body.mode ?? 'backfill';
     const estoqueOnly = body.estoqueOnly === true;
+
     const explicitEnrich = typeof body.enrichEstoque === 'boolean'
       ? body.enrichEstoque
       : typeof body.enrichAtivo === 'boolean'
         ? body.enrichAtivo
         : undefined;
-    const resolvedEnrich =
-      typeof explicitEnrich === 'boolean'
-        ? explicitEnrich
-        : estoqueOnly
-          ? true
-          : true;
+
+    const resolvedEnrich = typeof explicitEnrich === 'boolean'
+      ? explicitEnrich
+      : estoqueOnly
+        ? true
+        : true; // default para admin cron é enriquecer estoque
 
     const explicitModeLabel = typeof body.modeLabel === 'string' ? body.modeLabel.trim() : '';
-    const resolvedModeLabel = explicitModeLabel
-      ? explicitModeLabel
-      : resolvedMode === 'cron' && estoqueOnly
-        ? 'cron_estoque'
-        : resolvedMode;
+    const resolvedModeLabel = explicitModeLabel || 'backfill_cron';
 
     const cleanedCursorKey = typeof body.cursorKey === 'string' && body.cursorKey.trim().length
       ? body.cursorKey.trim()
@@ -70,32 +62,19 @@ export async function POST(req: Request) {
         : undefined;
     const finalCursorKey = body.cursorKey === null ? null : resolvedCursorKey;
 
-    const payload: Record<string, unknown> = {
+    const result = await syncProdutosFromTiny({
       mode: resolvedMode,
+      modoCron: true,
       updatedSince: typeof body.updatedSince === 'string' ? body.updatedSince : undefined,
-      limit: Number.isFinite(toNumber(body.limit)) ? Number(toNumber(body.limit)) : undefined,
-      workers: Number.isFinite(toNumber(body.workers)) ? Number(toNumber(body.workers)) : undefined,
-      modoCron: resolvedMode === 'cron',
-      estoqueOnly: estoqueOnly || undefined,
+      limit: Number.isFinite(toNumber(body.limit)) ? Number(toNumber(body.limit)) : 10,
+      workers: Number.isFinite(toNumber(body.workers)) ? Number(toNumber(body.workers)) : 1,
+      estoqueOnly,
       enrichEstoque: resolvedEnrich,
-      enrichAtivo: resolvedEnrich,
       modeLabel: resolvedModeLabel,
       cursorKey: finalCursorKey,
-    };
-
-    const bodyCleaned = Object.fromEntries(
-      Object.entries(payload).filter(([, value]) => value !== undefined)
-    );
-
-    const result = await callInternalJson<ProdutosSyncResponse>('/api/produtos/sync', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(bodyCleaned),
     });
 
-    return NextResponse.json({ ok: result.ok !== false, result });
+    return NextResponse.json(result);
   } catch (error: unknown) {
     const detail = getErrorMessage(error) || 'Erro inesperado';
     return NextResponse.json(
