@@ -712,6 +712,8 @@ export async function syncProdutosFromTiny(
       const limitForPage = limit;
       stats.batchUsado = limitForPage;
 
+      const dataAlteracaoParam = normalizeUpdatedSince(requestedUpdatedSince);
+
       const page = await callTinyWithAuthRetry(
         () =>
           tinyRequest<TinyListarProdutosResponse>({
@@ -720,7 +722,7 @@ export async function syncProdutosFromTiny(
                 limit: limitForPage,
                 offset: offsetForPage,
                 situacao: situacaoParam,
-                dataAlteracao: requestedUpdatedSince ?? undefined,
+                dataAlteracao: dataAlteracaoParam ?? undefined,
               }),
             limiter,
             stats,
