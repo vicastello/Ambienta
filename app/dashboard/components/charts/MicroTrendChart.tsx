@@ -2,7 +2,6 @@
 
 import { memo, useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { useLazyMount } from '@/components/hooks/useLazyMount';
 import { CustomTooltip, type CustomTooltipFormatter } from './ChartTooltips';
 
 type SparkDatum = {
@@ -16,30 +15,25 @@ type MicroTrendChartProps = {
 };
 
 const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => {
-  const { ref, isVisible } = useLazyMount<HTMLDivElement>();
   const chartData = useMemo(() => data, [data]);
 
   return (
-    <div ref={ref} className="h-32 w-full">
-      {isVisible ? (
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData}>
-            <defs>
-              <linearGradient id="microSpark" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
-                <stop offset="100%" stopColor="#a855f7" stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
-            <XAxis dataKey="label" hide />
-            <YAxis hide />
-            <Tooltip content={<CustomTooltip formatter={formatter} />} />
-            <Area type="monotone" dataKey="value" stroke="#a855f7" fill="url(#microSpark)" strokeWidth={3} />
-          </AreaChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="h-full w-full animate-pulse rounded-2xl bg-white/60 dark:bg-slate-900/30" />
-      )}
+    <div className="h-32 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id="microSpark" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#a855f7" stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
+          <XAxis dataKey="label" hide />
+          <YAxis hide />
+          <Tooltip content={<CustomTooltip formatter={formatter} />} />
+          <Area type="monotone" dataKey="value" stroke="#a855f7" fill="url(#microSpark)" strokeWidth={3} />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 };
