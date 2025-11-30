@@ -25,16 +25,17 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     console.warn('Não foi possível carregar .env.local manualmente', err);
   }
 }
-import { supabaseAdmin } from '../lib/supabaseAdmin';
-import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
-import { obterEstoqueProduto, TinyApiError } from '../lib/tinyApi';
-import { upsertProdutosEstoque } from '../src/repositories/tinyProdutosRepository';
+// Demais imports (dependem do .env carregado) serão feitos dinamicamente em main()
 
 type ProdutoRow = { id_produto_tiny: number; codigo?: string | null };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
+  const { supabaseAdmin } = await import('../lib/supabaseAdmin');
+  const { getAccessTokenFromDbOrRefresh } = await import('../lib/tinyAuth');
+  const { obterEstoqueProduto, TinyApiError } = await import('../lib/tinyApi');
+  const { upsertProdutosEstoque } = await import('../src/repositories/tinyProdutosRepository');
   const limit = Number(process.env.LIMIT ?? 200);
   const offset = Number(process.env.OFFSET ?? 0);
   const batchSize = Number(process.env.BATCH ?? 10);
