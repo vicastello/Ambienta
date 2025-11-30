@@ -57,7 +57,7 @@ export async function salvarItensPedido(
               ? (raw as any).pedido.itensPedido
               : []) as any[];
 
-      if (!itensRaw.length) return null;
+    if (!itensRaw.length) return null;
 
       const itensParaSalvar = itensRaw.map((item) => {
         const produto = (item as any).produto || item;
@@ -75,6 +75,23 @@ export async function salvarItensPedido(
           info_adicional: item.informacoesAdicionais || null,
         };
       });
+
+      // Zera id_produto_tiny se produto não existe no catálogo para evitar violar FK
+      const idsTiny = itensParaSalvar
+        .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
+        .filter((v): v is number => !!v);
+      if (idsTiny.length) {
+        const { data: existentes } = await supabaseAdmin
+          .from('tiny_produtos')
+          .select('id_produto_tiny')
+          .in('id_produto_tiny', idsTiny);
+        const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
+        for (const row of itensParaSalvar) {
+          if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
+            row.id_produto_tiny = null;
+          }
+        }
+      }
 
       const { error: insertErr } = await supabaseAdmin
         .from('tiny_pedido_itens')
@@ -141,6 +158,23 @@ export async function salvarItensPedido(
         info_adicional: item.informacoesAdicionais || null,
       };
     });
+
+    // Zera id_produto_tiny se produto não existe no catálogo para evitar violar FK
+    const idsTiny = itensParaSalvar
+      .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
+      .filter((v): v is number => !!v);
+    if (idsTiny.length) {
+      const { data: existentes } = await supabaseAdmin
+        .from('tiny_produtos')
+        .select('id_produto_tiny')
+        .in('id_produto_tiny', idsTiny);
+      const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
+      for (const row of itensParaSalvar) {
+        if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
+          row.id_produto_tiny = null;
+        }
+      }
+    }
 
     // Inserir no banco (já verificamos que não existe)
     const { error } = await supabaseAdmin
