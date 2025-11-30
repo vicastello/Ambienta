@@ -184,58 +184,60 @@ export default function ProdutosClient() {
 
   return (
     <div className="space-y-6">
-      <div className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-              <Package className="w-7 h-7 text-purple-600" />
-              Produtos
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">{(total || 0).toLocaleString("pt-BR")} produtos</p>
+            <div className="inline-flex items-center gap-3 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
+              <Package className="w-4 h-4 text-purple-600" />
+              Catálogo
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+            <p className="text-sm text-slate-500 mt-2 max-w-3xl">
+              {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
+            </p>
           </div>
-          <button
-            onClick={syncProdutos}
-            disabled={syncing}
-            className="flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-5 py-2.5 text-sm font-medium"
-          >
-            {syncing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCcw className="w-4 h-4" />
-                Sincronizar
-              </>
-            )}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={syncProdutos}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 disabled:bg-purple-400 text-white px-5 py-2.5 text-sm font-semibold"
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCcw className="w-4 h-4" />
+                  Sincronizar
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[220px] w-full">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Buscar por nome, código ou GTIN..."
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") handleSearchSubmit();
-                }}
-                className="w-full pl-10 pr-4 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
-              />
-            </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_auto]">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, código ou GTIN..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleSearchSubmit();
+              }}
+              className="app-input w-full pl-11"
+            />
           </div>
-
           <select
             value={situacao}
             onChange={(event) => {
               setSituacao(event.target.value);
               setPage(0);
             }}
-            className="px-4 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+            className="app-input w-full min-w-[180px]"
           >
             <option value="all">Todas</option>
             <option value="A">Ativo</option>
@@ -243,9 +245,9 @@ export default function ProdutosClient() {
             <option value="E">Excluído</option>
           </select>
         </div>
-      </div>
+      </section>
 
-      <div className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
+      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
         {loading ? (
           <div className="px-6 py-12 text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" />
@@ -272,35 +274,17 @@ export default function ProdutosClient() {
 
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
-                <thead className="border-b border-slate-200 dark:border-slate-700">
-                  <tr className="bg-slate-50 dark:bg-slate-800/50">
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Imagem
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Código
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Produto
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Tipo
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Preço
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Estoque
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Reservado
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Disponível
-                    </th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase">
-                      Status
-                    </th>
+                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                  <tr>
+                    <th className="px-6 py-4 text-left">Imagem</th>
+                    <th className="px-6 py-4 text-left">Código</th>
+                    <th className="px-6 py-4 text-left">Produto</th>
+                    <th className="px-6 py-4 text-left">Tipo</th>
+                    <th className="px-6 py-4 text-right">Preço</th>
+                    <th className="px-6 py-4 text-right">Estoque</th>
+                    <th className="px-6 py-4 text-right">Reservado</th>
+                    <th className="px-6 py-4 text-right">Disponível</th>
+                    <th className="px-6 py-4 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -316,7 +300,7 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between">
+              <div className="border-t border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
                 <div className="text-sm text-slate-500">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
@@ -324,14 +308,14 @@ export default function ProdutosClient() {
                   <button
                     onClick={() => setPage(Math.max(0, page - 1))}
                     disabled={page === 0}
-                    className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
+                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                     disabled={page >= totalPages - 1}
-                    className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium disabled:opacity-50"
+                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
                   >
                     Próxima
                   </button>
@@ -340,7 +324,7 @@ export default function ProdutosClient() {
             )}
           </>
         )}
-      </div>
+      </section>
     </div>
   );
 }
@@ -363,8 +347,8 @@ const ProdutoCard = memo(function ProdutoCard({ produto }: ProdutoRowProps) {
   const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
 
   return (
-    <article className="rounded-3xl border border-white/60 dark:border-slate-800/70 bg-white/95 dark:bg-slate-900/80 p-3 flex gap-3">
-      <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
+    <article className="app-card p-4 flex gap-3">
+      <div className="w-16 h-16 rounded-2xl bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
         {produto.imagem_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />

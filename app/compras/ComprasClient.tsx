@@ -146,70 +146,92 @@ export default function ComprasClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600 dark:text-slate-300">Período (dias)</label>
-          <input
-            type="number"
-            min={15}
-            max={180}
-            className="app-input w-24"
-            value={periodDays}
-            onChange={(e) => setPeriodDays(Number(e.target.value) || 60)}
-          />
+      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Sugestão automática</p>
+            <h2 className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">Reabastecimento guiado por consumo</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 max-w-3xl">
+              Ajuste período/cobertura e gere o PDF com um clique. Este card replica o hero translúcido do dashboard para manter consistência visual.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={load}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-950 dark:bg-white/10 disabled:opacity-60"
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              Recalcular
+            </button>
+            <button
+              onClick={gerarPdf}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-400"
+              disabled={exportando}
+            >
+              {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              {exportando ? 'Gerando…' : 'Gerar PDF'}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600 dark:text-slate-300">Cobertura (meses)</label>
-          <input
-            type="number"
-            min={1}
-            max={6}
-            className="app-input w-20"
-            value={targetMonths}
-            onChange={(e) => setTargetMonths(Number(e.target.value) || 2)}
-          />
-        </div>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-          Recalcular
-        </button>
-        <button
-          onClick={gerarPdf}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-400"
-          disabled={exportando}
-        >
-          {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-          {exportando ? 'Gerando…' : 'Gerar PDF'}
-        </button>
-        <div className="text-sm text-slate-500">
-          Total sugerido (unidades): <span className="font-semibold text-slate-800 dark:text-white">{totalCompra.toLocaleString('pt-BR')}</span>
-        </div>
-      </div>
 
-      {erro && <div className="text-sm text-rose-500">{erro}</div>}
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">Período (dias)</label>
+            <input
+              type="number"
+              min={15}
+              max={180}
+              className="app-input w-full"
+              value={periodDays}
+              onChange={(e) => setPeriodDays(Number(e.target.value) || 60)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 mb-2">Cobertura (meses)</label>
+            <input
+              type="number"
+              min={1}
+              max={6}
+              className="app-input w-full"
+              value={targetMonths}
+              onChange={(e) => setTargetMonths(Number(e.target.value) || 2)}
+            />
+          </div>
+          <div className="app-card">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Total sugerido</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+              {totalCompra.toLocaleString('pt-BR')} unid.
+            </p>
+            <p className="text-xs text-slate-500">Baseado no ajuste por embalagem</p>
+          </div>
+        </div>
+      </section>
 
-      <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 overflow-hidden">
+      {erro && (
+        <div className="glass-panel glass-tint rounded-3xl border border-white/60 dark:border-white/10 px-5 py-4 text-sm text-rose-500">
+          {erro}
+        </div>
+      )}
+
+      <section className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 overflow-hidden">
         <div className="overflow-auto scrollbar-hide">
           <table className="min-w-[1200px] w-full text-sm">
-            <thead className="bg-white/70 dark:bg-slate-900/70">
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Produto</th>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">EAN</th>
-                <th className="px-4 py-3">Código fornecedor</th>
-                <th className="px-4 py-3">Emb.</th>
-                <th className="px-4 py-3">Estoque disp.</th>
-                <th className="px-4 py-3">Consumo período</th>
-                <th className="px-4 py-3">Consumo mensal</th>
-                <th className="px-4 py-3">Sugestão base</th>
-                <th className="px-4 py-3">Pedido (ajust.)</th>
-                <th className="px-4 py-3">Observações (PDF)</th>
-                <th className="px-4 py-3">Ações</th>
+            <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3 text-left">#</th>
+                <th className="px-4 py-3 text-left">Produto</th>
+                <th className="px-4 py-3 text-left">SKU</th>
+                <th className="px-4 py-3 text-left">EAN</th>
+                <th className="px-4 py-3 text-left">Código fornecedor</th>
+                <th className="px-4 py-3 text-left">Emb.</th>
+                <th className="px-4 py-3 text-left">Estoque disp.</th>
+                <th className="px-4 py-3 text-left">Consumo período</th>
+                <th className="px-4 py-3 text-left">Consumo mensal</th>
+                <th className="px-4 py-3 text-left">Sugestão base</th>
+                <th className="px-4 py-3 text-left">Pedido (ajust.)</th>
+                <th className="px-4 py-3 text-left">Observações (PDF)</th>
+                <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/40 dark:divide-slate-800/50">
@@ -298,7 +320,7 @@ export default function ComprasClient() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

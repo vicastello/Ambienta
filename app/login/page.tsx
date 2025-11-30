@@ -55,8 +55,12 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[var(--bg-page)] text-[var(--text-main)] px-4">
-      <div className="surface-panel surface-panel-soft w-full max-w-md p-8 space-y-6">
+    <main className="liquid-bg min-h-screen flex items-center justify-center px-4 py-12">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-10 left-10 h-72 w-72 rounded-full bg-[#c7d7ff] blur-[160px] opacity-60" />
+        <div className="absolute bottom-0 right-10 h-80 w-80 rounded-full bg-[#ffd6ff] blur-[200px] opacity-50" />
+      </div>
+      <div className="relative z-10 w-full max-w-md glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-8 space-y-6">
         <div className="text-center space-y-3">
           <div className="relative mx-auto h-12 w-48">
             <Image
@@ -76,12 +80,13 @@ export default function LoginPage() {
               priority
             />
           </div>
-          <h1 className="text-2xl font-bold">Login – Gestor Tiny</h1>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Login – Gestor Tiny</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-300">Mesmo visual glass antes do AppLayout carregar.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-muted mb-1" htmlFor="email">
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1" htmlFor="email">
               E-mail
             </label>
             <input
@@ -95,7 +100,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-muted mb-1" htmlFor="password">
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1" htmlFor="password">
               Senha
             </label>
             <input
@@ -117,13 +122,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-full font-semibold bg-[var(--accent)] text-white hover:opacity-90 transition disabled:opacity-60"
+            className="w-full app-btn-primary py-3 disabled:opacity-60"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
 
-        <p className="text-xs text-muted text-center">
+        <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
           Use o e-mail e a senha cadastrados no Supabase.
         </p>
       </div>
