@@ -138,7 +138,7 @@ export async function salvarItensLote(
 export async function sincronizarItensPorPedidos(
   accessToken: string,
   tinyIds: Array<number | null | undefined>,
-  options?: { delayMs?: number; retries?: number }
+  options?: { delayMs?: number; retries?: number; force?: boolean }
 ): Promise<{ processados: number; sucesso: number; totalItens: number }> {
   const uniqueTinyIds = Array.from(new Set(tinyIds.filter((id): id is number => Boolean(id))));
 
@@ -168,10 +168,17 @@ export async function sincronizarItensPorPedidos(
   }
 
   const pedidosSemItensIds = await buscarPedidosSemItens(pedidoIds);
-  const pedidosSemItens = pedidos.filter((p) => pedidosSemItensIds.includes(p.id));
+  const pedidosSemItens = options?.force
+    ? pedidos
+    : pedidos.filter((p) => pedidosSemItensIds.includes(p.id));
 
   if (!pedidosSemItens.length) {
     return { processados: pedidos.length, sucesso: 0, totalItens: 0 };
+  }
+
+  if (options?.force) {
+    // Remove itens existentes para reprocessar e evitar duplicidade
+    await supabaseAdmin.from('tiny_pedido_itens').delete().in('id_pedido', pedidosSemItens.map((p) => p.id));
   }
 
   const delayMs = options?.delayMs ?? 1000;

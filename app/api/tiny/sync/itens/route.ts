@@ -6,6 +6,7 @@ import { getErrorMessage } from '@/lib/errors';
 type SyncItensBody = {
   tinyId?: number | string;
   tinyIds?: Array<number | string>;
+  force?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
     const body: SyncItensBody = isRecord(rawBody) ? (rawBody as SyncItensBody) : {};
     const tinyId = body.tinyId;
     const tinyIdsBody = Array.isArray(body.tinyIds) ? body.tinyIds : undefined;
+    const force = body.force === true;
 
     const tinyIds: number[] = [];
     const tinyIdNumber = typeof tinyId === 'number' ? tinyId : typeof tinyId === 'string' ? Number(tinyId) : null;
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await getAccessTokenFromDbOrRefresh();
-    const result = await sincronizarItensPorPedidos(accessToken, tinyIds);
+    const result = await sincronizarItensPorPedidos(accessToken, tinyIds, { force });
 
     return NextResponse.json({
       success: true,
