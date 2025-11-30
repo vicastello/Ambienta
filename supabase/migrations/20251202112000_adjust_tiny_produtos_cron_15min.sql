@@ -11,10 +11,7 @@ begin
   where jobname = 'tiny_produtos_backfill_hourly';
 
   if v_jobid is not null then
-    perform cron.alter_job(
-      jobid    => v_jobid,
-      schedule => '*/15 * * * *'
-    );
+    perform cron.alter_job(v_jobid, '*/15 * * * *');
   end if;
 end;
 $$;

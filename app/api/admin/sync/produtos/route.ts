@@ -15,9 +15,13 @@ type AdminSyncBody = {
   cursorKey?: string | null;
   useCursor?: boolean;
   disableCursor?: boolean;
+  maxPages?: number;
+  situacao?: 'A' | 'I' | 'E' | 'all';
 };
 
 const toNumber = (value: unknown) => (typeof value === 'number' ? value : Number(value));
+const isSituacao = (value: unknown): value is 'A' | 'I' | 'E' | 'all' =>
+  value === 'A' || value === 'I' || value === 'E' || value === 'all';
 
 export async function POST(req: Request) {
   try {
@@ -72,6 +76,8 @@ export async function POST(req: Request) {
       modeLabel: resolvedModeLabel,
       cursorKey: finalCursorKey,
       modoCron: true,
+      maxPages: Number.isFinite(toNumber(body.maxPages)) ? Number(toNumber(body.maxPages)) : undefined,
+      situacao: isSituacao(body.situacao) ? body.situacao : undefined,
     });
 
     const result = await syncProdutosFromTiny({
@@ -84,6 +90,8 @@ export async function POST(req: Request) {
       enrichEstoque: resolvedEnrich,
       modeLabel: resolvedModeLabel,
       cursorKey: finalCursorKey,
+      maxPages: Number.isFinite(toNumber(body.maxPages)) ? Number(toNumber(body.maxPages)) : undefined,
+      situacao: isSituacao(body.situacao) ? body.situacao : undefined,
     });
 
     return NextResponse.json(result);

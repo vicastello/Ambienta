@@ -18,6 +18,8 @@ type SyncProdutosBody = {
   cursorKey?: string | null;
   modeLabel?: string;
   useCursor?: boolean;
+  maxPages?: number;
+  situacao?: 'A' | 'I' | 'E' | 'all';
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -43,6 +45,8 @@ export async function POST(req: NextRequest) {
       modeLabel: bodyModeLabel,
       useCursor,
     } = body ?? {};
+    const maxPages = typeof body?.maxPages === 'number' ? body.maxPages : undefined;
+    const situacao = typeof body?.situacao === 'string' ? body.situacao : undefined;
 
     const resolvedMode: SyncProdutosMode =
       isSyncProdutosMode(bodyMode)
@@ -88,6 +92,10 @@ export async function POST(req: NextRequest) {
     };
     if (typeof limit === 'number') options.limit = limit;
     if (typeof workers === 'number') options.workers = workers;
+    if (typeof maxPages === 'number') options.maxPages = maxPages;
+    if (situacao === 'A' || situacao === 'I' || situacao === 'E' || situacao === 'all') {
+      options.situacao = situacao;
+    }
     if (typeof resolvedCursorKey !== 'undefined') {
       options.cursorKey = resolvedCursorKey;
     }
