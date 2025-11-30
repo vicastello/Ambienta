@@ -1264,17 +1264,17 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     }}
                     />
                     {preset === 'custom' && (
-                      <div className="mt-3 flex items-center gap-2 text-xs">
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs">
                         <input
                           type="date"
-                          className="app-input flex-1"
+                          className="app-input min-w-0"
                           value={customStart ?? ''}
                           onChange={(e) => handleCustomStartChange(e.target.value || null)}
                         />
-                        <span className="text-slate-400">a</span>
+                        <span className="text-slate-400 text-center">a</span>
                         <input
                           type="date"
-                          className="app-input flex-1"
+                          className="app-input min-w-0"
                           value={customEnd ?? ''}
                           onChange={(e) => handleCustomEndChange(e.target.value || null)}
                         />
