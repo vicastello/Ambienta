@@ -438,7 +438,16 @@ export default function PedidosClient() {
   );
 
   return (
-    <div className="space-y-8 pb-12 max-w-[1400px] mx-auto px-4 lg:px-6">
+    <div className="space-y-8 pb-14 max-w-[1440px] mx-auto px-4 lg:px-6">
+      {/* Intro banner (matching dashboard hero) */}
+      <section className="rounded-[32px] border border-white/60 dark:border-white/10 bg-white/60 dark:bg-slate-900/50 shadow-[0_22px_70px_-48px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5 md:p-6">
+        <p className="text-[12px] uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">Painel</p>
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Pedidos</h2>
+        <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+          Acompanhe a saúde do seu e-commerce em uma experiência visual inspirada em apps iOS.
+        </p>
+      </section>
+
       <section className="rounded-[36px] bg-gradient-to-br from-[#f6f9ff] via-white to-[#eef5ff] dark:from-slate-900/85 dark:via-slate-900/80 dark:to-slate-900/70 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl p-6 md:p-8 relative overflow-hidden">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
@@ -485,24 +494,24 @@ export default function PedidosClient() {
         <div className="lg:hidden space-y-3">
           <button
             onClick={() => setShowFilters((open) => !open)}
-            className="w-full flex items-center justify-between rounded-3xl border border-white/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/70 px-4 py-3 text-sm font-semibold"
+            className="w-full flex items-center justify-between rounded-3xl border border-white/70 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/70 px-4 py-3 text-sm font-semibold shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl"
           >
             Filtros e período
             <span className="text-xs text-muted">{showFilters ? "Ocultar" : "Exibir"}</span>
           </button>
           {showFilters && (
-            <div className="rounded-[28px] bg-white/95 dark:bg-slate-900/80 border border-white/60 dark:border-slate-800/70 p-5 space-y-6">
+            <div className="rounded-[28px] bg-white/96 dark:bg-slate-900/80 border border-white/70 dark:border-slate-800/70 shadow-[0_15px_50px_-45px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5 space-y-6">
               {filtersPanel}
             </div>
           )}
         </div>
 
-        <aside className="hidden lg:block rounded-[32px] bg-white/95 dark:bg-slate-900/75 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
+        <aside className="hidden lg:block rounded-[32px] bg-white/96 dark:bg-slate-900/78 border border-white/80 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-6 space-y-6">
           {filtersPanel}
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[32px] bg-white/96 dark:bg-slate-900/78 border border-white/70 dark:border-white/10 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
+          <div className="rounded-[32px] bg-white/96 dark:bg-slate-900/80 border border-white/80 dark:border-white/12 shadow-[0_25px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur-xl p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-muted">Fila por status</p>
