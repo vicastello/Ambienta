@@ -110,7 +110,6 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     };
   }, [isMobileMenuOpen]);
 
-  const showSidebar = !isMobile || isMobileMenuOpen;
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
   const activeMobileNavIndex = useMemo(
     () => computeMobileNavIndex(pathname),
@@ -198,26 +197,42 @@ export function AppLayout({ title, children }: AppLayoutProps) {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Desktop sidebar (only visible on lg+) */}
       <aside
-        className={`fixed left-5 top-0 h-full z-50 transition-all duration-300 ease-out ${
-          showSidebar ? 'translate-x-0' : '-translate-x-full'
-        } ${isMobile ? 'w-[86vw] max-w-sm' : 'w-14'}`}
+        className="hidden lg:block fixed left-5 top-0 h-full z-40 w-14 transition-all duration-300 ease-out"
+        aria-hidden={isMobile}
       >
-        {/* Glassmorphism background only for mobile drawer */}
-        {isMobile && (
-          <div className="absolute inset-0 glass-panel glass-tint border-r border-white/50 dark:border-slate-800/50" />
-        )}
-
         <div className="relative h-full flex flex-col">
-          {/* Header (mobile only) */}
-          {isMobile && (
+          <div className="flex flex-col items-center gap-6 w-full pt-8">
+            <div className="flex w-10 justify-center">{logoIcon}</div>
+            <GlassVerticalNav
+              activeIndex={displayNavIndex}
+              onChange={handleNavChange}
+              items={GLASS_NAV_ITEMS}
+              className="w-10"
+            />
+          </div>
+          <div className="pb-6 pt-6">
+            <div className="text-[10px] text-center text-slate-500 dark:text-slate-600 font-mono uppercase tracking-wider opacity-70">
+              Build: 2025-11-20 16:00
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Mobile drawer */}
+      {isMounted && (
+        <aside
+          className={`lg:hidden fixed left-0 top-0 h-full z-50 w-[86vw] max-w-sm transition-all duration-300 ease-out ${
+            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          aria-hidden={!isMobile}
+        >
+          <div className="absolute inset-0 glass-panel glass-tint border-r border-white/50 dark:border-slate-800/50" />
+          <div className="relative h-full flex flex-col">
             <div className="px-5 py-6 border-b border-white/40 dark:border-slate-800/40">
               <div className="flex items-center gap-3">
-                <div className={`flex ${isMobile ? 'flex-1 justify-center' : 'justify-center'}`}>
-                  {logoHorizontal}
-                </div>
-
+                <div className="flex flex-1 justify-center">{logoHorizontal}</div>
                 <button
                   className="ml-auto rounded-full p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -227,15 +242,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Navigation */}
-          <nav
-            className={`flex-1 ${
-              isMobile ? 'px-3 py-6 overflow-y-auto' : 'flex flex-col items-center justify-start pt-8'
-            }`}
-          >
-            {isMounted && isMobile ? (
+            <nav className="flex-1 px-3 py-6 overflow-y-auto">
               <div className="space-y-1">
                 {NAV_ITEMS.map((item) => {
                   const active = pathname === item.href;
@@ -254,33 +262,24 @@ export function AppLayout({ title, children }: AppLayoutProps) {
                       {active && (
                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[#009DA8] to-[#00B5C3] rounded-r-full" />
                       )}
-                      <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'scale-110' : 'group-hover:scale-110'} transition-transform duration-200`} />
+                      <Icon
+                        className={`w-5 h-5 flex-shrink-0 ${active ? 'scale-110' : 'group-hover:scale-110'} transition-transform duration-200`}
+                      />
                       <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
                     </Link>
                   );
                 })}
               </div>
-            ) : (
-              <div className="flex flex-col items-center gap-6 w-full">
-                <div className="flex w-10 justify-center">{logoIcon}</div>
-                <GlassVerticalNav
-                  activeIndex={displayNavIndex}
-                  onChange={handleNavChange}
-                  items={GLASS_NAV_ITEMS}
-                  className="w-10"
-                />
-              </div>
-            )}
-          </nav>
+            </nav>
 
-          {/* Footer */}
-          <div className={`pb-5 ${isMobile ? 'px-3 border-t border-white/30 dark:border-slate-800/40 pt-4' : 'pt-6'}`}>
-            <div className="text-[10px] text-center text-slate-500 dark:text-slate-600 font-mono uppercase tracking-wider opacity-70">
-              Build: 2025-11-20 16:00
+            <div className="px-3 border-t border-white/30 dark:border-slate-800/40 pt-4 pb-5">
+              <div className="text-[10px] text-center text-slate-500 dark:text-slate-600 font-mono uppercase tracking-wider opacity-70">
+                Build: 2025-11-20 16:00
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       {/* Mobile top bar */}
           {isMounted && isMobile && (
