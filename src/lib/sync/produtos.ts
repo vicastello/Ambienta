@@ -8,12 +8,14 @@ import {
   TinyProdutoDetalhado,
   TinyListarProdutosResponse,
   TinyApiError,
+  TinyProdutoListaItem,
 } from '@/lib/tinyApi';
 import {
   getProdutosSyncCursor,
   upsertProdutosSyncCursor,
   type ProdutosSyncCursorRow,
 } from '@/src/repositories/produtosCursorRepository';
+import { buildProdutoUpsertPayload } from '@/lib/productMapper';
 import { upsertProduto, upsertProdutosEstoque } from '@/src/repositories/tinyProdutosRepository';
 import type { Database } from '@/src/types/db-public';
 
@@ -57,7 +59,10 @@ export type SyncProdutosResult = {
   cursorAppliedUpdatedSince?: string | null;
 };
 
+type TinyProdutosRow = Database['public']['Tables']['tiny_produtos']['Row'];
+
 type SyncStats = {
+
   totalRequests: number;
   total429: number;
   backoffMs: number;
@@ -489,7 +494,7 @@ export async function syncProdutosFromTiny(
           updateLatestData((produto as any)?.dataAlteracao ?? (detalhe as any)?.dataAlteracao ?? null);
 
           // Buscar o registro atual para merge se necessário
-          let registroAtual: any = null;
+          let registroAtual: TinyProdutosRow | null = null;
           try {
             const { data: atual, error: errAtual } = await supabaseAdmin
               .from('tiny_produtos')
@@ -500,38 +505,12 @@ export async function syncProdutosFromTiny(
           } catch {}
 
           // Preferir campos do detalhado, depois do produto, depois manter o atual
-          const detalheEstoque = (detalhe as any)?.estoque || {};
-          const detalheDimensoes = (detalhe as any)?.dimensoes || {};
-          const detalhePrecos = (detalhe as any)?.precos || {};
-          const produtoData: any = {
-            id_produto_tiny: produto.id,
-            codigo: (produto as any).sku || (produto as any).codigo || registroAtual?.codigo || null,
-            nome: (detalhe as any)?.nome || (produto as any).descricao || (produto as any).nome || registroAtual?.nome || '',
-            unidade: (detalhe as any)?.unidade || (produto as any).unidade || registroAtual?.unidade || null,
-            preco: detalhePrecos?.preco ?? (produto as any).precos?.preco ?? registroAtual?.preco ?? null,
-            preco_promocional: detalhePrecos?.precoPromocional ?? (produto as any).precos?.precoPromocional ?? registroAtual?.preco_promocional ?? null,
-            situacao: (detalhe as any)?.situacao || (produto as any).situacao || registroAtual?.situacao || null,
-            tipo: (detalhe as any)?.tipo || (produto as any).tipo || registroAtual?.tipo || null,
-            gtin: (detalhe as any)?.gtin || (produto as any).gtin || registroAtual?.gtin || null,
-            imagem_url: (detalhe as any)?.anexos?.find?.((a: any) => a.url)?.url || registroAtual?.imagem_url || null,
-            saldo: detalheEstoque?.saldo ?? estoqueDetalhado?.saldo ?? registroAtual?.saldo ?? null,
-            reservado: detalheEstoque?.reservado ?? estoqueDetalhado?.reservado ?? registroAtual?.reservado ?? null,
-            disponivel: detalheEstoque?.disponivel ?? estoqueDetalhado?.disponivel ?? registroAtual?.disponivel ?? null,
-            descricao: (detalhe as any)?.descricao || registroAtual?.descricao || null,
-            ncm: (detalhe as any)?.ncm || registroAtual?.ncm || null,
-            origem: (detalhe as any)?.origem || registroAtual?.origem || null,
-            peso_liquido: detalheDimensoes?.pesoLiquido ?? registroAtual?.peso_liquido ?? null,
-            peso_bruto: detalheDimensoes?.pesoBruto ?? registroAtual?.peso_bruto ?? null,
-            data_criacao_tiny: (produto as any).dataCriacao || registroAtual?.data_criacao_tiny || null,
-            data_atualizacao_tiny: (produto as any).dataAlteracao || registroAtual?.data_atualizacao_tiny || null,
-            // Adicionais: marca, categoria, fornecedores, embalagem, etc.
-            fornecedor_codigo: (detalhe as any)?.fornecedores?.[0]?.codigoProdutoNoFornecedor || registroAtual?.fornecedor_codigo || null,
-            embalagem_qtd: (detalhe as any)?.embalagem?.quantidade ?? registroAtual?.embalagem_qtd ?? null,
-            marca: (detalhe as any)?.marca || registroAtual?.marca || null,
-            categoria: (detalhe as any)?.categoria || (detalhe as any)?.grupo || registroAtual?.categoria || null,
-            // Se existir coluna para JSON completo, salvar
-            ...(typeof registroAtual?.raw_payload !== 'undefined' && { raw_payload: detalhe }),
-          };
+          const produtoData = buildProdutoUpsertPayload({
+            resumo: produto as TinyProdutoListaItem,
+            detalhe: detalhe as TinyProdutoDetalhado,
+            estoque: estoqueDetalhado ?? undefined,
+            registroAtual,
+          });
 
           if (estoqueOnly) {
             await upsertProdutosEstoque([
