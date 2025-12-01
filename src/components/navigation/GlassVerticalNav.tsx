@@ -57,15 +57,16 @@ export function GlassVerticalNav({ activeIndex, onChange, className, items }: Gl
     setAnimKey((key) => key + 1);
   }, [clampedIndex]);
 
-  const cssVars = useMemo<CSSProperties>(
-    () => ({
-      ['--nav-item-size' as const]: `${ITEM_SIZE}px`,
-      ['--nav-gap' as const]: `${GAP}px`,
-      ['--nav-thumb-size' as const]: `${THUMB_HEIGHT}px`,
-      ['--nav-thumb-width' as const]: `${THUMB_WIDTH}px`,
-      ['--nav-shell-padding' as const]: `${SHELL_PADDING_TOP}px`,
-      ['--nav-thumb-top' as const]: `${THUMB_TOP}px`,
-    }),
+  const cssVars = useMemo(
+    () =>
+      ({
+        ['--nav-item-size' as const]: `${ITEM_SIZE}px`,
+        ['--nav-gap' as const]: `${GAP}px`,
+        ['--nav-thumb-size' as const]: `${THUMB_HEIGHT}px`,
+        ['--nav-thumb-width' as const]: `${THUMB_WIDTH}px`,
+        ['--nav-shell-padding' as const]: `${SHELL_PADDING_TOP}px`,
+        ['--nav-thumb-top' as const]: `${THUMB_TOP}px`,
+      }) as CSSProperties,
     []
   );
 
@@ -132,16 +133,17 @@ export function GlassHorizontalNav({ activeIndex, onChange, className, items }: 
 
   const totalWidth = useMemo(() => itemsWidth + H_SHELL_PADDING * 2, [itemsWidth]);
 
-  const cssVars = useMemo<CSSProperties>(
-    () => ({
-      ['--nav-item-size' as const]: `${H_ITEM_SIZE}px`,
-      ['--nav-gap' as const]: `${H_GAP}px`,
-      ['--nav-thumb-width' as const]: `${H_THUMB_WIDTH}px`,
-      ['--nav-thumb-size' as const]: `${H_THUMB_HEIGHT}px`,
-      ['--nav-shell-padding' as const]: `${H_SHELL_PADDING}px`,
-      ['--nav-total-width' as const]: `${totalWidth}px`,
-      ['--nav-items-width' as const]: `${itemsWidth}px`,
-    }),
+  const cssVars = useMemo(
+    () =>
+      ({
+        ['--nav-item-size' as const]: `${H_ITEM_SIZE}px`,
+        ['--nav-gap' as const]: `${H_GAP}px`,
+        ['--nav-thumb-width' as const]: `${H_THUMB_WIDTH}px`,
+        ['--nav-thumb-size' as const]: `${H_THUMB_HEIGHT}px`,
+        ['--nav-shell-padding' as const]: `${H_SHELL_PADDING}px`,
+        ['--nav-total-width' as const]: `${totalWidth}px`,
+        ['--nav-items-width' as const]: `${itemsWidth}px`,
+      }) as CSSProperties,
     [itemsWidth, totalWidth]
   );
 
