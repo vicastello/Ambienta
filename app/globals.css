@@ -7,12 +7,12 @@
 @layer base {
   :root {
     font-size: 80%; /* reduce overall scale so rem-based sizes render ~20% smaller */
-    --glass-blur-1: 22px;
-    --glass-blur-2: 28px;
-    --glass-blur-3: 34px;
-    --card-blur: 18px;
+    --glass-blur-1: 200px;
+    --glass-blur-2: 200px;
+    --glass-blur-3: 200px;
+    --card-blur: 200px;
     --card-sat: 1.1;
-    --panel-blur: 18px;
+    --panel-blur: 200px;
     --panel-sat: 1.1;
     --row-blur: 12px;
     --row-sat: 1.05;
@@ -37,26 +37,26 @@
     --negative: #e11d48;
 
     /* Superfícies compartilhadas */
-    --surface-card-bg: rgba(255, 255, 255, 0.72);
+    --surface-card-bg: rgba(255, 255, 255, 0.95);
     --surface-card-bg-hover: rgba(255, 255, 255, 0.56);
-    --surface-card-border: transparent;
-    --surface-card-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      inset 0 0 18px rgba(255, 255, 255, 0.08),
-      0 8px 30px rgba(10, 15, 30, 0.08);
-    --surface-panel-bg: rgba(255, 255, 255, 0.45);
-    --surface-panel-border: transparent;
-    --surface-panel-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.15),
-      inset 0 0 20px rgba(255, 255, 255, 0.08),
-      0 10px 30px rgba(15, 23, 42, 0.08);
+    --surface-card-border: #FFF;
+    --surface-card-shadow: none;
+    --surface-panel-bg: rgba(255, 255, 255, 0.75);
+    --surface-panel-border: #FFF;
+    --surface-panel-shadow: none;
     --surface-row-bg: rgba(255, 255, 255, 0.08);
     --surface-row-border: var(--surface-border-soft);
-    --surface-row-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --surface-row-shadow: none;
     --surface-sheen-start: rgba(255, 255, 255, 0.02);
     --surface-sheen-end: rgba(255, 255, 255, 0.14);
     --cta-primary: linear-gradient(120deg, var(--accent), var(--accent-light));
     --cta-primary-hover: linear-gradient(120deg, var(--accent-dark), var(--accent));
+    --btn-bg: rgba(255, 255, 255, 0.92);
+    --btn-bg-hover: rgba(255, 255, 255, 0.98);
+    --btn-border: rgba(2, 6, 23, 0.12);
+    --btn-border-hover: rgba(2, 6, 23, 0.24);
+    --btn-text: var(--text-main);
+    --btn-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
   }
 
   :root.dark {
@@ -90,15 +90,13 @@
     --surface-border-strong: rgba(118, 140, 210, 0.03);
     --surface-border-soft: rgba(118, 140, 210, 0.015);
     --surface-card-border: var(--surface-border-strong);
-    --surface-card-shadow:
-      0 18px 45px rgba(1, 2, 8, 0.6);
-    --card-blur: 26px;
+    --surface-card-shadow: none;
+    --card-blur: 200px;
     --card-sat: 1.08;
     --surface-panel-bg: linear-gradient(150deg, rgba(4, 8, 18, 0.74), rgba(8, 14, 28, 0.64));
     --surface-panel-border: var(--surface-border-strong);
-    --surface-panel-shadow:
-      0 18px 45px rgba(1, 3, 10, 0.6);
-    --panel-blur: 28px;
+    --surface-panel-shadow: none;
+    --panel-blur: 200px;
     --panel-sat: 1.12;
     --surface-row-bg: rgba(4, 8, 18, 0.56);
     --surface-row-border: transparent;
@@ -109,6 +107,12 @@
     --surface-sheen-end: rgba(0, 0, 0, 0);
     --cta-primary: linear-gradient(120deg, #2ad4ff, #7cc6ff);
     --cta-primary-hover: linear-gradient(120deg, #35eacb, #a4ccff);
+    --btn-bg: rgba(255, 255, 255, 0.08);
+    --btn-bg-hover: rgba(255, 255, 255, 0.16);
+    --btn-border: rgba(255, 255, 255, 0.2);
+    --btn-border-hover: rgba(255, 255, 255, 0.32);
+    --btn-text: #f8fbff;
+    --btn-shadow: 0 14px 36px rgba(0, 5, 18, 0.65);
   }
 
   html,
@@ -130,6 +134,104 @@
     background: var(--bg-body-alt);
     background-image: var(--bg-body-gradient);
     color: var(--text-main);
+  }
+
+  button,
+  [type="button"],
+  [type="submit"],
+  [type="reset"] {
+    appearance: none;
+    background-color: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 9999px;
+    color: var(--btn-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.7rem 1.4rem;
+    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    box-shadow: var(--btn-shadow);
+    backdrop-filter: blur(18px) saturate(1.08);
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  }
+
+  button:hover,
+  [type="button"]:hover,
+  [type="submit"]:hover,
+  [type="reset"]:hover {
+    background-color: var(--btn-bg-hover);
+    border-color: var(--btn-border-hover);
+  }
+
+  button:focus-visible,
+  [type="button"]:focus-visible,
+  [type="submit"]:focus-visible,
+  [type="reset"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(0, 157, 168, 0.2);
+  }
+
+  button:active,
+  [type="button"]:active,
+  [type="submit"]:active,
+  [type="reset"]:active {
+    transform: translateY(1px);
+  }
+
+  button:disabled,
+  [type="button"]:disabled,
+  [type="submit"]:disabled,
+  [type="reset"]:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .app-checkbox {
+    border-radius: 9999px;
+    border: 1px solid var(--btn-border);
+    background-color: rgba(255, 255, 255, 0.4);
+    width: 1.75rem;
+    height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+  }
+
+  .app-checkbox:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .app-checkbox .app-checkbox-indicator {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 0.4rem;
+    border: 2px solid rgba(2, 6, 23, 0.2);
+    background-color: rgba(255, 255, 255, 0.8);
+    transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .app-checkbox.checked {
+    border-color: var(--accent);
+    background-color: rgba(0, 157, 168, 0.15);
+    box-shadow: inset 0 0 0 1px rgba(0, 157, 168, 0.2);
+  }
+
+  .app-checkbox.checked .app-checkbox-indicator {
+    background-color: var(--accent);
+    border-color: transparent;
+    transform: scale(0.9);
+    box-shadow: 0 4px 12px rgba(0, 157, 168, 0.3);
   }
 
   /* Dark-mode specific background treatment */
@@ -160,10 +262,7 @@
     position: fixed;
     inset: -20%;
     background:
-      radial-gradient(circle at 18% 18%, rgba(255, 246, 250, 0.92), rgba(255, 246, 250, 0.4) 36%, transparent 66%),
-      radial-gradient(circle at 80% 16%, rgba(237, 230, 235, 0.8), rgba(226, 217, 223, 0.3) 34%, transparent 60%),
-      radial-gradient(circle at 24% 78%, rgba(217, 216, 212, 0.72), rgba(202, 200, 196, 0.34) 38%, transparent 62%),
-      radial-gradient(circle at 72% 84%, rgba(236, 230, 222, 0.62), rgba(222, 214, 204, 0.28) 40%, transparent 66%);
+radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transparent 66%), radial-gradient(circle at 80% 16%, #bcf0f5, #dae0e0 34%, transparent 60%), radial-gradient(circle at 24% 78%, rgb(212 227 228 / 72%), rgb(255 255 255 / 34%) 38%, transparent 62%), radial-gradient(circle at 72% 84%, rgb(222 236 230 / 62%), rgb(205 205 205 / 28%) 40%, transparent 66%);
     filter: blur(24px);
     opacity: 0.66;
     z-index: -5;
@@ -201,11 +300,22 @@
   :root.dark .border-slate-100 { border-color: rgba(255, 255, 255, 0.08) !important; }
   :root.dark .border-slate-200 { border-color: rgba(255, 255, 255, 0.12) !important; }
 
-  /* Suaviza sombras claras no modo escuro (eliminação do glow branco) */
-  :root.dark .shadow-white\/30 { --tw-shadow-color: rgba(5, 7, 18, 0.65); --tw-shadow: var(--tw-shadow-colored); }
-  :root.dark .shadow-white\/40 { --tw-shadow-color: rgba(5, 7, 18, 0.7); --tw-shadow: var(--tw-shadow-colored); }
-  :root.dark .shadow-white\/60 { --tw-shadow-color: rgba(5, 7, 18, 0.8); --tw-shadow: var(--tw-shadow-colored); }
-  :root.dark .shadow-inner { box-shadow: inset 0 0 0 1px rgba(31, 48, 106, 0.4) !important; }
+  /* Neutraliza utilitários de sombra do Tailwind */
+  .shadow,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl,
+  .shadow-inner,
+  .shadow-white\/30,
+  .shadow-white\/40,
+  .shadow-white\/60 {
+    box-shadow: none !important;
+    --tw-shadow: 0 0 #0000 !important;
+    --tw-shadow-colored: 0 0 #0000 !important;
+    --tw-shadow-color: transparent !important;
+  }
   :root.dark .text-slate-900 { color: var(--text-main) !important; }
   :root.dark .text-slate-800 { color: #dbe4ff !important; }
   :root.dark .text-slate-700 { color: #bcc8ef !important; }
@@ -226,8 +336,7 @@
     backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
     -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
     padding: 1.5rem;
-    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: var(--surface-card-shadow);
+    transition: background 0.2s ease, border-color 0.2s ease;
     will-change: transform;
     contain: paint;
   }
@@ -245,23 +354,20 @@
     overflow: hidden;
     backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
     -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
-    box-shadow: var(--surface-panel-shadow);
     will-change: transform;
     contain: paint;
   }
-  .glass-panel::after,
-  .app-card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 1;
-    background: linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end));
-  }
 
-  :root.dark .glass-panel::after,
-  :root.dark .app-card::after {
-    background: none;
+  .dark .glass-panel {
+    background: var(--surface-panel-bg);
+    border: none;
+    border-radius: 2rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+    will-change: transform;
+    contain: paint;
   }
 
   /* Intensifica blur/saturação em blocos com bg-white translúcido existentes */
@@ -309,47 +415,6 @@
     border: 1px solid rgba(123, 162, 255, 0.14);
   }
 
-  /* Escalonamento automático de blur em camadas de cards/painéis */
-  .app-card .app-card,
-  .app-card .glass-panel,
-  .glass-panel .app-card,
-  .glass-panel .glass-panel,
-  .bg-white\/90 .app-card,
-  .bg-white\/80 .app-card,
-  .bg-white\/70 .app-card,
-  .bg-white\/60 .app-card,
-  .bg-white\/50 .app-card,
-  .bg-white\/40 .app-card {
-    background: var(--surface-card-bg);
-    border-color: var(--surface-card-border);
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: none !important;
-  }
-
-  .app-card .app-card .app-card,
-  .glass-panel .glass-panel .glass-panel {
-    background: var(--surface-card-bg);
-    border-color: var(--surface-card-border);
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: none !important;
-  }
-
-  .app-card .glass-row,
-  .glass-panel .glass-row {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    background: var(--surface-row-bg);
-    border-color: var(--surface-row-border);
-  }
-
-  :root.dark .app-card .glass-row,
-  :root.dark .glass-panel .glass-row {
-    border: none;
-    box-shadow: none;
-  }
-
   .glass-row {
     background: var(--surface-row-bg);
     border: 1px solid var(--surface-row-border);
@@ -358,13 +423,11 @@
     overflow: hidden;
     backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
     -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
-    box-shadow: var(--surface-row-shadow);
     will-change: transform;
     contain: paint;
   }
 
   :root.dark .app-card,
-  :root.dark .glass-panel,
   :root.dark .product-card,
   :root.dark .glass-row {
     border: none;
@@ -375,6 +438,7 @@
   background: var(--surface-panel-bg);
   border: 1px solid var(--surface-panel-border);
   backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
   contain: paint;
 }
 .insight-card-bg-info {
@@ -411,37 +475,11 @@
   background-blend-mode: screen;
 }
 
-:root.dark .glass-tint {
+.dark .glass-tint {
   background: var(--surface-panel-bg);
-  border: 1px solid var(--surface-panel-border);
-  box-shadow: var(--surface-panel-shadow);
-}
-
-@media (prefers-reduced-transparency: reduce), (prefers-reduced-motion: reduce) {
-  .glass-panel,
-  .glass-row,
-  .app-card,
-  .glass-tint,
-  .product-card {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    box-shadow: none !important;
-    background: rgba(255, 255, 255, 0.30);
-    border-color: rgba(255, 255, 255, 0.4);
-  }
-
-  :root.dark .glass-panel,
-  :root.dark .glass-row,
-  :root.dark .app-card,
-  :root.dark .glass-tint,
-  :root.dark .product-card {
-    background: rgba(10, 12, 24, 0.62);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  body {
-    transform: translateZ(0);
-  }
+  border: none;
+  backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
 }
 
 .scrollbar-hide {
@@ -458,7 +496,6 @@
   overflow: hidden;
   backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
   -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-  box-shadow: var(--surface-card-shadow);
   contain: paint;
 }
 
@@ -511,7 +548,6 @@
   :root.dark .app-chip-group {
     border-color: rgba(128, 158, 255, 0.3);
     background-color: rgba(8, 12, 28, 0.82);
-    box-shadow: inset 0 0 0 1px rgba(111, 150, 255, 0.2);
   }
 
   /* Chip individual */
@@ -548,7 +584,6 @@
   :root.dark .app-chip-active {
     background: linear-gradient(130deg, var(--accent), var(--accent-light));
     color: white;
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
   }
 
   /* Cabeçalho das tabelas */
@@ -562,10 +597,6 @@
     -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
   }
 
-  :root.dark .app-table-header {
-    box-shadow: 0 10px 25px rgba(2, 4, 12, 0.65);
-  }
-
   /* Borda discreta */
   .app-border-subtle {
     border-color: var(--border-subtle);
@@ -574,7 +605,7 @@
   /* Input com estilo Liquid Glass */
   .app-input {
     background-color: rgba(255, 255, 255, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 1.5rem;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
@@ -592,14 +623,12 @@
 
   :root.dark .app-input {
     background-color: rgba(7, 11, 26, 0.82);
-    border-color: rgba(126, 158, 255, 0.3);
-    box-shadow: 0 0 0 1px rgba(126, 158, 255, 0.15);
+    border-color: rgba(226, 237, 255, 0.12);
   }
 
   :root.dark .app-input:focus {
     background-color: rgba(10, 16, 36, 0.95);
     border-color: var(--accent-light);
-    box-shadow: 0 0 0 2px rgba(108, 135, 255, 0.25);
   }
 
   /* Esconde barras de rolagem visíveis no mobile, mantendo o scroll */
@@ -614,28 +643,29 @@
 
   /* Button primário */
   .app-btn-primary {
-    background-image: var(--cta-primary);
-    color: white;
-    border-radius: 1.5rem;
-    padding: 0.75rem 1.5rem;
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    border-radius: 9999px;
+    padding: 0.85rem 1.75rem;
     font-weight: 600;
-    font-size: 0.875rem;
-    border: none;
+    font-size: 0.9rem;
+    border: 1px solid var(--btn-border);
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    box-shadow: var(--btn-shadow);
   }
 
   .app-btn-primary:hover {
-    background-image: var(--cta-primary-hover);
+    background-color: var(--btn-bg-hover);
+    border-color: var(--btn-border-hover);
   }
 
   .app-btn-primary:active {
-    transform: scale(0.98);
+    transform: translateY(1px);
   }
 
   :root.dark .app-btn-primary {
-    box-shadow: 0 12px 25px rgba(19, 30, 74, 0.65);
-    border: 1px solid rgba(156, 188, 255, 0.25);
+    border-color: var(--btn-border);
   }
 
   /* Badge / Pill para status */
@@ -655,7 +685,6 @@
     background: linear-gradient(130deg, rgba(123, 103, 230, 0.28), rgba(207, 185, 255, 0.16));
     color: #f7f8ff;
     border: 1px solid rgba(167, 190, 255, 0.45);
-    box-shadow: 0 8px 22px rgba(2, 4, 12, 0.65);
   }
 
   .app-shell {
@@ -707,7 +736,6 @@
   background: rgba(4, 8, 22, 0.95) !important;
   border: 1px solid rgba(120, 158, 255, 0.35) !important;
   border-radius: 1rem !important;
-  box-shadow: 0 15px 35px rgba(1, 3, 10, 0.8) !important;
 }
 
 /* SVG text for Recharts tooltip should be sharp */
