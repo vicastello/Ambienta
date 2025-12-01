@@ -81,6 +81,80 @@ const firstDate = (
   return null;
 };
 
+type VariacoesSource = {
+  tipo?: string | null;
+  variacoes?: Array<{
+    estoque?: {
+      saldo?: number | string | null;
+      disponivel?: number | string | null;
+      reservado?: number | string | null;
+      quantidade?: number | string | null;
+    } | null;
+  } | null>;
+} | null;
+
+export type VariacaoEstoqueTotals = {
+  saldo: number | null;
+  reservado: number | null;
+  disponivel: number | null;
+};
+
+export function computeVariacaoEstoqueTotals(
+  source: VariacoesSource
+): VariacaoEstoqueTotals | null {
+  if (!source || source.tipo !== 'V') return null;
+  if (!Array.isArray(source.variacoes) || !source.variacoes.length) return null;
+
+  let saldoSum = 0;
+  let disponivelSum = 0;
+  let reservadoSum = 0;
+  let hasSaldo = false;
+  let hasDisponivel = false;
+  let hasReservado = false;
+
+  for (const variacao of source.variacoes) {
+    if (!variacao || typeof variacao !== 'object') continue;
+    const estoque: Record<string, unknown> =
+      (variacao as { estoque?: Record<string, unknown> | null })?.estoque ?? {};
+
+    const saldoValue = firstNumber(
+      estoque?.saldo as any,
+      estoque?.disponivel as any,
+      estoque?.quantidade as any
+    );
+    if (saldoValue !== null) {
+      saldoSum += saldoValue;
+      hasSaldo = true;
+    }
+
+    const disponivelValue = firstNumber(
+      estoque?.disponivel as any,
+      estoque?.saldo as any,
+      estoque?.quantidade as any
+    );
+    if (disponivelValue !== null) {
+      disponivelSum += disponivelValue;
+      hasDisponivel = true;
+    }
+
+    const reservadoValue = toNumber(estoque?.reservado as any);
+    if (reservadoValue !== null) {
+      reservadoSum += reservadoValue;
+      hasReservado = true;
+    }
+  }
+
+  if (!hasSaldo && !hasDisponivel && !hasReservado) {
+    return null;
+  }
+
+  return {
+    saldo: hasSaldo ? saldoSum : null,
+    disponivel: hasDisponivel ? disponivelSum : null,
+    reservado: hasReservado ? reservadoSum : null,
+  };
+}
+
 export type ProdutoCadastroSources = {
   resumo?: TinyProdutoListaItem | null;
   detalhe?: TinyProdutoDetalhado | null;
@@ -130,27 +204,33 @@ export function buildProdutoUpsertPayload({
     registroAtual?.preco_promocional
   );
 
-  const saldo = firstNumber(
+  const variacaoEstoque = computeVariacaoEstoqueTotals(detalhe as VariacoesSource);
+
+  const baseSaldo = firstNumber(
     detalhe?.estoque?.saldo,
     estoque?.saldo,
     (resumo as any)?.estoques?.saldo,
     registroAtual?.saldo
   );
+  const saldo = variacaoEstoque?.saldo ?? baseSaldo;
 
-  const reservado = firstNumber(
+  const baseReservado = firstNumber(
     detalhe?.estoque?.reservado,
     estoque?.reservado,
     (resumo as any)?.estoques?.reservado,
     registroAtual?.reservado
   );
+  const reservado = variacaoEstoque?.reservado ?? baseReservado;
 
-  const disponivel = firstNumber(
+  const baseDisponivel = firstNumber(
     detalhe?.estoque?.disponivel,
     estoque?.disponivel,
     (resumo as any)?.estoques?.disponivel,
     registroAtual?.disponivel,
-    saldo
+    baseSaldo
   );
+  const disponivel =
+    variacaoEstoque?.disponivel ?? baseDisponivel ?? variacaoEstoque?.saldo ?? saldo;
 
   const unidade = firstText(detalhe?.unidade, resumo?.unidade, registroAtual?.unidade);
   const situacao = firstText(detalhe?.situacao, resumo?.situacao, registroAtual?.situacao);

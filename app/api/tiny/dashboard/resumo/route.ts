@@ -951,7 +951,7 @@ export async function GET(req: NextRequest) {
       topProdutos: enrichProdutos(
         Array.from(mapaProdutoAtual.values())
           .sort((a, b) => b.quantidade - a.quantidade)
-          .slice(0, 10)
+          .slice(0, 12)
       ),
     };
 
@@ -977,7 +977,7 @@ export async function GET(req: NextRequest) {
       topProdutos: enrichProdutos(
         Array.from(mapaProdutoAnterior.values())
           .sort((a, b) => b.quantidade - a.quantidade)
-          .slice(0, 10)
+          .slice(0, 12)
       ),
     };
 

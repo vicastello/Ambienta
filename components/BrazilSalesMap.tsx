@@ -509,11 +509,12 @@ export function BrazilSalesMap({
               const d = uf ? mapaUF.get(uf) : null;
               const val = d?.totalValor || 0;
               const fill = colorScale(val);
+              const emptyFill = '#e5e7eb';
               // Emit selectors for common ID variants to maximize compatibility
               return [
-                `.rvm-svg #${idLower} { fill: ${val > 0 ? fill : "#eef8fa"} !important; fill-opacity: 1; }`,
-                `.rvm-svg #${idUpper} { fill: ${val > 0 ? fill : "#eef8fa"} !important; fill-opacity: 1; }`,
-                `.rvm-svg #${idUnderscore} { fill: ${val > 0 ? fill : "#eef8fa"} !important; fill-opacity: 1; }`,
+                `.rvm-svg #${idLower} { fill: ${val > 0 ? fill : emptyFill} !important; fill-opacity: 1; }`,
+                `.rvm-svg #${idUpper} { fill: ${val > 0 ? fill : emptyFill} !important; fill-opacity: 1; }`,
+                `.rvm-svg #${idUnderscore} { fill: ${val > 0 ? fill : emptyFill} !important; fill-opacity: 1; }`,
               ].join('\n');
             })
             .join("\n")}

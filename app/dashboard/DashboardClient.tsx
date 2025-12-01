@@ -1220,7 +1220,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
   const totalProdutosVendidos = resumoAtual?.totalProdutosVendidos ?? 0;
-  const topProdutos = resumoAtual?.topProdutos?.slice(0, 10) ?? [];
+  const topProdutos = resumoAtual?.topProdutos?.slice(0, 12) ?? [];
 
   return (
     <>
@@ -1740,7 +1740,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6 w-full min-w-0 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Top 10</p>
+                      <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Top 12</p>
                       <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Produtos mais vendidos</h2>
                     </div>
                     <span className="text-xs text-slate-400">Atual: {topProdutos.length}</span>
@@ -1748,8 +1748,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   {topProdutos.length ? (
                     <>
                       {/* Desktop / tablet: lista vertical com 5 visíveis e scroll suave */}
-                      <div className="relative hidden md:block">
-                        <div className="grid grid-cols-2 gap-4 pr-2 max-h-[820px] overflow-y-auto scrollbar-hide">
+                      <div className="hidden md:block">
+                        <div className="grid grid-cols-2 gap-4 pr-2">
                           {topProdutos.map((produto, idx) => (
                             <div
                               key={`${produto.produtoId ?? produto.descricao}`}
@@ -1797,7 +1797,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                             </div>
                           ))}
                         </div>
-                        <div className="fade-bottom" />
                       </div>
 
                       {/* Mobile: carrossel horizontal com snap */}
@@ -1850,8 +1849,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                             </div>
                           ))}
                         </div>
-                        <div className="fade-side fade-left" />
-                        <div className="fade-side fade-right" />
                       </div>
                     </>
                   ) : (
