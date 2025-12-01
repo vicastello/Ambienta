@@ -88,14 +88,14 @@ export async function salvarItensPedido(
     try {
       const { data: pedidoLocal, error: rawErr } = await supabaseAdmin
         .from('tiny_orders')
-        .select('raw')
+        .select('raw, raw_payload')
         .eq('id', idPedidoLocal)
         .maybeSingle();
       if (rawErr) {
         console.error(`[Itens Pedido] Falha ao buscar raw do pedido ${idPedidoTiny}`, rawErr);
         return null;
       }
-      const raw = pedidoLocal?.raw as any;
+      const raw = (pedidoLocal?.raw ?? pedidoLocal?.raw_payload) as any;
       if (!raw || typeof raw !== 'object') return null;
 
       const itensRaw =

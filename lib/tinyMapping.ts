@@ -208,7 +208,8 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
     uf: uf ?? null,
     forma_pagamento,
     transportador_nome: (p as any).transportador?.nome ?? null,
-    // Armazena o payload completo no campo raw_payload SEMPRE
+    // Armazena o payload completo tanto no campo legada `raw` quanto no novo `raw_payload`
+    raw: p,
     raw_payload: p,
   } as const;
 }
