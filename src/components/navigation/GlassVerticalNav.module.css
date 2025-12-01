@@ -358,9 +358,9 @@
   position: absolute;
   top: 50%;
   left: 0;
-  width: var(--nav-thumb-width, 76px);
-  height: var(--nav-thumb-size, 48px);
-  border-radius: 18px;
+  width: var(--nav-thumb-width, 68px);
+  height: var(--nav-thumb-size, 42px);
+  border-radius: 16px;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.24), rgba(240, 240, 240, 0.08)),
     radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 65%);
@@ -370,7 +370,7 @@
     0 6px 16px rgba(0, 0, 0, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
     inset 0 -1px 0 rgba(0, 0, 0, 0.07),
-    0 0 0 3px rgba(255, 255, 255, 0.08);
+    0 0 0 2px rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px) saturate(1.05);
   -webkit-backdrop-filter: blur(10px) saturate(1.05);
   transform: translate(var(--thumb-x, 0px), -50%);
@@ -390,7 +390,7 @@
     0 6px 16px rgba(0, 0, 0, 0.26),
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
     inset 0 -1px 0 rgba(0, 0, 0, 0.2),
-    0 0 0 3px rgba(255, 255, 255, 0.05);
+    0 0 0 2px rgba(255, 255, 255, 0.05);
 }
 
 .thumbHorizontal::before {
@@ -410,11 +410,11 @@
 .thumbHorizontal::after {
   content: "";
   position: absolute;
-  inset: -12px;
-  border-radius: 18px;
+  inset: -10px;
+  border-radius: 16px;
   background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.32), transparent 70%);
-  filter: blur(14px);
-  opacity: 0.35;
+  filter: blur(12px);
+  opacity: 0.32;
 }
 
 :global(.dark) .thumbHorizontal::before {

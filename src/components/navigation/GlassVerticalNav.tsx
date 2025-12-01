@@ -37,8 +37,8 @@ const THUMB_TOP = SHELL_PADDING_TOP - (THUMB_HEIGHT - ITEM_SIZE) / 2;
 // Horizontal (mobile) variant
 const H_ITEM_SIZE = 18; // px
 const H_GAP = 42; // px
-const H_THUMB_WIDTH = 76; // px
-const H_THUMB_HEIGHT = 48; // px
+const H_THUMB_WIDTH = 68; // px
+const H_THUMB_HEIGHT = 42; // px
 const H_STEP = H_ITEM_SIZE + H_GAP;
 const H_SHELL_PADDING = 26; // px
 const H_THUMB_LEFT = (index: number) => H_SHELL_PADDING + index * H_STEP + H_ITEM_SIZE / 2 - H_THUMB_WIDTH / 2;
