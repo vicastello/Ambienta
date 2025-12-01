@@ -41,7 +41,9 @@ export async function GET(req: NextRequest) {
         codigo: p.codigo,
         nome: p.nome,
         gtin: p.gtin,
+        imagem_url: p.imagem_url,
         fornecedor_codigo: p.fornecedor_codigo,
+        fornecedor_nome: p.fornecedor_nome,
         embalagem_qtd: pack,
         saldo: p.saldo ?? 0,
         reservado: p.reservado ?? 0,
@@ -51,6 +53,7 @@ export async function GET(req: NextRequest) {
         sugestao_base: sugestaoBase,
         sugestao_ajustada: sugeridoAjustado,
         alerta_embalagem: alertaEmbalagem,
+        observacao_compras: p.observacao_compras,
       };
     });
 

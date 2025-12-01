@@ -142,7 +142,9 @@ export interface TinyProdutosRow {
   updated_at: string | null; // timestamptz
   imagem_url: string | null;
   fornecedor_codigo: string | null;
+  fornecedor_nome: string | null;
   embalagem_qtd: number | null;
+  observacao_compras: string | null;
   marca: string | null;
   categoria: string | null;
   raw_payload: Json | null;

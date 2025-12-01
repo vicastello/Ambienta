@@ -95,6 +95,7 @@
 - updated_at (timestamptz, null)
 - imagem_url (text, null)
 - fornecedor_codigo (text, null)
+- fornecedor_nome (text, null)
 - embalagem_qtd (numeric, null)
 - Papel: catálogo de produtos do Tiny (estoque, preço, fornecedor, embalagem).
 - Índices: codigo (btree), nome (GIN full-text), situacao, updated_at DESC.

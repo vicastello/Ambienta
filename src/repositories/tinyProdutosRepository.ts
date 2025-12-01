@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
-import type { TinyProdutosRow } from '@/src/types/db-public';
+import type { TinyProdutosRow, TinyProdutosInsert } from '@/src/types/db-public';
 
 export type ListProdutosParams = {
   search?: string;
@@ -42,14 +42,31 @@ export async function getTinyAccessToken() {
   return getAccessTokenFromDbOrRefresh();
 }
 
+const sanitizeProdutoPayload = (
+  produtoData: Partial<TinyProdutosRow> & { id_produto_tiny: number }
+): Partial<TinyProdutosRow> & { id_produto_tiny: number } => {
+  const next: Partial<TinyProdutosRow> & { id_produto_tiny: number } = {
+    ...produtoData,
+  };
+
+  const codigo = typeof next.codigo === 'string' ? next.codigo.trim() : '';
+  next.codigo = codigo || `ID-${next.id_produto_tiny}`;
+
+  const nome = typeof next.nome === 'string' ? next.nome.trim() : '';
+  next.nome = nome || `Produto ${next.id_produto_tiny}`;
+
+  return next;
+};
+
 export async function upsertProduto(
   produtoData: Partial<TinyProdutosRow> & { id_produto_tiny: number }
 ) {
   const admin = supabaseAdmin as any;
+  const payload = sanitizeProdutoPayload(produtoData);
   const { error } = await admin
     .from('tiny_produtos')
     .upsert(
-      produtoData as any,
+      payload as TinyProdutosInsert,
       { onConflict: 'id_produto_tiny', ignoreDuplicates: false }
     );
 
@@ -95,14 +112,16 @@ export async function updateFornecedorEmbalagem(params: {
   id_produto_tiny: number;
   fornecedor_codigo?: string | null;
   embalagem_qtd?: number | null;
+  observacao_compras?: string | null;
 }) {
-  const { id_produto_tiny, fornecedor_codigo, embalagem_qtd } = params;
+  const { id_produto_tiny, fornecedor_codigo, embalagem_qtd, observacao_compras } = params;
   const admin = supabaseAdmin as any;
   const { error } = await admin
     .from('tiny_produtos')
     .update({
       fornecedor_codigo: fornecedor_codigo ?? null,
       embalagem_qtd: embalagem_qtd ?? null,
+      observacao_compras: observacao_compras ?? null,
     } as any)
     .eq('id_produto_tiny', id_produto_tiny);
 
@@ -119,7 +138,10 @@ export type ProdutoBaseRow = Pick<
   | 'reservado'
   | 'disponivel'
   | 'fornecedor_codigo'
+  | 'fornecedor_nome'
   | 'embalagem_qtd'
+  | 'observacao_compras'
+  | 'imagem_url'
   | 'tipo'
   | 'situacao'
 >;
@@ -128,7 +150,7 @@ export async function listProdutosAtivosSimples() {
   const { data, error } = await supabaseAdmin
     .from('tiny_produtos')
     .select(
-      'id_produto_tiny,codigo,nome,gtin,saldo,reservado,disponivel,fornecedor_codigo,embalagem_qtd,tipo,situacao'
+      'id_produto_tiny,codigo,nome,gtin,saldo,reservado,disponivel,fornecedor_codigo,fornecedor_nome,embalagem_qtd,observacao_compras,imagem_url,tipo,situacao'
     )
     .eq('situacao', 'A')
     .eq('tipo', 'S');

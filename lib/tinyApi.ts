@@ -300,6 +300,7 @@ export interface TinyProdutoDetalhado {
   };
   fornecedores?: Array<{
     id?: number;
+    nome?: string;
     codigoProdutoNoFornecedor?: string;
   }>;
   anexos?: Array<{
