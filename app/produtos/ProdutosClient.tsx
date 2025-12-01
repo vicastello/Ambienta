@@ -239,6 +239,12 @@ export default function ProdutosClient() {
               placeholder="Buscar por nome, código ou GTIN..."
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleFiltersSubmit();
+                }
+              }}
               className="app-input w-full pl-11"
             />
           </div>
