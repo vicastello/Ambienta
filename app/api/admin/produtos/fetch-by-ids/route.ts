@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
           data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
         };
         await upsertProduto(produtoData);
-        results.push({ id, ok: true, imagem: produtoData.imagem_url });
+        results.push({ id, ok: true, imagem: produtoData.imagem_url ?? undefined });
       } catch (error: unknown) {
         const status = getStatusFromError(error);
         results.push({
