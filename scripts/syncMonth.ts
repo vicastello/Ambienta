@@ -17,13 +17,15 @@
 
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '../lib/tinyAuth';
-import { listarPedidosTinyPorPeriodo } from '../lib/tinyApi';
+import { listarPedidosTinyPorPeriodo, TinyApiError } from '../lib/tinyApi';
 import { mapPedidoToOrderRow } from '../lib/tinyMapping';
 import { runFreteEnrichment } from '../lib/freteEnricher';
 import { normalizeMissingOrderChannels } from '../lib/channelNormalizer';
 import { enrichOrdersBatch } from '../lib/orderEnricher';
 
 const ENABLE_INLINE_ENRICHMENT = process.env.ENABLE_INLINE_FRETE_ENRICHMENT === 'true'; // Desabilitado por padrão
+const PAGE_DELAY_MS = Number(process.env.TINY_SYNC_PAGE_DELAY_MS ?? '550');
+const RATE_LIMIT_BACKOFF_MS = Number(process.env.TINY_RATE_LIMIT_BACKOFF_MS ?? '65000');
 
 function parseArg(name: string): string | undefined {
   const idx = process.argv.findIndex((a) => a.startsWith(`--${name}=`));
@@ -97,14 +99,26 @@ async function main() {
     let requestsMade = 0;
 
     while (true) {
+      console.log(`[syncMonth] requesting page ${round + 1} (offset=${offset})`);
+      let res;
+      try {
+        res = await listarPedidosTinyPorPeriodo(accessToken, {
+          dataInicial: start,
+          dataFinal: end,
+          limit,
+          offset,
+        });
+      } catch (err) {
+        if (err instanceof TinyApiError && err.status === 429) {
+          console.warn(
+            `[syncMonth] Tiny rate limit reached on page ${round + 1}; waiting ${RATE_LIMIT_BACKOFF_MS}ms before retrying`
+          );
+          await sleep(RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
+        throw err;
+      }
       round++;
-      console.log(`[syncMonth] requesting page ${round} (offset=${offset})`);
-      const res = await listarPedidosTinyPorPeriodo(accessToken, {
-        dataInicial: start,
-        dataFinal: end,
-        limit,
-        offset,
-      });
 
       const itens = (res as any).itens ?? [];
       if (!itens.length) {
@@ -207,7 +221,9 @@ async function main() {
       }
 
       // rate limit: Tiny permite 120 req/min => ~500ms por chamada
-      await sleep(550);
+      if (PAGE_DELAY_MS > 0) {
+        await sleep(PAGE_DELAY_MS);
+      }
     }
 
     console.log('[syncMonth] finished, total orders fetched/upserted:', totalFetched);

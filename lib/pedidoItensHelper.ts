@@ -6,14 +6,140 @@
  */
 
 import { supabaseAdmin } from './supabaseAdmin';
-import { obterPedidoDetalhado, obterProduto, obterEstoqueProduto } from './tinyApi';
+import { obterPedidoDetalhado, obterProduto, obterEstoqueProduto, TinyApiError } from './tinyApi';
 import { getErrorMessage } from './errors';
-import { upsertProduto } from '@/src/repositories/tinyProdutosRepository';
+import { upsertProduto, upsertProdutosEstoque } from '@/src/repositories/tinyProdutosRepository';
 
 const toNumberOrNull = (value: any): number | null => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchAndUpsertProduto(accessToken: string, id: number) {
+  try {
+    const detalhe: any = await obterProduto(accessToken, id, {});
+    let estoque: any = null;
+    try {
+      estoque = await obterEstoqueProduto(accessToken, id, {});
+    } catch (err) {
+      console.warn('[Itens Pedido] Estoque falhou para produto', id, err);
+    }
+
+    const detalheEstoque = detalhe?.estoque || {};
+    const estOk = estoque || {};
+    const detalhePrecos = detalhe?.precos || {};
+    const dims = detalhe?.dimensoes || {};
+
+    const produtoData: any = {
+      id_produto_tiny: id,
+      codigo: detalhe?.codigo ?? null,
+      nome: detalhe?.nome ?? detalhe?.descricao ?? null,
+      unidade: detalhe?.unidade ?? null,
+      preco: detalhePrecos?.preco ?? null,
+      preco_promocional: detalhePrecos?.precoPromocional ?? null,
+      situacao: detalhe?.situacao ?? null,
+      tipo: detalhe?.tipo ?? null,
+      gtin: detalhe?.gtin ?? null,
+      imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
+      saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
+      reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
+      disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
+      descricao: detalhe?.descricao ?? null,
+      ncm: detalhe?.ncm ?? null,
+      origem: detalhe?.origem ?? null,
+      peso_liquido: dims?.pesoLiquido ?? null,
+      peso_bruto: dims?.pesoBruto ?? null,
+      data_criacao_tiny: detalhe?.dataCriacao ?? null,
+      data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
+    };
+
+    await upsertProduto(produtoData);
+  } catch (err) {
+    console.error('[Itens Pedido] Falha ao upsert produto faltante', id, err);
+  }
+}
+
+async function ensureProdutosNoCatalog(accessToken: string, ids: number[]): Promise<Set<number>> {
+  const uniqueIds = Array.from(new Set(ids.filter((id): id is number => Number.isFinite(id))));
+  const ensured = new Set<number>();
+  if (!uniqueIds.length) return ensured;
+
+  const { data: existentes } = await supabaseAdmin
+    .from('tiny_produtos')
+    .select('id_produto_tiny')
+    .in('id_produto_tiny', uniqueIds);
+  const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
+  setExistentes.forEach((id) => ensured.add(id));
+  const faltantes = uniqueIds.filter((id) => !setExistentes.has(id));
+
+  for (const id of faltantes) {
+    await fetchAndUpsertProduto(accessToken, id);
+    const { data: inserted } = await supabaseAdmin
+      .from('tiny_produtos')
+      .select('id_produto_tiny')
+      .eq('id_produto_tiny', id)
+      .maybeSingle();
+    if (inserted?.id_produto_tiny) {
+      ensured.add(id);
+    } else {
+      console.warn('[Itens Pedido] Produto ainda não disponível após tentativa de cadastro', id);
+    }
+    await delay(400); // respeitar limite Tiny entre detalhes de produtos
+  }
+
+  return ensured;
+}
+
+async function atualizarEstoqueProdutos(accessToken: string, ids: number[]) {
+  const uniqueIds = Array.from(new Set(ids.filter((id): id is number => Number.isFinite(id))));
+  if (!uniqueIds.length) return;
+
+  const ensured = await ensureProdutosNoCatalog(accessToken, uniqueIds);
+  const idsParaAtualizar = uniqueIds.filter((id) => ensured.has(id));
+
+  if (!idsParaAtualizar.length) {
+    console.warn('[Itens Pedido] Nenhum produto disponível para atualizar estoque após ensure; ids originais:', uniqueIds.join(', '));
+    return;
+  }
+
+  for (let index = 0; index < idsParaAtualizar.length; index++) {
+    const id = idsParaAtualizar[index];
+    let atualizado = false;
+    let tentativa = 0;
+    while (!atualizado) {
+      try {
+        const estoque: any = await obterEstoqueProduto(accessToken, id, {});
+        await upsertProdutosEstoque([
+          {
+            id_produto_tiny: id,
+            saldo: estoque?.saldo ?? null,
+            reservado: estoque?.reservado ?? null,
+            disponivel: estoque?.disponivel ?? null,
+            data_atualizacao_tiny: new Date().toISOString(),
+          },
+        ]);
+        atualizado = true;
+      } catch (err) {
+        const status = err instanceof TinyApiError ? err.status : (typeof err === 'object' && err && 'status' in err ? Number((err as any).status) : undefined);
+        if (status === 429) {
+          tentativa += 1;
+          const backoff = Math.min(4000 + tentativa * 500, 15000);
+          console.warn(`[Itens Pedido] 429 ao atualizar estoque do produto ${id}. Tentativa ${tentativa}, aguardando ${backoff}ms`);
+          await delay(backoff);
+          continue;
+        }
+        console.error(`[Itens Pedido] Falha ao atualizar estoque do produto ${id}:`, getErrorMessage(err));
+        atualizado = true; // evita loop infinito em erros não tratados
+      }
+    }
+    if (index < idsParaAtualizar.length - 1) {
+      // respeita limite de requisições do Tiny
+      await delay(600);
+    }
+  }
+}
 
 interface PedidoItemData {
   id_pedido: number;
@@ -35,55 +161,6 @@ export async function salvarItensPedido(
   idPedidoTiny: number,
   idPedidoLocal: number
 ): Promise<number | null> {
-  const ensureProdutosNoCatalog = async (ids: number[]) => {
-    if (!ids.length) return;
-    const { data: existentes } = await supabaseAdmin
-      .from('tiny_produtos')
-      .select('id_produto_tiny')
-      .in('id_produto_tiny', ids);
-    const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
-    const faltantes = ids.filter((id) => !setExistentes.has(id));
-    for (const id of faltantes) {
-      try {
-        const detalhe: any = await obterProduto(accessToken, id, {});
-        let estoque: any = null;
-        try {
-          estoque = await obterEstoqueProduto(accessToken, id, {});
-        } catch (err) {
-          console.warn('[Itens Pedido] Estoque falhou para produto', id, err);
-        }
-        const detalheEstoque = detalhe?.estoque || {};
-        const estOk = estoque || {};
-        const detalhePrecos = detalhe?.precos || {};
-        const dims = detalhe?.dimensoes || {};
-        const produtoData: any = {
-          id_produto_tiny: id,
-          codigo: detalhe?.codigo ?? null,
-          nome: detalhe?.nome ?? detalhe?.descricao ?? null,
-          unidade: detalhe?.unidade ?? null,
-          preco: detalhePrecos?.preco ?? null,
-          preco_promocional: detalhePrecos?.precoPromocional ?? null,
-          situacao: detalhe?.situacao ?? null,
-          tipo: detalhe?.tipo ?? null,
-          gtin: detalhe?.gtin ?? null,
-          imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
-          saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
-          reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
-          disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
-          descricao: detalhe?.descricao ?? null,
-          ncm: detalhe?.ncm ?? null,
-          origem: detalhe?.origem ?? null,
-          peso_liquido: dims?.pesoLiquido ?? null,
-          peso_bruto: dims?.pesoBruto ?? null,
-          data_criacao_tiny: detalhe?.dataCriacao ?? null,
-          data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
-        };
-        await upsertProduto(produtoData);
-      } catch (err) {
-        console.error('[Itens Pedido] Falha ao upsert produto faltante', id, err);
-      }
-    }
-  };
   const fallbackFromRaw = async (): Promise<number | null> => {
     try {
       const { data: pedidoLocal, error: rawErr } = await supabaseAdmin
@@ -131,7 +208,8 @@ export async function salvarItensPedido(
         .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
         .filter((v): v is number => !!v);
       if (idsTiny.length) {
-        await ensureProdutosNoCatalog(idsTiny);
+        await ensureProdutosNoCatalog(accessToken, idsTiny);
+        await atualizarEstoqueProdutos(accessToken, idsTiny);
       }
 
       const { error: insertErr } = await supabaseAdmin
@@ -205,7 +283,8 @@ export async function salvarItensPedido(
       .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
       .filter((v): v is number => !!v);
     if (idsTiny.length) {
-      await ensureProdutosNoCatalog(idsTiny);
+      await ensureProdutosNoCatalog(accessToken, idsTiny);
+      await atualizarEstoqueProdutos(accessToken, idsTiny);
       const { data: existentes } = await supabaseAdmin
         .from('tiny_produtos')
         .select('id_produto_tiny')
@@ -325,34 +404,59 @@ export async function sincronizarItensPorPedidos(
   }
 
   const delayMs = options?.delayMs ?? 1000;
-  const retries = Math.max(0, options?.retries ?? 1);
+  const rawRetries = options?.retries;
+  const retries = rawRetries === undefined ? 1 : rawRetries;
+  const unlimitedRetries = !Number.isFinite(retries);
 
-  let resultado = await salvarItensLote(
-    accessToken,
-    pedidosSemItens.map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id })),
-    delayMs
-  );
+  let totalSucesso = 0;
+  let totalItens = 0;
 
-  let restantes = await buscarPedidosSemItens(pedidosSemItens.map((p) => p.id));
-
-  for (let tentativa = 0; tentativa < retries && restantes.length > 0; tentativa++) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    resultado = await salvarItensLote(
+  async function processSubset(subset: typeof pedidosSemItens) {
+    if (!subset.length) return;
+    const parcial = await salvarItensLote(
       accessToken,
-      pedidosSemItens
-        .filter((p) => restantes.includes(p.id))
-        .map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id })),
+      subset.map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id })),
       delayMs
     );
-    restantes = await buscarPedidosSemItens(pedidosSemItens.map((p) => p.id));
+    totalSucesso += parcial.sucesso;
+    totalItens += parcial.totalItens;
   }
 
-  const falhas = pedidosSemItens.length - resultado.sucesso;
+  await processSubset(pedidosSemItens);
+  let restantes = await buscarPedidosSemItens(pedidosSemItens.map((p) => p.id));
+
+  let tentativa = 0;
+  while (restantes.length > 0 && (unlimitedRetries || tentativa < (retries as number))) {
+    tentativa++;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+    const restantesSet = new Set(restantes);
+    const subset = pedidosSemItens.filter((p) => restantesSet.has(p.id));
+    if (!subset.length) break;
+
+    await processSubset(subset);
+
+    const antes = restantes.length;
+    restantes = await buscarPedidosSemItens(pedidosSemItens.map((p) => p.id));
+
+    if (restantes.length === antes && unlimitedRetries) {
+      console.warn(
+        '[Itens Pedido] Nenhum progresso na sincronização de itens; aguardando antes da próxima tentativa (modo retries infinitos)'
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs * 2));
+    }
+
+    if (restantes.length === antes && !unlimitedRetries) {
+      break;
+    }
+  }
+
+  const falhas = pedidosSemItens.length - totalSucesso;
   return {
     processados: pedidos.length,
-    sucesso: resultado.sucesso,
+    sucesso: totalSucesso,
     falhas,
-    totalItens: resultado.totalItens,
+    totalItens,
   };
 }
 

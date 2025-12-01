@@ -17,7 +17,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { obterPedidoDetalhado } from "../lib/tinyApi";
+import { obterPedidoDetalhado, TinyApiError } from "../lib/tinyApi";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -28,6 +28,16 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+const ITENS_DELAY_MS = Math.max(300, Number(process.env.TINY_ITENS_DELAY_MS ?? "600"));
+const ITENS_RATE_LIMIT_SLEEP_MS = Math.max(
+  ITENS_DELAY_MS,
+  Number(process.env.TINY_ITENS_RATE_LIMIT_SLEEP_MS ?? "10000")
+);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface SyncStats {
   totalPedidos: number;
@@ -95,6 +105,7 @@ async function syncItensRecentes(dias: number): Promise<SyncStats> {
 
   console.log(`✅ Já processados: ${idsComItens.size} pedidos`);
   console.log(`⏳ Faltam: ${pedidosSemItens.length} pedidos\n`);
+  console.log(`🐢 Delay entre requisições: ${ITENS_DELAY_MS}ms (rate limit backoff: ${ITENS_RATE_LIMIT_SLEEP_MS}ms)\n`);
   
   stats.totalPedidos = pedidos.length;
   stats.jaProcessados = idsComItens.size;
@@ -158,16 +169,18 @@ async function syncItensRecentes(dias: number): Promise<SyncStats> {
       }
 
       // Rate limit: 600ms entre requisições = ~100 req/min
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await sleep(ITENS_DELAY_MS);
 
     } catch (error: any) {
       console.error(`   ❌ Erro ao processar pedido ${pedido.tiny_id}:`, error.message);
       stats.erros++;
       
       // Se for erro 429 (rate limit), aguardar mais tempo
-      if (error.status === 429) {
-        console.log(`   ⏸️  Rate limit atingido, aguardando 10 segundos...`);
-        await new Promise((resolve) => setTimeout(resolve, 10000));
+      if (error instanceof TinyApiError && error.status === 429) {
+        console.log(
+          `   ⏸️  Rate limit atingido, aguardando ${ITENS_RATE_LIMIT_SLEEP_MS / 1000}s...`
+        );
+        await sleep(ITENS_RATE_LIMIT_SLEEP_MS);
       }
     }
   }

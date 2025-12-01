@@ -72,24 +72,23 @@ export async function upsertProdutosEstoque(
   if (!produtos.length) return;
 
   const admin = supabaseAdmin as any;
-  const payload = produtos.map((produto) => ({
-    id_produto_tiny: produto.id_produto_tiny,
-    saldo: produto.saldo ?? null,
-    reservado: produto.reservado ?? null,
-    disponivel: produto.disponivel ?? null,
-    preco: produto.preco ?? null,
-    preco_promocional: produto.preco_promocional ?? null,
-    data_atualizacao_tiny: produto.data_atualizacao_tiny ?? null,
-  }));
+  for (const produto of produtos) {
+    const payload = {
+      saldo: produto.saldo ?? null,
+      reservado: produto.reservado ?? null,
+      disponivel: produto.disponivel ?? null,
+      preco: produto.preco ?? null,
+      preco_promocional: produto.preco_promocional ?? null,
+      data_atualizacao_tiny: produto.data_atualizacao_tiny ?? null,
+    } as any;
 
-  const { error } = await admin
-    .from('tiny_produtos')
-    .upsert(payload as any, {
-      onConflict: 'id_produto_tiny',
-      ignoreDuplicates: false,
-    });
+    const { error } = await admin
+      .from('tiny_produtos')
+      .update(payload)
+      .eq('id_produto_tiny', produto.id_produto_tiny);
 
-  if (error) throw error;
+    if (error) throw error;
+  }
 }
 
 export async function updateFornecedorEmbalagem(params: {
