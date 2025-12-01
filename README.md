@@ -49,7 +49,11 @@
 
 ## Runtime & UX Notes
 - **Dashboard Cache**: `DashboardClient` usa `localStorage` (`tiny_dash_state_v1:*`) para resumo/global/situações/gráfico com validade de ~2 min. Reaproveite `readCacheEntry`/`isCacheEntryFresh` ao criar novos cards para não aumentar a pressão no endpoint `/api/tiny/dashboard/resumo`.
-- **Pedidos/Produtos**: utilize `lib/staleCache.ts` (`staleWhileRevalidate`) para listas com paginação. Evite `fetch` direto com `cache: 'no-store'` quando já houver cache compartilhado.
+- **Pedidos/Produtos**: utilize `lib/staleCache.ts` (`staleWhileRevalidate`) para listas com paginação. Evite `fetch` direto com `cache: 'no-store'` quando já houver cache compartilhado. Para pedidos, há endpoints admin de manutenção:
+  - `/api/admin/pedidos/retry-itens` — reprocessa pedidos sem itens ou sem código/id de produto.
+  - `/api/admin/pedidos/update-produtos` — dado um conjunto de pedidos (por `since`, `limit` ou lista), extrai ids de produto (itens + raw) e atualiza catálogo/estoque com retry/backoff.
+  - `/api/admin/produtos/fetch-by-ids` — wrapper HTTP do script para buscar produtos específicos no Tiny (detalhe + estoque) com retries 429/401.
+- **Itens com produto garantido**: `lib/pedidoItensHelper.ts` agora garante que produtos referenciados existam no catálogo: se um `id_produto_tiny` não estiver em `tiny_produtos`, ele chama Tiny (`obterProduto` + `obterEstoqueProduto`) e faz `upsertProduto` antes de gravar os itens (aplica tanto no fluxo normal quanto no fallback do `raw`).
 - **Compras**: o PDF (`jspdf` + `jspdf-autotable`) é carregado dinamicamente. Mantenha feedback visual (`Gerando…`) para exportações pesadas e preserve o debounce de recalcular sugestões (350 ms) ao alterar filtros numéricos.
 - **Rate Limits Tiny**: scripts já aplicam delay; não reduza `batchDelayMs` sem testar, ou os 429s quebram o job. Todos os writes em `tiny_orders` devem passar por `upsertOrdersPreservingEnriched`.
 
