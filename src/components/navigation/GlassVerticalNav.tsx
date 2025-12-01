@@ -77,11 +77,13 @@ export function GlassVerticalNav({ activeIndex, onChange, className, items }: Gl
         <div className={styles.track} aria-hidden />
         <div
           className={styles.thumb}
-          style={{
-            transform: `translate(-50%, ${thumbTranslateY}px)`,
-            ['--thumb-y' as const]: `${thumbTranslateY}px`,
-            animation: animKey ? 'thumbLiquid 720ms cubic-bezier(0.22, 0.88, 0.32, 1.08)' : undefined,
-          }}
+          style={
+            {
+              transform: `translate(-50%, ${thumbTranslateY}px)`,
+              ['--thumb-y' as const]: `${thumbTranslateY}px`,
+              animation: animKey ? 'thumbLiquid 720ms cubic-bezier(0.22, 0.88, 0.32, 1.08)' : undefined,
+            } as CSSProperties
+          }
           aria-hidden
         />
 
@@ -153,11 +155,13 @@ export function GlassHorizontalNav({ activeIndex, onChange, className, items }: 
       <div className={styles.shellHorizontal}>
         <div
           className={styles.thumbHorizontal}
-          style={{
-            transform: `translate(${thumbTranslateX}px, -50%)`,
-            ['--thumb-x' as const]: `${thumbTranslateX}px`,
-            animation: animKey ? 'thumbLiquidX 720ms cubic-bezier(0.22, 0.88, 0.32, 1.08)' : undefined,
-          }}
+          style={
+            {
+              transform: `translate(${thumbTranslateX}px, -50%)`,
+              ['--thumb-x' as const]: `${thumbTranslateX}px`,
+              animation: animKey ? 'thumbLiquidX 720ms cubic-bezier(0.22, 0.88, 0.32, 1.08)' : undefined,
+            } as CSSProperties
+          }
           aria-hidden
         />
 
