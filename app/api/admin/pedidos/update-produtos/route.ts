@@ -171,10 +171,11 @@ async function fetchProdutos(ids: number[], retries429: number) {
       const detalhePrecos = detalhe?.precos ?? null;
       const dims = detalhe?.dimensoes ?? null;
       const anexos = detalhe?.anexos ?? null;
+      const nomeProduto = detalhe?.nome ?? detalhe?.descricao ?? 'Produto sem nome';
       const produtoData: Parameters<typeof upsertProduto>[0] = {
         id_produto_tiny: id,
         codigo: detalhe?.codigo ?? null,
-        nome: detalhe?.nome ?? detalhe?.descricao ?? null,
+        nome: nomeProduto,
         unidade: detalhe?.unidade ?? null,
         preco: detalhePrecos?.preco ?? null,
         preco_promocional: detalhePrecos?.precoPromocional ?? null,
