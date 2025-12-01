@@ -40,6 +40,8 @@ type TinyProdutoDetalhe = TinyProdutoIdCarrier & {
   situacao?: string | null;
   tipo?: string | null;
   gtin?: string | null;
+  ncm?: string | null;
+  origem?: string | null;
   anexos?: TinyProdutoAnexo[] | null;
   estoque?: TinyProdutoEstoque | null;
   precos?: TinyProdutoPrecos | null;
