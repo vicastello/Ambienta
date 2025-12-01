@@ -14,6 +14,17 @@ const toLowerTrimmed = (value: string | null | undefined) => {
   return trimmed.length ? trimmed : null;
 };
 
+const toTitleCase = (value: string | null | undefined) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .toLowerCase()
+    .split(/\s+/)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+};
+
 const firstText = (
   ...values: Array<string | number | null | undefined>
 ): string | null => {
@@ -160,9 +171,8 @@ export function buildProdutoUpsertPayload({
     detalhe?.fornecedores?.[0]?.codigoProdutoNoFornecedor,
     registroAtual?.fornecedor_codigo
   );
-  const fornecedor_nome = firstText(
-    detalhe?.fornecedores?.[0]?.nome,
-    registroAtual?.fornecedor_nome
+  const fornecedor_nome = toTitleCase(
+    firstText(detalhe?.fornecedores?.[0]?.nome, registroAtual?.fornecedor_nome)
   );
   const embalagem_qtd = firstNumber(
     (detalhe as any)?.embalagem?.quantidade,

@@ -17,11 +17,6 @@ export default {
         xs: "2px",
         sm: "4px",
       },
-      boxShadow: {
-        "glass": "0 8px 32px rgba(0, 0, 0, 0.1)",
-        "glass-lg": "0 20px 50px rgba(0, 0, 0, 0.12)",
-        "glass-xl": "0 25px 60px rgba(0, 0, 0, 0.15)",
-      },
     },
   },
 } satisfies Config;

@@ -7,6 +7,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { listarProdutos, obterEstoqueProduto, obterProduto } from "../lib/tinyApi";
+import { buildProdutoUpsertPayload } from "../lib/productMapper";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -120,23 +121,11 @@ async function syncProdutos(enrichEstoque = true): Promise<SyncStats> {
           const primeiraImagem = produtoDetalhado?.anexos?.find((anexo: any) => anexo.url);
 
           // Preparar dados para inserção
-          const produtoData = {
-            id_produto_tiny: produto.id,
-            codigo: produto.sku || null,
-            nome: produto.descricao,
-            unidade: produto.unidade || null,
-            preco: produto.precos?.preco || null,
-            preco_promocional: produto.precos?.precoPromocional || null,
-            saldo: estoqueData?.estoque?.saldo || 0,
-            reservado: estoqueData?.estoque?.reservado || 0,
-            disponivel: estoqueData?.estoque?.disponivel || 0,
-            situacao: produto.situacao,
-            tipo: produto.tipo,
-            gtin: produto.gtin || null,
-            imagem_url: primeiraImagem?.url || null,
-            data_criacao_tiny: produto.dataCriacao || null,
-            data_atualizacao_tiny: produto.dataAlteracao || null,
-          };
+          const produtoData = buildProdutoUpsertPayload({
+            resumo: produto as any,
+            detalhe: produtoDetalhado as any,
+            estoque: estoqueData as any,
+          });
 
           // Upsert no banco
           const { error: upsertError } = await supabase

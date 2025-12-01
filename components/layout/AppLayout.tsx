@@ -314,15 +314,12 @@ export function AppLayout({ title, children }: AppLayoutProps) {
             <div className="absolute bottom-10 left-1/3 h-72 w-72 rounded-full bg-[#d1fff0] blur-[150px] opacity-50" />
           </div>
 
-          <div className="relative z-10 space-y-6">
+          <div className="relative z-10 space-y-6" data-page-title={title ?? undefined}>
             {title && (
-              <header className="rounded-[32px] border border-white/40 dark:border-slate-800/50 glass-panel glass-tint px-6 py-5 flex flex-col gap-2">
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Painel</p>
-                <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{title}</h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Acompanhe a saúde do seu e-commerce em uma experiência visual inspirada em apps iOS.</p>
-              </header>
+              <h1 className="sr-only" aria-live="polite">
+                {title}
+              </h1>
             )}
-
             <div className="pb-4">
               {children}
             </div>

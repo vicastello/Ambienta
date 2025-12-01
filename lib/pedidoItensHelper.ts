@@ -9,6 +9,7 @@ import { supabaseAdmin } from './supabaseAdmin';
 import { obterPedidoDetalhado, obterProduto, obterEstoqueProduto, TinyApiError } from './tinyApi';
 import { getErrorMessage } from './errors';
 import { upsertProduto, upsertProdutosEstoque } from '@/src/repositories/tinyProdutosRepository';
+import { buildProdutoUpsertPayload } from './productMapper';
 
 const toNumberOrNull = (value: any): number | null => {
   const n = Number(value);
@@ -27,33 +28,7 @@ async function fetchAndUpsertProduto(accessToken: string, id: number) {
       console.warn('[Itens Pedido] Estoque falhou para produto', id, err);
     }
 
-    const detalheEstoque = detalhe?.estoque || {};
-    const estOk = estoque || {};
-    const detalhePrecos = detalhe?.precos || {};
-    const dims = detalhe?.dimensoes || {};
-
-    const produtoData: any = {
-      id_produto_tiny: id,
-      codigo: detalhe?.codigo ?? null,
-      nome: detalhe?.nome ?? detalhe?.descricao ?? null,
-      unidade: detalhe?.unidade ?? null,
-      preco: detalhePrecos?.preco ?? null,
-      preco_promocional: detalhePrecos?.precoPromocional ?? null,
-      situacao: detalhe?.situacao ?? null,
-      tipo: detalhe?.tipo ?? null,
-      gtin: detalhe?.gtin ?? null,
-      imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
-      saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
-      reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
-      disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
-      descricao: detalhe?.descricao ?? null,
-      ncm: detalhe?.ncm ?? null,
-      origem: detalhe?.origem ?? null,
-      peso_liquido: dims?.pesoLiquido ?? null,
-      peso_bruto: dims?.pesoBruto ?? null,
-      data_criacao_tiny: detalhe?.dataCriacao ?? null,
-      data_atualizacao_tiny: detalhe?.dataAlteracao ?? null,
-    };
+    const produtoData = buildProdutoUpsertPayload({ detalhe: detalhe as any, estoque: estoque as any });
 
     await upsertProduto(produtoData);
   } catch (err) {

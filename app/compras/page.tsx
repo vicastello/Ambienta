@@ -15,9 +15,15 @@ export default function ComprasPage() {
 
 function ComprasSkeleton() {
   return (
-    <div className="space-y-6 pb-6">
-      <div className="h-48 rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-white/10 animate-pulse" />
-      <div className="h-[520px] rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-white/10 animate-pulse" />
+    <div className="space-y-8 pb-10">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-[36px] glass-panel glass-tint border border-white/40 dark:border-white/10 h-[360px] animate-pulse" />
+        <div className="space-y-4">
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-white/10 h-40 animate-pulse" />
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-white/10 h-40 animate-pulse" />
+        </div>
+      </section>
+      <div className="rounded-[32px] glass-panel glass-tint border border-white/40 dark:border-white/10 h-[520px] animate-pulse" />
     </div>
   );
 }

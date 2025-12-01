@@ -38,7 +38,6 @@ type SortDirection = 'asc' | 'desc' | null;
 type SortKey =
   | 'nome'
   | 'codigo'
-  | 'gtin'
   | 'fornecedor_codigo'
   | 'embalagem_qtd'
   | 'disponivel'
@@ -68,6 +67,7 @@ export default function ComprasClient() {
   const [periodDays, setPeriodDays] = useState(60);
   const [targetDays, setTargetDays] = useState(DEFAULT_COBERTURA_DIAS);
   const [dados, setDados] = useState<Sugestao[]>([]);
+  const [fornecedorFiltro, setFornecedorFiltro] = useState('');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
@@ -136,8 +136,18 @@ export default function ComprasClient() {
     return () => clearTimeout(timeout);
   }, [load]);
 
+  const dadosFiltrados = useMemo(() => {
+    const termo = fornecedorFiltro.trim().toLowerCase();
+    if (!termo) return dados;
+    return dados.filter((produto) => {
+      const codigo = produto.fornecedor_codigo?.toLowerCase() ?? '';
+      const nome = produto.fornecedor_nome?.toLowerCase() ?? '';
+      return codigo.includes(termo) || nome.includes(termo);
+    });
+  }, [dados, fornecedorFiltro]);
+
   const derivados = useMemo<ProdutoDerivado[]>(() => {
-    return dados.map((p, index) => {
+    return dadosFiltrados.map((p, index) => {
       const pack = Math.max(p.embalagem_qtd || 1, 1);
       const sugestaoAjustada = p.sugestao_base > 0 ? Math.ceil(p.sugestao_base / pack) * pack : 0;
       const alerta = p.sugestao_base > 0 && p.sugestao_base < pack;
@@ -149,7 +159,7 @@ export default function ComprasClient() {
         originalIndex: index,
       };
     });
-  }, [dados]);
+  }, [dadosFiltrados]);
 
   const sortedProdutos = useMemo(() => {
     const { key: activeKey, direction } = sortConfig;
@@ -659,6 +669,19 @@ export default function ComprasClient() {
               <StatCard key={card.id} {...card} />
             ))}
           </div>
+
+          <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)] items-center">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Filtro de fornecedor</p>
+              <p className="text-xs text-slate-500">Filtra por nome ou código retornado pelo Tiny</p>
+            </div>
+            <input
+              className="app-input"
+              placeholder="Ex: Rainha ou 1234"
+              value={fornecedorFiltro}
+              onChange={(e) => setFornecedorFiltro(e.target.value)}
+            />
+          </div>
         </div>
 
         <aside className="space-y-4">
@@ -734,7 +757,6 @@ export default function ComprasClient() {
                 </th>
                 <th className="px-4 py-3 text-left" aria-sort={getAriaSort('nome')}>{renderSortableHeader('Produto', 'nome')}</th>
                 <th className="px-4 py-3 text-left" aria-sort={getAriaSort('codigo')}>{renderSortableHeader('SKU', 'codigo')}</th>
-                <th className="px-4 py-3 text-left" aria-sort={getAriaSort('gtin')}>{renderSortableHeader('EAN', 'gtin')}</th>
                 <th className="px-4 py-3 text-left" aria-sort={getAriaSort('fornecedor_codigo')}>
                   {renderSortableHeader('Código fornecedor', 'fornecedor_codigo')}
                 </th>
@@ -794,12 +816,11 @@ export default function ComprasClient() {
                       </div>
                       <div>
                         <div className="font-semibold text-slate-900 dark:text-white">{p.nome || 'Sem nome'}</div>
-                        <p className="text-[11px] text-slate-500">ID Tiny {p.id_produto_tiny}</p>
+                        <p className="text-[11px] text-slate-500">EAN {p.gtin || '-'}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{p.codigo || '-'}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{p.gtin || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1 w-48">
                       <input
@@ -818,7 +839,10 @@ export default function ComprasClient() {
                         }}
                         placeholder="Código forn."
                       />
-                      <p className={`text-[11px] leading-tight ${p.fornecedor_nome ? 'text-slate-500' : 'text-slate-400 italic'}`}>
+                      <p
+                        className={`text-[10px] leading-tight truncate ${p.fornecedor_nome ? 'text-slate-500' : 'text-slate-400 italic'}`}
+                        title={p.fornecedor_nome || undefined}
+                      >
                         {p.fornecedor_nome ? p.fornecedor_nome : 'Nome não cadastrado no Tiny'}
                       </p>
                     </div>
