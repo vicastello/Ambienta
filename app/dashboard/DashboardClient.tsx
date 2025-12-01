@@ -226,11 +226,6 @@ function readCacheEntry<T>(key: string): CacheEntry<T> | null {
   }
 }
 
-function safeReadCache<T>(key: string): T | null {
-  const entry = readCacheEntry<T>(key);
-  return entry?.data ?? null;
-}
-
 function isCacheEntryFresh(entry: CacheEntry<unknown> | null, maxAgeMs: number) {
   if (!entry) return false;
   return Date.now() - entry.timestamp < maxAgeMs;
@@ -1395,7 +1390,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {quickHighlights.length ? (
-                quickHighlights.map((item, idx) => (
+                quickHighlights.map((item) => (
                   <div
                     key={item.label}
                     className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 flex flex-col gap-1"
@@ -1887,11 +1882,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                             className="flex items-center justify-between gap-3 rounded-2xl glass-row border border-white/60 dark:border-white/10 px-4 py-3 min-h-[78px]"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
+                              <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center">
                                 {pedido.primeiraImagem ? (
                                   <>
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                    <div className="w-full h-full rounded-2xl overflow-hidden">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                    </div>
                                     {(pedido.itensQuantidade ?? 0) > 1 && (
                                       <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
                                         +{(pedido.itensQuantidade ?? 0) - 1}

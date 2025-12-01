@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
-import { obterProduto, obterEstoqueProduto } from '@/lib/tinyApi';
+import { obterProduto, obterEstoqueProduto, TinyApiError } from '@/lib/tinyApi';
 import { upsertProduto } from '@/src/repositories/tinyProdutosRepository';
 import { getErrorMessage } from '@/lib/errors';
 
@@ -9,8 +9,61 @@ type Body = {
   retries429?: number;
 };
 
+type TinyProdutoIdCarrier = {
+  id?: number | string | null;
+  idProduto?: number | string | null;
+};
+
+type TinyProdutoAnexo = { url?: string | null };
+
+type TinyProdutoEstoque = {
+  saldo?: number | null;
+  reservado?: number | null;
+  disponivel?: number | null;
+};
+
+type TinyProdutoPrecos = {
+  preco?: number | null;
+  precoPromocional?: number | null;
+};
+
+type TinyProdutoDimensoes = {
+  pesoLiquido?: number | null;
+  pesoBruto?: number | null;
+};
+
+type TinyProdutoDetalhe = TinyProdutoIdCarrier & {
+  codigo?: string | null;
+  nome?: string | null;
+  descricao?: string | null;
+  unidade?: string | null;
+  situacao?: string | null;
+  tipo?: string | null;
+  gtin?: string | null;
+  anexos?: TinyProdutoAnexo[] | null;
+  estoque?: TinyProdutoEstoque | null;
+  precos?: TinyProdutoPrecos | null;
+  dimensoes?: TinyProdutoDimensoes | null;
+  dataCriacao?: string | null;
+  dataAlteracao?: string | null;
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const toNumber = (v: unknown): number | null => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+
+const getStatusFromError = (error: unknown): number | undefined => {
+  if (error instanceof TinyApiError) return error.status;
+  if (typeof error === 'object' && error && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : undefined;
+  }
+  return undefined;
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,8 +72,8 @@ export async function POST(req: NextRequest) {
     const retries429 = Number.isFinite(body.retries429) ? Math.max(0, Number(body.retries429)) : 5;
 
     const ids = (Array.isArray(body.tinyIds) ? body.tinyIds : [])
-      .map((v) => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : null))
-      .filter((v): v is number => Number.isFinite(v));
+      .map(toNumber)
+      .filter((v): v is number => v !== null);
 
     if (!ids.length) {
       return NextResponse.json({ ok: false, message: 'Envie tinyIds' }, { status: 400 });
@@ -32,38 +85,39 @@ export async function POST(req: NextRequest) {
     for (const id of ids) {
       let attempts = 0;
       try {
-        let detalhe: any = null;
-        let estoque: any = null;
+        let detalhe: TinyProdutoDetalhe | null = null;
+        let estoque: TinyProdutoEstoque | null = null;
         while (true) {
           try {
-            detalhe = await obterProduto(token, id, {});
+            detalhe = await obterProduto(token, id, {}) as TinyProdutoDetalhe;
             try {
-              estoque = await obterEstoqueProduto(token, id, {});
+              estoque = await obterEstoqueProduto(token, id, {}) as TinyProdutoEstoque;
             } catch (err) {
               console.warn('Estoque falhou para', id, err);
             }
             break;
-          } catch (err: any) {
-            if (err?.status === 401) {
+          } catch (error: unknown) {
+            const status = getStatusFromError(error);
+            if (status === 401) {
               token = await getAccessTokenFromDbOrRefresh();
               continue;
             }
-            if (err?.status === 429 && attempts < retries429) {
+            if (status === 429 && attempts < retries429) {
               attempts += 1;
               const backoff = 1000 * attempts;
               console.warn(`429 no produto ${id}. Backoff ${backoff}ms (tentativa ${attempts}/${retries429})`);
               await new Promise((r) => setTimeout(r, backoff));
               continue;
             }
-            throw err;
+            throw error;
           }
         }
 
-        const detalheEstoque = detalhe?.estoque || {};
-        const estOk = estoque || {};
-        const detalhePrecos = detalhe?.precos || {};
-        const dims = detalhe?.dimensoes || {};
-        const produtoData: any = {
+        const estoqueFinal = estoque ?? detalhe?.estoque ?? {};
+        const detalhePrecos = detalhe?.precos ?? null;
+        const dims = detalhe?.dimensoes ?? null;
+        const anexos = detalhe?.anexos ?? null;
+        const produtoData: Parameters<typeof upsertProduto>[0] = {
           id_produto_tiny: id,
           codigo: detalhe?.codigo ?? null,
           nome: detalhe?.nome ?? detalhe?.descricao ?? null,
@@ -73,10 +127,10 @@ export async function POST(req: NextRequest) {
           situacao: detalhe?.situacao ?? null,
           tipo: detalhe?.tipo ?? null,
           gtin: detalhe?.gtin ?? null,
-          imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
-          saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
-          reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
-          disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
+          imagem_url: anexos?.find?.((anexo) => anexo?.url)?.url ?? null,
+          saldo: estoqueFinal.saldo ?? null,
+          reservado: estoqueFinal.reservado ?? null,
+          disponivel: estoqueFinal.disponivel ?? null,
           descricao: detalhe?.descricao ?? null,
           ncm: detalhe?.ncm ?? null,
           origem: detalhe?.origem ?? null,
@@ -87,12 +141,13 @@ export async function POST(req: NextRequest) {
         };
         await upsertProduto(produtoData);
         results.push({ id, ok: true, imagem: produtoData.imagem_url });
-      } catch (err: any) {
+      } catch (error: unknown) {
+        const status = getStatusFromError(error);
         results.push({
           id,
           ok: false,
-          status: err?.status ?? undefined,
-          error: getErrorMessage(err) ?? String(err),
+          status,
+          error: getErrorMessage(error) ?? String(error),
         });
       }
     }

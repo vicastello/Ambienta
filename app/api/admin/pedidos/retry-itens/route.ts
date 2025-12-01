@@ -11,6 +11,12 @@ type RetryBody = {
   force?: boolean;
 };
 
+type PedidoItemRow = {
+  id_pedido: number;
+  codigo_produto: string | null;
+  id_produto_tiny: number | null;
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -49,10 +55,10 @@ export async function POST(req: NextRequest) {
         .in('id_pedido', idsPedidos);
       if (itensError) throw itensError;
 
-      const itensByPedido = new Map<number, { codigo_produto: string | null; id_produto_tiny: number | null }[]>();
-      (itensData ?? []).forEach((row: any) => {
+      const itensByPedido = new Map<number, PedidoItemRow[]>();
+      (itensData ?? []).forEach((row) => {
         const arr = itensByPedido.get(row.id_pedido) ?? [];
-        arr.push({ codigo_produto: row.codigo_produto, id_produto_tiny: row.id_produto_tiny });
+        arr.push(row);
         itensByPedido.set(row.id_pedido, arr);
       });
 

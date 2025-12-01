@@ -13,6 +13,65 @@ type Body = {
   retries429?: number;
 };
 
+type PedidoRow = {
+  id: number;
+  tiny_id: number | null;
+  raw: Record<string, unknown> | null;
+};
+
+type TinyPedidoRaw = {
+  itens?: unknown[];
+  pedido?: {
+    itens?: unknown[];
+    itensPedido?: unknown[];
+  };
+};
+
+type TinyPedidoItemRaw = {
+  produto?: TinyProdutoIdCarrier | null;
+  id?: number | string | null;
+  idProduto?: number | string | null;
+};
+
+type TinyProdutoIdCarrier = {
+  id?: number | string | null;
+  idProduto?: number | string | null;
+};
+
+type TinyProdutoAnexo = { url?: string | null };
+
+type TinyProdutoEstoque = {
+  saldo?: number | null;
+  reservado?: number | null;
+  disponivel?: number | null;
+};
+
+type TinyProdutoPrecos = {
+  preco?: number | null;
+  precoPromocional?: number | null;
+};
+
+type TinyProdutoDimensoes = {
+  pesoLiquido?: number | null;
+  pesoBruto?: number | null;
+};
+
+type TinyProdutoDetalhe = TinyProdutoIdCarrier & {
+  codigo?: string | null;
+  nome?: string | null;
+  descricao?: string | null;
+  unidade?: string | null;
+  situacao?: string | null;
+  tipo?: string | null;
+  gtin?: string | null;
+  anexos?: TinyProdutoAnexo[] | null;
+  estoque?: TinyProdutoEstoque | null;
+  precos?: TinyProdutoPrecos | null;
+  dimensoes?: TinyProdutoDimensoes | null;
+  dataCriacao?: string | null;
+  dataAlteracao?: string | null;
+};
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -21,7 +80,16 @@ const toNumber = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-async function collectPedidos(body: Body) {
+const getStatusFromError = (error: unknown): number | undefined => {
+  if (error instanceof TinyApiError) return error.status;
+  if (typeof error === 'object' && error && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : undefined;
+  }
+  return undefined;
+};
+
+async function collectPedidos(body: Body): Promise<PedidoRow[]> {
   if (Array.isArray(body.tinyIdsPedidos) && body.tinyIdsPedidos.length) {
     const ids = body.tinyIdsPedidos.map(toNumber).filter((v): v is number => v !== null);
     const { data, error } = await supabaseAdmin
@@ -29,7 +97,7 @@ async function collectPedidos(body: Body) {
       .select('id,tiny_id,raw')
       .in('tiny_id', ids);
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []) as PedidoRow[];
   }
 
   const limit = Number.isFinite(body.limitPedidos) ? Math.max(1, Math.min(100, Number(body.limitPedidos))) : 50;
@@ -45,22 +113,19 @@ async function collectPedidos(body: Body) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as PedidoRow[];
 }
 
-function extractProdutoIdsFromRaw(raw: any): number[] {
-  const itens =
-    Array.isArray(raw?.itens)
-      ? raw.itens
-      : Array.isArray(raw?.pedido?.itens)
-        ? raw.pedido.itens
-        : Array.isArray(raw?.pedido?.itensPedido)
-          ? raw.pedido.itensPedido
-          : [];
+function extractProdutoIdsFromRaw(raw: Record<string, unknown> | null): number[] {
+  const typedRaw = (raw ?? {}) as TinyPedidoRaw;
+  const itensCandidate = typedRaw.itens ?? typedRaw.pedido?.itens ?? typedRaw.pedido?.itensPedido ?? [];
+  const itens = Array.isArray(itensCandidate) ? itensCandidate : [];
   const ids: number[] = [];
   for (const item of itens) {
-    const prod = item?.produto ?? item ?? {};
-    const idProd = toNumber(prod.id) ?? toNumber(prod.idProduto);
+    if (!item || typeof item !== 'object') continue;
+    const pedidoItem = item as TinyPedidoItemRaw;
+    const prod = pedidoItem.produto ?? pedidoItem;
+    const idProd = toNumber(prod?.id) ?? toNumber(prod?.idProduto) ?? toNumber(pedidoItem.id) ?? toNumber(pedidoItem.idProduto);
     if (idProd) ids.push(idProd);
   }
   return ids;
@@ -73,38 +138,40 @@ async function fetchProdutos(ids: number[], retries429: number) {
   for (const id of ids) {
     let attempts = 0;
     try {
-      let detalhe: any = null;
-      let estoque: any = null;
+      let detalhe: TinyProdutoDetalhe | null = null;
+      let estoque: TinyProdutoEstoque | null = null;
       while (true) {
         try {
-          detalhe = await obterProduto(token, id, {});
+          detalhe = await obterProduto(token, id, {}) as TinyProdutoDetalhe;
           try {
-            estoque = await obterEstoqueProduto(token, id, {});
+            estoque = await obterEstoqueProduto(token, id, {}) as TinyProdutoEstoque;
           } catch (err) {
             console.warn('Estoque falhou para', id, err);
           }
           break;
-        } catch (err: any) {
-          if (err instanceof TinyApiError && err.status === 401) {
+        } catch (error: unknown) {
+          const status = getStatusFromError(error);
+          if (status === 401) {
             token = await getAccessTokenFromDbOrRefresh();
             continue;
           }
-          if (err instanceof TinyApiError && err.status === 429 && attempts < retries429) {
+          if (status === 429 && attempts < retries429) {
             attempts += 1;
             const backoff = 1000 * attempts;
             console.warn(`429 no produto ${id}. Backoff ${backoff}ms (tentativa ${attempts}/${retries429})`);
             await new Promise((r) => setTimeout(r, backoff));
             continue;
           }
-          throw err;
+          throw error;
         }
       }
 
-      const detalheEstoque = detalhe?.estoque || {};
-      const estOk = estoque || {};
-      const detalhePrecos = detalhe?.precos || {};
-      const dims = detalhe?.dimensoes || {};
-      const produtoData: any = {
+      const detalheEstoque = detalhe?.estoque ?? null;
+      const estoqueEfetivo = estoque ?? detalheEstoque ?? {};
+      const detalhePrecos = detalhe?.precos ?? null;
+      const dims = detalhe?.dimensoes ?? null;
+      const anexos = detalhe?.anexos ?? null;
+      const produtoData: Parameters<typeof upsertProduto>[0] = {
         id_produto_tiny: id,
         codigo: detalhe?.codigo ?? null,
         nome: detalhe?.nome ?? detalhe?.descricao ?? null,
@@ -114,10 +181,10 @@ async function fetchProdutos(ids: number[], retries429: number) {
         situacao: detalhe?.situacao ?? null,
         tipo: detalhe?.tipo ?? null,
         gtin: detalhe?.gtin ?? null,
-        imagem_url: detalhe?.anexos?.find?.((a: any) => a.url)?.url ?? null,
-        saldo: detalheEstoque?.saldo ?? estOk?.saldo ?? null,
-        reservado: detalheEstoque?.reservado ?? estOk?.reservado ?? null,
-        disponivel: detalheEstoque?.disponivel ?? estOk?.disponivel ?? null,
+        imagem_url: anexos?.find?.((anexo) => anexo?.url)?.url ?? null,
+        saldo: estoqueEfetivo.saldo ?? null,
+        reservado: estoqueEfetivo.reservado ?? null,
+        disponivel: estoqueEfetivo.disponivel ?? null,
         descricao: detalhe?.descricao ?? null,
         ncm: detalhe?.ncm ?? null,
         origem: detalhe?.origem ?? null,
@@ -128,8 +195,9 @@ async function fetchProdutos(ids: number[], retries429: number) {
       };
       await upsertProduto(produtoData);
       results.push({ id, ok: true, imagem: produtoData.imagem_url });
-    } catch (err: any) {
-      results.push({ id, ok: false, status: err?.status ?? undefined, error: getErrorMessage(err) ?? String(err) });
+    } catch (error: unknown) {
+      const status = getStatusFromError(error);
+      results.push({ id, ok: false, status, error: getErrorMessage(error) ?? String(error) });
     }
   }
 
@@ -147,7 +215,7 @@ export async function POST(req: NextRequest) {
       produtoIds = body.produtoIds.map(toNumber).filter((v): v is number => v !== null);
     } else {
       const pedidos = await collectPedidos(body);
-      const pedidoIds = pedidos.map((p: any) => p.id);
+      const pedidoIds = pedidos.map((p) => p.id);
 
       // IDs vindos de itens já gravados
       const { data: itensData } = await supabaseAdmin
@@ -155,13 +223,13 @@ export async function POST(req: NextRequest) {
         .select('id_produto_tiny')
         .in('id_pedido', pedidoIds);
       const idsItens = (itensData ?? [])
-        .map((r: any) => (typeof r.id_produto_tiny === 'number' ? r.id_produto_tiny : null))
+        .map(({ id_produto_tiny }) => (typeof id_produto_tiny === 'number' ? id_produto_tiny : null))
         .filter((v): v is number => v !== null);
 
       // IDs vindos do raw
-      const idsRaw = pedidos.flatMap((p: any) => extractProdutoIdsFromRaw(p.raw || {}));
+      const idsRaw = pedidos.flatMap((p) => extractProdutoIdsFromRaw(p.raw ?? null));
 
-      const setIds = new Set<number>([...idsItens, ...idsRaw].filter((v) => Number.isFinite(v)));
+      const setIds = new Set<number>([...idsItens, ...idsRaw]);
       produtoIds = Array.from(setIds);
     }
 

@@ -638,11 +638,13 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
   return (
     <article className="glass-panel glass-tint p-4 flex flex-col gap-3 rounded-3xl border border-white/60 dark:border-white/10">
       <div className="flex items-start gap-3">
-        <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+        <div className="relative w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center">
           {order.primeiraImagem ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+              <div className="w-full h-full rounded-2xl overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover rounded-2xl" />
+              </div>
               {(order.itensQuantidade ?? 0) > 1 && (
                 <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ zIndex: 50 }}>
                   +{(order.itensQuantidade ?? 0) - 1}
@@ -721,11 +723,13 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
     <article className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] items-center text-sm hover:bg-white/70 dark:hover:bg-slate-800/60 transition">
       <div className="px-6 py-4 space-y-1">
         <div className="flex items-center gap-3">
-          <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center overflow-visible">
+          <div className="relative w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-white/70 dark:border-slate-700 flex items-center justify-center">
             {order.primeiraImagem ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                <div className="w-full h-full rounded-2xl overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={order.primeiraImagem} alt="Produto" className="w-full h-full object-cover rounded-2xl" />
+                </div>
                 {(order.itensQuantidade ?? 0) > 1 && (
                   <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ zIndex: 50 }}>
                     +{(order.itensQuantidade ?? 0) - 1}

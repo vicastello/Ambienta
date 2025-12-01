@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getProdutosSyncCursor, resetProdutosSyncCursor } from '@/src/repositories/produtosCursorRepository';
 import { getErrorMessage } from '@/lib/errors';
 
-export async function POST(_req: NextRequest) {
+export async function POST() {
   const cursorKey = 'catalog';
 
   try {
