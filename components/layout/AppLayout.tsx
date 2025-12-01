@@ -318,7 +318,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       )}
 
       {/* Main content */}
-      <main className={`flex-1 transition-all duration-300 ${isMobile ? 'ml-0' : 'ml-[4.5rem]'}`}>
+      <main className="flex-1 transition-all duration-300 ml-0 lg:ml-[4.5rem]">
         <div className="w-full max-w-[1600px] mx-auto relative z-10">
           <div
             className={`relative min-h-screen px-4 sm:px-6 lg:px-12 ${
