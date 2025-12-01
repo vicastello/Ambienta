@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search') || '';
-    const situacao = searchParams.get('situacao') || 'A';
+    const situacao = searchParams.get('situacao') || 'all';
     const tipo = searchParams.get('tipo') || 'all';
     const fornecedor = searchParams.get('fornecedor') || '';
     const limitParam = Number(searchParams.get('limit') ?? '50');

@@ -13,7 +13,7 @@ export type ListProdutosParams = {
 
 export async function listProdutos({
   search = '',
-  situacao = 'A',
+  situacao = 'all',
   tipo = 'all',
   fornecedor = '',
   limit = 50,
