@@ -5,6 +5,8 @@ import type { TinyProdutosRow, TinyProdutosInsert } from '@/src/types/db-public'
 export type ListProdutosParams = {
   search?: string;
   situacao?: string;
+  tipo?: string;
+  fornecedor?: string;
   limit?: number;
   offset?: number;
 };
@@ -12,6 +14,8 @@ export type ListProdutosParams = {
 export async function listProdutos({
   search = '',
   situacao = 'A',
+  tipo = 'all',
+  fornecedor = '',
   limit = 50,
   offset = 0,
 }: ListProdutosParams) {
@@ -23,6 +27,14 @@ export async function listProdutos({
 
   if (situacao && situacao !== 'all') {
     query = query.eq('situacao', situacao);
+  }
+
+  if (tipo && tipo !== 'all') {
+    query = query.eq('tipo', tipo);
+  }
+
+  if (fornecedor) {
+    query = query.ilike('fornecedor_nome', `%${fornecedor}%`);
   }
 
   if (search) {

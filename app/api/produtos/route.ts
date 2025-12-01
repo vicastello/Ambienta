@@ -8,12 +8,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search') || '';
     const situacao = searchParams.get('situacao') || 'A';
+    const tipo = searchParams.get('tipo') || 'all';
+    const fornecedor = searchParams.get('fornecedor') || '';
     const limitParam = Number(searchParams.get('limit') ?? '50');
     const offsetParam = Number(searchParams.get('offset') ?? '0');
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
     const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : 0;
 
-    const { produtos, total } = await listProdutos({ search, situacao, limit, offset });
+    const { produtos, total } = await listProdutos({ search, situacao, tipo, fornecedor, limit, offset });
 
     return NextResponse.json({
       produtos,

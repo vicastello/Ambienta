@@ -17,6 +17,7 @@ type Produto = {
   disponivel: number | null;
   situacao: string;
   tipo: string;
+  fornecedor_nome: string | null;
   gtin: string | null;
   imagem_url: string | null;
 };
@@ -37,9 +38,10 @@ const PRODUTOS_AUTO_REFRESH_MS = 180_000;
 const PRODUTOS_PAGE_SIZE = 25;
 
 const TIPO_CONFIG: Record<string, { label: string; color: string }> = {
-  P: { label: "Produto", color: "bg-purple-100 text-purple-700" },
+  K: { label: "Kit", color: "bg-fuchsia-100 text-fuchsia-700" },
   V: { label: "Variação", color: "bg-blue-100 text-blue-700" },
-  S: { label: "Serviço", color: "bg-emerald-100 text-emerald-700" },
+  S: { label: "Simples", color: "bg-emerald-100 text-emerald-700" },
+  P: { label: "Produto", color: "bg-purple-100 text-purple-700" },
 };
 
 const SITUACAO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -79,6 +81,9 @@ export default function ProdutosClient() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [situacao, setSituacao] = useState("all");
+  const [tipo, setTipo] = useState("all");
+  const [fornecedorInput, setFornecedorInput] = useState("");
+  const [fornecedor, setFornecedor] = useState("");
   const [page, setPage] = useState(0);
 
   const produtosRequestId = useRef(0);
@@ -94,6 +99,8 @@ export default function ProdutosClient() {
     });
     if (search) params.set("search", search);
     if (situacao !== "all") params.set("situacao", situacao);
+    if (tipo !== "all") params.set("tipo", tipo);
+    if (fornecedor) params.set("fornecedor", fornecedor);
 
     const cacheKey = buildProdutosCacheKey(params);
 
@@ -129,7 +136,7 @@ export default function ProdutosClient() {
         setLoading(false);
       }
     }
-  }, [page, search, situacao]);
+  }, [page, search, situacao, tipo, fornecedor]);
 
   useEffect(() => {
     fetchProdutos();
@@ -145,8 +152,9 @@ export default function ProdutosClient() {
 
   const totalPages = Math.max(1, Math.ceil(total / PRODUTOS_PAGE_SIZE) || 1);
 
-  const handleSearchSubmit = () => {
+  const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
+    setFornecedor(fornecedorInput.trim());
     setPage(0);
   };
 
@@ -217,7 +225,13 @@ export default function ProdutosClient() {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_auto]">
+        <form
+          className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleFiltersSubmit();
+          }}
+        >
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -225,9 +239,6 @@ export default function ProdutosClient() {
               placeholder="Buscar por nome, código ou GTIN..."
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleSearchSubmit();
-              }}
               className="app-input w-full pl-11"
             />
           </div>
@@ -237,14 +248,50 @@ export default function ProdutosClient() {
               setSituacao(event.target.value);
               setPage(0);
             }}
-            className="app-input w-full min-w-[180px]"
+            className="app-input w-full min-w-[160px]"
           >
             <option value="all">Todas</option>
             <option value="A">Ativo</option>
             <option value="I">Inativo</option>
             <option value="E">Excluído</option>
           </select>
-        </div>
+          <select
+            value={tipo}
+            onChange={(event) => {
+              setTipo(event.target.value);
+              setPage(0);
+            }}
+            className="app-input w-full min-w-[160px]"
+          >
+            <option value="all">Todos os tipos</option>
+            <option value="S">Simples</option>
+            <option value="V">Variação</option>
+            <option value="K">Kit</option>
+          </select>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Filtrar por fornecedor"
+              value={fornecedorInput}
+              onChange={(event) => setFornecedorInput(event.target.value)}
+              className="app-input w-full pr-10"
+            />
+            {(fornecedorInput || fornecedor) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFornecedorInput("");
+                  setFornecedor("");
+                  setPage(0);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                aria-label="Limpar filtro de fornecedor"
+              >
+                &times;
+              </button>
+            )}
+          </div>
+        </form>
       </section>
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
