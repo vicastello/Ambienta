@@ -500,7 +500,7 @@ export async function syncProdutosFromTiny(
               .from('tiny_produtos')
               .select('*')
               .eq('id_produto_tiny', produto.id)
-              .maybeSingle();
+              .maybeSingle<TinyProdutosRow>();
             if (!errAtual && atual) registroAtual = atual;
           } catch {}
 
