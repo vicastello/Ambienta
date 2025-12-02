@@ -237,16 +237,16 @@
   /* Dark-mode specific background treatment */
   .dark .liquid-bg::before {
     background:
-      radial-gradient(circle at 22% 16%, rgba(79, 123, 255, 0.24), rgba(21, 30, 54, 0.08) 48%, transparent 68%),
-      radial-gradient(circle at 80% 12%, rgba(42, 184, 240, 0.24), rgba(12, 24, 44, 0.08) 46%, transparent 64%),
-      radial-gradient(circle at 74% 80%, rgba(56, 180, 160, 0.18), rgba(14, 28, 40, 0.08) 50%, transparent 68%),
-      radial-gradient(circle at 18% 78%, rgba(86, 118, 255, 0.18), transparent 86%);
+      radial-gradient(circle at 24% 18%, rgba(80, 104, 160, 0.22), rgba(24, 30, 48, 0.08) 48%, transparent 68%),
+      radial-gradient(circle at 78% 14%, rgba(64, 142, 186, 0.2), rgba(16, 26, 44, 0.08) 46%, transparent 64%),
+      radial-gradient(circle at 72% 78%, rgba(68, 168, 152, 0.16), rgba(16, 26, 42, 0.08) 50%, transparent 68%),
+      radial-gradient(circle at 18% 78%, rgba(70, 94, 150, 0.16), transparent 86%);
   }
 
   .dark .liquid-bg::after {
-    background: linear-gradient(135deg, rgba(10, 14, 24, 0.96), rgba(6, 9, 16, 0.94));
-    backdrop-filter: blur(28px) saturate(1.05);
-    -webkit-backdrop-filter: blur(28px) saturate(1.05);
+    background: linear-gradient(135deg, rgba(22, 25, 36, 0.96), rgba(12, 14, 24, 0.96));
+    backdrop-filter: blur(28px) saturate(1.06);
+    -webkit-backdrop-filter: blur(28px) saturate(1.06);
   }
 
   /* Liquid glass background (fixo, não se move com scroll) */
