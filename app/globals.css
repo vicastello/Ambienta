@@ -89,7 +89,7 @@
     --surface-card-bg-hover: linear-gradient(165deg, rgba(18, 24, 36, 0.92), rgba(12, 14, 22, 0.94));
     --surface-border-strong: rgba(255, 255, 255, 0.12);
     --surface-border-soft: rgba(255, 255, 255, 0.06);
-    --surface-card-border: rgba(255, 255, 255, 0.05);
+    --surface-card-border: rgba(255, 255, 255, 0.02);
     --surface-card-shadow: none;
     --card-blur: 26px;
     --card-sat: 1.08;
@@ -99,7 +99,7 @@
     --panel-blur: 24px;
     --panel-sat: 1.08;
     --surface-row-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.82), rgba(10, 12, 20, 0.86));
-    --surface-row-border: transparent;
+    --surface-row-border: rgba(255, 255, 255, 0.02);
     --surface-row-shadow: none;
     --row-blur: 22px;
     --row-sat: 1.04;
