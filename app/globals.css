@@ -362,7 +362,7 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
       var(--surface-panel-bg);
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.02) !important;
     border-radius: 2rem;
     position: relative;
     overflow: hidden;
@@ -442,7 +442,7 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   }
 
   :root.dark .glass-row {
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.01) !important;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
       var(--surface-row-bg);
