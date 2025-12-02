@@ -1239,6 +1239,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Período</p>
                     <MultiSelectDropdown
                       label="Período"
+                      showLabel={false}
                       options={[
                         { value: 'today', label: 'Hoje' },
                         { value: 'yesterday', label: 'Ontem' },
@@ -1282,6 +1283,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     {dashboardSource ? (
                       <MultiSelectDropdown
                         label="Canais"
+                        showLabel={false}
                         options={dashboardSource.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
                         selected={canaisSelecionados}
                         onChange={(values) => handleChannelsChange(values as string[])}
@@ -1297,6 +1299,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     {dashboardSource ? (
                       <MultiSelectDropdown
                         label="Situações"
+                        showLabel={false}
                         options={dashboardSource.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
                         selected={situacoesSelecionadas}
                         onChange={(values) => handleSituationsChange(values as number[])}

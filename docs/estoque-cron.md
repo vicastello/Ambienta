@@ -1,77 +1,53 @@
-## Cron de estoque/produtos (Supabase → Vercel)
+## Cron de estoque/produtos (pg_cron → /api/admin/sync/produtos)
 
-### Fluxo
-- Supabase Edge Function `cron-sync-produtos` roda a cada 5–10 minutos (scheduler do Supabase).
-- A função chama `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app/api/produtos/sync` enviando apenas o corpo JSON com `limit`, `enrichEstoque` e `modoCron`.
-- A rota `/api/produtos/sync` executa o helper compartilhado `syncProdutosFromTiny`, atualizando `public.tiny_produtos`.
-- A UI no Vercel faz polling (30s em `/produtos`, 60s em `/dashboard`) e exibe estoque quase em tempo real.
+### Visão geral
+- `pg_cron` agenda o job `tiny_produtos_backfill_hourly`, que executa `public.cron_run_produtos_backfill()` uma vez por hora.
+- A função usa `pg_net.http_post` para chamar `https://gestor-tiny.vercel.app/api/admin/sync/produtos` com `mode: 'backfill'`, `modeLabel: 'backfill_cron'`, `limit: 10`, `workers: 1`, `enrichEstoque: false` e `cursorKey: 'catalog_backfill'`.
+- `/api/admin/sync/produtos` delega para `syncProdutosFromTiny` (`src/lib/sync/produtos.ts`). Esse helper respeita rate limit, persiste estado em `produtos_sync_cursor` e grava telemetria em `sync_logs`.
+- A UI segue consumindo `/api/produtos` e `/api/tiny/dashboard/resumo`, que refletem `tiny_produtos` após cada rodada do cron ou de execuções manuais.
 
-### Variáveis de ambiente
-- Vercel:
-  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`
-  - `TINY_API_BASE_URL`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`
-  - `GEMINI_API_KEY`
-- Supabase (projeto Ambienta):
-  - `VERCEL_API_BASE_URL` — URL pública do app: `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app`.
-- Arquivos de exemplo:
-  - `.env.vercel.example` (Vercel)
-  - `supabase/.env.example` (Supabase)
+### Cursor `catalog_backfill`
+- A tabela `produtos_sync_cursor` mantém um registro por cursor. Hoje usamos:
+  - `catalog`: incremental padrão por `data_alteracao` (modo cron/manual).
+  - `catalog_backfill`: cursor dedicado ao backfill com offsets lineares.
+- Para o backfill, o campo `updated_since` guarda um ISO derivado de `formatBackfillOffset(offsetEmSegundos)`. `syncProdutosFromTiny` converte esse valor de volta para segundos e usa como ponto inicial (`offsetStart`).
+- Ao finalizar uma janela, `backfillNextOffset` é persistido novamente no mesmo campo. Quando o catálogo termina, reapontamos para `0` e o job volta para o início.
 
-### Edge Function
-- Arquivo: `supabase/functions/cron-sync-produtos/index.ts`
-- Comportamento: faz `fetch` POST para `/api/produtos/sync` com `limit: 100`, `enrichEstoque: true` e `modoCron: true`.
-- Resposta: 200 quando sucesso, 500 com mensagem em caso de erro/timeout.
+### Scripts úteis
+| Script | Para que serve |
+| --- | --- |
+| `npx tsx scripts/runProdutosBackfill.ts [limit]` | Roda `syncProdutosFromTiny` em modo backfill manual, respeitando o mesmo cursor `catalog_backfill`. Use para acelerar lotes ou validar novos ajustes. |
+| `npx tsx scripts/showProdutosCursor.ts [cursorKey]` | Mostra o registro atual em `produtos_sync_cursor` (default `catalog_backfill`). |
+| `npx tsx scripts/resetProdutosCursor.ts [cursorKey]` | Zera `updated_since`/`latest_data_alteracao`. Útil quando queremos reiniciar a varredura. |
+| `npx tsx scripts/showBackfillLogs.ts` | Lista os últimos logs `sync_produtos` em modo `backfill` com o cursor `catalog_backfill`. |
+| `npx tsx scripts/applySupabaseSqlFile.ts supabase/migrations/20251202143000_update_produtos_backfill_payload.sql` | Aplica a migration que injeta `cursorKey: catalog_backfill` e mantém o cron em linha com o código. |
 
-### Proteção da rota
-- A rota `POST /api/produtos/sync` agora é disparada apenas a partir dos nossos handlers internos (`/api/admin/sync/produtos`, `/api/admin/cron/run-sync` e Edge Function). Não há mais header secreto e o endpoint depende das permissões internas do projeto.
+### Monitoramento
+- **`sync_logs`**: cada execução de `syncProdutosFromTiny` grava um resumo (`message = 'sync_produtos'`) com estatísticas (`total429`, `offsetStart`, `backfillNextOffset`, etc.). `scripts/showBackfillLogs.ts` já filtra esse universo.
+- **`cron_run_produtos_backfill`**: também insere um log (`message = 'cron_run_produtos_backfill dispatched via pg_cron'`) com o `request_id` retornado pelo `net.http_post`. Ajuda a correlacionar execuções HTTP.
+- **Tabelas pg_cron**: use `select * from cron.job where jobname = 'tiny_produtos_backfill_hourly';` para conferir o schedule e `select * from cron.job_run_details where jobname = 'tiny_produtos_backfill_hourly' order by start_time desc limit 10;` para o histórico.
 
-### Como configurar o cron no Supabase (passo a passo)
-1. Acesse o projeto correto (Ambienta Project) no painel do Supabase.
-2. Vá em Edge Functions e encontre `cron-sync-produtos`.
-3. Abra a aba de Schedules (Scheduled Functions).
-4. Crie um schedule:
-   - Nome: `cron-sync-produtos-10min`
-   - Frequência: a cada 10 minutos (se cron, usar `*/10 * * * *`)
-   - Método: POST (padrão).
-5. Salve. Para pausar, desabilite ou remova o schedule nessa mesma tela.
+### Troubleshooting rápido
+1. **Backfill parou de avançar**
+   - Rode `npx tsx scripts/showProdutosCursor.ts` e confirme se `updated_since` continua aumentando. Caso esteja preso, use `npx tsx scripts/resetProdutosCursor.ts catalog_backfill` e execute `npx tsx scripts/runProdutosBackfill.ts 20` para reaquecer.
+2. **Many 429 do Tiny**
+   - Consulte os campos `total429`, `maxBackoffMs` e `windowUsagePct` no log. Se estiver alto, reduza temporariamente o limite passado pelo cron (alterar `limit` na migration) ou rode manualmente com `limit` menor.
+3. **Cron não dispara**
+   - Verifique se o `cron.job` ainda existe. Caso contrário, reaplique `supabase/migrations/20251129122000_cron_produtos_backfill.sql` (ou use `scripts/applySupabaseSqlFile.ts ...`).
+4. **Precisa cobrir IDs específicos**
+   - Execute o script `scripts/backfillProdutosByIds.ts` (detalhado em `scripts/README.md`) antes ou depois do backfill global.
 
-### Testes manuais (fim a fim)
-- Rota Vercel:
-  ```bash
-  curl -X POST https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app/api/produtos/sync \
-    -H "Content-Type: application/json" \
-    -d '{"limit":50,"enrichEstoque":true}'
-  ```
-  Esperado: 200 OK; `tiny_produtos` com `updated_at` recente no Supabase.
+### Fluxo manual recomendado
+1. Verifique o cursor atual: `npx tsx scripts/showProdutosCursor.ts`.
+2. Rode um lote manual (`npx tsx scripts/runProdutosBackfill.ts 40`) e aguarde o resumo (`offsetStart`, `backfillNextOffset`).
+3. Consulte `scripts/showBackfillLogs.ts` para confirmar inserção no `sync_logs`.
+4. Se tudo OK, deixe o cron seguir sozinho; ele continuará do último `backfillNextOffset` gravado.
 
-- Função Supabase local:
-  ```bash
-  # Em outra aba: supabase functions serve cron-sync-produtos
-  curl -X POST http://localhost:54321/functions/v1/cron-sync-produtos
-  ```
-  Requer `VERCEL_API_BASE_URL` configurado no ambiente local do Supabase CLI.
+### Variáveis de ambiente relevantes
+- **Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`, `DATABASE_URL` (para scripts que usam pg direto).
+- **Supabase**: precisa do `pg_net` e `pg_cron` habilitados; a migration já executa `create extension if not exists`. Não há mais Edge Function para esse fluxo.
 
-- Teste com UI aberta:
-  1) Abra `/produtos` e `/dashboard`.  
-  2) Rode o curl para `/api/produtos/sync`.  
-  3) Em ~30–60s o polling deve refletir o estoque/insights atualizados sem F5.
-
-- Teste do cron real (após criar o schedule):
-  1) Aguarde 10–20 minutos.  
-  2) Veja logs da função `cron-sync-produtos` no painel (status 200).  
-  3) Confirme `tiny_produtos` atualizado mesmo sem rodar manualmente.
-
-### Checklist de configuração
-- Vercel (Production):
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-  - `DATABASE_URL`
-  - `TINY_API_BASE_URL`
-  - `TINY_CLIENT_ID`
-  - `TINY_CLIENT_SECRET`
-  - `TINY_REDIRECT_URI`
-  - `GEMINI_API_KEY`
-
-- Supabase (Project env vars):
-  - `VERCEL_API_BASE_URL` = `https://gestor-tiny-g9a8gkbpw-vihcastello-6133s-projects.vercel.app`
+### Dicas gerais
+- Respeite o limite da API do Tiny (~100 req/min). Mesmo com `limit: 10`, o backfill pode acumular 429 se rodarmos scripts paralelos; prefira deixar o cron serializado.
+- Sempre aplique migrations relacionadas (20251129122000, 20251201090000, 20251202103000, 20251202143000) antes de mexer em produção — a versão atual depende do payload com `cursorKey: 'catalog_backfill'`.
+- Quando precisar alterar frequência ou payload, gere uma migration nova para manter o histórico auditável.

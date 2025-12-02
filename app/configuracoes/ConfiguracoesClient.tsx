@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import type { CalendarDayStatus } from "@/app/api/admin/sync/calendar/route";
 import type { SyncProdutosResult } from "@/src/lib/sync/produtos";
 
@@ -1007,6 +1008,23 @@ export default function ConfiguracoesClient() {
           connecting={connecting}
           onConnect={handleConnectTiny}
         />
+
+        <div
+          className={`${CARD_PANEL_CLASS} flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5`}
+        >
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Preferências de tema
+            </p>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Escolha entre modo claro ou escuro
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              O ajuste vale para todas as páginas e fica salvo neste navegador.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
 
         <section
           className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-6 text-slate-900`}

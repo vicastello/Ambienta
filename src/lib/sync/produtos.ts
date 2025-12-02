@@ -148,6 +148,18 @@ const sanitizeCursorKey = (value?: string | null) => {
   return trimmed.length ? trimmed : null;
 };
 
+const formatBackfillOffset = (offset: number) => {
+  const date = new Date(Math.max(0, Math.floor(offset)) * 1000);
+  return date.toISOString();
+};
+
+const parseBackfillOffset = (value?: string | null) => {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return Math.max(0, Math.floor(parsed / 1000));
+};
+
 // Wrapper de requisições para aplicar rate limit + backoff 429
 async function tinyRequest<T>({
   fn,
@@ -260,6 +272,7 @@ export async function syncProdutosFromTiny(
     }
 > {
   const mode: SyncProdutosMode = options.mode ?? (options.modoCron ? 'cron' : 'manual');
+  const isBackfillMode = mode === 'backfill';
   const resolvedModeLabelRaw = typeof options.modeLabel === 'string' ? options.modeLabel.trim() : '';
   const modeLabel = resolvedModeLabelRaw
     ? resolvedModeLabelRaw
@@ -306,7 +319,7 @@ export async function syncProdutosFromTiny(
     workers = 1;
   }
 
-  const offsetStart = Math.max(0, options.offset ?? 0);
+  let offsetStart = Math.max(0, options.offset ?? 0);
   const maxPages = mode === 'backfill' ? Math.max(1, options.maxPages ?? 5) : 1;
   const situacaoFiltro = estoqueOnly
     ? 'all'
@@ -322,16 +335,27 @@ export async function syncProdutosFromTiny(
   const cursorKey = sanitizeCursorKey(options.cursorKey);
   let cursorRow: ProdutosSyncCursorRow | null = null;
   let cursorDerivedUpdatedSince: string | null = null;
+  let cursorBackfillOffset: number | null = null;
+  let backfillNextOffset: number | null = null;
 
   if (cursorKey) {
     try {
       cursorRow = await getProdutosSyncCursor(cursorKey);
-      cursorDerivedUpdatedSince = cursorValueToTinyTimestamp(
-        cursorRow?.latest_data_alteracao ?? cursorRow?.updated_since ?? null
-      );
+      if (isBackfillMode) {
+        const parsedOffset = parseBackfillOffset(cursorRow?.updated_since ?? null);
+        cursorBackfillOffset = parsedOffset ?? 0;
+      } else {
+        cursorDerivedUpdatedSince = cursorValueToTinyTimestamp(
+          cursorRow?.latest_data_alteracao ?? cursorRow?.updated_since ?? null
+        );
+      }
     } catch (err) {
       log('Falha ao carregar cursor do catálogo', { cursorKey, error: formatError(err) });
     }
+  }
+
+  if (isBackfillMode && cursorBackfillOffset !== null) {
+    offsetStart = cursorBackfillOffset;
   }
 
   const cursorInitialUpdatedSince = cursorRow?.updated_since ?? null;
@@ -418,11 +442,15 @@ export async function syncProdutosFromTiny(
   const explicitUpdatedSince = normalizeUpdatedSince(
     typeof options.updatedSince === 'string' ? options.updatedSince : null
   );
-  let requestedUpdatedSince = explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null;
-  if (!requestedUpdatedSince) {
+  let requestedUpdatedSince = explicitUpdatedSince ?? (isBackfillMode ? null : cursorDerivedUpdatedSince) ?? null;
+  if (!requestedUpdatedSince && !isBackfillMode) {
     requestedUpdatedSince = await inferUpdatedSince(mode, null);
   }
-  const cursorAppliedUpdatedSince = cursorKey ? (explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null) : null;
+  const cursorAppliedUpdatedSince = cursorKey
+    ? isBackfillMode
+      ? null
+      : (explicitUpdatedSince ?? cursorDerivedUpdatedSince ?? null)
+    : null;
   let updatedSince: string | null = requestedUpdatedSince;
 
   // Função para processar uma página de produtos com paralelismo controlado
@@ -579,6 +607,8 @@ export async function syncProdutosFromTiny(
     cursorDerivedUpdatedSince,
     cursorAppliedUpdatedSince,
     cursorPersistedLatest,
+    cursorBackfillOffset,
+    backfillNextOffset,
     ...(extra ?? {}),
   });
 
@@ -599,7 +629,15 @@ export async function syncProdutosFromTiny(
   const persistCursorState = async (reason: 'success' | 'timeout' | 'error') => {
     if (!cursorKey) return;
     const nextLatest = latestDataAlteracao ?? cursorPersistedLatest ?? null;
-    const nextUpdatedSince = latestDataAlteracao ?? requestedUpdatedSince ?? cursorInitialUpdatedSince ?? cursorInitialLatest ?? null;
+    let nextUpdatedSince: string | null;
+    if (isBackfillMode) {
+      const offsetToPersist = typeof backfillNextOffset === 'number'
+        ? backfillNextOffset
+        : cursorBackfillOffset ?? offsetStart ?? 0;
+      nextUpdatedSince = formatBackfillOffset(offsetToPersist);
+    } else {
+      nextUpdatedSince = latestDataAlteracao ?? requestedUpdatedSince ?? cursorInitialUpdatedSince ?? cursorInitialLatest ?? null;
+    }
     if (!nextLatest && !nextUpdatedSince) return;
     try {
       const saved = await upsertProdutosSyncCursor(cursorKey, {
@@ -734,6 +772,10 @@ export async function syncProdutosFromTiny(
       const paginacao = page.paginacao;
       const reachedEnd = paginacao ? paginacao.pagina >= paginacao.paginas : itens.length < limitForPage;
       currentOffset += limitForPage;
+
+      if (isBackfillMode && cursorKey) {
+        backfillNextOffset = reachedEnd ? 0 : currentOffset;
+      }
 
       if (mode !== 'backfill' || pagesProcessed >= maxPages || reachedEnd) {
         break;

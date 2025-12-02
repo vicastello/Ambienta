@@ -16,6 +16,7 @@ type MultiSelectDropdownProps = {
   onClear: () => void;
   singleSelect?: boolean;
   displayFormatter?: (values: (string | number)[], options: Option[]) => string;
+  showLabel?: boolean;
 };
 
 export function MultiSelectDropdown({
@@ -26,6 +27,7 @@ export function MultiSelectDropdown({
   onClear,
   singleSelect = false,
   displayFormatter,
+  showLabel = true,
 }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 256 });
@@ -94,7 +96,7 @@ export function MultiSelectDropdown({
 
   return (
     <>
-      {label && (
+      {label && showLabel && (
         <div className="mb-1 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
           {label}
         </div>
@@ -103,6 +105,9 @@ export function MultiSelectDropdown({
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center gap-2 px-4 py-2 rounded-2xl border app-border-subtle bg-[var(--bg-card-soft)] text-[var(--text-main)] hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors min-w-0 justify-between"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={label}
       >
         <span className="text-sm truncate">{displayText}</span>
         <span className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>

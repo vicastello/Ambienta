@@ -59,10 +59,11 @@ export async function POST(req: Request) {
       ? body.useCursor
       : resolvedMode === 'backfill' || backfillRequested;
     const cursorDisabled = body.disableCursor === true || body.cursorKey === null;
+    const defaultCursorKey = resolvedMode === 'backfill' ? 'catalog_backfill' : 'catalog';
     const resolvedCursorKey = cursorDisabled
       ? undefined
       : cursorToggle
-        ? cleanedCursorKey ?? 'catalog'
+        ? cleanedCursorKey ?? defaultCursorKey
         : undefined;
     const finalCursorKey = body.cursorKey === null ? null : resolvedCursorKey;
 
