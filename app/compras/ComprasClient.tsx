@@ -191,6 +191,7 @@ export default function ComprasClient() {
   const [savedOrdersSyncing, setSavedOrdersSyncing] = useState(false);
   const [savedOrdersSyncError, setSavedOrdersSyncError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const dadosRef = useRef<Sugestao[]>([]);
   const pendingSavesRef = useRef<Record<number, AutoSavePayload>>({});
   const saveTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
   const selectionLoadedRef = useRef(false);
@@ -278,6 +279,10 @@ export default function ComprasClient() {
     }, COMPRAS_RECALC_DEBOUNCE_MS);
     return () => clearTimeout(timeout);
   }, [load]);
+
+  useEffect(() => {
+    dadosRef.current = dados;
+  }, [dados]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -790,6 +795,32 @@ export default function ComprasClient() {
     return Math.max(1, Math.floor(Number(value)));
   }, []);
 
+  const buildAutoSavePayload = useCallback(
+    (id: number, overrides?: AutoSavePayload): AutoSavePayload => {
+      const produto = dadosRef.current.find((item) => item.id_produto_tiny === id);
+      const hasFornecedorOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'fornecedor_codigo') : false;
+      const hasEmbalagemOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'embalagem_qtd') : false;
+      const hasObservacaoOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'observacao_compras') : false;
+
+      const fornecedorSource = hasFornecedorOverride
+        ? overrides?.fornecedor_codigo ?? null
+        : produto?.fornecedor_codigo ?? null;
+      const embalagemSource = hasEmbalagemOverride
+        ? overrides?.embalagem_qtd ?? null
+        : produto?.embalagem_qtd ?? null;
+      const observacaoSource = hasObservacaoOverride
+        ? overrides?.observacao_compras ?? null
+        : produto?.observacao_compras ?? null;
+
+      return {
+        fornecedor_codigo: sanitizeFornecedor(fornecedorSource),
+        embalagem_qtd: sanitizeEmbalagem(embalagemSource),
+        observacao_compras: sanitizeObservacao(observacaoSource),
+      };
+    },
+    [sanitizeEmbalagem, sanitizeFornecedor, sanitizeObservacao]
+  );
+
   const updateManualEntry = useCallback((field: keyof ManualEntry, value: string) => {
     setManualEntry((prev) => ({
       ...prev,
@@ -1069,10 +1100,8 @@ export default function ComprasClient() {
 
   const scheduleAutoSave = useCallback(
     (id: number, payload: AutoSavePayload) => {
-      pendingSavesRef.current[id] = {
-        ...pendingSavesRef.current[id],
-        ...payload,
-      };
+      const fullPayload = buildAutoSavePayload(id, payload);
+      pendingSavesRef.current[id] = fullPayload;
       if (saveTimersRef.current[id]) {
         clearTimeout(saveTimersRef.current[id]);
       }
@@ -1083,7 +1112,7 @@ export default function ComprasClient() {
         setSyncStatus((prev) => ({ ...prev, [id]: 'saving' }));
       }
     },
-    [flushAutoSave]
+    [buildAutoSavePayload, flushAutoSave]
   );
 
   const flushAllPendingSaves = useCallback(
