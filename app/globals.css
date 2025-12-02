@@ -61,18 +61,18 @@
 
   :root.dark {
     /* Nova paleta baseada no dashboard de referência (noite azul arroxeada) */
-    --bg-body: #020511;
-    --bg-body-alt: #040816;
-    --bg-body-gradient: radial-gradient(circle at 18% 20%, rgba(63, 93, 255, 0.32), transparent 48%),
-      radial-gradient(circle at 78% 12%, rgba(58, 156, 255, 0.22), transparent 52%),
-      radial-gradient(circle at 68% 78%, rgba(88, 122, 255, 0.16), transparent 58%),
-      linear-gradient(135deg, #020512, #050b1a 58%, #080f24);
-    --bg-card: rgba(7, 12, 28, 0.92);
-    --bg-card-soft: rgba(9, 16, 36, 0.86);
-    --bg-elevated: rgba(10, 18, 40, 0.9);
-    --bg-blur-strong: rgba(12, 22, 48, 0.7);
-    --border-subtle: rgba(120, 150, 255, 0.05);
-    --border-strong: rgba(160, 190, 255, 0.12);
+    --bg-body: #05070f;
+    --bg-body-alt: #070b15;
+    --bg-body-gradient: radial-gradient(circle at 18% 20%, rgba(80, 104, 160, 0.22), transparent 48%),
+      radial-gradient(circle at 78% 12%, rgba(64, 142, 186, 0.2), transparent 52%),
+      radial-gradient(circle at 68% 78%, rgba(68, 168, 152, 0.16), transparent 58%),
+      linear-gradient(135deg, #0b0f1c, #080c16 58%, #070b14);
+    --bg-card: rgba(14, 18, 30, 0.9);
+    --bg-card-soft: rgba(12, 16, 28, 0.86);
+    --bg-elevated: rgba(12, 18, 28, 0.92);
+    --bg-blur-strong: rgba(12, 18, 28, 0.7);
+    --border-subtle: rgba(180, 200, 255, 0.04);
+    --border-strong: rgba(255, 255, 255, 0.12);
     --text-main: #f5f6ff;
     --text-muted: #a3b4e2;
     --text-soft: #90a0cc;
@@ -85,21 +85,21 @@
     --negative: #ff7390;
     --warning: #fcd34d;
 
-    --surface-card-bg: linear-gradient(150deg, rgba(3, 5, 14, 0.78), rgba(6, 11, 24, 0.64));
-    --surface-card-bg-hover: linear-gradient(150deg, rgba(4, 7, 16, 0.82), rgba(8, 14, 30, 0.7));
-    --surface-border-strong: rgba(118, 140, 210, 0.03);
-    --surface-border-soft: rgba(118, 140, 210, 0.015);
+    --surface-card-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.9), rgba(10, 12, 20, 0.92));
+    --surface-card-bg-hover: linear-gradient(165deg, rgba(18, 24, 36, 0.92), rgba(12, 14, 22, 0.94));
+    --surface-border-strong: rgba(255, 255, 255, 0.12);
+    --surface-border-soft: rgba(255, 255, 255, 0.06);
     --surface-card-border: var(--surface-border-strong);
     --surface-card-shadow: none;
-    --card-blur: 200px;
+    --card-blur: 26px;
     --card-sat: 1.08;
-    --surface-panel-bg: linear-gradient(150deg, rgba(4, 8, 18, 0.74), rgba(8, 14, 28, 0.64));
-    --surface-panel-border: var(--surface-border-strong);
+    --surface-panel-bg: linear-gradient(165deg, rgba(28, 31, 42, 0.9), rgba(16, 18, 26, 0.92));
+    --surface-panel-border: rgba(255, 255, 255, 0.12);
     --surface-panel-shadow: none;
-    --panel-blur: 200px;
-    --panel-sat: 1.12;
-    --surface-row-bg: rgba(4, 8, 18, 0.56);
-    --surface-row-border: transparent;
+    --panel-blur: 24px;
+    --panel-sat: 1.08;
+    --surface-row-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.82), rgba(10, 12, 20, 0.86));
+    --surface-row-border: rgba(255, 255, 255, 0.08);
     --surface-row-shadow: none;
     --row-blur: 22px;
     --row-sat: 1.04;
