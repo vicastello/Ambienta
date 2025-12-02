@@ -55,12 +55,26 @@ export type ConsumoRow = {
 };
 
 export async function listConsumoPeriodo(startIso: string) {
-  const { data, error } = await supabaseAdmin
-    .from('tiny_pedido_itens')
-    .select('id_produto_tiny, quantidade, tiny_orders!inner(data_criacao,situacao)')
-    .gte('tiny_orders.data_criacao', startIso)
-    .neq('tiny_orders.situacao', 2);
+  const pageSize = 1000;
+  let from = 0;
+  const allRows: ConsumoRow[] = [];
 
-  if (error) throw error;
-  return (data || []) as unknown as ConsumoRow[];
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('tiny_pedido_itens')
+      .select('id_produto_tiny, quantidade, tiny_orders!inner(data_criacao,situacao)')
+      .gte('tiny_orders.data_criacao', startIso)
+      .neq('tiny_orders.situacao', 2)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allRows.push(...((data as unknown) as ConsumoRow[]));
+
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return allRows;
 }
