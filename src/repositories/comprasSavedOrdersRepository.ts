@@ -5,9 +5,8 @@ import type {
   ComprasSavedOrderUpdate,
 } from '@/src/types/db-public';
 import type { SavedOrder, SavedOrderManualItem, SavedOrderProduct } from '@/src/types/compras';
-import { getErrorMessage } from '@/lib/errors';
 
-const TABLE_NAME = 'compras_saved_orders';
+const TABLE_NAME = 'compras_saved_orders' as const;
 const DEFAULT_LIMIT = 200;
 
 const normalizeSavedOrderRow = (row: ComprasSavedOrderRow): SavedOrder => ({
@@ -22,14 +21,15 @@ const normalizeSavedOrderRow = (row: ComprasSavedOrderRow): SavedOrder => ({
 });
 
 export async function listSavedOrders(limit = DEFAULT_LIMIT) {
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from(TABLE_NAME)
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit)
+    .throwOnError();
 
-  if (error) throw error;
-  return (data || []).map((row) => normalizeSavedOrderRow(row as ComprasSavedOrderRow));
+  const typedRows = data as unknown as ComprasSavedOrderRow[];
+  return typedRows.map((row) => normalizeSavedOrderRow(row));
 }
 
 export async function createSavedOrder(payload: {
@@ -47,14 +47,15 @@ export async function createSavedOrder(payload: {
     manual_items: payload.manualItems,
   } as unknown as ComprasSavedOrderInsert;
 
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from(TABLE_NAME)
     .insert(insertPayload)
     .select()
-    .single();
+    .single()
+    .throwOnError();
 
-  if (error) throw error;
-  return normalizeSavedOrderRow(data as ComprasSavedOrderRow);
+  const typedRow = data as unknown as ComprasSavedOrderRow;
+  return normalizeSavedOrderRow(typedRow);
 }
 
 export async function updateSavedOrderName(id: string, name: string) {
@@ -67,15 +68,16 @@ export async function updateSavedOrderName(id: string, name: string) {
     name: trimmed,
   };
 
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from(TABLE_NAME)
     .update(updatePayload)
     .eq('id', id)
     .select()
-    .single();
+    .single()
+    .throwOnError();
 
-  if (error) throw new Error(getErrorMessage(error) ?? 'Erro ao atualizar pedido');
-  return normalizeSavedOrderRow(data as ComprasSavedOrderRow);
+  const typedRow = data as unknown as ComprasSavedOrderRow;
+  return normalizeSavedOrderRow(typedRow);
 }
 
 export async function deleteSavedOrder(id: string) {
