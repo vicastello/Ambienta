@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Box, Loader2, Package, RefreshCcw, Search } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
+import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 
 type Produto = {
   id: number;
@@ -154,7 +155,9 @@ export default function ProdutosClient() {
 
   const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
-    setFornecedor(fornecedorInput.trim());
+    const fornecedorFormatado = formatFornecedorNome(fornecedorInput);
+    setFornecedorInput(fornecedorFormatado);
+    setFornecedor(fornecedorFormatado);
     setPage(0);
   };
 
@@ -279,7 +282,7 @@ export default function ProdutosClient() {
               type="text"
               placeholder="Filtrar por fornecedor"
               value={fornecedorInput}
-              onChange={(event) => setFornecedorInput(event.target.value)}
+              onChange={(event) => setFornecedorInput(formatFornecedorNome(event.target.value))}
               className="app-input w-full pr-10"
             />
             {(fornecedorInput || fornecedor) && (

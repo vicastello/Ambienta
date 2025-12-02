@@ -247,12 +247,21 @@ export function buildProdutoUpsertPayload({
     detalhe?.dimensoes?.pesoBruto,
     registroAtual?.peso_bruto
   );
+  const fornecedorPrincipal = Array.isArray(detalhe?.fornecedores)
+    ? detalhe?.fornecedores?.find((fornecedor) => {
+        const nomeValido = typeof fornecedor?.nome === 'string' && fornecedor.nome.trim().length > 0;
+        const codigoValido = typeof fornecedor?.codigoProdutoNoFornecedor === 'string' && fornecedor.codigoProdutoNoFornecedor.trim().length > 0;
+        return nomeValido || codigoValido;
+      })
+    : undefined;
+
   const fornecedor_codigo = firstText(
-    detalhe?.fornecedores?.[0]?.codigoProdutoNoFornecedor,
+    fornecedorPrincipal?.codigoProdutoNoFornecedor,
     registroAtual?.fornecedor_codigo
   );
+
   const fornecedor_nome = toTitleCase(
-    firstText(detalhe?.fornecedores?.[0]?.nome, registroAtual?.fornecedor_nome)
+    firstText(fornecedorPrincipal?.nome, registroAtual?.fornecedor_nome)
   );
   const embalagem_qtd = firstNumber(
     (detalhe as any)?.embalagem?.quantidade,

@@ -150,6 +150,18 @@ export interface TinyProdutosRow {
   raw_payload: Json | null;
 }
 
+export interface ComprasSavedOrderRow {
+  id: string; // uuid
+  name: string;
+  period_days: number;
+  target_days: number;
+  produtos: Json;
+  manual_items: Json;
+  item_count: number;
+  created_at: string; // timestamptz
+  updated_at: string; // timestamptz
+}
+
 export interface TinyTokensRow {
   id: number;
   access_token: string | null;
@@ -262,6 +274,19 @@ export type ProdutosSyncCursorInsert = {
 
 export type ProdutosSyncCursorUpdate = Partial<ProdutosSyncCursorRow>;
 
+export type ComprasSavedOrderInsert = {
+  id?: string;
+  name: string;
+  period_days: number;
+  target_days: number;
+  produtos?: Json;
+  manual_items?: Json;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ComprasSavedOrderUpdate = Partial<Omit<ComprasSavedOrderInsert, 'id'>>;
+
 /* ============================================================================
  * DATABASE SHAPE PARA SUPABASE CLIENT
  * ========================================================================== */
@@ -355,6 +380,12 @@ export type DatabasePublicSchema = GenericSupabaseSchema & {
       Row: ProdutosSyncCursorRow;
       Insert: ProdutosSyncCursorInsert;
       Update: ProdutosSyncCursorUpdate;
+      Relationships: [];
+    };
+    compras_saved_orders: {
+      Row: ComprasSavedOrderRow;
+      Insert: ComprasSavedOrderInsert;
+      Update: ComprasSavedOrderUpdate;
       Relationships: [];
     };
   };

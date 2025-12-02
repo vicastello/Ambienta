@@ -26,18 +26,22 @@
 - **Status**: ✅ Ativo
 
 ### Produtos (Nova migration criada)
-- **Migration**: `20251121120000_cron_sync_produtos.sql`
+### Produtos (pg_cron ativo)
+- **Migrations**: `20251121120000_cron_sync_produtos.sql` + `20251201150000_refresh_sync_produtos_function.sql` + `20251202170000_preserve_manual_produto_fields.sql`
 - **Frequência**: A cada **2 minutos**
 - **Função**: `sync_produtos_from_tiny()`
-- **Status**: ⏳ Pendente aplicação
+- **Status**: ✅ Aplicado (preserva campos locais)
 
 ---
-
-## 🚀 Como Aplicar a Migration
+1. **Campos locais preservados**: Desde `20251202170000_preserve_manual_produto_fields.sql`, o `ON CONFLICT` mantém `fornecedor_codigo`, `embalagem_qtd` e `observacao_compras` já armazenados no banco, evitando que edições feitas na tela de Compras sejam apagadas.
+2. **Rate Limit do Tiny**: A API do Tiny tem limite de 100 req/min
+  - pg_cron faz apenas 1 request a cada 2 min = seguro
+  - Ajuste `limit=100` na URL se quiser processar mais produtos por vez
+3. **Estoque não é sincronizado no pg_cron**: 
 
 ### Opção 1: Via Supabase Dashboard (Recomendado)
 1. Acesse: https://supabase.com/dashboard
-2. Selecione seu projeto
+4. **Logs**: Use as tabelas `cron.job_run_details` para monitorar
 3. Vá em **SQL Editor**
 4. Cole o conteúdo de `supabase/migrations/20251121120000_cron_sync_produtos.sql`
 5. Clique em **Run**
