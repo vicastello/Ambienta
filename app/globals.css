@@ -461,12 +461,9 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   :root.dark [class*="glass-panel"],
   :root.dark [class*="glass-tint"],
   :root.dark [class*="glass-row"] {
-    background-color: transparent !important;
-    background-image:
-      linear-gradient(175deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
-      linear-gradient(165deg, rgba(28, 31, 42, 0.92), rgba(16, 18, 26, 0.94)) !important;
-    border-color: rgba(255, 255, 255, 0.02) !important;
-    border-width: 1px !important;
+    background: linear-gradient(165deg, rgba(28, 31, 42, 0.92), rgba(16, 18, 26, 0.94)) !important;
+    border: 1px solid rgba(255, 255, 255, 0.02) !important;
+    border-style: solid !important;
     box-shadow:
       inset 0 1px rgba(255, 255, 255, 0.04),
       inset 0 -1px rgba(0, 0, 0, 0.22),
@@ -482,6 +479,7 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   :root.dark .app-card *,
   :root.dark .product-card * {
     border-color: inherit;
+    border-style: inherit;
   }
 
 /* Tons suaves para sobreposição translúcida (gradiente até transparente) */
