@@ -11,10 +11,12 @@ export async function GET(req: NextRequest) {
     const targetMonthsParam = Number(searchParams.get('targetMonths') ?? '2');
     const targetMonths = Number.isFinite(targetMonthsParam) && targetMonthsParam > 0 ? targetMonthsParam : 2;
 
-    const startIso = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+    const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+    startDate.setUTCHours(0, 0, 0, 0);
+    const startDateStr = startDate.toISOString().slice(0, 10);
 
     const produtos = await listProdutosAtivosSimples();
-    const consumos = await listConsumoPeriodo(startIso);
+    const consumos = await listConsumoPeriodo(startDateStr);
 
     const consumoPorProduto = new Map<number, number>();
     consumos.forEach((item: ConsumoRow) => {

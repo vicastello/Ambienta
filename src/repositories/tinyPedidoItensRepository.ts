@@ -54,7 +54,7 @@ export type ConsumoRow = {
   tiny_orders: { data_criacao: string; situacao: number | null };
 };
 
-export async function listConsumoPeriodo(startIso: string) {
+export async function listConsumoPeriodo(startDate: string) {
   const pageSize = 1000;
   let from = 0;
   const allRows: ConsumoRow[] = [];
@@ -63,7 +63,7 @@ export async function listConsumoPeriodo(startIso: string) {
     const { data, error } = await supabaseAdmin
       .from('tiny_pedido_itens')
       .select('id_produto_tiny, quantidade, tiny_orders!inner(data_criacao,situacao)')
-      .gte('tiny_orders.data_criacao', startIso)
+      .gte('tiny_orders.data_criacao', startDate)
       .neq('tiny_orders.situacao', 2)
       .range(from, from + pageSize - 1);
 
