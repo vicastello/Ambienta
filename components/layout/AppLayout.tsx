@@ -52,7 +52,6 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     []
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [displayNavIndex, setDisplayNavIndex] = useState(() => computeNavIndex(pathname));
   const computeMobileNavIndex = useCallback(
     (path?: string | null) => {
       if (!path) return 0;
@@ -63,7 +62,6 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     },
     []
   );
-  const [displayMobileNavIndex, setDisplayMobileNavIndex] = useState(() => computeMobileNavIndex(pathname));
   const navTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -95,16 +93,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     [computeMobileNavIndex, pathname]
   );
 
-  useEffect(() => {
-    setDisplayNavIndex(activeNavIndex);
-    setDisplayMobileNavIndex(activeMobileNavIndex);
-  }, [activeMobileNavIndex, activeNavIndex]);
-
   const handleNavChange = useCallback(
     (index: number) => {
       const target = NAV_ITEMS[index];
       if (!target || pathname === target.href) return;
-      setDisplayNavIndex(index);
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         startTransition(() => {
@@ -119,7 +111,6 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     (index: number) => {
       const target = MOBILE_NAV_ITEMS[index];
       if (!target || pathname === target.href) return;
-      setDisplayMobileNavIndex(index);
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         startTransition(() => {
@@ -182,7 +173,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           <div className="flex flex-col items-center gap-6 w-full pt-8">
             <div className="flex w-10 justify-center">{logoIcon}</div>
             <GlassVerticalNav
-              activeIndex={displayNavIndex}
+              activeIndex={activeNavIndex}
               onChange={handleNavChange}
               items={GLASS_NAV_ITEMS}
               className="w-10"
@@ -316,7 +307,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-center pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 bg-transparent">
         <div className="px-0">
           <GlassHorizontalNav
-            activeIndex={displayMobileNavIndex}
+            activeIndex={activeMobileNavIndex}
             onChange={handleMobileNavChange}
             items={MOBILE_GLASS_ITEMS}
           />

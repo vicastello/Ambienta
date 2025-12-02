@@ -2,6 +2,13 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import type { TinyProdutosRow, TinyProdutosInsert } from '@/src/types/db-public';
 
+export class TinyProdutoNotFoundError extends Error {
+  constructor(id: number) {
+    super(`Produto ${id} não encontrado`);
+    this.name = 'TinyProdutoNotFoundError';
+  }
+}
+
 export type ListProdutosParams = {
   search?: string;
   situacao?: string;
@@ -128,16 +135,20 @@ export async function updateFornecedorEmbalagem(params: {
 }) {
   const { id_produto_tiny, fornecedor_codigo, embalagem_qtd, observacao_compras } = params;
   const admin = supabaseAdmin as any;
-  const { error } = await admin
+  const { error, data } = await admin
     .from('tiny_produtos')
     .update({
       fornecedor_codigo: fornecedor_codigo ?? null,
       embalagem_qtd: embalagem_qtd ?? null,
       observacao_compras: observacao_compras ?? null,
     } as any)
-    .eq('id_produto_tiny', id_produto_tiny);
+    .eq('id_produto_tiny', id_produto_tiny)
+    .select('id_produto_tiny');
 
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new TinyProdutoNotFoundError(id_produto_tiny);
+  }
 }
 
 export type ProdutoBaseRow = Pick<
