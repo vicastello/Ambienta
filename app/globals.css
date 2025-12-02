@@ -37,7 +37,7 @@
     --negative: #e11d48;
 
     /* Superfícies compartilhadas */
-    --surface-card-bg: rgba(255, 255, 255, 0.95);
+    --surface-card-bg: transparent;
     --surface-card-bg-hover: rgba(255, 255, 255, 0.56);
     --surface-card-border: #FFF;
     --surface-card-shadow: none;
@@ -85,7 +85,7 @@
     --negative: #ff7390;
     --warning: #fcd34d;
 
-    --surface-card-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.9), rgba(10, 12, 20, 0.92));
+    --surface-card-bg: transparent;
     --surface-card-bg-hover: linear-gradient(165deg, rgba(18, 24, 36, 0.92), rgba(12, 14, 22, 0.94));
     --surface-border-strong: rgba(255, 255, 255, 0.12);
     --surface-border-soft: rgba(255, 255, 255, 0.06);
@@ -113,6 +113,12 @@
     --btn-border-hover: rgba(255, 255, 255, 0.32);
     --btn-text: #f8fbff;
     --btn-shadow: 0 14px 36px rgba(0, 5, 18, 0.65);
+    --dark-card-border: rgba(255, 255, 255, 0.02);
+    --dark-card-shadow: inset 0 1px rgba(255, 255, 255, 0.02),
+      inset 0 -1px rgba(0, 0, 0, 0.12),
+      0 4px 16px rgba(0, 0, 0, 0.24);
+    --dark-card-blur-strength: 24px;
+    --dark-card-sat-strength: 1.08;
   }
 
   html,
@@ -290,7 +296,6 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   :root.dark .bg-white\/30 { background-color: rgba(16, 24, 48, 0.28) !important; }
   :root.dark .bg-white\/20 { background-color: rgba(18, 28, 52, 0.24) !important; }
   :root.dark .bg-white\/10 { background-color: rgba(19, 30, 58, 0.18) !important; }
-  :root.dark .border-white\/60 { border-color: rgba(145, 173, 255, 0.26) !important; }
   :root.dark .bg-white { background-color: var(--bg-card) !important; }
   :root.dark .bg-slate-50 { background-color: rgba(255, 255, 255, 0.06) !important; }
   :root.dark .bg-slate-100 { background-color: rgba(255, 255, 255, 0.08) !important; }
@@ -431,28 +436,18 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
 
   :root.dark .app-card,
   :root.dark .product-card {
-    border: 1px solid rgba(255, 255, 255, 0.02) !important;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-      var(--surface-card-bg);
-    box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.06),
-      inset 0 -1px rgba(0, 0, 0, 0.32),
-      0 10px 30px rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--dark-card-border) !important;
+    background: var(--surface-card-bg) !important;
+    box-shadow: var(--dark-card-shadow);
   }
 
   :root.dark .glass-row {
-    border: 1px solid rgba(255, 255, 255, 0.01) !important;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
-      var(--surface-row-bg);
-    box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.06),
-      inset 0 -1px rgba(0, 0, 0, 0.26),
-      0 8px 24px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--dark-card-border) !important;
+    background: var(--surface-card-bg) !important;
+    box-shadow: var(--dark-card-shadow);
   }
 
-  /* Força o mesmo look dos menus em qualquer bloco de vidro no dark mode */
+  /* Força o mesmo look em qualquer card/painel/row no dark mode */
   :root.dark .glass-panel,
   :root.dark .glass-tint,
   :root.dark .glass-row,
@@ -460,16 +455,42 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   :root.dark .product-card,
   :root.dark [class*="glass-panel"],
   :root.dark [class*="glass-tint"],
-  :root.dark [class*="glass-row"] {
-    background: linear-gradient(165deg, rgba(28, 31, 42, 0.92), rgba(16, 18, 26, 0.94)) !important;
-    border: 1px solid rgba(255, 255, 255, 0.02) !important;
+  :root.dark [class*="glass-row"],
+  :root.dark [class*="inner-card"],
+  :root.dark [class*="card-inner"] {
+    background: var(--surface-card-bg) !important;
+    border: 1px solid var(--dark-card-border) !important;
     border-style: solid !important;
-    box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.04),
-      inset 0 -1px rgba(0, 0, 0, 0.22),
-      0 8px 28px rgba(0, 0, 0, 0.32);
-    backdrop-filter: blur(24px) saturate(1.08);
-    -webkit-backdrop-filter: blur(24px) saturate(1.08);
+    box-shadow: var(--dark-card-shadow);
+    backdrop-filter: blur(var(--dark-card-blur-strength)) saturate(var(--dark-card-sat-strength));
+    -webkit-backdrop-filter: blur(var(--dark-card-blur-strength)) saturate(var(--dark-card-sat-strength));
+  }
+
+  :root.dark .glass-panel::before,
+  :root.dark .glass-panel::after,
+  :root.dark .glass-tint::before,
+  :root.dark .glass-tint::after,
+  :root.dark .glass-row::before,
+  :root.dark .glass-row::after,
+  :root.dark .app-card::before,
+  :root.dark .app-card::after,
+  :root.dark .product-card::before,
+  :root.dark .product-card::after,
+  :root.dark [class*="glass-panel"]::before,
+  :root.dark [class*="glass-panel"]::after,
+  :root.dark [class*="glass-tint"]::before,
+  :root.dark [class*="glass-tint"]::after,
+  :root.dark [class*="glass-row"]::before,
+  :root.dark [class*="glass-row"]::after,
+  :root.dark [class*="inner-card"]::before,
+  :root.dark [class*="inner-card"]::after,
+  :root.dark [class*="card-inner"]::before,
+  :root.dark [class*="card-inner"]::after {
+    background: inherit !important;
+    border-color: inherit !important;
+    box-shadow: inherit !important;
+    backdrop-filter: inherit !important;
+    -webkit-backdrop-filter: inherit !important;
   }
 
   /* Refina bordas herdadas do Tailwind em itens específicos */
