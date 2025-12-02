@@ -1231,7 +1231,7 @@ export default function ComprasClient() {
         ]);
       });
 
-      autoTable(doc, {
+      const tableResult = autoTable(doc, {
         head: [['Código', 'EAN', 'Produto', 'Qtd Pedido', 'Observações']],
         body: rows,
         startY: 42,
@@ -1241,11 +1241,23 @@ export default function ComprasClient() {
         theme: 'plain',
       });
 
-      const table = (doc as unknown as { lastAutoTable?: { finalY: number; startY: number; startX: number; width: number; height: number } }).lastAutoTable;
-      if (table) {
-        doc.setDrawColor(216, 223, 230);
-        doc.setLineWidth(0.4);
-        doc.roundedRect(table.startX, table.startY, table.width, table.height, 4, 4, 'S');
+      const tableMeta = (tableResult as unknown as { table?: { startX: number; startY: number; width: number; height: number } })?.table
+        ?? (doc as unknown as {
+          lastAutoTable?: { finalY?: number; startY?: number; startX?: number; width?: number; height?: number };
+        }).lastAutoTable;
+      if (tableMeta) {
+        const { startX, startY, width, height } = tableMeta;
+        const numericArgs = [startX, startY, width, height];
+        const hasAllNumbers = numericArgs.every((value) => typeof value === 'number' && Number.isFinite(value));
+        if (hasAllNumbers && (width ?? 0) > 0 && (height ?? 0) > 0) {
+          try {
+            doc.setDrawColor(216, 223, 230);
+            doc.setLineWidth(0.4);
+            doc.roundedRect(startX as number, startY as number, width as number, height as number, 4, 4, 'S');
+          } catch (error) {
+            console.warn('[Compras] falha ao desenhar borda arredondada no PDF, ignorando.', error);
+          }
+        }
       }
 
       doc.save(`${toSafeFileName(orderTitle)}.pdf`);
