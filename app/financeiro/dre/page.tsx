@@ -177,6 +177,7 @@ export default function DrePage() {
   const isDraggingCards = useRef(false);
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
+  const [draggingCards, setDraggingCards] = useState(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
     sign: 'SAIDA',
@@ -482,6 +483,7 @@ export default function DrePage() {
     dragStartX.current = clientX;
     dragStartScroll.current = el.scrollLeft;
     el.classList.add('cursor-grabbing');
+    setDraggingCards(true);
   };
 
   const moveCardDrag = (clientX: number) => {
@@ -496,10 +498,13 @@ export default function DrePage() {
     if (!el) return;
     isDraggingCards.current = false;
     el.classList.remove('cursor-grabbing');
+    setDraggingCards(false);
   };
 
   const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('input, select, textarea, button')) return;
     beginCardDrag(e.clientX);
     e.preventDefault();
   };
@@ -513,6 +518,23 @@ export default function DrePage() {
   const handleCardsPointerUp = () => {
     endCardDrag();
   };
+
+  useEffect(() => {
+    if (!draggingCards) return;
+    const handleMove = (e: PointerEvent) => {
+      if (!isDraggingCards.current) return;
+      moveCardDrag(e.clientX);
+    };
+    const handleUp = () => {
+      endCardDrag();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [draggingCards]);
 
   const statusBadge =
     detail?.period.status === 'closed' ? (
