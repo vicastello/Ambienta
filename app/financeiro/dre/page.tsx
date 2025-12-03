@@ -727,6 +727,49 @@ export default function DrePage() {
           </div>
         </section>
 
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Resumo completo por mês (linhas fixas)
+              </h3>
+            </div>
+          </div>
+          {!filteredPeriods.length ? (
+            <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
+              Nenhum período carregado ainda. Crie/abra um mês acima para ver os cartões (Vendas,
+              CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              {filteredPeriods.map((p) => {
+                const detailData = periodDetails[p.period.id];
+                const draftData = valuesDraftByPeriod[p.period.id] || {};
+                return detailData ? (
+                  <MonthlyDreCard
+                    key={p.period.id}
+                    detail={detailData}
+                    draft={draftData}
+                    onChangeValue={(categoryId, value) =>
+                      setValuesDraftByPeriod((prev) => ({
+                        ...prev,
+                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                      }))
+                    }
+                    onSave={(status) => handleSavePeriod(p.period.id, status)}
+                    onSuggest={() => handleSuggestPeriod(p.period.id)}
+                    saving={saving}
+                    suggesting={suggesting}
+                  />
+                ) : (
+                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="app-card p-5">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Ponto de equilíbrio</p>
@@ -785,49 +828,6 @@ export default function DrePage() {
               </div>
             </div>
           </div>
-        </section>
-
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Resumo completo por mês (linhas fixas)
-              </h3>
-            </div>
-          </div>
-          {!filteredPeriods.length ? (
-            <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
-              Nenhum período carregado ainda. Crie/abra um mês acima para ver os cartões (Vendas,
-              CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
-            </div>
-          ) : (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {filteredPeriods.map((p) => {
-                const detailData = periodDetails[p.period.id];
-                const draftData = valuesDraftByPeriod[p.period.id] || {};
-                return detailData ? (
-                  <MonthlyDreCard
-                    key={p.period.id}
-                    detail={detailData}
-                    draft={draftData}
-                    onChangeValue={(categoryId, value) =>
-                      setValuesDraftByPeriod((prev) => ({
-                        ...prev,
-                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
-                      }))
-                    }
-                    onSave={(status) => handleSavePeriod(p.period.id, status)}
-                    onSuggest={() => handleSuggestPeriod(p.period.id)}
-                    saving={saving}
-                    suggesting={suggesting}
-                  />
-                ) : (
-                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
-                );
-              })}
-            </div>
-          )}
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
@@ -894,7 +894,6 @@ type MonthlyDreCardProps = {
   draft: Record<string, number | null>;
   onChangeValue: (categoryId: string, value: number | null) => void;
   onSave: (status?: 'draft' | 'closed') => void;
-  onSuggest: () => void;
   saving: boolean;
   suggesting: boolean;
 };
@@ -904,7 +903,6 @@ function MonthlyDreCard({
   draft,
   onChangeValue,
   onSave,
-  onSuggest,
   saving,
   suggesting,
 }: MonthlyDreCardProps) {
@@ -1044,11 +1042,14 @@ function MonthlyDreCard({
         <div className="flex gap-2">
           <button
             className="app-btn-ghost inline-flex items-center gap-2 text-xs"
-            onClick={onSuggest}
+            onClick={() => {
+              // TODO: implementar exportação do card em PNG (ex.: html2canvas/dom-to-image)
+              console.info('Exportar PNG - implementar captura do card');
+            }}
             disabled={suggesting}
           >
             {suggesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Sugestão
+            Exportar PNG
           </button>
           <button
             className="app-btn-primary inline-flex items-center gap-2 text-xs"
