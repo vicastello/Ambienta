@@ -180,6 +180,46 @@ export interface ProdutosSyncCursorRow {
   updated_at: string; // timestamptz
 }
 
+export interface DrePeriodsRow {
+  id: string; // uuid
+  year: number;
+  month: number;
+  label: string;
+  status: string;
+  target_net_margin: number | null;
+  reserve_percent: number | null;
+  created_at: string | null; // timestamptz
+  updated_at: string | null; // timestamptz
+}
+
+export interface DreCategoriesRow {
+  id: string; // uuid
+  code: string;
+  name: string;
+  group_type: string;
+  sign: string;
+  is_default: boolean;
+  is_editable: boolean;
+  order_index: number;
+  channel: string | null;
+  parent_code: string | null;
+  created_at: string | null; // timestamptz
+  updated_at: string | null; // timestamptz
+}
+
+export interface DreValuesRow {
+  id: string; // uuid
+  period_id: string;
+  category_id: string;
+  amount_auto: number | null;
+  amount_manual: number | null;
+  final_amount: number;
+  auto_source: string | null;
+  notes: string | null;
+  created_at: string | null; // timestamptz
+  updated_at: string | null; // timestamptz
+}
+
 /* ============================================================================
  * INSERT / UPDATE TYPES
  * ========================================================================== */
@@ -273,6 +313,39 @@ export type ProdutosSyncCursorInsert = {
 };
 
 export type ProdutosSyncCursorUpdate = Partial<ProdutosSyncCursorRow>;
+
+export type DrePeriodsInsert = Omit<
+  DrePeriodsRow,
+  "id" | "created_at" | "updated_at"
+> & {
+  id?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type DrePeriodsUpdate = Partial<DrePeriodsRow>;
+
+export type DreCategoriesInsert = Omit<
+  DreCategoriesRow,
+  "id" | "created_at" | "updated_at"
+> & {
+  id?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type DreCategoriesUpdate = Partial<DreCategoriesRow>;
+
+export type DreValuesInsert = Omit<
+  DreValuesRow,
+  "id" | "final_amount" | "created_at" | "updated_at"
+> & {
+  id?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type DreValuesUpdate = Partial<Omit<DreValuesRow, "final_amount">>;
 
 export type ComprasSavedOrderInsert = {
   id?: string;
@@ -381,6 +454,51 @@ export type DatabasePublicSchema = GenericSupabaseSchema & {
       Insert: ProdutosSyncCursorInsert;
       Update: ProdutosSyncCursorUpdate;
       Relationships: [];
+    };
+    dre_periods: {
+      Row: DrePeriodsRow;
+      Insert: DrePeriodsInsert;
+      Update: DrePeriodsUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "dre_values_period_id_fkey";
+          columns: ["id"];
+          referencedRelation: "dre_values";
+          referencedColumns: ["period_id"];
+        }
+      ];
+    };
+    dre_categories: {
+      Row: DreCategoriesRow;
+      Insert: DreCategoriesInsert;
+      Update: DreCategoriesUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "dre_values_category_id_fkey";
+          columns: ["id"];
+          referencedRelation: "dre_values";
+          referencedColumns: ["category_id"];
+        }
+      ];
+    };
+    dre_values: {
+      Row: DreValuesRow;
+      Insert: DreValuesInsert;
+      Update: DreValuesUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "dre_values_period_id_fkey";
+          columns: ["period_id"];
+          referencedRelation: "dre_periods";
+          referencedColumns: ["id"];
+        },
+        {
+          foreignKeyName: "dre_values_category_id_fkey";
+          columns: ["category_id"];
+          referencedRelation: "dre_categories";
+          referencedColumns: ["id"];
+        }
+      ];
     };
     compras_saved_orders: {
       Row: ComprasSavedOrderRow;
