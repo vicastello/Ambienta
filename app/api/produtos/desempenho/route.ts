@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getErrorMessage } from "@/lib/errors";
+import {
+  addCodeCandidates,
+  addIdCandidates,
+  extractRelatedEntries,
+  isRecord,
+  toTrimmedStringOrNull,
+} from "@/lib/productRelationships";
 import type { Database, TinyProdutosRow } from "@/src/types/db-public";
 
 const PAGE_SIZE = 1000;
@@ -85,124 +92,6 @@ type ProdutoSerieTargets = {
   usedCodigoFallback: boolean;
 };
 
-const VARIACAO_PATHS: Array<Array<string>> = [
-  ["variacoes"],
-  ["produto", "variacoes"],
-  ["variacoes", "variacao"],
-  ["produto", "variacoes", "variacao"],
-];
-
-const KIT_PATHS: Array<Array<string>> = [
-  ["componentes"],
-  ["produto", "componentes"],
-  ["componentes", "componente"],
-  ["produto", "componentes", "componente"],
-  ["componentesKit"],
-  ["produto", "componentesKit"],
-  ["itensKit"],
-  ["produto", "itensKit"],
-  ["kit", "componentes"],
-  ["kit", "itens"],
-];
-
-const ARRAY_FALLBACK_KEYS = ["item", "items", "itens", "variacao", "variacoes", "componentes", "componente"];
-
-const toNumber = (value: unknown): number | null => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value.trim());
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const toStringOrNull = (value: unknown): string | null => {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  }
-  return null;
-};
-
-function normalizeToArray(value: unknown): any[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value === "object") {
-    for (const key of ARRAY_FALLBACK_KEYS) {
-      const nested = (value as Record<string, unknown>)[key];
-      if (!nested) continue;
-      const normalized = normalizeToArray(nested);
-      if (normalized.length) return normalized;
-    }
-    return [value];
-  }
-  return [];
-}
-
-function pickFirstArray(raw: Record<string, unknown>, paths: Array<Array<string>>): any[] {
-  for (const path of paths) {
-    let current: unknown = raw;
-    for (const segment of path) {
-      if (!current || typeof current !== "object") {
-        current = null;
-        break;
-      }
-      current = (current as Record<string, unknown>)[segment];
-    }
-    const normalized = normalizeToArray(current);
-    if (normalized.length) return normalized;
-  }
-  return [];
-}
-
-function addIdCandidates(entry: Record<string, unknown> | null | undefined, target: Set<number>) {
-  if (!entry || typeof entry !== "object") return;
-  const candidates = [
-    entry["id"],
-    entry["idProduto"],
-    entry["id_produto"],
-    entry["produto_id"],
-    entry["idProdutoPai"],
-    (entry as any)?.produto?.id,
-    (entry as any)?.produto?.idProduto,
-  ];
-  for (const candidate of candidates) {
-    const parsed = toNumber(candidate);
-    if (parsed && parsed > 0) {
-      target.add(parsed);
-    }
-  }
-}
-
-function addCodeCandidates(entry: Record<string, unknown> | null | undefined, target: Set<string>) {
-  if (!entry || typeof entry !== "object") return;
-  const candidates = [
-    entry["codigo"],
-    entry["codigoProduto"],
-    entry["sku"],
-    (entry as any)?.produto?.codigo,
-    (entry as any)?.produto?.codigoProduto,
-    (entry as any)?.produto?.sku,
-  ];
-  for (const candidate of candidates) {
-    const parsed = toStringOrNull(candidate);
-    if (parsed) target.add(parsed);
-  }
-}
-
-function extractRelatedEntries(
-  raw: Record<string, unknown>,
-  tipo: string | null | undefined
-): { entries: any[]; source: "variacoes" | "kit" | null } {
-  if (!tipo) return { entries: [], source: null };
-  if (tipo === "V") {
-    return { entries: pickFirstArray(raw, VARIACAO_PATHS), source: "variacoes" };
-  }
-  if (tipo === "K") {
-    return { entries: pickFirstArray(raw, KIT_PATHS), source: "kit" };
-  }
-  return { entries: [], source: null };
-}
 
 async function loadProdutoSerieTargets(produtoId: number): Promise<ProdutoSerieTargets | null> {
   const { data, error } = await supabaseAdmin
@@ -218,22 +107,19 @@ async function loadProdutoSerieTargets(produtoId: number): Promise<ProdutoSerieT
   const ids = new Set<number>();
   const codes = new Set<string>();
   ids.add(produtoId);
-  const codigoBase = toStringOrNull(produto.codigo);
+  const codigoBase = toTrimmedStringOrNull(produto.codigo);
   if (codigoBase) codes.add(codigoBase);
 
   let childSource: "variacoes" | "kit" | null = null;
 
-  if (produto.raw_payload && typeof produto.raw_payload === "object") {
-    const { entries, source } = extractRelatedEntries(produto.raw_payload as Record<string, unknown>, produto.tipo);
+  if (produto.raw_payload) {
+    const { entries, source } = extractRelatedEntries(produto.raw_payload, produto.tipo);
     if (entries.length) {
       childSource = source;
       for (const entryRaw of entries) {
-        if (!entryRaw || typeof entryRaw !== "object") continue;
-        const entry = entryRaw as Record<string, unknown>;
-        addIdCandidates(entry, ids);
-        addIdCandidates((entry as any).produto, ids);
-        addCodeCandidates(entry, codes);
-        addCodeCandidates((entry as any).produto, codes);
+        if (!isRecord(entryRaw)) continue;
+        addIdCandidates(entryRaw, ids);
+        addCodeCandidates(entryRaw, codes);
       }
     }
   }
@@ -384,7 +270,7 @@ export async function GET(req: NextRequest) {
       if (typeof row.id_produto_tiny === "number" && Number.isFinite(row.id_produto_tiny)) {
         matchedIdsSet.add(row.id_produto_tiny);
       }
-      const codigo = toStringOrNull(row.codigo_produto);
+      const codigo = toTrimmedStringOrNull(row.codigo_produto);
       if (codigo) matchedCodesSet.add(codigo);
     }
 

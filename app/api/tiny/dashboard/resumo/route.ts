@@ -12,6 +12,7 @@ import {
   TODAS_SITUACOES,
   extractCidadeUfFromRaw,
 } from '@/lib/tinyMapping';
+import { loadProdutoParentMapping, ProdutoParentMapping } from '@/lib/productRelationships';
 import type { Json, TinyOrdersRow, TinyPedidoItensRow, TinyProdutosRow } from '@/src/types/db-public';
 
 type DiaResumo = {
@@ -237,6 +238,20 @@ const updateSerieDiaria = (
   serie[dia] = atual;
 };
 
+const mergeSerieDiariaMap = (
+  destino: ProdutoResumoInterno,
+  origem?: ProdutoResumoInterno['serieDiariaMap']
+) => {
+  if (!origem) return;
+  const alvo = destino.serieDiariaMap ?? (destino.serieDiariaMap = {});
+  for (const [dia, valores] of Object.entries(origem)) {
+    const atual = alvo[dia] ?? { quantidade: 0, receita: 0 };
+    atual.quantidade += valores.quantidade;
+    atual.receita += valores.receita;
+    alvo[dia] = atual;
+  }
+};
+
 function registrarProduto(
   map: Map<string, ProdutoResumoInterno>,
   item: TinyRawItem | null,
@@ -343,6 +358,69 @@ function registrarProdutoPersistido(
 
   map.set(key, atual);
 }
+
+const consolidarProdutosPorPai = (
+  mapa: Map<string, ProdutoResumoInterno>,
+  relacionamentos: ProdutoParentMapping
+): Map<string, ProdutoResumoInterno> => {
+  if (!mapa.size) return mapa;
+  const possuiRelacionamentos =
+    relacionamentos.idToParent.size > 0 || relacionamentos.codeToParent.size > 0;
+  if (!possuiRelacionamentos) return mapa;
+
+  const resultado = new Map<string, ProdutoResumoInterno>();
+
+  mapa.forEach((produto) => {
+    const parentPorId =
+      typeof produto.produtoId === 'number'
+        ? relacionamentos.idToParent.get(produto.produtoId)
+        : null;
+    const skuNormalizado = typeof produto.sku === 'string' ? produto.sku.trim() : null;
+    const parentPorSku = skuNormalizado
+      ? relacionamentos.codeToParent.get(skuNormalizado)
+      : null;
+    const parentInfo = parentPorId ?? parentPorSku ?? null;
+
+    const targetProdutoId = parentInfo?.parentId ?? produto.produtoId ?? null;
+    const targetSku = parentInfo?.parentCodigo ?? skuNormalizado ?? produto.sku ?? null;
+    const targetDescricao = parentInfo?.parentNome ?? produto.descricao;
+    const targetImagem = parentInfo?.parentImagemUrl ?? produto.imagemUrl ?? undefined;
+
+    const key = buildProdutoInternalKey(targetProdutoId, targetDescricao, targetSku);
+
+    const existente: ProdutoResumoInterno = resultado.get(key) ?? {
+      produtoId: targetProdutoId,
+      sku: targetSku ?? undefined,
+      descricao: targetDescricao,
+      quantidade: 0,
+      receita: 0,
+      imagemUrl: targetImagem,
+      saldo: produto.saldo,
+      reservado: produto.reservado,
+      disponivel: produto.disponivel,
+      serieDiariaMap: undefined,
+    };
+
+    existente.quantidade += produto.quantidade;
+    existente.receita += produto.receita;
+
+    if (!existente.imagemUrl && targetImagem) {
+      existente.imagemUrl = targetImagem;
+    }
+
+    if (existente.saldo == null && produto.saldo != null) existente.saldo = produto.saldo;
+    if (existente.reservado == null && produto.reservado != null)
+      existente.reservado = produto.reservado;
+    if (existente.disponivel == null && produto.disponivel != null)
+      existente.disponivel = produto.disponivel;
+
+    mergeSerieDiariaMap(existente, produto.serieDiariaMap);
+
+    resultado.set(key, existente);
+  });
+
+  return resultado;
+};
 
 async function carregarItensPorPedido(orderIds: number[]): Promise<PedidoItensMap> {
   const mapa: PedidoItensMap = new Map();
@@ -662,6 +740,7 @@ export async function GET(req: NextRequest) {
       carregarItensPorPedido(idsAnterior),
       carregarItensPorPedido(idsAtual),
     ]);
+    const parentMappingPromise = loadProdutoParentMapping();
     
     console.log(`[DEBUG] Período anterior (${dataInicialAnteriorStr} a ${dataFinalAnteriorStr}): ${ordersAnterior.length} pedidos`);
     console.log(`[DEBUG] Período atual (${dataInicialStr} a ${dataFinalStr}): ${ordersAtual.length} pedidos`);
@@ -1029,6 +1108,16 @@ export async function GET(req: NextRequest) {
 
     await hydrateTopProdutoSeries();
 
+    const produtoParentMapping = await parentMappingPromise;
+    const mapaProdutoAtualFinal = consolidarProdutosPorPai(
+      mapaProdutoAtual,
+      produtoParentMapping
+    );
+    const mapaProdutoAnteriorFinal = consolidarProdutosPorPai(
+      mapaProdutoAnterior,
+      produtoParentMapping
+    );
+
     const vendasPorDiaAtual: DiaResumo[] = Array.from(mapaDiaAtual.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([data, info]) => ({
@@ -1072,10 +1161,10 @@ export async function GET(req: NextRequest) {
     );
 
     // Enriquecer top produtos com estoque da tiny_produtos (quando existir)
-    const produtosParaEnriquecerIds = Array.from(mapaProdutoAtual.values())
+    const produtosParaEnriquecerIds = Array.from(mapaProdutoAtualFinal.values())
       .map((p) => p.produtoId)
       .filter((id): id is number => typeof id === 'number');
-    const produtosParaEnriquecerSkus = Array.from(mapaProdutoAtual.values())
+    const produtosParaEnriquecerSkus = Array.from(mapaProdutoAtualFinal.values())
       .map((p) => p.sku)
       .filter((sku): sku is string => !!sku);
 
@@ -1157,7 +1246,7 @@ export async function GET(req: NextRequest) {
           : 0,
       topProdutos: serializeProdutos(
         enrichProdutos(
-          Array.from(mapaProdutoAtual.values())
+          Array.from(mapaProdutoAtualFinal.values())
             .sort((a, b) => b.quantidade - a.quantidade)
             .slice(0, 12)
         )
@@ -1185,7 +1274,7 @@ export async function GET(req: NextRequest) {
           : 0,
       topProdutos: serializeProdutos(
         enrichProdutos(
-          Array.from(mapaProdutoAnterior.values())
+          Array.from(mapaProdutoAnteriorFinal.values())
             .sort((a, b) => b.quantidade - a.quantidade)
             .slice(0, 12)
         )
