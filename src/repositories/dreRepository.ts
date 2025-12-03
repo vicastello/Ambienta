@@ -462,7 +462,9 @@ export async function suggestAutoValuesForPeriod(periodId: string) {
       period_id: periodId,
       category_id: category.id,
       amount_auto: Number(value.toFixed(2)),
+      amount_manual: null,
       auto_source: source,
+      notes: null,
     });
   };
 
