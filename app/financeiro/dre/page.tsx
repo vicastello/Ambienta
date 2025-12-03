@@ -475,30 +475,43 @@ export default function DrePage() {
     }
   };
 
-  const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const beginCardDrag = (clientX: number) => {
     const el = cardsScrollRef.current;
     if (!el) return;
     isDraggingCards.current = true;
-    dragStartX.current = e.clientX;
+    dragStartX.current = clientX;
     dragStartScroll.current = el.scrollLeft;
-    el.setPointerCapture(e.pointerId);
     el.classList.add('cursor-grabbing');
   };
 
-  const handleCardsPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const moveCardDrag = (clientX: number) => {
+    const el = cardsScrollRef.current;
+    if (!el || !isDraggingCards.current) return;
+    const walk = clientX - dragStartX.current;
+    el.scrollLeft = dragStartScroll.current - walk;
+  };
+
+  const endCardDrag = () => {
     const el = cardsScrollRef.current;
     if (!el) return;
     isDraggingCards.current = false;
-    el.releasePointerCapture(e.pointerId);
     el.classList.remove('cursor-grabbing');
   };
 
-  const handleCardsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const el = cardsScrollRef.current;
-    if (!el || !isDraggingCards.current) return;
-    const walk = e.clientX - dragStartX.current;
-    el.scrollLeft = dragStartScroll.current - walk;
+  const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    beginCardDrag(e.clientX);
     e.preventDefault();
+  };
+
+  const handleCardsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingCards.current) return;
+    moveCardDrag(e.clientX);
+    e.preventDefault();
+  };
+
+  const handleCardsPointerUp = () => {
+    endCardDrag();
   };
 
   const statusBadge =
@@ -648,7 +661,7 @@ export default function DrePage() {
             </div>
           ) : (
             <div
-              className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab select-none"
+              className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab active:cursor-grabbing select-none touch-pan-y"
               ref={cardsScrollRef}
               onPointerDown={handleCardsPointerDown}
               onPointerUp={handleCardsPointerUp}
