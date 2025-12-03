@@ -170,7 +170,7 @@ export default function DrePage() {
   const [periodDetails, setPeriodDetails] = useState<Record<string, DreDetail>>({});
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [targetMargin, setTargetMargin] = useState<number | null>(null);
-  const [reservePercent, setReservePercent] = useState<number | null>(null);
+  const [reserveDraftByPeriod, setReserveDraftByPeriod] = useState<Record<string, number | null>>({});
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const seededBasePeriods = useRef(false);
   const [newCategory, setNewCategory] = useState({
@@ -269,7 +269,7 @@ export default function DrePage() {
       setDetail(data);
       setPeriodDetails((prev) => ({ ...prev, [id]: data }));
       setTargetMargin(data.period.target_net_margin ?? null);
-      setReservePercent(data.period.reserve_percent ?? 0.1);
+      setReserveDraftByPeriod((prev) => ({ ...prev, [id]: data.period.reserve_percent ?? 0.1 }));
       const nextDraft: Record<string, number | null> = {};
       data.categories.forEach((item: DreCategoryValue) => {
         nextDraft[item.category.id] = item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
@@ -317,6 +317,10 @@ export default function DrePage() {
                 item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
             });
             setValuesDraftByPeriod((prevDraft) => ({ ...prevDraft, [entry.id!]: draft }));
+            setReserveDraftByPeriod((prevReserve) => ({
+              ...prevReserve,
+              [entry.id!]: (entry.data as DreDetail).period.reserve_percent ?? 0.1,
+            }));
           }
         });
         return next;
@@ -398,11 +402,13 @@ export default function DrePage() {
         categoryId,
         amountManual: amountManual === null ? null : amountManual,
       }));
+      const reservePercent = reserveDraftByPeriod[periodId] ?? 0.1;
       const res = await fetch(`/api/dre/periods/${periodId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status,
+          reserve_percent: reservePercent,
           values: valuesPayload,
         }),
       });
@@ -412,7 +418,7 @@ export default function DrePage() {
       if (selectedPeriodId === periodId) {
         setDetail(data);
         setTargetMargin(data.period.target_net_margin ?? null);
-        setReservePercent(data.period.reserve_percent ?? null);
+        setReserveDraftByPeriod((prev) => ({ ...prev, [periodId]: data.period.reserve_percent ?? 0.1 }));
       }
       setValuesDraftByPeriod((prev) => ({
         ...prev,
@@ -575,18 +581,7 @@ export default function DrePage() {
               />
               <span className="text-sm text-slate-500">Meta de margem (fração)</span>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="0.01"
-                className="app-input w-24 text-right font-semibold"
-                value={reservePercent ?? ''}
-                onChange={(e) =>
-                  setReservePercent(e.target.value === '' ? null : Number(e.target.value))
-                }
-              />
-              <span className="text-sm text-slate-500">Reserva (% do lucro líquido)</span>
-            </div>
+            <p className="text-xs text-slate-500">Reserva por mês é editada dentro de cada cartão.</p>
           </div>
         </section>
 
@@ -635,6 +630,11 @@ export default function DrePage() {
                       <MonthlyDreCard
                         detail={detailData}
                         draft={draftData}
+                        reservePercent={
+                          reserveDraftByPeriod[p.period.id] ??
+                          detailData.period.reserve_percent ??
+                          0.1
+                        }
                         onChangeValue={(categoryId, value) =>
                           setValuesDraftByPeriod((prev) => ({
                             ...prev,
@@ -643,6 +643,9 @@ export default function DrePage() {
                         }
                         onSave={(status) => handleSavePeriod(p.period.id, status)}
                         onDelete={() => handleDeletePeriod(p.period.id)}
+                        onChangeReserve={(value) => {
+                          setReserveDraftByPeriod((prev) => ({ ...prev, [p.period.id]: value }));
+                        }}
                         saving={saving}
                       />
                     ) : (
@@ -907,6 +910,8 @@ type MonthlyDreCardProps = {
   onChangeValue: (categoryId: string, value: number | null) => void;
   onSave: (status?: 'draft' | 'closed') => Promise<void> | void;
   onDelete: () => Promise<void> | void;
+  reservePercent: number | null;
+  onChangeReserve: (value: number | null) => void;
   saving: boolean;
 };
 
@@ -916,6 +921,8 @@ function MonthlyDreCard({
   onChangeValue,
   onSave,
   onDelete,
+  reservePercent,
+  onChangeReserve,
   saving,
 }: MonthlyDreCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -1051,7 +1058,7 @@ function MonthlyDreCard({
   const lucroBruto = receitaLiquida - custosVariaveis - despesasFixas;
   const lucroLiquido = lucroBruto - despesasOperacionais;
 
-  const reservaPercent = detail.period.reserve_percent ?? 0;
+  const reservaPercent = reservePercent ?? 0.1;
   const reserva = Math.max(0, lucroLiquido * reservaPercent);
   const divisao = lucroLiquido - reserva;
   const nelsonBase = 2000;
@@ -1249,6 +1256,22 @@ function MonthlyDreCard({
 
       <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Reserva</div>
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              step="0.01"
+              className="app-input w-24 text-right"
+              value={reservaPercent}
+              onChange={(e) => onChangeReserve(e.target.value === '' ? null : Number(e.target.value))}
+            />
+            <span className="text-sm text-slate-500">Fração (ex: 0.10 = 10%)</span>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-700 dark:text-slate-200">
+            Reserva {formatPercent(reservaPercent)}
+          </p>
+        )}
         {computedRow('Reserva', reserva)}
       </div>
 
