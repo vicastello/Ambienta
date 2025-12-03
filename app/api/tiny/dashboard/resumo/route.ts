@@ -15,6 +15,7 @@ import {
 import {
   loadProdutoParentMapping,
   ProdutoParentMapping,
+  ProdutoParentInfo,
   resolveParentChain,
 } from '@/lib/productRelationships';
 import type { Json, TinyOrdersRow, TinyPedidoItensRow, TinyProdutosRow } from '@/src/types/db-public';
@@ -72,6 +73,21 @@ type ProdutoSerieDia = {
   receita: number;
 };
 
+type ProdutoZoomNivel = 'pai' | 'variacao' | 'kit' | 'simples' | 'origem' | 'desconhecido';
+
+type ProdutoZoomLevel = {
+  key: string;
+  produtoId: number | null;
+  sku?: string | null;
+  descricao: string;
+  tipo?: TinyProdutosRow['tipo'] | null;
+  nivel: ProdutoZoomNivel;
+  childSource?: ProdutoParentInfo['childSource'] | null;
+  quantidade: number;
+  receita: number;
+  serieDiaria?: ProdutoSerieDia[];
+};
+
 type ProdutoResumo = {
   produtoId: number | null;
   sku?: string | null;
@@ -83,10 +99,26 @@ type ProdutoResumo = {
   reservado?: number | null;
   disponivel?: number | null;
   serieDiaria?: ProdutoSerieDia[];
+  zoomLevels?: ProdutoZoomLevel[];
+};
+
+type ProdutoZoomLevelInternal = {
+  key: string;
+  produtoId: number | null;
+  sku?: string | null;
+  descricao: string;
+  tipo?: TinyProdutosRow['tipo'] | null;
+  nivel: ProdutoZoomNivel;
+  childSource?: ProdutoParentInfo['childSource'] | null;
+  quantidade: number;
+  receita: number;
+  ordem: number;
+  serieDiariaMap?: Record<string, { quantidade: number; receita: number }>;
 };
 
 type ProdutoResumoInterno = ProdutoResumo & {
   serieDiariaMap?: Record<string, { quantidade: number; receita: number }>;
+  zoomLevelsMap?: Map<string, ProdutoZoomLevelInternal>;
 };
 
 const buildProdutoInternalKey = (
@@ -256,6 +288,104 @@ const mergeSerieDiariaMap = (
   }
 };
 
+const mergeSerieDiariaIntoZoom = (
+  destino: ProdutoZoomLevelInternal,
+  origem?: ProdutoResumoInterno['serieDiariaMap']
+) => {
+  if (!origem) return;
+  const alvo = destino.serieDiariaMap ?? (destino.serieDiariaMap = {});
+  for (const [dia, valores] of Object.entries(origem)) {
+    const atual = alvo[dia] ?? { quantidade: 0, receita: 0 };
+    atual.quantidade += valores.quantidade;
+    atual.receita += valores.receita;
+    alvo[dia] = atual;
+  }
+};
+
+const serializeSerieFromMap = (
+  serieDiariaMap?: Record<string, { quantidade: number; receita: number }>
+): ProdutoSerieDia[] | undefined => {
+  if (!serieDiariaMap) return undefined;
+  return Object.entries(serieDiariaMap)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([data, info]) => ({ data, quantidade: info.quantidade, receita: info.receita }));
+};
+
+const buildZoomLevelKey = (
+  produtoId: number | null,
+  sku: string | null,
+  nivel: ProdutoZoomNivel,
+  descricao: string
+): string => {
+  const idSegment = produtoId ?? 'null';
+  const skuSegment = sku ?? descricao ?? 'sem-descricao';
+  return `${nivel}:${idSegment}:${skuSegment}`;
+};
+
+const normalizeSkuValue = (sku?: string | null): string | null => {
+  if (typeof sku !== 'string') return null;
+  const trimmed = sku.trim();
+  return trimmed || null;
+};
+
+const inferZoomNivelFromParent = (
+  parentInfo: ProdutoParentInfo,
+  isFinal: boolean
+): ProdutoZoomNivel => {
+  const tipo = typeof parentInfo.parentTipo === 'string' ? parentInfo.parentTipo.trim().toUpperCase() : null;
+  if (tipo === 'K') return 'kit';
+  if (tipo === 'P') return 'pai';
+  if (tipo === 'S') return 'simples';
+  if (tipo === 'V') return isFinal ? 'pai' : 'variacao';
+  if (parentInfo.childSource === 'kit') return 'kit';
+  if (parentInfo.childSource === 'variacoes') return isFinal ? 'pai' : 'variacao';
+  return 'desconhecido';
+};
+
+type ZoomNodeSeed = {
+  produtoId: number | null;
+  sku: string | null;
+  descricao: string;
+  tipo: TinyProdutosRow['tipo'] | null | undefined;
+  nivel: ProdutoZoomNivel;
+  ordem: number;
+  childSource?: ProdutoParentInfo['childSource'] | null;
+};
+
+const collectZoomNodes = (
+  produto: ProdutoResumoInterno,
+  parentResolution: ReturnType<typeof resolveParentChain>
+): ZoomNodeSeed[] => {
+  const nodes: ZoomNodeSeed[] = [];
+  const chain = parentResolution.chain ?? [];
+  const totalChain = chain.length;
+
+  chain.forEach((info, idx) => {
+    const isFinal = idx === totalChain - 1;
+    nodes.push({
+      produtoId: info.parentId ?? null,
+      sku: normalizeSkuValue(info.parentCodigo ?? null),
+      descricao: info.parentNome,
+      tipo: info.parentTipo,
+      nivel: inferZoomNivelFromParent(info, isFinal),
+      ordem: totalChain - idx,
+      childSource: info.childSource ?? null,
+    });
+  });
+
+  nodes.push({
+    produtoId: produto.produtoId ?? null,
+    sku: normalizeSkuValue(produto.sku ?? null),
+    descricao: produto.descricao,
+    tipo: undefined,
+    nivel: totalChain ? 'origem' : 'simples',
+    ordem: 0,
+    childSource: null,
+  });
+
+  return nodes;
+};
+
 function registrarProduto(
   map: Map<string, ProdutoResumoInterno>,
   item: TinyRawItem | null,
@@ -382,6 +512,7 @@ const consolidarProdutosPorPai = (
       relacionamentos
     );
     const parentInfo = parentResolution.finalParent;
+    const zoomNodes = collectZoomNodes(produto, parentResolution);
 
     if (parentResolution.chain.length > 1) {
       console.log('[Dashboard] Chain consolidada', {
@@ -414,6 +545,7 @@ const consolidarProdutosPorPai = (
       reservado: produto.reservado,
       disponivel: produto.disponivel,
       serieDiariaMap: undefined,
+      zoomLevelsMap: undefined,
     };
 
     existente.quantidade += produto.quantidade;
@@ -430,6 +562,36 @@ const consolidarProdutosPorPai = (
       existente.disponivel = produto.disponivel;
 
     mergeSerieDiariaMap(existente, produto.serieDiariaMap);
+
+    if (zoomNodes.length) {
+      const zoomMap = existente.zoomLevelsMap ?? (existente.zoomLevelsMap = new Map());
+      for (const node of zoomNodes) {
+        const zoomKey = buildZoomLevelKey(node.produtoId, node.sku, node.nivel, node.descricao);
+        const atual = zoomMap.get(zoomKey) ?? {
+          key: zoomKey,
+          produtoId: node.produtoId,
+          sku: node.sku,
+          descricao: node.descricao,
+          tipo: node.tipo ?? null,
+          nivel: node.nivel,
+          childSource: node.childSource ?? null,
+          quantidade: 0,
+          receita: 0,
+          ordem: node.ordem,
+          serieDiariaMap: undefined,
+        };
+
+        atual.quantidade += produto.quantidade;
+        atual.receita += produto.receita;
+        if (node.ordem > atual.ordem) atual.ordem = node.ordem;
+        if (!atual.sku && node.sku) atual.sku = node.sku;
+        if (!atual.produtoId && node.produtoId) atual.produtoId = node.produtoId;
+        if (!atual.tipo && node.tipo) atual.tipo = node.tipo;
+        mergeSerieDiariaIntoZoom(atual, produto.serieDiariaMap);
+
+        zoomMap.set(zoomKey, atual);
+      }
+    }
 
     resultado.set(key, existente);
   });
@@ -1234,12 +1396,30 @@ export async function GET(req: NextRequest) {
 
     const serializeProdutos = (arr: ProdutoResumoInterno[]): ProdutoResumo[] =>
       arr.map((prod) => {
-        const { serieDiariaMap, ...rest } = prod;
-        if (!serieDiariaMap) return rest;
-        const serieDiaria = Object.entries(serieDiariaMap)
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-          .map(([data, info]) => ({ data, quantidade: info.quantidade, receita: info.receita }));
-        return { ...rest, serieDiaria };
+        const { serieDiariaMap, zoomLevelsMap, ...rest } = prod;
+        const serieDiaria = serializeSerieFromMap(serieDiariaMap);
+        const zoomLevels = zoomLevelsMap
+          ? Array.from(zoomLevelsMap.values())
+              .sort((a, b) => b.ordem - a.ordem)
+              .map((level) => ({
+                key: level.key,
+                produtoId: level.produtoId,
+                sku: level.sku ?? null,
+                descricao: level.descricao,
+                tipo: level.tipo ?? null,
+                nivel: level.nivel,
+                childSource: level.childSource ?? null,
+                quantidade: level.quantidade,
+                receita: level.receita,
+                serieDiaria: serializeSerieFromMap(level.serieDiariaMap),
+              }))
+          : undefined;
+
+        return {
+          ...rest,
+          ...(serieDiaria ? { serieDiaria } : {}),
+          ...(zoomLevels ? { zoomLevels } : {}),
+        };
       });
 
     const periodoAtual: PeriodoResumo = {
