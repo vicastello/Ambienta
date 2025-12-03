@@ -178,6 +178,7 @@ export default function DrePage() {
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
   const [draggingCards, setDraggingCards] = useState(false);
+  const dragPointerId = useRef<number | null>(null);
   const [newCategory, setNewCategory] = useState({
     name: '',
     sign: 'SAIDA',
@@ -476,13 +477,21 @@ export default function DrePage() {
     }
   };
 
-  const beginCardDrag = (clientX: number) => {
+  const beginCardDrag = (clientX: number, pointerId?: number) => {
     const el = cardsScrollRef.current;
     if (!el) return;
     isDraggingCards.current = true;
     dragStartX.current = clientX;
     dragStartScroll.current = el.scrollLeft;
     el.classList.add('cursor-grabbing');
+    if (pointerId !== undefined) {
+      dragPointerId.current = pointerId;
+      try {
+        el.setPointerCapture(pointerId);
+      } catch {
+        // ignore
+      }
+    }
     setDraggingCards(true);
   };
 
@@ -498,6 +507,14 @@ export default function DrePage() {
     if (!el) return;
     isDraggingCards.current = false;
     el.classList.remove('cursor-grabbing');
+    if (dragPointerId.current !== null) {
+      try {
+        el.releasePointerCapture(dragPointerId.current);
+      } catch {
+        // ignore
+      }
+    }
+    dragPointerId.current = null;
     setDraggingCards(false);
   };
 
@@ -505,7 +522,7 @@ export default function DrePage() {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, select, textarea, button')) return;
-    beginCardDrag(e.clientX);
+    beginCardDrag(e.clientX, e.pointerId);
     e.preventDefault();
   };
 
