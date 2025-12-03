@@ -175,7 +175,15 @@ const emptyParentMapping = (): ProdutoParentMapping => ({
 const normalizeCodigo = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed || null;
+  if (!trimmed) return null;
+  return trimmed.toUpperCase();
+};
+
+const normalizeSkuInput = (sku: string | null | undefined): string | null => {
+  if (!sku || typeof sku !== 'string') return null;
+  const trimmed = sku.trim();
+  if (!trimmed) return null;
+  return trimmed.toUpperCase();
 };
 
 const normalizeNome = (value: unknown): string => {
@@ -248,10 +256,11 @@ export const resolveParentChain = (
 ): { finalParent: ProdutoParentInfo | null; chain: ProdutoParentInfo[] } => {
   const chain: ProdutoParentInfo[] = [];
   let currentId = typeof produtoId === 'number' ? produtoId : null;
-  let currentSku = sku ?? null;
+  let currentSku = normalizeSkuInput(sku);
   const visited = new Set<string>();
+  const MAX_DEPTH = 12;
 
-  while (true) {
+  for (let depth = 0; depth < MAX_DEPTH; depth += 1) {
     const parentById = currentId ? relacionamentos.idToParent.get(currentId) : null;
     const parentBySku = currentSku ? relacionamentos.codeToParent.get(currentSku) : null;
     const nextParent = chooseBestParent(parentById, parentBySku);
@@ -259,7 +268,7 @@ export const resolveParentChain = (
 
     chain.push(nextParent);
     const nextId = nextParent.parentId ?? currentId;
-    const nextSku = nextParent.parentCodigo ?? currentSku;
+    const nextSku = normalizeSkuInput(nextParent.parentCodigo ?? currentSku);
     const key = `${nextId ?? 'null'}:${nextSku ?? 'null'}`;
     if (visited.has(key)) break;
     visited.add(key);
@@ -277,15 +286,16 @@ export const resolveParentChain = (
 
 export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data } = await supabaseAdmin
       .from('tiny_produtos')
-      .select('id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url')
-      .in('tipo', ['P', 'V', 'K']);
-
-    if (error) throw error;
+      .select<'id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url', TinyProdutoParentRow>(
+        'id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url'
+      )
+      .in('tipo', ['P', 'V', 'K'])
+      .throwOnError();
 
     const mapping: ProdutoParentMapping = emptyParentMapping();
-    const rows = (data ?? []) as TinyProdutoParentRow[];
+    const rows = data ?? [];
 
     for (const row of rows) {
       if (!row?.raw_payload || !isRecord(row.raw_payload)) continue;
@@ -318,10 +328,13 @@ export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> 
         }
 
         for (const code of codes) {
-          if (!code || (parentInfo.parentCodigo && code === parentInfo.parentCodigo)) continue;
-          const atual = mapping.codeToParent.get(code);
+          const normalizedCode = normalizeCodigo(code);
+          if (!normalizedCode || (parentInfo.parentCodigo && normalizedCode === parentInfo.parentCodigo)) {
+            continue;
+          }
+          const atual = mapping.codeToParent.get(normalizedCode);
           if (shouldReplaceParent(atual, parentInfo)) {
-            mapping.codeToParent.set(code, parentInfo);
+            mapping.codeToParent.set(normalizedCode, parentInfo);
           }
         }
       }
