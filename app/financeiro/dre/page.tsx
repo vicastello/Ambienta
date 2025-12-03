@@ -1000,10 +1000,13 @@ function MonthlyDreCard({
 
   const valorParaSaque = vitorTotal + gabTotal + nelsonTotal;
 
+  const innerCardClass =
+    'rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 space-y-2';
+
   const editableRow = (code: string, label: string, showPercent = true) => {
     const amount = getAmount(code);
     return (
-      <div className="grid grid-cols-12 items-center border-b border-white/20 py-1 text-sm">
+      <div className="grid grid-cols-12 items-center border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
         <div className="col-span-7 text-slate-700 dark:text-slate-200">{label}</div>
         <div className="col-span-3">
           <input
