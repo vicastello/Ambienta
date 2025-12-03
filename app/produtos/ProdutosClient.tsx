@@ -99,6 +99,7 @@ type ProdutoDesempenhoResponse = {
 };
 
 const PRODUTO_DESEMPENHO_CACHE_TTL_MS = 2 * 60_000;
+const PRODUTO_SELECIONADO_STORAGE_KEY = "produtos:last-selected-id";
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
@@ -125,11 +126,18 @@ export default function ProdutosClient() {
   const [fornecedorInput, setFornecedorInput] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [page, setPage] = useState(0);
-  const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<number | null>(null);
+  const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const storedValue = window.localStorage.getItem(PRODUTO_SELECIONADO_STORAGE_KEY);
+    if (!storedValue) return null;
+    const parsed = Number(storedValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  });
   const [produtoHeroPreset, setProdutoHeroPreset] = useState<ProdutoSeriePreset>("30d");
   const [produtoDesempenho, setProdutoDesempenho] = useState<ProdutoDesempenhoResponse | null>(null);
   const [produtoDesempenhoLoading, setProdutoDesempenhoLoading] = useState(false);
   const [produtoDesempenhoError, setProdutoDesempenhoError] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -197,12 +205,22 @@ export default function ProdutosClient() {
       return;
     }
     setProdutoSelecionadoId((prev) => {
-      if (prev && produtos.some((produto) => produto.id === prev)) {
+      if (prev && produtos.some((produto) => produto.id_produto_tiny === prev)) {
         return prev;
       }
-      return produtos[0].id;
+      return produtos[0].id_produto_tiny;
     });
   }, [produtos]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (produtoSelecionadoId) {
+        window.localStorage.setItem(PRODUTO_SELECIONADO_STORAGE_KEY, String(produtoSelecionadoId));
+      } else {
+        window.localStorage.removeItem(PRODUTO_SELECIONADO_STORAGE_KEY);
+      }
+    }
+  }, [produtoSelecionadoId]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -282,7 +300,7 @@ export default function ProdutosClient() {
   const produtoEmFoco = useMemo(() => {
     if (!produtos.length) return null;
     if (produtoSelecionadoId == null) return produtos[0];
-    return produtos.find((produto) => produto.id === produtoSelecionadoId) ?? produtos[0];
+    return produtos.find((produto) => produto.id_produto_tiny === produtoSelecionadoId) ?? produtos[0];
   }, [produtos, produtoSelecionadoId]);
 
   const produtoSparkData = useMemo(() => {
@@ -329,6 +347,7 @@ export default function ProdutosClient() {
     setFornecedorInput(fornecedorFormatado);
     setFornecedor(fornecedorFormatado);
     setPage(0);
+    setMobileFiltersOpen(false);
   };
 
   async function syncProdutos() {
@@ -398,8 +417,43 @@ export default function ProdutosClient() {
           </div>
         </div>
 
+        <div className="md:hidden space-y-3">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, código ou GTIN..."
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleFiltersSubmit();
+                }
+              }}
+              className="app-input w-full pl-11"
+            />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(true)}
+              className="flex-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-200"
+            >
+              Ajustar filtros
+            </button>
+            <button
+              type="button"
+              onClick={handleFiltersSubmit}
+              className="flex-1 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 text-sm font-semibold"
+            >
+              Aplicar
+            </button>
+          </div>
+        </div>
+
         <form
-          className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
+          className="hidden md:grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
           onSubmit={(event) => {
             event.preventDefault();
             handleFiltersSubmit();
@@ -471,6 +525,104 @@ export default function ProdutosClient() {
             )}
           </div>
         </form>
+
+        {mobileFiltersOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <button
+              type="button"
+              aria-label="Fechar filtros"
+              className="absolute inset-0 bg-slate-900/40"
+              onClick={() => setMobileFiltersOpen(false)}
+            />
+            <div className="absolute inset-x-0 bottom-0 rounded-t-[32px] bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Filtros</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">Refine o catálogo</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileFiltersOpen(false)}
+                  className="text-sm font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-300"
+                >
+                  Fechar
+                </button>
+              </div>
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleFiltersSubmit();
+                }}
+              >
+                <div className="relative">
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">Situação</label>
+                  <select
+                    value={situacao}
+                    onChange={(event) => {
+                      setSituacao(event.target.value);
+                      setPage(0);
+                    }}
+                    className="app-input w-full"
+                  >
+                    <option value="all">Todas</option>
+                    <option value="A">Ativo</option>
+                    <option value="I">Inativo</option>
+                    <option value="E">Excluído</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo</label>
+                  <select
+                    value={tipo}
+                    onChange={(event) => {
+                      setTipo(event.target.value);
+                      setPage(0);
+                    }}
+                    className="app-input w-full"
+                  >
+                    <option value="all">Todos os tipos</option>
+                    <option value="S">Simples</option>
+                    <option value="V">Variação</option>
+                    <option value="K">Kit</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-500">Fornecedor</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Ex.: AMBIENTA"
+                      value={fornecedorInput}
+                      onChange={(event) => setFornecedorInput(formatFornecedorNome(event.target.value))}
+                      className="app-input w-full pr-10"
+                    />
+                    {(fornecedorInput || fornecedor) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFornecedorInput("");
+                          setFornecedor("");
+                          setPage(0);
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                        aria-label="Limpar filtro de fornecedor"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-3 text-sm font-semibold"
+                >
+                  Aplicar filtros
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
       </section>
 
       {produtoEmFoco && (
@@ -637,8 +789,8 @@ export default function ProdutosClient() {
                 <ProdutoCard
                   key={produto.id}
                   produto={produto}
-                  selected={produtoEmFoco?.id === produto.id}
-                  onSelect={() => setProdutoSelecionadoId(produto.id)}
+                  selected={produtoSelecionadoId === produto.id_produto_tiny}
+                  onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
                 />
               ))}
             </div>
@@ -663,8 +815,8 @@ export default function ProdutosClient() {
                     <ProdutoTableRow
                       key={produto.id}
                       produto={produto}
-                      selected={produtoEmFoco?.id === produto.id}
-                      onSelect={() => setProdutoSelecionadoId(produto.id)}
+                      selected={produtoSelecionadoId === produto.id_produto_tiny}
+                      onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
                     />
                   ))}
                 </tbody>

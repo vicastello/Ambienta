@@ -1,42 +1,717 @@
-# Copilot Instructions · Gestor Tiny
+# Guia rápido para IAs
+## Panorama
+- Next.js 16 (App Router) + React 19 + Tailwind 4; Supabase é a fonte persistente e Tiny ERP é o upstream. Consulte `app/` (rotas), `components/layout/AppLayout*` (shell) e `lib/` (integrações).
+- UI majoritariamente client-side com padrão glassmorphism; reutilize os utilitários de `app/globals.css` e componentes existentes antes de criar novos estilos.
 
-## Big Picture
-- Next.js App Router (TS, Tailwind 4) on Vercel; Supabase PG is the system of record; Tiny ERP is the upstream. UI is client-heavy and wrapped by `components/layout/AppLayout`.
-- Core tables: `tiny_orders` (pedido/raw/cidade/uf), `tiny_pedido_itens`, `tiny_produtos`, `tiny_tokens` (id=1), `sync_jobs`/`sync_logs`; schema and pg_cron/pg_net functions live in `migrations/` and `supabase/migrations/` (e.g., `orders_metrics` RPC).
+## Fluxo Tiny → Supabase
+- `POST /api/tiny/sync` (ver `lib/syncProcessor.ts`) chama Tiny via `listarPedidosTinyPorPeriodo`, faz backoff de 429 e usa `upsertOrdersPreservingEnriched` para não sobrescrever frete/canal/cidade/UF.
+- Pós-processamento obrigatório: `runFreteEnrichment`, `normalizeMissingOrderChannels`, `sincronizarItensAutomaticamente`. Qualquer write em `tiny_orders` deve manter essa sequência.
+- `/api/tiny/dashboard/resumo` resume períodos/canais/mapas/top produtos e abastece `app/dashboard/page.tsx`; cacheie em `DashboardClient` usando `readCacheEntry/isCacheEntryFresh`.
 
-## Sync & Cron
-- `POST /api/tiny/sync` enqueues `sync_jobs`; `lib/syncProcessor.ts` chunks date ranges, calls Tiny via `listarPedidosTinyPorPeriodo`, backs off on 429, upserts with `upsertOrdersPreservingEnriched` (keeps frete/canal/cidade/uf), then runs `runFreteEnrichment`, `normalizeMissingOrderChannels`, and `sincronizarItensAutomaticamente`.
-- Frete enrichment also runs via `/api/tiny/sync/enrich-background` (pg_cron job in `20251122123000_cron_sync_itens_e_imagens.sql` hits it every 5m); inline enrichment is optional (`ENABLE_INLINE_FRETE_ENRICHMENT=false`) to respect Tiny’s ~100 req/min rate limit.
-- Item sync: `sincronizarItensPorPedidos` plus trigger `trg_tiny_orders_auto_sync_itens` (`20251122124500_trigger_auto_sync_itens.sql`) POSTs `/api/tiny/sync/itens` whenever a `tiny_orders` row is inserted. `scripts/devCronServer.ts` mirrors the production cron locally and also normalizes channels.
-- Products: pg_cron (`20251121120000_cron_sync_produtos.sql` + `20251202170000_preserve_manual_produto_fields.sql`) polls Tiny via SQL `sync_produtos_from_tiny()` every 2m preserving local `fornecedor_codigo`/`embalagem_qtd`/`observacao_compras`; Vercel cron (`vercel.json`) refreshes Tiny tokens nightly; dev helpers `npm run dev:cron` / `./start-dev-cron.sh` simulate schedules.
+## Cron, scripts e jobs
+- pg_cron/pg_net vivem em `supabase/migrations/**/*cron*.sql`; não edite a baseline `20251126000000_v2_public_baseline.sql`.
+- Use `npm run dev` + `npm run dev:cron` (ou `npm run dev:full`) para reproduzir o ambiente com cron local (`scripts/devCronServer.ts`).
+- Scripts de manutenção ficam em `scripts/*.ts` (ex.: `syncMonth.ts`, `enrichAll.ts`, `syncProdutosInitial.ts`); leia `scripts/README.md` antes de rodar para entender pré-requisitos.
 
-## Tiny Auth
-- OAuth: `/api/tiny/auth/login` → `/api/tiny/auth/callback` writes cookies and `tiny_tokens` (id=1). Always fetch tokens through `getAccessTokenFromDbOrRefresh` (needs `TINY_CLIENT_ID/SECRET/REDIRECT_URI`, optional `TINY_TOKEN_URL`) and log failures to `sync_logs`.
-- Refresh surfaces: `/api/tiny/auth/refresh` (GET status / POST refresh), `/api/tiny/auth/save-token` for manual inserts, and `/api/admin/cron/refresh-tiny-token` (optional `CRON_SECRET`) for scheduled renewal.
+## Banco e acesso a dados
+- Clientes oficiais: `lib/supabaseClient.ts` (browser) e `lib/supabaseAdmin.ts` (server). Nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
+- Tipos do banco em `src/types/db-public.ts`; use-os em repositórios em `src/repositories/` (ex.: `tinyOrdersRepository.ts`). Rotas App Router devem chamar repositórios, não `supabase.from` direto.
+- Migrações novas: `supabase migration new ...`, edite o arquivo em `supabase/migrations/`, então `supabase stop --all && supabase start && supabase db reset` (local) e `supabase db push --linked`.
 
-## API Surfaces to Reuse
-- `/api/orders` filters/paginates Supabase via `supabaseAdmin`, restricts sort to numero_pedido/data_criacao/valor/valor_frete, joins `tiny_pedido_itens` + `tiny_produtos.imagem_url` for item counts/first image, and wraps metrics with the `orders_metrics` RPC.
-- `/api/tiny/dashboard/resumo` aggregates `tiny_orders` + persisted itens/produtos (with timezone handling and raw fallbacks) into `periodoAtual`, `periodoAnterior`, `canais`, `mapaVendasUF/Cidade`, `topProdutos`, `situacoesDisponiveis` consumed by `app/dashboard/page.tsx`.
-- `/api/produtos` serves paged `tiny_produtos` using the service role; `/api/produtos/sync` pulls from Tiny (optional estoque enrichment). `/api/ai/insights` calls Gemini (`GEMINI_API_KEY` / `GOOGLE_GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_API_*`).
+## Produtos, itens e estoque
+- `tiny_pedido_itens` depende de `tiny_produtos`; `lib/pedidoItensHelper.ts` garante upsert de produtos ausentes via Tiny antes de salvar itens.
+- Cron de produtos (`supabase/migrations/20251121120000_cron_sync_produtos.sql` + `20251202170000_preserve_manual_produto_fields.sql`) chama `sync_produtos_from_tiny()` e preserva `fornecedor_codigo`, `embalagem_qtd`, `observacao_compras`.
+- Cursores controlam o catálogo em `produtos_sync_cursor`; utilize scripts `showProdutosCursor.ts`, `resetProdutosCursor.ts` para troubleshooting.
 
-## UI Conventions
-- Client components fetch through the APIs above (avoid direct Supabase in the UI); filters/cache keys are persisted (e.g., `tiny_dash_filters_v1`). Reuse `MultiSelectDropdown`, `BrazilSalesMap`, existing glassmorphism/gradient styles from `globals.css`.
-- Map Tiny payloads with `tinyMapping` helpers (`normalizarCanalTiny`, `descricaoSituacao`, `parseValorTiny`, `extrairDataISO`, `TODAS_SITUACOES`) to keep status/channel labels consistent.
+## Autenticação Tiny
+- Fluxo OAuth: `/api/tiny/auth/login → callback` salva tokens em `tiny_tokens` (sempre id=1). Obtenha tokens com `getAccessTokenFromDbOrRefresh` e registre falhas em `sync_logs`.
+- Endpoints auxiliares: `/api/tiny/auth/refresh`, `/api/tiny/auth/save-token`, `/api/admin/cron/refresh-tiny-token` (proteja com `CRON_SECRET`).
 
-## Runtime & Performance
-- `app/dashboard/DashboardClient.tsx` cacheia resumo/global/situações/gráficos em `localStorage` (`tiny_dash_state_v1:*`) via `readCacheEntry` + `isCacheEntryFresh`. Use esses helpers e honre os TTLs (~90–180 s) quando criar novos cards ou ajustes para não saturar `/api/tiny/dashboard/resumo`.
-- Listas com paginação (pedidos, produtos etc.) devem passar por `lib/staleCache.ts` (`staleWhileRevalidate`) e manter debounces/search-submit existentes em vez de refazer `fetch` com `cache: 'no-store'` a cada digitação.
-- O PDF de compras (`jspdf` + `jspdf-autotable`) carrega dinamicamente; preserve o botão com spinner “Gerando…”/estado desabilitado para evitar cliques duplicados e mantenha o debounce de 350 ms ao recalcular sugestões.
-- Ao adicionar novos fluxos client-heavy, priorize compartilhar requisições já existentes, checar caches antes de buscar novamente e respeitar os auto-refresh intervals configurados.
+## Frontend & UX
+- Dashboards/pedidos/produtos usam `lib/staleCache.ts` (stale-while-revalidate). Evite `fetch` sem cache se o helper já cobrir o caso.
+- Compras: geração de PDF em `app/compras` usa import dinâmico (`jspdf`); mantenha feedback “Gerando…” e debounce de 350 ms ao recalcular sugestões.
+- Responsividade mobile-first: comece com `flex-col`, `gap-*`, `px-4` e só adicione `md:` quando necessário; mantenha áreas de toque ≥44×44.
 
-## Scripts & Ops
-- Historical imports/backfills: `npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD` (also enriches frete/canais); other ops scripts live in `scripts/README.md` and are mainly for historical enrichment now that new pedidos already come enriched (frete + canal).
-- Dev loop: `npm run dev` plus `npm run dev:cron` (or `npm run dev:full` with `concurrently`); logs go to `sync_logs` and `dev-cron.log`. Apply SQL in `supabase/migrations/` for pg_cron/pg_net jobs and `migrations/` for schema via the helper scripts if needed.
+## Comandos úteis
+- `npm run dev` / `npm run dev:cron` / `npm run dev:full`
+- `npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD`
+- `npm run lint`, `npm run build`
+- Backups locais: `tar --exclude='.git' ... -czf backup-gestor-tiny-$(date +%Y%m%d).tar.gz .`
+# Guia rápido para IAs
+## Panorama
+- Next.js 16 (App Router) + React 19 + Tailwind 4; Supabase é a fonte persistente e Tiny ERP é o upstream. Consulte `app/` (rotas), `components/layout/AppLayout*` (shell) e `lib/` (integrações).
+- UI majoritariamente client-side com padrão glassmorphism; reutilize os utilitários de `app/globals.css` e componentes existentes antes de criar novos estilos.
 
-## Environment & Gotchas
-- Required env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`; optional: `TINY_TOKEN_URL`, `PROCESS_IN_APP`, `PROCESS_BATCH_DAYS`, `FRETE_ENRICH_MAX_PASSES`, `ENABLE_INLINE_FRETE_ENRICHMENT`, `CHANNEL_NORMALIZE_MAX_PASSES/BATCH`, `GEMINI_API_KEY`/`GOOGLE_GEMINI_API_KEY`, `GEMINI_API_BASE_URL`, `GEMINI_API_VERSION`, `CRON_SECRET`.
-- Respect Tiny rate limits: keep batch sizes/delays from `runFreteEnrichment`, `sincronizarItensPorPedidos`, and Tiny list helpers or you’ll 429. When writing `tiny_orders`, go through `upsertOrdersPreservingEnriched` to avoid wiping enriched frete/canal/cidade/uf.
-- Supabase cron/trigger SQL hardcodes `https://gestor-tiny.vercel.app`; update those migrations if the production domain changes.
-- Backups locais seguem o padrão `backup-gestor-tiny-YYYYMMDD.tar.gz` (excluir `.git`, `node_modules`, `.next` e tarballs anteriores). Dumps de banco vivem em `supabase-export/` ou são gerados via `supabase db dump/export`; não versione arquivos gigantes.
+## Fluxo Tiny → Supabase
+- `POST /api/tiny/sync` (ver `lib/syncProcessor.ts`) chama Tiny via `listarPedidosTinyPorPeriodo`, faz backoff de 429 e usa `upsertOrdersPreservingEnriched` para não sobrescrever frete/canal/cidade/UF.
+- Pós-processamento obrigatório: `runFreteEnrichment`, `normalizeMissingOrderChannels`, `sincronizarItensAutomaticamente`. Qualquer write em `tiny_orders` deve manter essa sequência.
+- `/api/tiny/dashboard/resumo` resume períodos/canais/mapas/top produtos e abastece `app/dashboard/page.tsx`; cacheie em `DashboardClient` usando `readCacheEntry/isCacheEntryFresh`.
 
-Feedback welcome—if anything is unclear or missing, please shout and we’ll refine.
+## Cron, scripts e jobs
+- pg_cron/pg_net vivem em `supabase/migrations/**/*cron*.sql`; não edite a baseline `20251126000000_v2_public_baseline.sql`.
+- Use `npm run dev` + `npm run dev:cron` (ou `npm run dev:full`) para reproduzir o ambiente com cron local (`scripts/devCronServer.ts`).
+- Scripts de manutenção ficam em `scripts/*.ts` (ex.: `syncMonth.ts`, `enrichAll.ts`, `syncProdutosInitial.ts`); leia `scripts/README.md` antes de rodar para entender pré-requisitos.
+
+## Banco e acesso a dados
+- Clientes oficiais: `lib/supabaseClient.ts` (browser) e `lib/supabaseAdmin.ts` (server). Nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
+- Tipos do banco em `src/types/db-public.ts`; use-os em repositórios em `src/repositories/` (ex.: `tinyOrdersRepository.ts`). Rotas App Router devem chamar repositórios, não `supabase.from` direto.
+- Migrações novas: `supabase migration new ...`, edite o arquivo em `supabase/migrations/`, então `supabase stop --all && supabase start && supabase db reset` (local) e `supabase db push --linked`.
+
+## Produtos, itens e estoque
+- `tiny_pedido_itens` depende de `tiny_produtos`; `lib/pedidoItensHelper.ts` garante upsert de produtos ausentes via Tiny antes de salvar itens.
+- Cron de produtos (`supabase/migrations/20251121120000_cron_sync_produtos.sql` + `20251202170000_preserve_manual_produto_fields.sql`) chama `sync_produtos_from_tiny()` e preserva `fornecedor_codigo`, `embalagem_qtd`, `observacao_compras`.
+- Cursores controlam o catálogo em `produtos_sync_cursor`; utilize scripts `showProdutosCursor.ts`, `resetProdutosCursor.ts` para troubleshooting.
+
+## Autenticação Tiny
+- Fluxo OAuth: `/api/tiny/auth/login → callback` salva tokens em `tiny_tokens` (sempre id=1). Obtenha tokens com `getAccessTokenFromDbOrRefresh` e registre falhas em `sync_logs`.
+- Endpoints auxiliares: `/api/tiny/auth/refresh`, `/api/tiny/auth/save-token`, `/api/admin/cron/refresh-tiny-token` (proteja com `CRON_SECRET`).
+
+## Frontend & UX
+- Dashboards/pedidos/produtos usam `lib/staleCache.ts` (stale-while-revalidate). Evite `fetch` sem cache se o helper já cobrir o caso.
+- Compras: geração de PDF em `app/compras` usa import dinâmico (`jspdf`); mantenha feedback “Gerando…” e debounce de 350 ms ao recalcular sugestões.
+- Responsividade mobile-first: comece com `flex-col`, `gap-*`, `px-4` e só adicione `md:` quando necessário; mantenha áreas de toque ≥44×44.
+
+## Comandos úteis
+- `npm run dev` / `npm run dev:cron` / `npm run dev:full`
+- `npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD`
+- `npm run lint`, `npm run build`
+- Backups locais: `tar --exclude='.git' ... -czf backup-gestor-tiny-$(date +%Y%m%d).tar.gz .`
+Big Picture
+
+Next.js App Router (TypeScript, Tailwind 4) rodando na Vercel; Supabase Postgres é o sistema de registro; Tiny ERP é o upstream.
+
+UI é majoritariamente client-side e envolvida por components/layout/AppLayout.
+
+Tabelas principais (schema public):
+
+tiny_orders (pedido/raw/cidade/uf)
+
+tiny_pedido_itens
+
+tiny_produtos
+
+tiny_tokens (sempre id = 1)
+
+sync_settings, sync_jobs, sync_logs
+
+Schema, pg_cron e pg_net vivem em migrations/ e supabase/migrations/ (ex.: RPC orders_metrics).
+
+Sync & Cron
+
+POST /api/tiny/sync:
+
+Enfileira sync_jobs.
+
+lib/syncProcessor.ts quebra intervalos de datas, chama Tiny via listarPedidosTinyPorPeriodo, faz backoff em 429, upserta via upsertOrdersPreservingEnriched (preserva frete/canal/cidade/uf), e depois roda:
+
+runFreteEnrichment
+
+normalizeMissingOrderChannels
+
+sincronizarItensAutomaticamente
+
+Enriquecimento de frete em background:
+
+Endpoint /api/tiny/sync/enrich-background é chamado por pg_cron (migration 20251122123000_cron_sync_itens_e_imagens.sql) a cada 5 minutos.
+
+Enriquecimento inline é opcional (ENABLE_INLINE_FRETE_ENRICHMENT=false por padrão) para respeitar ~100 req/min do Tiny. 
+Ecorn
++1
+
+Sync de itens:
+
+sincronizarItensPorPedidos + trigger trg_tiny_orders_auto_sync_itens (migration 20251122124500_trigger_auto_sync_itens.sql) fazem POST para /api/tiny/sync/itens sempre que um tiny_orders é inserido.
+
+scripts/devCronServer.ts espelha o cron de produção localmente e normaliza canais.
+
+Sync de produtos:
+
+pg_cron (20251121120000_cron_sync_produtos.sql + 20251202170000_preserve_manual_produto_fields.sql) chama sync_produtos_from_tiny() a cada 2 minutos, preservando fornecedor_codigo, embalagem_qtd, observacao_compras.
+
+Cron da Vercel (vercel.json) renova tokens do Tiny diariamente.
+
+Dev helpers npm run dev:cron / ./start-dev-cron.sh simulam os agendamentos.
+
+Tiny Auth
+
+OAuth:
+
+/api/tiny/auth/login → /api/tiny/auth/callback grava cookies e tiny_tokens (sempre id=1).
+
+Sempre obter tokens via getAccessTokenFromDbOrRefresh (requer TINY_CLIENT_ID, TINY_CLIENT_SECRET, TINY_REDIRECT_URI, opcional TINY_TOKEN_URL) e logar falhas em sync_logs.
+
+Superfícies de refresh:
+
+/api/tiny/auth/refresh (GET status / POST refresh).
+
+/api/tiny/auth/save-token para inserção manual.
+
+/api/admin/cron/refresh-tiny-token (com CRON_SECRET opcional) para renovação agendada.
+
+API Surfaces to Reuse
+
+/api/orders:
+
+Usa supabaseAdmin para filtrar/paginar pedidos.
+
+Ordenação restrita a numero_pedido, data_criacao, valor, valor_frete.
+
+Faz join com tiny_pedido_itens + tiny_produtos.imagem_url para contagem de itens e primeira imagem.
+
+Envolve métricas via RPC orders_metrics.
+
+/api/tiny/dashboard/resumo:
+
+Agrega tiny_orders + itens/produtos persistidos (com timezone e fallbacks de dados raw) em:
+
+periodoAtual, periodoAnterior
+
+canais
+
+mapaVendasUF, mapaVendasCidade
+
+topProdutos
+
+situacoesDisponiveis
+
+Consumido por app/dashboard/page.tsx.
+
+/api/produtos:
+
+Lista paginada de tiny_produtos usando service role.
+
+/api/produtos/sync:
+
+Puxa do Tiny (estoque opcional).
+
+/api/ai/insights:
+
+Usa Gemini (GEMINI_API_KEY / GOOGLE_GEMINI_API_KEY, GEMINI_MODEL, GEMINI_API_*).
+
+Instruções gerais para o agente de IA neste projeto (Ambienta + Supabase + Tiny ERP)
+Linguagem e estilo
+
+Sempre responda em português (Brasil).
+
+Prefira respostas diretas, com exemplos práticos e código pronto.
+
+Quando sugerir mudanças em arquivos, use caminhos relativos (ex.: src/..., app/api/..., supabase/...).
+
+Visão geral do projeto
+
+Projeto: painel/serviço da Ambienta integrado ao Supabase Postgres e ao Tiny ERP.
+
+Stack principal:
+
+Next.js (App Router) em TypeScript.
+
+Supabase como banco de dados e autenticação.
+
+Tiny ERP para pedidos/produtos/sincronização.
+
+O schema public do Postgres é a fonte de verdade da lógica de negócio (sync de pedidos/produtos, métricas e automações).
+
+Banco de dados e migrations
+Estado “verdadeiro” do banco
+
+Considere que o estado atual do public é descrito por:
+
+supabase/migrations/20251126000000_v2_public_baseline.sql (baseline v2 “only public”) — NÃO deve ser alterada.
+
+supabase-export/schema.sql
+
+supabase-export/hardening.sql
+
+Documentação em docs/database-overview.md
+
+Tabelas principais (schema public):
+
+sync_settings, sync_jobs, sync_logs → configuração e rastreio de jobs Tiny.
+
+tiny_orders, tiny_pedido_itens → espelho dos pedidos e itens do Tiny.
+
+tiny_produtos → catálogo de produtos (estoque, preços, fornecedor, embalagem etc.).
+
+tiny_tokens → access/refresh token do Tiny.
+
+Funções importantes:
+
+set_updated_at, update_tiny_produtos_updated_at → triggers de updated_at.
+
+tiny_orders_auto_sync_itens → trigger que chama pg_net em /api/tiny/sync/itens.
+
+orders_metrics → função de métricas agregadas de pedidos (bruto, frete, líquido, contagens por situação etc.).
+
+Migrations v2 (Supabase)
+
+A baseline v2 está em supabase/migrations/20251126000000_v2_public_baseline.sql e não deve ser alterada.
+
+Qualquer mudança de schema deve ser feita criando novas migrations em supabase/migrations/ usando o Supabase CLI.
+
+Fluxo padrão esperado (local):
+
+supabase migration new minha_mudanca
+
+Editar o arquivo gerado em supabase/migrations/....
+
+supabase stop --all
+
+supabase start
+
+supabase db reset (LOCAL, sem --linked) para testar seed + baseline + novas migrations.
+
+Se estiver tudo ok: supabase db push --linked para aplicar no projeto remoto.
+
+Restrições:
+
+Nunca sugerir supabase db reset --linked em produção.
+
+Não alterar schemas internos do Supabase (auth, storage, realtime) via linha v2, a menos que seja pedido explicitamente.
+
+Preferir migrations em vez de SQL solto no painel.
+
+Tipos TypeScript e Supabase client
+Tipos do banco
+
+Tipos oficiais em src/types/db-public.ts, contendo:
+
+Json
+
+*Row (ex.: TinyOrdersRow, TinyProdutosRow)
+
+*Insert, *Update
+
+DatabasePublicSchema
+
+Database (com public: DatabasePublicSchema)
+
+Sempre que gerar código que acessa o banco, use esses tipos (não recrie interfaces para as mesmas tabelas).
+
+Clients Supabase
+
+lib/supabaseClient.ts → client público (createClient<Database>(URL, anonKey)).
+
+lib/supabaseAdmin.ts → client administrativo (createClient<Database>(URL, serviceRoleKey)), apenas em código server-side (rotas API, scripts etc.).
+
+Regras:
+
+Nunca expor SUPABASE_SERVICE_ROLE_KEY no client-side.
+
+Use supabaseClient no browser e supabaseAdmin em rotas API / server actions / scripts.
+
+Use sempre os tipos de src/types/db-public.ts.
+
+Exemplo esperado:
+
+import { createClient } from '@supabase/supabase-js';
+import type { Database, TinyOrdersRow } from '@/src/types/db-public';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+
+export async function listarPedidosRecentes(): Promise<TinyOrdersRow[]> {
+  const { data, error } = await supabase
+    .from('tiny_orders')
+    .select('*')
+    .order('data_criacao', { ascending: false })
+    .limit(50);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+Repositórios e camada de acesso a dados
+
+Padrão desejado: repositórios em src/repositories/, por exemplo:
+
+tinyOrdersRepository.ts
+
+tinyProdutosRepository.ts
+
+tinyPedidoItensRepository.ts
+
+syncRepository.ts
+
+Rotas de API em app/api/...:
+
+Devem usar repositórios e NÃO chamar supabase.from(...) diretamente.
+
+Ao criar/refatorar código:
+
+Mover lógica de acesso a dados para os repositórios.
+
+Deixar as rotas de API “finas”: validação + orquestração + resposta HTTP.
+
+Segurança e RLS
+
+RLS habilitada em tiny_orders, tiny_pedido_itens, tiny_produtos, tiny_tokens, sync_*.
+
+Policies service_role_full_access liberam acesso total apenas para service_role.
+
+Nunca expor serviceRoleKey no client-side.
+
+Use supabaseAdmin apenas em:
+
+Rotas API (app/api/...).
+
+Scripts/cron servers.
+
+Edge/Server components, nunca diretamente no browser.
+
+Frontend / UI (Ambienta “Liquid Glass”)
+Estilo visual geral
+
+Estilo: glassmorphism minimalista, inspirado em iOS/macOS.
+
+Fundos:
+
+Translúcidos com blur, leve “tint” esbranquiçado (10–15%).
+
+Orbs/gradientes sutis no background, sem poluição visual.
+
+Cores:
+
+Cor de destaque: #009DA8 / #009ca6 em detalhes (ícones, badges, bordas, botões discretos).
+
+Evitar blocos chapados com essa cor como fundo principal.
+
+Layout:
+
+Cards bem espaçados, cantos bem arredondados, sombras suaves.
+
+Tipografia limpa, poucos pesos (regular/medium).
+
+Evitar:
+
+UI pesada com muitas bordas fortes, cinza chapado sem blur.
+
+Muitos elementos decorativos sem função.
+
+Coerência com o layout atual
+
+Antes de propor novos layouts ou telas, sempre analisar os arquivos de layout existentes, em especial:
+
+components/layout/AppLayout*
+
+components/layout/*
+
+Páginas em app/**/page.tsx
+
+Componentes compartilhados em components/**
+
+Estilos globais em app/globals.css e qualquer components/ui/* já existente.
+
+Ao criar novos componentes, telas ou estilos:
+
+Não reinventar o layout (grade, espaçamentos, breakpoints, hierarquia de títulos) se o usuário não pedir explicitamente.
+
+Reaproveitar as mesmas classes/utilitárias Tailwind, padrões de espaçamento, bordas, sombras e blur já usados nos layouts atuais.
+
+Respeitar os padrões de glassmorphism já definidos (mesmo “tipo” de card, nível de blur, opacidade, radius).
+
+Se precisar de mudança estrutural (layout de colunas, navegação, barras laterais):
+
+Explicar/justificar a mudança.
+
+Manter coerência visual com o resto do app ao invés de criar um visual totalmente desconectado.
+
+Responsividade e mobile-first
+
+Abordagem mobile-first:
+
+Projetar primeiro pensando em telas pequenas (ex.: ~360–400px de largura) e depois expandir para tablet/desktop, adicionando complexidade só quando houver espaço. 
+Ecorn
++1
+
+Em Tailwind, comece pelos estilos base (mobile) e vá adicionando sm:, md:, lg: apenas quando necessário.
+
+Breakpoints e grids:
+
+Usar poucos breakpoints bem escolhidos (por exemplo: mobile, tablet, desktop), baseados em quando o conteúdo começa a “apertar” ou ficar com muita linha quebrada, e não em modelos específicos de dispositivo. 
+bookmarkify.io
++1
+
+Adotar grade fluida com flex/grid, deixando painéis empilhados no mobile (flex-col) e lado a lado apenas em md: ou superior.
+
+Leitura e hierarquia em telas pequenas:
+
+Priorizar o conteúdo mais importante no topo: título, KPI principal, ações primárias.
+
+Evitar colunas múltiplas no mobile; preferir um fluxo vertical claro.
+
+Manter margens e padding consistentes (mínimo ~8px entre elementos clicáveis) para dar respiro e legibilidade. 
+designcode.io
++1
+
+Áreas de toque e acessibilidade:
+
+Botões, ícones clicáveis e itens de lista acionáveis devem ter área de toque mínima próxima de 44×44 pts / 48×48 dp ou cerca de 1 cm × 1 cm para evitar “fat finger errors”. 
+learnui.design
++3
+Medium
++3
+M&M Communications
++3
+
+Usar espaçamento suficiente entre toques (ex.: gap/padding) para não agrupar botões demais.
+
+Safe areas e barras do sistema (iOS-like):
+
+Evitar colocar conteúdo relevante embaixo de notches, barras de navegação ou indicadores de home; respeitar “áreas seguras” (safe areas). 
+Apple Developer
++2
+median.co
++2
+
+Em layouts tipo app (headers fixos, bottom bars), considerar sempre um padding superior/inferior consistente.
+
+Boas práticas práticas com Tailwind:
+
+Começar com:
+
+w-full, flex-col, gap-*, px-4 no mobile.
+
+Mudar para md:flex-row, md:grid-cols-2/3 só quando o conteúdo justificar.
+
+Ajustar tipografia responsiva:
+
+text-sm no mobile, md:text-base / lg:text-lg para dashboards mais amplos.
+
+Evitar overflow horizontal; se inevitável (tabelas), usar contêiner com overflow-x-auto bem delimitado.
+
+Consistência de comportamento:
+
+Novos cards ou gráficos devem:
+
+Funcionar bem em viewport estreita sem zoom manual.
+
+Seguir o mesmo padrão de interação (filtros, dropdowns, tooltips) já usado no dashboard.
+
+Sempre que criar uma nova tela/painel, pensar em:
+
+“Como essa tela se comporta em 375px (iPhone SE)?”
+
+“Como ela se reorganiza em 768px (tablet) e 1024+ (desktop)?”
+
+Runtime & Performance
+
+app/dashboard/DashboardClient.tsx:
+
+Cacheia resumo, situações e gráficos em localStorage com keys tiny_dash_state_v1:*.
+
+Usa readCacheEntry + isCacheEntryFresh.
+
+Sempre usar esses helpers e respeitar TTLs (~90–180s) em novos cards para não saturar /api/tiny/dashboard/resumo.
+
+Listas com paginação (pedidos, produtos, etc.):
+
+Devem passar por lib/staleCache.ts (staleWhileRevalidate).
+
+Manter debounces/search-submit existentes ao invés de fetch com cache: 'no-store' a cada digitação.
+
+PDF de compras:
+
+Usa jspdf + jspdf-autotable com import dinâmico.
+
+Manter botão com spinner “Gerando…” + estado desabilitado para evitar cliques duplicados.
+
+Respeitar debounce ~350ms ao recalcular sugestões.
+
+Para fluxos muito client-heavy:
+
+Compartilhar requisições já existentes.
+
+Checar caches antes de buscar de novo.
+
+Honrar intervalos de auto-refresh configurados.
+
+Scripts & Ops
+
+Imports/backfills históricos:
+
+npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD
+→ também enriquece frete/canais.
+
+Outros scripts de operação:
+
+Em scripts/README.md, focados hoje em enriquecimentos históricos; novos pedidos já vêm enriquecidos (frete + canal).
+
+Loop de desenvolvimento:
+
+npm run dev + npm run dev:cron (ou npm run dev:full com concurrently).
+
+Logs:
+
+Banco → sync_logs
+
+Cron local → dev-cron.log
+
+SQL:
+
+Pg_cron/pg_net: supabase/migrations/.
+
+Schema geral: migrations/ (via scripts helpers).
+
+Ambiente & Gotchas
+
+Variáveis obrigatórias:
+
+NEXT_PUBLIC_SUPABASE_URL
+
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+SUPABASE_SERVICE_ROLE_KEY
+
+TINY_CLIENT_ID
+
+TINY_CLIENT_SECRET
+
+TINY_REDIRECT_URI
+
+Opcionais:
+
+TINY_TOKEN_URL
+
+PROCESS_IN_APP
+
+PROCESS_BATCH_DAYS
+
+FRETE_ENRICH_MAX_PASSES
+
+ENABLE_INLINE_FRETE_ENRICHMENT
+
+CHANNEL_NORMALIZE_MAX_PASSES, CHANNEL_NORMALIZE_MAX_BATCH
+
+GEMINI_API_KEY / GOOGLE_GEMINI_API_KEY
+
+GEMINI_API_BASE_URL, GEMINI_API_VERSION
+
+CRON_SECRET
+
+Respeitar rate limits do Tiny:
+
+Manter batch sizes/delays de runFreteEnrichment, sincronizarItensPorPedidos e helpers de listagem.
+
+Ao escrever em tiny_orders, usar upsertOrdersPreservingEnriched para não apagar frete/canal/cidade/uf.
+
+SQL de cron/trigger:
+
+URLs hardcoded para https://gestor-tiny.vercel.app.
+
+Se o domínio de produção mudar, atualizar as migrations correspondentes.
+
+Backups locais:
+
+Padrão backup-gestor-tiny-YYYYMMDD.tar.gz.
+
+Excluir .git, node_modules, .next e tarballs anteriores.
+
+Dumps de banco ficam em supabase-export/ ou gerados via supabase db dump/export (evitar versionar arquivos gigantes).
+
+Fluxos padrão: migrations, commit e deploy (CLI)
+
+IMPORTANTE: No ambiente do VS Code, assuma que você TEM permissão para usar terminal, Supabase CLI, Git e Vercel CLI quando o usuário pedir explicitamente para rodar migrations, fazer commit ou deploy.
+
+1. Fluxo de migration (schema public)
+
+Quando o usuário pedir para alterar o schema ou criar algo novo no banco:
+
+Criar migration:
+
+supabase migration new minha_mudanca_descritiva
+
+
+Editar migration:
+
+Abrir o arquivo gerado em supabase/migrations/... e escrever o SQL respeitando:
+
+Baseline v2 intocável (20251126000000_v2_public_baseline.sql).
+
+Apenas schema public (não alterar auth, storage, realtime).
+
+Testar localmente (sem --linked):
+
+supabase stop --all
+supabase start
+supabase db reset
+
+
+Aplicar no projeto remoto:
+
+supabase db push --linked
+
+
+Nunca sugerir supabase db reset --linked.
+
+Quando o usuário pedir “faça a migration”, você deve:
+
+Criar o arquivo.
+
+Escrever o SQL.
+
+Rodar os comandos acima automaticamente no terminal.
+
+2. Fluxo de Git: revisar, adicionar e commitar
+
+Quando terminar uma alteração (código, migrations, UI, etc.) e o usuário pedir “faz o commit”:
+
+Revisar status/diffs:
+
+git status
+git diff
+
+
+Adicionar arquivos relevantes:
+
+Selecionar arquivos ou usar git add . quando fizer sentido.
+
+Criar commit com mensagem clara (padrão leve de conventional commits):
+
+git commit -m "feat(dashboard): adiciona card de resumo por canal"
+
+
+Outros exemplos:
+
+chore(migrations): ajusta trigger de sync de itens
+
+fix(sync): corrige enrich de frete em pedidos antigos
+
+(Opcional) Enviar para o remoto quando fizer sentido:
+
+git push
+
+
+Se o usuário pedir explicitamente “faz o push”, execute o comando.
+
+3. Fluxo de deploy (Vercel)
+
+Quando o usuário pedir “faz o deploy” / “deploy em produção”:
+
+Verificar package.json:
+
+Se existir script específico, usar:
+
+npm run deploy
+
+
+ou o script configurado.
+
+Se não houver script dedicado, usar Vercel CLI diretamente a partir da raiz:
+
+vercel --prod
+
+
+ou
+
+vercel deploy --prod
+
+
+Acompanhar o output no terminal:
+
+Se houver erros, ajustar o código/configuração e tentar novamente.
+
+Se o deploy for bem-sucedido, informar a URL final (output da Vercel CLI).
+
+Não diga que “não tem acesso ao CLI” — neste contexto, assuma que o terminal está disponível e execute os comandos necessários quando solicitado.
