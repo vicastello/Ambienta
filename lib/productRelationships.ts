@@ -13,6 +13,7 @@ export const KIT_PATHS: Array<Array<string>> = [
   ['produto', 'componentes'],
   ['componentes', 'componente'],
   ['produto', 'componentes', 'componente'],
+  ['kit'],
   ['componentesKit'],
   ['produto', 'componentesKit'],
   ['itensKit'],
@@ -225,6 +226,53 @@ const shouldReplaceParent = (
   if (!atual.parentCodigo && candidato.parentCodigo) return true;
 
   return false;
+};
+
+const chooseBestParent = (
+  ...candidates: Array<ProdutoParentInfo | null | undefined>
+): ProdutoParentInfo | null => {
+  let chosen: ProdutoParentInfo | undefined;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (shouldReplaceParent(chosen, candidate)) {
+      chosen = candidate;
+    }
+  }
+  return chosen ?? null;
+};
+
+export const resolveParentChain = (
+  produtoId: number | null | undefined,
+  sku: string | null,
+  relacionamentos: ProdutoParentMapping
+): { finalParent: ProdutoParentInfo | null; chain: ProdutoParentInfo[] } => {
+  const chain: ProdutoParentInfo[] = [];
+  let currentId = typeof produtoId === 'number' ? produtoId : null;
+  let currentSku = sku ?? null;
+  const visited = new Set<string>();
+
+  while (true) {
+    const parentById = currentId ? relacionamentos.idToParent.get(currentId) : null;
+    const parentBySku = currentSku ? relacionamentos.codeToParent.get(currentSku) : null;
+    const nextParent = chooseBestParent(parentById, parentBySku);
+    if (!nextParent) break;
+
+    chain.push(nextParent);
+    const nextId = nextParent.parentId ?? currentId;
+    const nextSku = nextParent.parentCodigo ?? currentSku;
+    const key = `${nextId ?? 'null'}:${nextSku ?? 'null'}`;
+    if (visited.has(key)) break;
+    visited.add(key);
+
+    if (nextId === currentId && nextSku === currentSku) break;
+    currentId = nextId;
+    currentSku = nextSku;
+  }
+
+  return {
+    finalParent: chain.at(-1) ?? null,
+    chain,
+  };
 };
 
 export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> {

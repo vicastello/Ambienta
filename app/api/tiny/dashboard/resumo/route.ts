@@ -12,7 +12,11 @@ import {
   TODAS_SITUACOES,
   extractCidadeUfFromRaw,
 } from '@/lib/tinyMapping';
-import { loadProdutoParentMapping, ProdutoParentMapping } from '@/lib/productRelationships';
+import {
+  loadProdutoParentMapping,
+  ProdutoParentMapping,
+  resolveParentChain,
+} from '@/lib/productRelationships';
 import type { Json, TinyOrdersRow, TinyPedidoItensRow, TinyProdutosRow } from '@/src/types/db-public';
 
 type DiaResumo = {
@@ -371,15 +375,26 @@ const consolidarProdutosPorPai = (
   const resultado = new Map<string, ProdutoResumoInterno>();
 
   mapa.forEach((produto) => {
-    const parentPorId =
-      typeof produto.produtoId === 'number'
-        ? relacionamentos.idToParent.get(produto.produtoId)
-        : null;
     const skuNormalizado = typeof produto.sku === 'string' ? produto.sku.trim() : null;
-    const parentPorSku = skuNormalizado
-      ? relacionamentos.codeToParent.get(skuNormalizado)
-      : null;
-    const parentInfo = parentPorId ?? parentPorSku ?? null;
+    const parentResolution = resolveParentChain(
+      produto.produtoId,
+      skuNormalizado,
+      relacionamentos
+    );
+    const parentInfo = parentResolution.finalParent;
+
+    if (parentResolution.chain.length > 1) {
+      console.log('[Dashboard] Chain consolidada', {
+        produtoId: produto.produtoId,
+        sku: produto.sku,
+        chain: parentResolution.chain.map((info) => ({
+          id: info.parentId,
+          codigo: info.parentCodigo,
+          nome: info.parentNome,
+          tipo: info.parentTipo,
+        })),
+      });
+    }
 
     const targetProdutoId = parentInfo?.parentId ?? produto.produtoId ?? null;
     const targetSku = parentInfo?.parentCodigo ?? skuNormalizado ?? produto.sku ?? null;
