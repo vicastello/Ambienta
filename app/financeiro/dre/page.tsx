@@ -178,6 +178,7 @@ export default function DrePage() {
   const isDraggingCards = useRef(false);
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
+  const DRAG_SCROLL_FACTOR = 3;
   const [draggingCards, setDraggingCards] = useState(false);
   const dragPointerId = useRef<number | null>(null);
 
@@ -520,7 +521,7 @@ export default function DrePage() {
     const el = cardsScrollRef.current;
     if (!el || !isDraggingCards.current) return;
     const walk = clientX - dragStartX.current;
-    el.scrollLeft = dragStartScroll.current - walk;
+    el.scrollLeft = dragStartScroll.current - walk * DRAG_SCROLL_FACTOR;
   };
 
   const endCardDrag = () => {
