@@ -193,7 +193,7 @@ export default function DrePage() {
     const childWidth = children[0].offsetWidth || el.offsetWidth;
     const viewportCenter = el.scrollLeft + el.offsetWidth / 2;
 
-    const delta = dragLastX.current - dragStartX.current;
+    const delta = dragStartX.current - dragLastX.current;
     const duration = Math.max(performance.now() - dragStartTime.current, 1);
     const velocity = Math.abs(delta) / duration; // px/ms
     const direction = Math.sign(delta);
