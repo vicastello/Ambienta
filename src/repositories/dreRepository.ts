@@ -111,15 +111,15 @@ async function fetchCategories() {
 }
 
 async function fetchPeriodById(periodId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('dre_periods')
-    .select('*')
+    .select<'*', DrePeriodsRow>('*')
     .eq('id', periodId)
-    .maybeSingle();
+    .maybeSingle()
+    .throwOnError();
 
-  if (error) throw error;
   if (!data) throw new Error('Período não encontrado');
-  return data as DrePeriodsRow;
+  return data;
 }
 
 const mergeCategoriesWithValues = (
