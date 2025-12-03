@@ -564,7 +564,7 @@ export default function DrePage() {
             </div>
             <div className="flex items-center gap-3">
               <select
-                className="app-input w-28"
+                className="app-input w-auto px-3 py-2"
                 value={yearFilter}
                 onChange={(e) => setYearFilter(e.target.value)}
               >
