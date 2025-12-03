@@ -467,7 +467,7 @@ export default function DrePage() {
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <select
-                  className="app-input w-24"
+                  className="app-input w-28"
                   value={monthInput}
                   onChange={(e) => setMonthInput(Number(e.target.value))}
                 >
@@ -479,7 +479,7 @@ export default function DrePage() {
                 </select>
                 <input
                   type="number"
-                  className="app-input w-24"
+                  className="app-input w-28"
                   value={yearInput}
                   onChange={(e) => setYearInput(Number(e.target.value))}
                 />
