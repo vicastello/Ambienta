@@ -30,12 +30,19 @@ const sanitizeValues = (input: unknown) => {
     .filter(Boolean) as { categoryId: string; amountManual: number | null; notes: string | null }[];
 };
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+type Params = { params: Promise<{ id: string }> | { id: string } };
+
+const unwrapParams = async (params: Params['params']): Promise<{ id: string }> => {
+  return params instanceof Promise ? params : Promise.resolve(params);
+};
+
+export async function GET(_req: NextRequest, ctx: Params) {
   try {
-    if (!isUuid(params.id)) {
+    const { id } = await unwrapParams(ctx.params);
+    if (!isUuid(id)) {
       return NextResponse.json({ error: 'ID do período inválido.' }, { status: 400 });
     }
-    const detail = await getPeriodDetail(params.id);
+    const detail = await getPeriodDetail(id);
     return NextResponse.json(detail);
   } catch (error) {
     const message = getErrorMessage(error) || 'Erro ao carregar o período da DRE.';
@@ -44,13 +51,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, ctx: Params) {
   try {
-    if (!isUuid(params.id)) {
+    const { id } = await unwrapParams(ctx.params);
+    if (!isUuid(id)) {
       return NextResponse.json({ error: 'ID do período inválido.' }, { status: 400 });
     }
     const body = await req.json().catch(() => ({}));
-    await updatePeriod(params.id, {
+    await updatePeriod(id, {
       status: body.status === 'closed' || body.status === 'draft' ? body.status : undefined,
       target_net_margin: toNullableNumber(body.target_net_margin),
       reserve_percent: toNullableNumber(body.reserve_percent),
@@ -59,10 +67,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const values = sanitizeValues(body.values);
     if (values.length) {
-      await upsertValues(params.id, values);
+      await upsertValues(id, values);
     }
 
-    const detail = await getPeriodDetail(params.id);
+    const detail = await getPeriodDetail(id);
     return NextResponse.json(detail);
   } catch (error) {
     const message = getErrorMessage(error) || 'Erro ao atualizar o período da DRE.';
