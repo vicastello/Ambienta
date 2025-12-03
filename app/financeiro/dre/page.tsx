@@ -173,6 +173,10 @@ export default function DrePage() {
   const [reserveDraftByPeriod, setReserveDraftByPeriod] = useState<Record<string, number | null>>({});
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const seededBasePeriods = useRef(false);
+  const cardsScrollRef = useRef<HTMLDivElement>(null);
+  const isDraggingCards = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartScroll = useRef(0);
   const [newCategory, setNewCategory] = useState({
     name: '',
     sign: 'SAIDA',
@@ -471,6 +475,37 @@ export default function DrePage() {
     }
   };
 
+  const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardsScrollRef.current;
+    if (!el) return;
+    isDraggingCards.current = true;
+    dragStartX.current = e.pageX;
+    dragStartScroll.current = el.scrollLeft;
+    el.classList.add('cursor-grabbing');
+    e.preventDefault();
+  };
+
+  const handleCardsMouseLeave = () => {
+    const el = cardsScrollRef.current;
+    if (!el) return;
+    isDraggingCards.current = false;
+    el.classList.remove('cursor-grabbing');
+  };
+
+  const handleCardsMouseUp = () => {
+    const el = cardsScrollRef.current;
+    if (!el) return;
+    isDraggingCards.current = false;
+    el.classList.remove('cursor-grabbing');
+  };
+
+  const handleCardsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardsScrollRef.current;
+    if (!el || !isDraggingCards.current) return;
+    const walk = e.pageX - dragStartX.current;
+    el.scrollLeft = dragStartScroll.current - walk;
+  };
+
   const statusBadge =
     detail?.period.status === 'closed' ? (
       <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 text-emerald-700 px-3 py-1 text-xs font-semibold">
@@ -617,7 +652,14 @@ export default function DrePage() {
               CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
             </div>
           ) : (
-            <div className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2">
+            <div
+              className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab select-none"
+              ref={cardsScrollRef}
+              onMouseDown={handleCardsMouseDown}
+              onMouseLeave={handleCardsMouseLeave}
+              onMouseUp={handleCardsMouseUp}
+              onMouseMove={handleCardsMouseMove}
+            >
               {filteredPeriods.map((p) => {
                 const detailData = periodDetails[p.period.id];
                 const draftData = valuesDraftByPeriod[p.period.id] || {};
