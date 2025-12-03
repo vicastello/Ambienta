@@ -157,6 +157,7 @@ export type ProdutoParentInfo = {
   parentCodigo: string | null;
   parentNome: string;
   parentImagemUrl: string | null;
+  parentTipo: TinyProdutosRow['tipo'] | null;
   childSource: 'variacoes' | 'kit';
 };
 
@@ -182,20 +183,40 @@ const normalizeNome = (value: unknown): string => {
   return trimmed || 'Produto sem nome';
 };
 
+const tipoPriority = (tipo: TinyProdutosRow['tipo'] | null | undefined): number => {
+  const normalized = typeof tipo === 'string' ? tipo.trim().toUpperCase() : null;
+  switch (normalized) {
+    case 'K':
+      return 4;
+    case 'P':
+      return 3;
+    case 'V':
+      return 2;
+    case 'S':
+      return 1;
+    default:
+      return 0;
+  }
+};
+
+const childSourcePriority = (source: ProdutoParentInfo['childSource'] | null | undefined) => {
+  if (source === 'kit') return 2;
+  if (source === 'variacoes') return 1;
+  return 0;
+};
+
+const buildPriorityScore = (info: ProdutoParentInfo | undefined): number => {
+  if (!info) return 0;
+  return tipoPriority(info.parentTipo) * 10 + childSourcePriority(info.childSource);
+};
+
 const shouldReplaceParent = (
   atual: ProdutoParentInfo | undefined,
   candidato: ProdutoParentInfo
 ): boolean => {
   if (!atual) return true;
-  const prioridade = (info: ProdutoParentInfo | undefined) => {
-    if (!info) return 0;
-    if (info.childSource === 'kit') return 3;
-    if (info.childSource === 'variacoes') return 2;
-    return 1;
-  };
-
-  const prioridadeAtual = prioridade(atual);
-  const prioridadeCandidato = prioridade(candidato);
+  const prioridadeAtual = buildPriorityScore(atual);
+  const prioridadeCandidato = buildPriorityScore(candidato);
   if (prioridadeCandidato > prioridadeAtual) return true;
   if (prioridadeCandidato < prioridadeAtual) return false;
 
@@ -228,6 +249,7 @@ export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> 
         parentCodigo: normalizeCodigo(row.codigo),
         parentNome: normalizeNome(row.nome),
         parentImagemUrl: typeof row.imagem_url === 'string' ? row.imagem_url : null,
+        parentTipo: row.tipo ?? null,
         childSource: source,
       };
 
