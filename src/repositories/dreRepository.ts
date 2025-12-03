@@ -407,13 +407,13 @@ export async function getPeriodDetail(periodId: string): Promise<DrePeriodDetail
   const period = await fetchPeriodById(periodId);
   const categories = await fetchCategories();
 
-  const { data: valuesData, error } = await supabaseAdmin
+  const { data: valuesData } = await supabaseAdmin
     .from('dre_values')
-    .select('*')
-    .eq('period_id', periodId);
+    .select<'*', DreValuesRow>('*')
+    .eq('period_id', periodId)
+    .throwOnError();
 
-  if (error) throw error;
-  const values = (valuesData || []) as DreValuesRow[];
+  const values = valuesData ?? [];
   const merged = mergeCategoriesWithValues(categories, values);
   const metrics = computeMetrics(period, merged);
 
