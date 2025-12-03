@@ -5,8 +5,10 @@ import {
   ArrowUpRight,
   CheckCircle,
   Download,
+  Equal,
   Info,
   Loader2,
+  Minus,
   Plus,
   RefreshCw,
   Sparkles,
@@ -987,24 +989,30 @@ function MonthlyDreCard({
     'rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 space-y-3';
 
   const renderLabelWithIcon = (raw: string) => {
-    let iconChar: '+' | '-' | '=' | null = null;
+    let icon: 'plus' | 'minus' | 'equal' | null = null;
     let text = raw;
     if (raw.startsWith('(-)')) {
-      iconChar = '-';
+      icon = 'minus';
       text = raw.replace('(-)', '').trim();
     } else if (raw.startsWith('(+)')) {
-      iconChar = '+';
+      icon = 'plus';
       text = raw.replace('(+)','').trim();
     } else if (raw.startsWith('(=)')) {
-      iconChar = '=';
+      icon = 'equal';
       text = raw.replace('(=)','').trim();
     }
 
     return (
       <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 leading-none">
-        {iconChar ? (
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-[10px] font-semibold text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0 leading-none">
-            {iconChar}
+        {icon ? (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 bg-white/70 dark:bg-white/5 text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0 leading-none">
+            {icon === 'plus' ? (
+              <Plus className="w-3 h-3" strokeWidth={2} />
+            ) : icon === 'minus' ? (
+              <Minus className="w-3 h-3" strokeWidth={2} />
+            ) : (
+              <Equal className="w-3 h-3" strokeWidth={2} />
+            )}
           </span>
         ) : null}
         <span className="leading-tight">{text}</span>
