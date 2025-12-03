@@ -475,35 +475,30 @@ export default function DrePage() {
     }
   };
 
-  const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = cardsScrollRef.current;
     if (!el) return;
     isDraggingCards.current = true;
-    dragStartX.current = e.pageX;
+    dragStartX.current = e.clientX;
     dragStartScroll.current = el.scrollLeft;
+    el.setPointerCapture(e.pointerId);
     el.classList.add('cursor-grabbing');
-    e.preventDefault();
   };
 
-  const handleCardsMouseLeave = () => {
+  const handleCardsPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = cardsScrollRef.current;
     if (!el) return;
     isDraggingCards.current = false;
+    el.releasePointerCapture(e.pointerId);
     el.classList.remove('cursor-grabbing');
   };
 
-  const handleCardsMouseUp = () => {
-    const el = cardsScrollRef.current;
-    if (!el) return;
-    isDraggingCards.current = false;
-    el.classList.remove('cursor-grabbing');
-  };
-
-  const handleCardsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleCardsPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = cardsScrollRef.current;
     if (!el || !isDraggingCards.current) return;
-    const walk = e.pageX - dragStartX.current;
+    const walk = e.clientX - dragStartX.current;
     el.scrollLeft = dragStartScroll.current - walk;
+    e.preventDefault();
   };
 
   const statusBadge =
@@ -655,10 +650,10 @@ export default function DrePage() {
             <div
               className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab select-none"
               ref={cardsScrollRef}
-              onMouseDown={handleCardsMouseDown}
-              onMouseLeave={handleCardsMouseLeave}
-              onMouseUp={handleCardsMouseUp}
-              onMouseMove={handleCardsMouseMove}
+              onPointerDown={handleCardsPointerDown}
+              onPointerUp={handleCardsPointerUp}
+              onPointerLeave={handleCardsPointerUp}
+              onPointerMove={handleCardsPointerMove}
             >
               {filteredPeriods.map((p) => {
                 const detailData = periodDetails[p.period.id];
