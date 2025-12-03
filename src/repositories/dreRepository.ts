@@ -367,14 +367,14 @@ export async function createCustomCategory(params: {
 }
 
 export async function listPeriodsWithSummary(): Promise<DrePeriodSummary[]> {
-  const { data: periods, error } = await supabaseAdmin
+  const { data: periods } = await supabaseAdmin
     .from('dre_periods')
-    .select('*')
+    .select<'*', DrePeriodsRow>('*')
     .order('year', { ascending: false })
-    .order('month', { ascending: false });
+    .order('month', { ascending: false })
+    .throwOnError();
 
-  if (error) throw error;
-  const typedPeriods = (periods || []) as DrePeriodsRow[];
+  const typedPeriods = periods ?? [];
   if (!typedPeriods.length) return [];
 
   const periodIds = typedPeriods.map((p) => p.id);
