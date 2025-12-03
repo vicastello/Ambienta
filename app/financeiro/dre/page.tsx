@@ -223,7 +223,8 @@ export default function DrePage() {
     }
   }, [selectedPeriodId]);
 
-  const loadDetail = async (id: string) => {
+  const loadDetail = async (id: string | null) => {
+    if (!id) return;
     setSaving(true);
     setErrorMessage('');
     try {

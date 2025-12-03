@@ -6,6 +6,9 @@ import {
   upsertValues,
 } from '@/src/repositories/dreRepository';
 
+const isUuid = (value: string | undefined): value is string =>
+  !!value && /^[0-9a-fA-F-]{36}$/.test(value);
+
 const toNullableNumber = (value: unknown) => {
   if (value === null || value === undefined || value === '') return null;
   const num = Number(value);
@@ -29,6 +32,9 @@ const sanitizeValues = (input: unknown) => {
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    if (!isUuid(params.id)) {
+      return NextResponse.json({ error: 'ID do período inválido.' }, { status: 400 });
+    }
     const detail = await getPeriodDetail(params.id);
     return NextResponse.json(detail);
   } catch (error) {
@@ -40,6 +46,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    if (!isUuid(params.id)) {
+      return NextResponse.json({ error: 'ID do período inválido.' }, { status: 400 });
+    }
     const body = await req.json().catch(() => ({}));
     await updatePeriod(params.id, {
       status: body.status === 'closed' || body.status === 'draft' ? body.status : undefined,
