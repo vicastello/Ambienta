@@ -1287,6 +1287,7 @@ function MonthlyDreCard({
 
   const editableRow = (code: string, label: string, showPercent = true) => {
     const amount = getAmount(code);
+    const displayValue = Number.isFinite(amount) ? (amount as number).toFixed(2).replace('.', ',') : '0,00';
     return (
       <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
         <div className="flex-1 text-slate-700 dark:text-slate-200">{renderLabelWithIcon(label)}</div>
@@ -1294,12 +1295,13 @@ function MonthlyDreCard({
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500">R$</span>
             <input
-              type="number"
-              step="0.01"
-              className="app-input w-[120px] text-right font-semibold"
-              value={Number.isFinite(amount) ? amount : 0}
+              type="text"
+              inputMode="numeric"
+              className="app-input w-[120px] text-center font-semibold"
+              value={displayValue}
               onChange={(e) => {
-                const value = e.target.value === '' ? null : Number(e.target.value);
+                const digits = e.target.value.replace(/\D/g, '');
+                const value = digits === '' ? 0 : Number(digits) / 100;
                 const catId = codeToId[code];
                 if (!catId) return;
                 onChangeValue(catId, value);
@@ -1424,7 +1426,7 @@ function MonthlyDreCard({
               <input
                 type="number"
                 step="0.1"
-                className="app-input w-24 text-right"
+                className="app-input w-24 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 value={Number(((reservaPercent ?? 0) * 100).toFixed(1))}
                 onChange={(e) => {
                   const value = e.target.value === '' ? null : Number(e.target.value) / 100;
