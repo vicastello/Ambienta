@@ -835,7 +835,7 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   body,
   .glass-scroll {
     scrollbar-width: thin;
-    scrollbar-color: rgba(130, 162, 255, 0.6) transparent;
+    scrollbar-color: #ffffff transparent;
   }
 
   html::-webkit-scrollbar,
@@ -848,21 +848,21 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   html::-webkit-scrollbar-track,
   body::-webkit-scrollbar-track,
   .glass-scroll::-webkit-scrollbar-track {
-    background: linear-gradient(180deg, rgba(5, 8, 20, 0.9), rgba(9, 15, 36, 0.5));
+    background: transparent;
     border-radius: 9999px;
   }
 
   html::-webkit-scrollbar-thumb,
   body::-webkit-scrollbar-thumb,
   .glass-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(105, 136, 255, 0.9), rgba(64, 255, 210, 0.6));
+    background: #ffffff;
     border-radius: 9999px;
-    border: 1px solid rgba(6, 10, 24, 0.6);
+    border: 2px solid transparent;
   }
 
   html:hover::-webkit-scrollbar-thumb,
   body:hover::-webkit-scrollbar-thumb,
   .glass-scroll:hover::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(133, 168, 255, 0.95), rgba(93, 255, 214, 0.78));
+    background: #ffffff;
   }
 }
