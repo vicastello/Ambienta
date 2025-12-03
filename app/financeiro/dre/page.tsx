@@ -1012,7 +1012,7 @@ function MonthlyDreCard({
           <input
             type="number"
             step="0.01"
-            className="app-input w-full text-right font-semibold"
+            className="app-input w-20 text-right font-semibold"
             value={Number.isFinite(amount) ? amount : 0}
             onChange={(e) => {
               const value = e.target.value === '' ? null : Number(e.target.value);
