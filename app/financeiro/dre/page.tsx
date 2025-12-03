@@ -796,30 +796,39 @@ export default function DrePage() {
               </h3>
             </div>
           </div>
-          <div className="grid gap-5 xl:grid-cols-2">
-            {filteredPeriods.map((p) => {
-              const detailData = periodDetails[p.period.id];
-              const draftData = valuesDraftByPeriod[p.period.id] || {};
-              if (!detailData) return null;
-              return (
-                <MonthlyDreCard
-                  key={p.period.id}
-                  detail={detailData}
-                  draft={draftData}
-                  onChangeValue={(categoryId, value) =>
-                    setValuesDraftByPeriod((prev) => ({
-                      ...prev,
-                      [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
-                    }))
-                  }
-                  onSave={(status) => handleSavePeriod(p.period.id, status)}
-                  onSuggest={() => handleSuggestPeriod(p.period.id)}
-                  saving={saving}
-                  suggesting={suggesting}
-                />
-              );
-            })}
-          </div>
+          {!filteredPeriods.length ? (
+            <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
+              Nenhum período carregado ainda. Crie/abra um mês acima e os cartões do modelo (Vendas,
+              Reembolsos, CMV, tarifas, fretes, despesas e saques por sócio) aparecem aqui um ao lado
+              do outro.
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              {filteredPeriods.map((p) => {
+                const detailData = periodDetails[p.period.id];
+                const draftData = valuesDraftByPeriod[p.period.id] || {};
+                return detailData ? (
+                  <MonthlyDreCard
+                    key={p.period.id}
+                    detail={detailData}
+                    draft={draftData}
+                    onChangeValue={(categoryId, value) =>
+                      setValuesDraftByPeriod((prev) => ({
+                        ...prev,
+                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                      }))
+                    }
+                    onSave={(status) => handleSavePeriod(p.period.id, status)}
+                    onSuggest={() => handleSuggestPeriod(p.period.id)}
+                    saving={saving}
+                    suggesting={suggesting}
+                  />
+                ) : (
+                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
@@ -1117,6 +1126,48 @@ function MonthlyDreCard({
       <div className="mt-2 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Valor para Saque</div>
         {computedRow('Valor para Saque', valorParaSaque)}
+      </div>
+    </div>
+  );
+}
+
+function MonthlyDreCardPlaceholder({ label }: { label: string }) {
+  const placeholderRows = [
+    'Vendas',
+    'Reembolsos/Devoluções',
+    'Ressarcimento de Devoluções',
+    'CMV + Impostos',
+    'Tarifas Shopee',
+    'Tarifas Mercado Livre',
+    'Tarifas Magalu',
+    'Coop. Fretes Magalu',
+    'Fretes',
+    'Contador',
+    'Outros Custos',
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/30 bg-white/60 dark:bg-white/5 p-5 space-y-2 text-sm text-slate-500 dark:text-slate-300">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Mês</p>
+          <h4 className="text-lg font-semibold text-slate-900 dark:text-white">{label}</h4>
+        </div>
+        <div className="text-xs rounded-full bg-white/60 px-3 py-1 border border-white/40">
+          Carregando detalhes...
+        </div>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 divide-y divide-white/30">
+        {placeholderRows.map((row) => (
+          <div key={row} className="flex items-center justify-between py-2 px-3">
+            <span>{row}</span>
+            <span className="text-slate-400">—</span>
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Lucro Bruto</span>
+        <span>—</span>
       </div>
     </div>
   );
