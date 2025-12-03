@@ -382,12 +382,12 @@ export async function listPeriodsWithSummary(): Promise<DrePeriodSummary[]> {
     fetchCategories(),
     supabaseAdmin
       .from('dre_values')
-      .select('*')
+      .select<'*', DreValuesRow>('*')
       .in('period_id', periodIds),
   ]);
 
   if (valuesRes.error) throw valuesRes.error;
-  const values = (valuesRes.data || []) as DreValuesRow[];
+  const values = valuesRes.data ?? [];
 
   const valuesByPeriod = new Map<string, DreValuesRow[]>();
   values.forEach((row) => {
