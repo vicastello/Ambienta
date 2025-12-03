@@ -180,6 +180,26 @@ export default function DrePage() {
   const dragStartScroll = useRef(0);
   const [draggingCards, setDraggingCards] = useState(false);
   const dragPointerId = useRef<number | null>(null);
+
+  const snapToNearestCard = () => {
+    const el = cardsScrollRef.current;
+    const track = cardsTrackRef.current;
+    if (!el || !track) return;
+    const children = Array.from(track.children) as HTMLElement[];
+    if (!children.length) return;
+    const viewportCenter = el.scrollLeft + el.offsetWidth / 2;
+    let target = el.scrollLeft;
+    let minDiff = Number.POSITIVE_INFINITY;
+    children.forEach((child) => {
+      const center = child.offsetLeft + child.offsetWidth / 2;
+      const diff = Math.abs(center - viewportCenter);
+      if (diff < minDiff) {
+        minDiff = diff;
+        target = child.offsetLeft;
+      }
+    });
+    el.scrollTo({ left: target, behavior: 'smooth' });
+  };
   const [newCategory, setNewCategory] = useState({
     name: '',
     sign: 'SAIDA',
@@ -535,6 +555,7 @@ export default function DrePage() {
 
   const handleCardsPointerUp = () => {
     endCardDrag();
+    snapToNearestCard();
   };
 
   const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -557,6 +578,7 @@ export default function DrePage() {
     };
     const handleUp = () => {
       endCardDrag();
+      snapToNearestCard();
     };
     window.addEventListener('pointermove', handleMovePointer);
     window.addEventListener('mousemove', handleMoveMouse);
