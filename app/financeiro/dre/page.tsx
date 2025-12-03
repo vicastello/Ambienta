@@ -179,7 +179,6 @@ export default function DrePage() {
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
   const [draggingCards, setDraggingCards] = useState(false);
-  const [dragDelta, setDragDelta] = useState(0);
   const dragPointerId = useRef<number | null>(null);
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -494,7 +493,6 @@ export default function DrePage() {
         // ignore
       }
     }
-    setDragDelta(0);
     setDraggingCards(true);
   };
 
@@ -502,9 +500,7 @@ export default function DrePage() {
     const el = cardsScrollRef.current;
     if (!el || !isDraggingCards.current) return;
     const walk = clientX - dragStartX.current;
-    const next = dragStartScroll.current - walk;
-    el.scrollLeft = next;
-    setDragDelta(walk);
+    el.scrollLeft = dragStartScroll.current - walk;
   };
 
   const endCardDrag = () => {
@@ -520,7 +516,6 @@ export default function DrePage() {
       }
     }
     dragPointerId.current = null;
-    setDragDelta(0);
     setDraggingCards(false);
   };
 
@@ -530,15 +525,15 @@ export default function DrePage() {
     if (!el || !track) return;
     const children = Array.from(track.children) as HTMLElement[];
     if (!children.length) return;
-    const current = el.scrollLeft;
+    const current = el.scrollLeft + el.offsetWidth / 2;
     let target = current;
     let minDiff = Number.POSITIVE_INFINITY;
     children.forEach((child) => {
-      const left = child.offsetLeft;
-      const diff = Math.abs(left - current);
+      const center = child.offsetLeft + child.offsetWidth / 2;
+      const diff = Math.abs(center - current);
       if (diff < minDiff) {
         minDiff = diff;
-        target = left;
+        target = child.offsetLeft;
       }
     });
     el.scrollTo({ left: target, behavior: 'smooth' });
@@ -752,14 +747,7 @@ export default function DrePage() {
               onPointerMove={handleCardsPointerMove}
               onMouseDown={handleCardsMouseDown}
             >
-              <div
-                ref={cardsTrackRef}
-                className="flex"
-                style={{
-                  transform: draggingCards ? `translateX(${dragDelta}px)` : 'translateX(0)',
-                  transition: draggingCards ? 'none' : 'transform 0.2s ease',
-                }}
-              >
+              <div ref={cardsTrackRef} className="flex">
                 {filteredPeriods.map((p) => {
                   const detailData = periodDetails[p.period.id];
                   const draftData = valuesDraftByPeriod[p.period.id] || {};
