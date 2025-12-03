@@ -211,7 +211,7 @@ export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> 
     const { data, error } = await supabaseAdmin
       .from('tiny_produtos')
       .select('id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url')
-      .in('tipo', ['V', 'K']);
+      .in('tipo', ['P', 'V', 'K']);
 
     if (error) throw error;
 
