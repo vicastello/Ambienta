@@ -100,6 +100,7 @@ const DEFAULT_CATEGORY_SEED: DreCategoriesInsert[] = [
   { code: 'OUTROS_DESCONTOS_NELSON', name: 'Outros Descontos (Nelson)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 232, channel: null, parent_code: null },
   { code: 'VALE_COMBUSTIVEL_NELSON', name: 'Vale Combustível (Nelson)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 233, channel: null, parent_code: null },
   { code: 'OUTROS_CREDITOS_NELSON', name: 'Outros Créditos (Nelson)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 234, channel: null, parent_code: null },
+  { code: 'NELSON_BASE', name: 'Base Nelson', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 235, channel: null, parent_code: null },
 ];
 
 const MONTH_LABELS = [

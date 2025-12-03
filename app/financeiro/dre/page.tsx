@@ -1224,8 +1224,16 @@ function MonthlyDreCard({
   const reservaPercent = reservePercent ?? 0.1;
   const reserva = Math.max(0, lucroLiquido * reservaPercent);
   const divisao = lucroLiquido - reserva;
-  const nelsonBase = 2000;
-  const restante = Math.max(divisao - nelsonBase, 0);
+  const nelsonBaseFromCat = codeToId['NELSON_BASE'] ? getAmount('NELSON_BASE') : 0;
+  const nelsonBase = Number.isFinite(nelsonBaseFromCat) ? nelsonBaseFromCat : 0;
+  const nelsonPretotal =
+    nelsonBase -
+    getAmount('PLANO_SAUDE_NELSON') -
+    getAmount('VALES_NELSON') -
+    getAmount('OUTROS_DESCONTOS_NELSON') +
+    getAmount('VALE_COMBUSTIVEL_NELSON') +
+    getAmount('OUTROS_CREDITOS_NELSON');
+  const restante = Math.max(divisao - Math.max(nelsonPretotal, 0), 0);
   const vitorBase = restante * 0.5;
   const gabBase = restante * 0.5;
 
@@ -1245,15 +1253,7 @@ function MonthlyDreCard({
     getAmount('VALE_COMBUSTIVEL_GABRIELA') +
     getAmount('OUTROS_CREDITOS_GABRIELA');
 
-  const nelsonBaseFromCat = codeToId['NELSON_BASE'] ? getAmount('NELSON_BASE') : 2000;
-  const nelsonBase = Number.isFinite(nelsonBaseFromCat) ? nelsonBaseFromCat : 2000;
-  const nelsonTotal =
-    nelsonBase -
-    getAmount('PLANO_SAUDE_NELSON') -
-    getAmount('VALES_NELSON') -
-    getAmount('OUTROS_DESCONTOS_NELSON') +
-    getAmount('VALE_COMBUSTIVEL_NELSON') +
-    getAmount('OUTROS_CREDITOS_NELSON');
+  const nelsonTotal = nelsonPretotal;
 
   const valorParaSaque = vitorTotal + gabTotal + nelsonTotal;
 
