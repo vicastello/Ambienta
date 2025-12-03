@@ -467,7 +467,7 @@ export default function DrePage() {
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <select
-                  className="app-input w-24"
+                  className="app-input w-20"
                   value={monthInput}
                   onChange={(e) => setMonthInput(Number(e.target.value))}
                 >
@@ -479,7 +479,7 @@ export default function DrePage() {
                 </select>
                 <input
                   type="number"
-                  className="app-input w-24"
+                  className="app-input w-20"
                   value={yearInput}
                   onChange={(e) => setYearInput(Number(e.target.value))}
                 />
@@ -533,7 +533,7 @@ export default function DrePage() {
               <input
                 type="number"
                 step="0.01"
-                className="app-input w-24 text-right font-semibold"
+                className="app-input w-20 text-right font-semibold"
                 value={targetMargin ?? ''}
                 onChange={(e) => setTargetMargin(e.target.value === '' ? null : Number(e.target.value))}
               />
@@ -543,7 +543,7 @@ export default function DrePage() {
               <input
                 type="number"
                 step="0.01"
-                className="app-input w-24 text-right font-semibold"
+                className="app-input w-20 text-right font-semibold"
                 value={reservePercent ?? ''}
                 onChange={(e) =>
                   setReservePercent(e.target.value === '' ? null : Number(e.target.value))
@@ -564,7 +564,7 @@ export default function DrePage() {
             </div>
             <div className="flex items-center gap-3">
               <select
-                className="app-input w-28"
+                className="app-input w-20"
                 value={yearFilter}
                 onChange={(e) => setYearFilter(e.target.value)}
               >
