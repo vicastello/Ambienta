@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowUpRight,
   CheckCircle,
+  Download,
   Info,
   Loader2,
   Plus,
@@ -157,7 +158,6 @@ export default function DrePage() {
   const [detail, setDetail] = useState<DreDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [yearInput, setYearInput] = useState(now.getUTCFullYear());
   const [monthInput, setMonthInput] = useState(now.getUTCMonth() + 1);
@@ -372,36 +372,6 @@ export default function DrePage() {
       setErrorMessage(getErrorMessage(error) || 'Falha ao salvar DRE.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSuggestPeriod = async (periodId: string) => {
-    setSuggesting(true);
-    setErrorMessage('');
-    try {
-      const res = await fetch(`/api/dre/periods/${periodId}/suggest-auto`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Erro ao sugerir valores');
-      setPeriodDetails((prev) => ({ ...prev, [periodId]: data }));
-      if (selectedPeriodId === periodId) {
-        setDetail(data);
-        setTargetMargin(data.period.target_net_margin ?? null);
-        setReservePercent(data.period.reserve_percent ?? null);
-      }
-      setValuesDraftByPeriod((prev) => ({
-        ...prev,
-        [periodId]: data.categories.reduce((acc: Record<string, number | null>, item: DreCategoryValue) => {
-          acc[item.category.id] = item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
-          return acc;
-        }, {}),
-      }));
-      await loadPeriods();
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error) || 'Falha ao sugerir valores.');
-    } finally {
-      setSuggesting(false);
     }
   };
 
@@ -758,9 +728,7 @@ export default function DrePage() {
                       }))
                     }
                     onSave={(status) => handleSavePeriod(p.period.id, status)}
-                    onSuggest={() => handleSuggestPeriod(p.period.id)}
                     saving={saving}
-                    suggesting={suggesting}
                   />
                 ) : (
                   <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
@@ -895,7 +863,6 @@ type MonthlyDreCardProps = {
   onChangeValue: (categoryId: string, value: number | null) => void;
   onSave: (status?: 'draft' | 'closed') => void;
   saving: boolean;
-  suggesting: boolean;
 };
 
 function MonthlyDreCard({
@@ -904,8 +871,29 @@ function MonthlyDreCard({
   onChangeValue,
   onSave,
   saving,
-  suggesting,
 }: MonthlyDreCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!cardRef.current) return;
+    setExporting(true);
+    try {
+      const { toPng } = await import('html-to-image');
+      const dataUrl = await toPng(cardRef.current, {
+        cacheBust: true,
+        backgroundColor: '#ffffff',
+      });
+      const link = document.createElement('a');
+      link.download = `dre-${detail.period.label.replace(/\s+/g, '-').toLowerCase()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('Erro ao exportar PNG', error);
+    } finally {
+      setExporting(false);
+    }
+  };
   const codeToId = useMemo(() => {
     const map: Record<string, string> = {};
     detail.categories.forEach((c) => {
@@ -999,7 +987,7 @@ function MonthlyDreCard({
   const valorParaSaque = vitorTotal + gabTotal + nelsonTotal;
 
   const innerCardClass =
-    'rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3 space-y-2';
+    'rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 space-y-3';
 
   const editableRow = (code: string, label: string, showPercent = true) => {
     const amount = getAmount(code);
@@ -1042,13 +1030,10 @@ function MonthlyDreCard({
         <div className="flex gap-2">
           <button
             className="app-btn-ghost inline-flex items-center gap-2 text-xs"
-            onClick={() => {
-              // TODO: implementar exportação do card em PNG (ex.: html2canvas/dom-to-image)
-              console.info('Exportar PNG - implementar captura do card');
-            }}
-            disabled={suggesting}
+            onClick={handleExport}
+            disabled={exporting}
           >
-            {suggesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Exportar PNG
           </button>
           <button
