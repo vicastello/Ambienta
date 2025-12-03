@@ -340,7 +340,7 @@ export default function DrePage() {
           year: yearInput,
           month: monthInput,
           target_net_margin: targetMargin,
-          reserve_percent: reservePercent,
+          reserve_percent: 0.1,
         }),
       });
       const data = await res.json();
