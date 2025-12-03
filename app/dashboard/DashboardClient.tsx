@@ -1187,6 +1187,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       .map((dia) => ({
         label: dia.data.split('-')[2],
         value: dia.totalDia,
+        quantidade: dia.quantidade,
       }));
   }, [resumoGlobalAtual]);
 
