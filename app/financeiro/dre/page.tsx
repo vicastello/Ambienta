@@ -1088,7 +1088,7 @@ function MonthlyDreCard({
       </div>
 
       <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Saques</div>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Reserva e divisão</div>
         {computedRow('Reserva', reserva)}
         {computedRow('Divisão', divisao)}
       </div>
@@ -1134,16 +1134,40 @@ function MonthlyDreCard({
 function MonthlyDreCardPlaceholder({ label }: { label: string }) {
   const placeholderRows = [
     'Vendas',
-    'Reembolsos/Devoluções',
-    'Ressarcimento de Devoluções',
-    'CMV + Impostos',
-    'Tarifas Shopee',
-    'Tarifas Mercado Livre',
-    'Tarifas Magalu',
-    'Coop. Fretes Magalu',
-    'Fretes',
-    'Contador',
-    'Outros Custos',
+    '(-) Reembolsos/Devoluções',
+    '(+) Ressarcimento de Devoluções',
+    '(-) Custo de Mercadoria Vendida (CMV) + Impostos',
+    '(-) Tarifas Shopee',
+    '(-) Tarifas Mercado Livre',
+    '(-) Tarifas Magalu',
+    '(-) Cooparticipação Fretes Magalu',
+    '(-) Fretes',
+    '(-) Contador',
+    '(-) Outros Custos',
+    '(-) Despesas Operacionais',
+    '(-) Sistema ERP',
+    '(-) Internet',
+    '(-) IA',
+    '(-) Marketing e Publicidade (Anúncios)',
+    '(-) Materiais de Embalagem',
+    '(-) Combustíveis',
+    'Reserva',
+    'Divisão',
+    'Vitor: Plano de Saúde',
+    'Vitor: Vales',
+    'Vitor: Outros Descontos',
+    'Vitor: Vale Combustível',
+    'Vitor: Outros Créditos',
+    'Gabriela: Plano de Saúde',
+    'Gabriela: Vales',
+    'Gabriela: Outros Descontos',
+    'Gabriela: Vale Combustível',
+    'Gabriela: Outros Créditos',
+    'Nelson: Plano de Saúde',
+    'Nelson: Vales',
+    'Nelson: Outros Descontos',
+    'Nelson: Vale Combustível',
+    'Nelson: Outros Créditos',
   ];
 
   return (
@@ -1167,6 +1191,34 @@ function MonthlyDreCardPlaceholder({ label }: { label: string }) {
       </div>
       <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
         <span>Lucro Bruto</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Lucro Líquido</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Reserva</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Divisão</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Vitor (total)</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Gabriela (total)</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Nelson (total)</span>
+        <span>—</span>
+      </div>
+      <div className="rounded-xl border border-white/30 bg-white/70 dark:bg-white/10 px-3 py-2 flex justify-between font-semibold text-slate-700 dark:text-white">
+        <span>Valor para Saque</span>
         <span>—</span>
       </div>
     </div>
