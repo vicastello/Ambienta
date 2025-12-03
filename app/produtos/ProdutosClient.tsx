@@ -87,6 +87,16 @@ type ProdutoDesempenhoPoint = {
   receita: number;
 };
 
+type ProdutoDesempenhoMeta = {
+  aggregatedIds: number[];
+  aggregatedCodes: string[];
+  matchedIds: number[];
+  matchedCodes: string[];
+  consolidatedChildren: number;
+  childSource: "variacoes" | "kit" | null;
+  usedCodigoFallback: boolean;
+};
+
 type ProdutoDesempenhoResponse = {
   produtoId: number;
   preset: ProdutoSeriePreset;
@@ -96,10 +106,16 @@ type ProdutoDesempenhoResponse = {
   totalReceita: number;
   serie: ProdutoDesempenhoPoint[];
   melhorDia: ProdutoDesempenhoPoint | null;
+  meta?: ProdutoDesempenhoMeta;
 };
 
 const PRODUTO_DESEMPENHO_CACHE_TTL_MS = 2 * 60_000;
 const PRODUTO_SELECIONADO_STORAGE_KEY = "produtos:last-selected-id";
+
+type ProdutoAtualizacaoMeta = {
+  attempts429: number;
+  updatedAt: number;
+};
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
@@ -138,6 +154,9 @@ export default function ProdutosClient() {
   const [produtoDesempenhoLoading, setProdutoDesempenhoLoading] = useState(false);
   const [produtoDesempenhoError, setProdutoDesempenhoError] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [produtoAtualizandoId, setProdutoAtualizandoId] = useState<number | null>(null);
+  const [produtoAtualizacaoErro, setProdutoAtualizacaoErro] = useState<string | null>(null);
+  const [produtoAtualizacaoMeta, setProdutoAtualizacaoMeta] = useState<ProdutoAtualizacaoMeta | null>(null);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -199,9 +218,17 @@ export default function ProdutosClient() {
     fetchProdutos();
   }, [fetchProdutos]);
 
+  const fetchProdutosRef = useRef(fetchProdutos);
+  useEffect(() => {
+    fetchProdutosRef.current = fetchProdutos;
+  }, [fetchProdutos]);
+
   useEffect(() => {
     if (!produtos.length) {
       setProdutoSelecionadoId(null);
+      setProdutoAtualizandoId(null);
+      setProdutoAtualizacaoErro(null);
+      setProdutoAtualizacaoMeta(null);
       return;
     }
     setProdutoSelecionadoId((prev) => {
@@ -220,6 +247,58 @@ export default function ProdutosClient() {
         window.localStorage.removeItem(PRODUTO_SELECIONADO_STORAGE_KEY);
       }
     }
+  }, [produtoSelecionadoId]);
+
+  useEffect(() => {
+    if (!produtoSelecionadoId) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    setProdutoAtualizacaoErro(null);
+    setProdutoAtualizacaoMeta(null);
+    setProdutoAtualizandoId(produtoSelecionadoId);
+
+    const run = async () => {
+      try {
+        const response = await fetch("/api/produtos/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ produtoId: produtoSelecionadoId, enrichEstoque: true }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+        if (!response.ok) {
+          const message =
+            (payload?.message as string) ||
+            (payload?.error as string) ||
+            (payload?.details as string) ||
+            "Erro ao atualizar produto";
+          throw new Error(message);
+        }
+        if (cancelled || controller.signal.aborted) return;
+        clearCacheByPrefix("produtos:");
+        await fetchProdutosRef.current();
+        const attempts =
+          payload && typeof (payload as { attempts429?: unknown }).attempts429 === 'number'
+            ? (payload as { attempts429: number }).attempts429
+            : 0;
+        setProdutoAtualizacaoMeta({ attempts429: attempts, updatedAt: Date.now() });
+      } catch (err) {
+        if (cancelled || controller.signal.aborted) return;
+        setProdutoAtualizacaoErro(getErrorMessage(err) || "Erro ao atualizar produto");
+      } finally {
+        if (cancelled || controller.signal.aborted) return;
+        setProdutoAtualizandoId(null);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [produtoSelecionadoId]);
 
   useEffect(() => {
@@ -325,6 +404,28 @@ export default function ProdutosClient() {
     if (Number.isNaN(parsed.getTime())) return produtoMelhorDia.data;
     return formatSerieDayLabel(parsed);
   }, [produtoMelhorDia]);
+  const consolidacaoMensagem = useMemo(() => {
+    const meta = produtoDesempenho?.meta;
+    if (!meta) return null;
+    if (meta.consolidatedChildren > 0) {
+      const label = meta.childSource === "variacoes"
+        ? meta.consolidatedChildren === 1
+          ? "variação"
+          : "variações"
+        : meta.childSource === "kit"
+          ? meta.consolidatedChildren === 1
+            ? "item do kit"
+            : "itens do kit"
+          : meta.consolidatedChildren === 1
+            ? "produto relacionado"
+            : "produtos relacionados";
+      return `Consolidando ${meta.consolidatedChildren} ${label}`;
+    }
+    if (meta.usedCodigoFallback) {
+      return "Incluindo vendas identificadas apenas por código";
+    }
+    return null;
+  }, [produtoDesempenho?.meta]);
   const tipoProdutoEmFoco = produtoEmFoco
     ? TIPO_CONFIG[produtoEmFoco.tipo] ?? {
         label: produtoEmFoco.tipo,
@@ -628,7 +729,7 @@ export default function ProdutosClient() {
       {produtoEmFoco && (
         <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/70 dark:bg-white/5 border border-white/60 flex items-center justify-center overflow-hidden">
                 {produtoEmFoco.imagem_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -647,16 +748,35 @@ export default function ProdutosClient() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {situacaoProdutoEmFoco && (
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}>
-                  {situacaoProdutoEmFoco.label}
-                </span>
+            <div className="flex flex-col gap-2 text-left lg:text-right lg:items-end">
+              <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
+                {situacaoProdutoEmFoco && (
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}>
+                    {situacaoProdutoEmFoco.label}
+                  </span>
+                )}
+                {tipoProdutoEmFoco && (
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoProdutoEmFoco.color}`}>
+                    {tipoProdutoEmFoco.label}
+                  </span>
+                )}
+              </div>
+              {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
+                <p className="flex items-center gap-2 text-xs text-slate-500 lg:justify-end">
+                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                  Atualizando dados diretamente do Tiny...
+                </p>
+              ) : produtoAtualizacaoMeta && produtoSelecionadoId === produtoEmFoco.id_produto_tiny ? (
+                <p className="text-xs text-slate-500">
+                  Última atualização sincronizada agora
+                  {produtoAtualizacaoMeta.attempts429 ? ` · ${produtoAtualizacaoMeta.attempts429} retentativa(s)` : ""}
+                </p>
+              ) : null}
+              {produtoAtualizacaoErro && produtoSelecionadoId === produtoEmFoco.id_produto_tiny && (
+                <p className="text-xs text-rose-500">{produtoAtualizacaoErro}</p>
               )}
-              {tipoProdutoEmFoco && (
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoProdutoEmFoco.color}`}>
-                  {tipoProdutoEmFoco.label}
-                </span>
+              {consolidacaoMensagem && (
+                <p className="text-xs text-slate-400">{consolidacaoMensagem}</p>
               )}
             </div>
           </div>
