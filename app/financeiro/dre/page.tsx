@@ -1050,7 +1050,9 @@ function MonthlyDreCard({
       <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Receita / Operação</div>
         <div className="divide-y divide-slate-200/60 dark:divide-white/10">
-          {receitaRows.map((row) => editableRow(row.code, row.label, true))}
+          {receitaRows.map((row) => (
+            <div key={row.code}>{editableRow(row.code, row.label, true)}</div>
+          ))}
         </div>
         {computedRow('Lucro Bruto', lucroBruto)}
       </div>
@@ -1058,7 +1060,9 @@ function MonthlyDreCard({
       <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Despesas</div>
         <div className="divide-y divide-slate-200/60 dark:divide-white/10">
-          {despesasRows.map((row) => editableRow(row.code, row.label, true))}
+          {despesasRows.map((row) => (
+            <div key={row.code}>{editableRow(row.code, row.label, true)}</div>
+          ))}
         </div>
         {computedRow('Lucro Líquido', lucroLiquido)}
       </div>
