@@ -167,6 +167,7 @@ export default function DrePage() {
   const [periods, setPeriods] = useState<DrePeriodSummary[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DreDetail | null>(null);
+  const [periodDetails, setPeriodDetails] = useState<Record<string, DreDetail>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -205,10 +206,33 @@ export default function DrePage() {
     }));
   }, [periods]);
 
+  const ensureBasePeriods = useCallback(async () => {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const prev = new Date(Date.UTC(year, month - 2, 1));
+    const prevYear = prev.getUTCFullYear();
+    const prevMonth = prev.getUTCMonth() + 1;
+
+    await Promise.all(
+      [
+        { year, month },
+        { year: prevYear, month: prevMonth },
+      ].map(({ year: y, month: m }) =>
+        fetch('/api/dre/periods', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year: y, month: m }),
+        }).then(() => null)
+      )
+    );
+  }, []);
+
   const loadPeriods = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
     try {
+      await ensureBasePeriods();
       const res = await fetch('/api/dre/periods', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao buscar períodos');
@@ -256,6 +280,33 @@ export default function DrePage() {
       loadDetail(selectedPeriodId);
     }
   }, [selectedPeriodId]);
+
+  useEffect(() => {
+    const loadInitialDetails = async () => {
+      if (!periods.length) return;
+      const ids = periods.map((p) => p.period.id).slice(0, 6); // mostrar até 6 meses
+      const missing = ids.filter((id) => !periodDetails[id]);
+      if (!missing.length) return;
+      const results = await Promise.all(
+        missing.map((id) =>
+          fetch(`/api/dre/periods/${id}`, { cache: 'no-store' })
+            .then((res) => res.json())
+            .then((data) => ({ id, data }))
+            .catch(() => null)
+        )
+      );
+      setPeriodDetails((prev) => {
+        const next = { ...prev };
+        results.forEach((entry) => {
+          if (entry?.id && entry.data?.period) {
+            next[entry.id] = entry.data as DreDetail;
+          }
+        });
+        return next;
+      });
+    };
+    void loadInitialDetails();
+  }, [periodDetails, periods]);
 
   const handleCreatePeriod = async () => {
     setCreating(true);
@@ -843,6 +894,24 @@ export default function DrePage() {
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
           <div className="flex items-center justify-between mb-3">
             <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Resumo completo por mês (linhas fixas)
+              </h3>
+            </div>
+          </div>
+          <div className="grid gap-5 xl:grid-cols-2">
+            {periods.map((p) => {
+              const detail = periodDetails[p.period.id];
+              if (!detail) return null;
+              return <MonthlyDreCard key={p.period.id} detail={detail} />;
+            })}
+          </div>
+        </section>
+
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Divisão por sócio</p>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Cartões pré-definidos (Vitor, Gabriela, Nelson)
@@ -948,6 +1017,84 @@ function MetricCard({ title, value, subtitle, trendIcon, alert }: MetricCardProp
       </div>
       {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
       {alert && <p className="text-xs font-semibold text-amber-600">{alert}</p>}
+    </div>
+  );
+}
+
+type MonthlyDreCardProps = {
+  detail: DreDetail;
+};
+
+function MonthlyDreCard({ detail }: MonthlyDreCardProps) {
+  const vendas = detail.metrics.vendas || 0;
+  const percent = (value: number) => (vendas > 0 ? (value / vendas) * 100 : 0);
+
+  const grouped = GROUP_ORDER.map((group) => ({
+    group,
+    rows: detail.categories.filter((c) => c.category.group_type === group),
+  }));
+
+  const renderRow = (label: string, amount: number, type: 'entrada' | 'saida' | 'calc') => {
+    const pct = percent(amount);
+    const sign = type === 'saida' ? '-' : type === 'entrada' ? '+' : '';
+    return (
+      <div className="flex items-center justify-between border-b border-white/20 py-1 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-600 dark:text-slate-300">{label}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-slate-500">{pct ? `${pct.toFixed(2)}%` : '—'}</span>
+          <span className="font-semibold text-slate-900 dark:text-white">
+            {sign} {formatCurrency(amount)}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-5 space-y-2 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Mês</p>
+          <h4 className="text-lg font-semibold text-slate-900 dark:text-white">{detail.period.label}</h4>
+        </div>
+        <div className="text-right text-sm text-slate-600 dark:text-slate-400">
+          <p>Lucro Líquido: {formatCurrency(detail.metrics.lucroLiquido)}</p>
+          <p>Margem Líquida: {formatPercent(detail.metrics.margemLiquida)}</p>
+        </div>
+      </div>
+
+      {grouped.map(({ group, rows }) => (
+        <div key={group} className="mt-3">
+          <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mb-1">
+            {GROUP_LABELS[group]}
+          </div>
+          <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
+            {rows.map((item) =>
+              renderRow(
+                item.category.name,
+                item.finalAmount,
+                item.category.sign === 'SAIDA' ? 'saida' : 'entrada'
+              )
+            )}
+          </div>
+        </div>
+      ))}
+
+      <div className="mt-4 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucros</div>
+        {renderRow('Lucro Bruto', detail.metrics.lucroBruto, 'calc')}
+        {renderRow('Lucro Líquido', detail.metrics.lucroLiquido, 'calc')}
+      </div>
+      <div className="mt-2 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Saques</div>
+        {renderRow('Reserva', detail.metrics.reserva, 'saida')}
+        {renderRow('Divisão', detail.metrics.divisao, 'calc')}
+        {renderRow('Vitor', detail.metrics.saque.vitor, 'saida')}
+        {renderRow('Gabriela', detail.metrics.saque.gabriela, 'saida')}
+        {renderRow('Nelson', detail.metrics.saque.nelson, 'saida')}
+      </div>
     </div>
   );
 }
