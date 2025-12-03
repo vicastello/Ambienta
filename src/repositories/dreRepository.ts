@@ -285,16 +285,16 @@ export async function updatePeriod(id: string, updates: DrePeriodsUpdate) {
     return fetchPeriodById(id);
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('dre_periods')
     .update(payload)
     .eq('id', id)
-    .select()
-    .maybeSingle();
+    .select<'*', DrePeriodsRow>('*')
+    .maybeSingle()
+    .throwOnError();
 
-  if (error) throw error;
   if (!data) throw new Error('Período não encontrado para atualização.');
-  return data as DrePeriodsRow;
+  return data;
 }
 
 export async function upsertValues(
