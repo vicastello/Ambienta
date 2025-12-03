@@ -519,20 +519,36 @@ export default function DrePage() {
     endCardDrag();
   };
 
+  const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('input, select, textarea, button')) return;
+    beginCardDrag(e.clientX);
+    e.preventDefault();
+  };
+
   useEffect(() => {
     if (!draggingCards) return;
-    const handleMove = (e: PointerEvent) => {
+    const handleMovePointer = (e: PointerEvent) => {
+      if (!isDraggingCards.current) return;
+      moveCardDrag(e.clientX);
+    };
+    const handleMoveMouse = (e: MouseEvent) => {
       if (!isDraggingCards.current) return;
       moveCardDrag(e.clientX);
     };
     const handleUp = () => {
       endCardDrag();
     };
-    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointermove', handleMovePointer);
+    window.addEventListener('mousemove', handleMoveMouse);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('mouseup', handleUp);
     return () => {
-      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointermove', handleMovePointer);
+      window.removeEventListener('mousemove', handleMoveMouse);
       window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('mouseup', handleUp);
     };
   }, [draggingCards]);
 
@@ -689,6 +705,7 @@ export default function DrePage() {
               onPointerUp={handleCardsPointerUp}
               onPointerLeave={handleCardsPointerUp}
               onPointerMove={handleCardsPointerMove}
+              onMouseDown={handleCardsMouseDown}
             >
               {filteredPeriods.map((p) => {
                 const detailData = periodDetails[p.period.id];
