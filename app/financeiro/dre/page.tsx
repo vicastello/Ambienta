@@ -397,10 +397,9 @@ export default function DrePage() {
                 {item.category.name}
               </p>
               {HELP_TEXTS[item.category.code] && (
-                <Info
-                  className="w-4 h-4 text-slate-400"
-                  title={HELP_TEXTS[item.category.code]}
-                />
+                <span title={HELP_TEXTS[item.category.code]}>
+                  <Info className="w-4 h-4 text-slate-400" />
+                </span>
               )}
               {item.category.channel && (
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700">
@@ -521,7 +520,9 @@ export default function DrePage() {
           <div className="app-card p-4 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Meta</p>
-              <Info className="w-4 h-4 text-slate-400" title="Meta de margem líquida do mês" />
+              <span title="Meta de margem líquida do mês">
+                <Info className="w-4 h-4 text-slate-400" />
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <input
