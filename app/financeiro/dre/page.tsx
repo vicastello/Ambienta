@@ -9,6 +9,8 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Minus,
+  Equal,
   Sparkles,
   TrendingUp,
 } from 'lucide-react';
@@ -986,11 +988,46 @@ function MonthlyDreCard({
   const innerCardClass =
     'rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 space-y-3';
 
+  const renderLabelWithIcon = (raw: string) => {
+    let icon: 'plus' | 'minus' | 'equal' | null = null;
+    let text = raw;
+    if (raw.startsWith('(-)')) {
+      icon = 'minus';
+      text = raw.replace('(-)', '').trim();
+    } else if (raw.startsWith('(+)')) {
+      icon = 'plus';
+      text = raw.replace('(+)','').trim();
+    } else if (raw.startsWith('(=)')) {
+      icon = 'equal';
+      text = raw.replace('(=)','').trim();
+    }
+
+    const iconEl =
+      icon === 'plus' ? (
+        <Plus className="w-3 h-3 text-slate-600" />
+      ) : icon === 'minus' ? (
+        <Minus className="w-3 h-3 text-slate-600" />
+      ) : icon === 'equal' ? (
+        <Equal className="w-3 h-3 text-slate-600" />
+      ) : null;
+
+    return (
+      <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
+        {iconEl && (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-[10px] text-slate-700 dark:border-white/30 dark:text-white/80">
+            {iconEl}
+          </span>
+        )}
+        <span className="leading-tight">{text}</span>
+      </span>
+    );
+  };
+
   const editableRow = (code: string, label: string, showPercent = true) => {
     const amount = getAmount(code);
     return (
       <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
-        <div className="flex-1 text-slate-700 dark:text-slate-200">{label}</div>
+        <div className="flex-1 text-slate-700 dark:text-slate-200">{renderLabelWithIcon(label)}</div>
         <input
           type="number"
           step="0.01"
@@ -1012,7 +1049,7 @@ function MonthlyDreCard({
 
   const computedRow = (label: string, amount: number) => (
     <div className="grid grid-cols-12 items-center rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 dark:text-white bg-white/60 dark:bg-white/5">
-      <div className="col-span-7">{label}</div>
+      <div className="col-span-7">{renderLabelWithIcon(label)}</div>
       <div className="col-span-5 text-right">{formatCurrency(amount)}</div>
     </div>
   );
