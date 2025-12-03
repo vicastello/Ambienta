@@ -258,14 +258,15 @@ export async function upsertPeriod(params: {
     reserve_percent: params.reserve_percent ?? null,
   };
 
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('dre_periods')
     .upsert(payload, { onConflict: 'year,month' })
-    .select()
-    .maybeSingle();
+    .select<'*', DrePeriodsRow>('*')
+    .maybeSingle()
+    .throwOnError();
 
-  if (error) throw error;
-  return data as DrePeriodsRow;
+  if (!data) throw new Error('Falha ao salvar período.');
+  return data;
 }
 
 export async function updatePeriod(id: string, updates: DrePeriodsUpdate) {
