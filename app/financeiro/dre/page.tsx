@@ -174,10 +174,12 @@ export default function DrePage() {
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const seededBasePeriods = useRef(false);
   const cardsScrollRef = useRef<HTMLDivElement>(null);
+  const cardsTrackRef = useRef<HTMLDivElement>(null);
   const isDraggingCards = useRef(false);
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
   const [draggingCards, setDraggingCards] = useState(false);
+  const [dragDelta, setDragDelta] = useState(0);
   const dragPointerId = useRef<number | null>(null);
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -492,6 +494,7 @@ export default function DrePage() {
         // ignore
       }
     }
+    setDragDelta(0);
     setDraggingCards(true);
   };
 
@@ -499,7 +502,9 @@ export default function DrePage() {
     const el = cardsScrollRef.current;
     if (!el || !isDraggingCards.current) return;
     const walk = clientX - dragStartX.current;
-    el.scrollLeft = dragStartScroll.current - walk;
+    const next = dragStartScroll.current - walk;
+    el.scrollLeft = next;
+    setDragDelta(-walk);
   };
 
   const endCardDrag = () => {
@@ -515,6 +520,7 @@ export default function DrePage() {
       }
     }
     dragPointerId.current = null;
+    setDragDelta(0);
     setDraggingCards(false);
   };
 
@@ -716,7 +722,7 @@ export default function DrePage() {
             </div>
           ) : (
             <div
-              className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab active:cursor-grabbing select-none touch-pan-y"
+              className="overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab active:cursor-grabbing select-none touch-pan-y"
               ref={cardsScrollRef}
               onPointerDown={handleCardsPointerDown}
               onPointerUp={handleCardsPointerUp}
@@ -724,42 +730,51 @@ export default function DrePage() {
               onPointerMove={handleCardsPointerMove}
               onMouseDown={handleCardsMouseDown}
             >
-              {filteredPeriods.map((p) => {
-                const detailData = periodDetails[p.period.id];
-                const draftData = valuesDraftByPeriod[p.period.id] || {};
-                return (
-                  <div
-                    key={p.period.id}
-                    className="snap-start flex-none w-full md:w-1/2 px-2"
-                  >
-                    {detailData ? (
-                      <MonthlyDreCard
-                        detail={detailData}
-                        draft={draftData}
-                        reservePercent={
-                          reserveDraftByPeriod[p.period.id] ??
-                          detailData.period.reserve_percent ??
-                          0.1
-                        }
-                        onChangeValue={(categoryId, value) =>
-                          setValuesDraftByPeriod((prev) => ({
-                            ...prev,
-                            [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
-                          }))
-                        }
-                        onSave={(status) => handleSavePeriod(p.period.id, status)}
-                        onDelete={() => handleDeletePeriod(p.period.id)}
-                        onChangeReserve={(value) => {
-                          setReserveDraftByPeriod((prev) => ({ ...prev, [p.period.id]: value }));
-                        }}
-                        saving={saving}
-                      />
-                    ) : (
-                      <MonthlyDreCardPlaceholder label={p.period.label} />
-                    )}
-                  </div>
-                );
-              })}
+              <div
+                ref={cardsTrackRef}
+                className="flex"
+                style={{
+                  transform: draggingCards ? `translateX(${dragDelta}px)` : 'translateX(0)',
+                  transition: draggingCards ? 'none' : 'transform 0.2s ease',
+                }}
+              >
+                {filteredPeriods.map((p) => {
+                  const detailData = periodDetails[p.period.id];
+                  const draftData = valuesDraftByPeriod[p.period.id] || {};
+                  return (
+                    <div
+                      key={p.period.id}
+                      className="snap-start flex-none w-full md:w-1/2 px-2"
+                    >
+                      {detailData ? (
+                        <MonthlyDreCard
+                          detail={detailData}
+                          draft={draftData}
+                          reservePercent={
+                            reserveDraftByPeriod[p.period.id] ??
+                            detailData.period.reserve_percent ??
+                            0.1
+                          }
+                          onChangeValue={(categoryId, value) =>
+                            setValuesDraftByPeriod((prev) => ({
+                              ...prev,
+                              [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                            }))
+                          }
+                          onSave={(status) => handleSavePeriod(p.period.id, status)}
+                          onDelete={() => handleDeletePeriod(p.period.id)}
+                          onChangeReserve={(value) => {
+                            setReserveDraftByPeriod((prev) => ({ ...prev, [p.period.id]: value }));
+                          }}
+                          saving={saving}
+                        />
+                      ) : (
+                        <MonthlyDreCardPlaceholder label={p.period.label} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
