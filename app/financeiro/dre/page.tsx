@@ -843,6 +843,59 @@ export default function DrePage() {
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
           <div className="flex items-center justify-between mb-3">
             <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Divisão por sócio</p>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Cartões pré-definidos (Vitor, Gabriela, Nelson)
+              </h3>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              { nome: 'Vitor', valor: detail?.metrics.saque.vitor ?? 0 },
+              { nome: 'Gabriela', valor: detail?.metrics.saque.gabriela ?? 0 },
+              { nome: 'Nelson', valor: detail?.metrics.saque.nelson ?? 0 },
+            ].map((socio) => (
+              <div
+                key={socio.nome}
+                className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-4 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{socio.nome}</p>
+                  <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Saque</span>
+                </div>
+                <div className="text-xl font-semibold text-slate-900 dark:text-white">
+                  {formatCurrency(socio.valor)}
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                  <div className="flex justify-between">
+                    <span>Plano de Saúde</span>
+                    <span>{formatCurrency(0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Vales</span>
+                    <span>{formatCurrency(0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Outros Descontos</span>
+                    <span>{formatCurrency(0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Vale Combustível</span>
+                    <span>{formatCurrency(0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Outros Créditos</span>
+                    <span>{formatCurrency(0)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Canais</p>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Resumo por marketplace

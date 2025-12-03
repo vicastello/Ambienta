@@ -62,6 +62,26 @@ export type DrePeriodDetail = {
   channels: DreChannelSummary[];
 };
 
+const DEFAULT_CATEGORY_SEED: DreCategoriesInsert[] = [
+  { code: 'VENDAS', name: 'Vendas', group_type: 'RECEITA', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 10, channel: null, parent_code: null },
+  { code: 'REEMBOLSOS_DEVOLUCOES', name: 'Reembolsos / Devoluções', group_type: 'RECEITA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 20, channel: null, parent_code: null },
+  { code: 'RESSARCIMENTO_DEVOLUCOES', name: 'Ressarcimento de Devoluções', group_type: 'RECEITA', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 30, channel: null, parent_code: null },
+  { code: 'CMV_IMPOSTOS', name: 'CMV + Impostos', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 40, channel: null, parent_code: null },
+  { code: 'TARIFAS_SHOPEE', name: 'Tarifas Shopee', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 50, channel: 'SHOPEE', parent_code: null },
+  { code: 'TARIFAS_MERCADO_LIVRE', name: 'Tarifas Mercado Livre', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 60, channel: 'MERCADO_LIVRE', parent_code: null },
+  { code: 'TARIFAS_MAGALU', name: 'Tarifas Magalu', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 70, channel: 'MAGALU', parent_code: null },
+  { code: 'COOP_FRETES_MAGALU', name: 'Cooparticipação Fretes Magalu', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 80, channel: 'MAGALU', parent_code: null },
+  { code: 'FRETES', name: 'Fretes', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 90, channel: null, parent_code: null },
+  { code: 'CONTADOR', name: 'Contador', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 100, channel: null, parent_code: null },
+  { code: 'OUTROS_CUSTOS', name: 'Outros Custos', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 110, channel: null, parent_code: null },
+  { code: 'SISTEMA_ERP', name: 'Sistema ERP', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 120, channel: null, parent_code: null },
+  { code: 'INTERNET', name: 'Internet', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 130, channel: null, parent_code: null },
+  { code: 'IA', name: 'IA', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 140, channel: null, parent_code: null },
+  { code: 'MARKETING_PUBLICIDADE', name: 'Marketing e Publicidade (Anúncios)', group_type: 'DESPESA_OPERACIONAL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 150, channel: null, parent_code: null },
+  { code: 'MATERIAIS_EMBALAGEM', name: 'Materiais de Embalagem', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 160, channel: null, parent_code: null },
+  { code: 'COMBUSTIVEIS', name: 'Combustíveis', group_type: 'DESPESA_OPERACIONAL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 170, channel: null, parent_code: null },
+];
+
 const MONTH_LABELS = [
   'Janeiro',
   'Fevereiro',
@@ -107,7 +127,15 @@ async function fetchCategories() {
     .order('order_index', { ascending: true })
     .throwOnError();
 
-  return data ?? [];
+  const result = data ?? [];
+  const existingCodes = new Set(result.map((c) => c.code));
+  const missing = DEFAULT_CATEGORY_SEED.filter((c) => !existingCodes.has(c.code));
+  if (missing.length) {
+    await supabaseAdmin.from('dre_categories').insert(missing).throwOnError();
+    return fetchCategories();
+  }
+
+  return result;
 }
 
 async function fetchPeriodById(periodId: string) {
