@@ -193,6 +193,14 @@ export default function DrePage() {
     }));
   }, [periods, yearFilter]);
 
+  const filteredPeriods = useMemo(() => {
+    const base = yearFilter === 'all' ? periods : periods.filter((p) => `${p.period.year}` === yearFilter);
+    return [...base].sort((a, b) => {
+      if (a.period.year !== b.period.year) return b.period.year - a.period.year;
+      return b.period.month - a.period.month;
+    });
+  }, [periods, yearFilter]);
+
   const ensureBasePeriods = useCallback(async () => {
     const now = new Date();
     const year = now.getUTCFullYear();
