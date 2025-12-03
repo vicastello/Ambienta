@@ -100,14 +100,14 @@ const monthBounds = (year: number, month: number) => {
 };
 
 async function fetchCategories() {
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('dre_categories')
     .select('*')
     .order('group_type', { ascending: true })
-    .order('order_index', { ascending: true });
+    .order('order_index', { ascending: true })
+    .throwOnError();
 
-  if (error) throw error;
-  return (data || []) as DreCategoriesRow[];
+  return (data ?? []) as DreCategoriesRow[];
 }
 
 async function fetchPeriodById(periodId: string) {
