@@ -306,10 +306,12 @@ export async function upsertValues(
   const payload: DreValuesInsert[] = values.map((value) => ({
     period_id: periodId,
     category_id: value.categoryId,
+    amount_auto: null,
     amount_manual:
       typeof value.amountManual === 'number' && Number.isFinite(value.amountManual)
         ? value.amountManual
         : value.amountManual ?? null,
+    auto_source: null,
     notes: typeof value.notes === 'string' ? value.notes : null,
   }));
 
