@@ -20,6 +20,8 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  ZoomIn,
+  ZoomOut,
   X,
 } from 'lucide-react';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
@@ -41,6 +43,8 @@ const PRODUTO_CARD_PRESETS = [
 ] as const;
 type ProdutoCardPreset = (typeof PRODUTO_CARD_PRESETS)[number]['id'];
 const DASHBOARD_AUTO_REFRESH_MS = 60_000; // polling leve para dados mais frescos
+const EMPTY_ZOOM_LEVELS: ProdutoZoomLevel[] = [];
+const EMPTY_SERIE: ProdutoSerieDia[] = [];
 
 type DiaResumo = {
   data: string;
@@ -82,6 +86,21 @@ type ProdutoSerieDia = {
   receita: number;
 };
 
+type ProdutoZoomNivel = 'pai' | 'variacao' | 'kit' | 'simples' | 'origem' | 'desconhecido';
+
+type ProdutoZoomLevel = {
+  key: string;
+  produtoId: number | null;
+  sku?: string | null;
+  descricao: string;
+  tipo?: string | null;
+  nivel: ProdutoZoomNivel;
+  childSource?: 'variacoes' | 'kit' | null;
+  quantidade: number;
+  receita: number;
+  serieDiaria?: ProdutoSerieDia[];
+};
+
 type ProdutoResumo = {
   produtoId: number | null;
   sku?: string | null;
@@ -93,6 +112,7 @@ type ProdutoResumo = {
   reservado?: number | null;
   disponivel?: number | null;
   serieDiaria?: ProdutoSerieDia[];
+  zoomLevels?: ProdutoZoomLevel[];
 };
 
 type SituacaoDisponivel = {
@@ -205,6 +225,14 @@ const MARKETPLACE_COLORS: Record<string, string> = {
   Tray: '#5f6bff',
   Tiny: AMBIENTA_PRIMARY,
   Outros: '#94a3b8',
+};
+const ZOOM_NIVEL_LABELS: Record<ProdutoZoomNivel, string> = {
+  pai: 'Kit pai',
+  variacao: 'Variação',
+  kit: 'Kit',
+  simples: 'Simples',
+  origem: 'Origem',
+  desconhecido: 'Outro',
 };
 
 const buildProdutoKey = (produto: ProdutoResumo): string => {
@@ -412,6 +440,7 @@ export default function DashboardClient() {
 
   const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [selectedProdutoKey, setSelectedProdutoKey] = useState<string | null>(null);
+  const [selectedZoomLevelKey, setSelectedZoomLevelKey] = useState<string | null>(null);
   const [produtoCardPreset, setProdutoCardPreset] = useState<ProdutoCardPreset>('30d');
 
   const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
@@ -1281,8 +1310,64 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   const produtoEmFocoKey = produtoEmFoco ? buildProdutoKey(produtoEmFoco) : null;
 
+  useEffect(() => {
+    if (!produtoEmFoco || !produtoEmFoco.zoomLevels?.length) {
+      setSelectedZoomLevelKey(null);
+      return;
+    }
+    setSelectedZoomLevelKey((prev) => {
+      if (prev && produtoEmFoco.zoomLevels?.some((level) => level.key === prev)) {
+        return prev;
+      }
+      return produtoEmFoco.zoomLevels?.[0]?.key ?? null;
+    });
+  }, [produtoEmFoco]);
+
+  const zoomLevelsDisponiveis = produtoEmFoco?.zoomLevels ?? EMPTY_ZOOM_LEVELS;
+  const zoomLevelAtual = useMemo(() => {
+    if (!zoomLevelsDisponiveis.length) return null;
+    if (!selectedZoomLevelKey) return zoomLevelsDisponiveis[0];
+    return (
+      zoomLevelsDisponiveis.find((nivel) => nivel.key === selectedZoomLevelKey) ?? zoomLevelsDisponiveis[0]
+    );
+  }, [selectedZoomLevelKey, zoomLevelsDisponiveis]);
+
+  const zoomIndexAtual = zoomLevelAtual
+    ? zoomLevelsDisponiveis.findIndex((nivel) => nivel.key === zoomLevelAtual.key)
+    : zoomLevelsDisponiveis.length ? 0 : -1;
+  const podeDarZoomOut = zoomLevelsDisponiveis.length > 1 && zoomIndexAtual > 0;
+  const podeDarZoomIn =
+    zoomLevelsDisponiveis.length > 1 &&
+    zoomIndexAtual >= 0 &&
+    zoomIndexAtual < zoomLevelsDisponiveis.length - 1;
+
+  const alterarZoom = useCallback(
+    (direcao: 'in' | 'out') => {
+      if (!zoomLevelsDisponiveis.length) return;
+      const fallbackIndex = Math.max(0, zoomLevelsDisponiveis.findIndex((nivel) => nivel.key === (zoomLevelAtual?.key ?? selectedZoomLevelKey ?? '')));
+      const indexAtual = fallbackIndex >= 0 ? fallbackIndex : 0;
+      const delta = direcao === 'in' ? 1 : -1;
+      const proximoIndex = Math.min(
+        Math.max(0, indexAtual + delta),
+        zoomLevelsDisponiveis.length - 1
+      );
+      setSelectedZoomLevelKey(zoomLevelsDisponiveis[proximoIndex]?.key ?? null);
+    },
+    [zoomLevelAtual?.key, selectedZoomLevelKey, zoomLevelsDisponiveis]
+  );
+
+  const handleZoomIn = useCallback(() => alterarZoom('in'), [alterarZoom]);
+  const handleZoomOut = useCallback(() => alterarZoom('out'), [alterarZoom]);
+
+  const produtoDisplayDescricao = zoomLevelAtual?.descricao ?? produtoEmFoco?.descricao ?? 'Produto sem nome';
+  const produtoDisplaySku = zoomLevelAtual?.sku ?? produtoEmFoco?.sku ?? null;
+  const produtoDisplayQuantidade = zoomLevelAtual?.quantidade ?? produtoEmFoco?.quantidade ?? 0;
+  const produtoDisplayReceita = zoomLevelAtual?.receita ?? produtoEmFoco?.receita ?? 0;
+  const produtoSerieBase = zoomLevelAtual?.serieDiaria ?? produtoEmFoco?.serieDiaria ?? EMPTY_SERIE;
+  const zoomNivelLabel = zoomLevelAtual ? ZOOM_NIVEL_LABELS[zoomLevelAtual.nivel] ?? 'Nível atual' : 'Resumo';
+
   const produtoSerieFiltrada = useMemo(() => {
-    if (!produtoEmFoco?.serieDiaria?.length) return [];
+    if (!produtoSerieBase.length) return [];
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
@@ -1296,13 +1381,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         ? startOfMonth
         : startOfYear;
 
-    const filtrada = produtoEmFoco.serieDiaria.filter((dia) => {
+    const filtrada = produtoSerieBase.filter((dia) => {
       const parsed = new Date(`${dia.data}T00:00:00`);
       if (Number.isNaN(parsed.getTime())) return false;
       return parsed >= cutoff;
     });
     return filtrada.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
-  }, [produtoCardPreset, produtoEmFoco]);
+  }, [produtoCardPreset, produtoSerieBase]);
 
   const produtoSparkData = useMemo(() => {
     if (!produtoSerieFiltrada.length) return [];
@@ -1339,8 +1424,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     }, produtoSerieFiltrada[0]);
   }, [produtoSerieFiltrada]);
 
-  const produtoTicketMedio = produtoEmFoco && produtoEmFoco.quantidade > 0
-    ? produtoEmFoco.receita / produtoEmFoco.quantidade
+  const produtoTicketMedio = produtoDisplayQuantidade > 0
+    ? produtoDisplayReceita / produtoDisplayQuantidade
     : 0;
   const produtoEstoqueDisponivel = produtoEmFoco?.disponivel ?? produtoEmFoco?.saldo ?? null;
   return (
@@ -1875,36 +1960,67 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                         <div className="space-y-4 mb-6">
                           <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                              <div className="space-y-3">
-                                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Produto em foco</p>
-                                <h3 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">
-                                  {produtoEmFoco.descricao}
-                                </h3>
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                  <span className="font-semibold tracking-[0.3em] uppercase">
-                                    {produtoEmFoco.sku ? `SKU ${produtoEmFoco.sku}` : 'Sem SKU'}
-                                  </span>
-                                  <div className="hidden h-4 w-px bg-slate-200/70 dark:bg-white/10 sm:block" />
-                                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
-                                      Saldo:
-                                      <strong className="text-slate-900 dark:text-white">{produtoEmFoco.saldo ?? '—'}</strong>
+                              <div className="flex flex-col gap-4 lg:flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="space-y-3">
+                                    <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Produto em foco</p>
+                                    <h3 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">
+                                      {produtoDisplayDescricao}
+                                    </h3>
+                                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                      <span className="font-semibold tracking-[0.3em] uppercase">
+                                        {produtoDisplaySku ? `SKU ${produtoDisplaySku}` : 'Sem SKU'}
+                                      </span>
+                                      <div className="hidden h-4 w-px bg-slate-200/70 dark:bg-white/10 sm:block" />
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                          Saldo:
+                                          <strong className="text-slate-900 dark:text-white">{produtoEmFoco.saldo ?? '—'}</strong>
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                          Reservado:
+                                          <strong className="text-slate-900 dark:text-white">{produtoEmFoco.reservado ?? '—'}</strong>
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                          Disponível:
+                                          <strong className="text-slate-900 dark:text-white">{produtoEstoqueDisponivel ?? '—'}</strong>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2 text-xs text-slate-500">
+                                    <span className="uppercase tracking-[0.3em] text-[10px] text-slate-400">
+                                      Nível · {zoomNivelLabel}
                                     </span>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
-                                      Reservado:
-                                      <strong className="text-slate-900 dark:text-white">{produtoEmFoco.reservado ?? '—'}</strong>
-                                    </span>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
-                                      Disponível:
-                                      <strong className="text-slate-900 dark:text-white">{produtoEstoqueDisponivel ?? '—'}</strong>
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={handleZoomOut}
+                                        disabled={!podeDarZoomOut}
+                                        className="p-2 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:border-[#009DA8] hover:text-[#009DA8] transition"
+                                        aria-label="Zoom out"
+                                        title="Mostrar nível mais agregado"
+                                      >
+                                        <ZoomOut className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={handleZoomIn}
+                                        disabled={!podeDarZoomIn}
+                                        className="p-2 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:border-[#009DA8] hover:text-[#009DA8] transition"
+                                        aria-label="Zoom in"
+                                        title="Detalhar para variação/SKU"
+                                      >
+                                        <ZoomIn className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                               {produtoEmFoco.imagemUrl ? (
                                 <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-white/60 dark:border-white/10 flex-shrink-0">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={produtoEmFoco.imagemUrl} alt={produtoEmFoco.descricao} className="w-full h-full object-cover" />
+                                  <img src={produtoEmFoco.imagemUrl} alt={produtoDisplayDescricao} className="w-full h-full object-cover" />
                                 </div>
                               ) : null}
                             </div>
@@ -1912,12 +2028,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                                 <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
                                   <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Receita</p>
-                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.receita)}</p>
+                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoDisplayReceita)}</p>
                                 </div>
                                 <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
                                   <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Unidades</p>
                                   <p className="text-2xl font-semibold text-slate-900 dark:text-white">
-                                    {produtoEmFoco.quantidade.toLocaleString('pt-BR')} un
+                                    {produtoDisplayQuantidade.toLocaleString('pt-BR')} un
                                   </p>
                                 </div>
                                 <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
