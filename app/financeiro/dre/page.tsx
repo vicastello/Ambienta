@@ -1014,8 +1014,8 @@ function MonthlyDreCard({
     return (
       <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
         {iconEl && (
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-[10px] text-slate-700 dark:border-white/30 dark:text-white/80">
-            {iconEl}
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-[10px] text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0">
+            <span className="flex items-center justify-center">{iconEl}</span>
           </span>
         )}
         <span className="leading-tight">{text}</span>
