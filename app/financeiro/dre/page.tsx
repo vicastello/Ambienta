@@ -7,6 +7,7 @@ import {
   Download,
   Equal,
   Info,
+  Edit3,
   Loader2,
   Minus,
   Plus,
@@ -171,13 +172,23 @@ export default function DrePage() {
   const [targetMargin, setTargetMargin] = useState<number | null>(null);
   const [reservePercent, setReservePercent] = useState<number | null>(null);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
+  const seededBasePeriods = useRef(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
     sign: 'SAIDA',
     group_type: 'OUTROS',
     channel: '',
+    destination: 'RECEITA_OPERACAO',
   });
   const [errorMessage, setErrorMessage] = useState('');
+
+  const DESTINATION_OPTIONS = [
+    { value: 'RECEITA_OPERACAO', label: 'Receita / Operação', group_type: 'RECEITA' },
+    { value: 'DESPESAS', label: 'Despesas', group_type: 'DESPESA_OPERACIONAL' },
+    { value: 'VITOR', label: 'Vitor', group_type: 'OUTROS' },
+    { value: 'GABRIELA', label: 'Gabriela', group_type: 'OUTROS' },
+    { value: 'NELSON', label: 'Nelson', group_type: 'OUTROS' },
+  ] as const;
 
   const chartData = useMemo(() => {
     const base = yearFilter === 'all' ? periods : periods.filter((p) => `${p.period.year}` === yearFilter);
@@ -229,7 +240,10 @@ export default function DrePage() {
     setLoading(true);
     setErrorMessage('');
     try {
-      await ensureBasePeriods();
+      if (!seededBasePeriods.current) {
+        await ensureBasePeriods();
+        seededBasePeriods.current = true;
+      }
       const res = await fetch('/api/dre/periods', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao buscar períodos');
@@ -336,6 +350,44 @@ export default function DrePage() {
     }
   };
 
+  const handleDeletePeriod = async (periodId: string) => {
+    if (!periodId) return;
+    setSaving(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch(`/api/dre/periods/${periodId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Erro ao excluir mês');
+
+      setPeriodDetails((prev) => {
+        const next = { ...prev };
+        delete next[periodId];
+        return next;
+      });
+      setValuesDraftByPeriod((prev) => {
+        const next = { ...prev };
+        delete next[periodId];
+        return next;
+      });
+
+      const remaining = periods.filter((p) => p.period.id !== periodId);
+      setPeriods(remaining);
+      if (selectedPeriodId === periodId) {
+        if (remaining.length) {
+          setSelectedPeriodId(remaining[0].period.id);
+        } else {
+          setSelectedPeriodId(null);
+          setDetail(null);
+        }
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error) || 'Falha ao excluir mês.');
+    } finally {
+      setSaving(false);
+    }
+    await loadPeriods();
+  };
+
   const handleSavePeriod = async (periodId: string, status?: 'draft' | 'closed') => {
     const draft = valuesDraftByPeriod[periodId];
     if (!draft) return;
@@ -379,20 +431,32 @@ export default function DrePage() {
 
   const handleAddCategory = async () => {
     try {
+      const dest = DESTINATION_OPTIONS.find((opt) => opt.value === newCategory.destination);
+      if (!dest) {
+        setErrorMessage('Selecione onde a linha deve aparecer.');
+        return;
+      }
       const res = await fetch('/api/dre/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCategory.name,
           sign: newCategory.sign,
-          group_type: newCategory.group_type,
+          group_type: dest.group_type,
           channel: newCategory.channel || null,
+          parent_code: dest.value,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao criar categoria');
       setAddCategoryOpen(false);
-      setNewCategory({ name: '', sign: 'SAIDA', group_type: 'OUTROS', channel: '' });
+      setNewCategory({
+        name: '',
+        sign: 'SAIDA',
+        group_type: 'OUTROS',
+        channel: '',
+        destination: 'RECEITA_OPERACAO',
+      });
       if (selectedPeriodId) {
         await loadDetail(selectedPeriodId);
       }
@@ -526,12 +590,12 @@ export default function DrePage() {
           </div>
         </section>
 
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Períodos</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Meses recentes (clique para abrir)
+                Resumo completo por mês (linhas fixas)
               </h3>
             </div>
             <div className="flex items-center gap-3">
@@ -548,42 +612,8 @@ export default function DrePage() {
                 ))}
               </select>
               <button className="app-btn-ghost inline-flex items-center gap-2" onClick={loadPeriods}>
-                <RefreshCw className="w-4 h-4" /> Atualizar lista
+                <RefreshCw className="w-4 h-4" /> Atualizar
               </button>
-            </div>
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {filteredPeriods.map((item) => (
-              <button
-                key={item.period.id}
-                onClick={() => setSelectedPeriodId(item.period.id)}
-                className={`min-w-[200px] rounded-2xl border px-4 py-3 text-left transition ${
-                  selectedPeriodId === item.period.id
-                    ? 'border-cyan-500 bg-white/80 shadow-lg'
-                    : 'border-white/40 bg-white/50 dark:bg-white/5'
-                }`}
-              >
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {item.period.label}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Margem Líquida {formatPercent(item.metrics.margemLiquida)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Lucro Líquido {formatCurrency(item.metrics.lucroLiquido)}
-                </p>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Resumo completo por mês (linhas fixas)
-              </h3>
             </div>
           </div>
           {!filteredPeriods.length ? (
@@ -592,30 +622,103 @@ export default function DrePage() {
               CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
             </div>
           ) : (
-            <div className="grid gap-5 xl:grid-cols-2">
+            <div className="flex overflow-x-auto pb-4 snap-x snap-mandatory -mx-2">
               {filteredPeriods.map((p) => {
                 const detailData = periodDetails[p.period.id];
                 const draftData = valuesDraftByPeriod[p.period.id] || {};
-                return detailData ? (
-                  <MonthlyDreCard
+                return (
+                  <div
                     key={p.period.id}
-                    detail={detailData}
-                    draft={draftData}
-                    onChangeValue={(categoryId, value) =>
-                      setValuesDraftByPeriod((prev) => ({
-                        ...prev,
-                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
-                      }))
-                    }
-                    onSave={(status) => handleSavePeriod(p.period.id, status)}
-                    saving={saving}
-                  />
-                ) : (
-                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
+                    className="snap-start flex-none w-full md:w-1/2 px-2"
+                  >
+                    {detailData ? (
+                      <MonthlyDreCard
+                        detail={detailData}
+                        draft={draftData}
+                        onChangeValue={(categoryId, value) =>
+                          setValuesDraftByPeriod((prev) => ({
+                            ...prev,
+                            [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                          }))
+                        }
+                        onSave={(status) => handleSavePeriod(p.period.id, status)}
+                        onDelete={() => handleDeletePeriod(p.period.id)}
+                        saving={saving}
+                      />
+                    ) : (
+                      <MonthlyDreCardPlaceholder label={p.period.label} />
+                    )}
+                  </div>
                 );
               })}
             </div>
           )}
+        </section>
+
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6 space-y-4">
+          <div className="border-t border-white/30 pt-4 flex flex-col gap-3">
+            <button
+              onClick={() => setAddCategoryOpen((prev) => !prev)}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-700"
+            >
+              <Plus className="w-4 h-4" /> Adicionar linha
+            </button>
+            {addCategoryOpen && (
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <input
+                  className="app-input w-full"
+                  placeholder="Nome"
+                  value={newCategory.name}
+                  onChange={(e) => setNewCategory((prev) => ({ ...prev, name: e.target.value }))}
+                />
+                <select
+                  className="app-input w-full"
+                  value={newCategory.sign}
+                  onChange={(e) => setNewCategory((prev) => ({ ...prev, sign: e.target.value }))}
+                >
+                  <option value="SAIDA">Saída</option>
+                  <option value="ENTRADA">Entrada</option>
+                </select>
+                <select
+                  className="app-input w-full"
+                  value={newCategory.destination}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const dest = DESTINATION_OPTIONS.find((opt) => opt.value === value);
+                    setNewCategory((prev) => ({
+                      ...prev,
+                      destination: value,
+                      group_type: dest?.group_type ?? prev.group_type,
+                    }));
+                  }}
+                >
+                  {DESTINATION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="app-input w-full"
+                  value={newCategory.channel}
+                  onChange={(e) => setNewCategory((prev) => ({ ...prev, channel: e.target.value }))}
+                >
+                  <option value="">Nenhum canal</option>
+                  <option value="SHOPEE">Shopee</option>
+                  <option value="MERCADO_LIVRE">Mercado Livre</option>
+                  <option value="MAGALU">Magalu</option>
+                </select>
+                <div className="md:col-span-2">
+                  <button
+                    onClick={handleAddCategory}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-emerald-500/30"
+                  >
+                    <Plus className="w-4 h-4" /> Salvar categoria
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-5">
@@ -676,64 +779,6 @@ export default function DrePage() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
-        </section>
-
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6 space-y-4">
-          <div className="border-t border-white/30 pt-4 flex flex-col gap-3">
-            <button
-              onClick={() => setAddCategoryOpen((prev) => !prev)}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-700"
-            >
-              <Plus className="w-4 h-4" /> Adicionar linha
-            </button>
-            {addCategoryOpen && (
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <input
-                  className="app-input w-full"
-                  placeholder="Nome"
-                  value={newCategory.name}
-                  onChange={(e) => setNewCategory((prev) => ({ ...prev, name: e.target.value }))}
-                />
-                <select
-                  className="app-input w-full"
-                  value={newCategory.sign}
-                  onChange={(e) => setNewCategory((prev) => ({ ...prev, sign: e.target.value }))}
-                >
-                  <option value="SAIDA">Saída</option>
-                  <option value="ENTRADA">Entrada</option>
-                </select>
-                <select
-                  className="app-input w-full"
-                  value={newCategory.group_type}
-                  onChange={(e) => setNewCategory((prev) => ({ ...prev, group_type: e.target.value }))}
-                >
-                  {GROUP_ORDER.map((group) => (
-                    <option key={group} value={group}>
-                      {GROUP_LABELS[group]}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="app-input w-full"
-                  value={newCategory.channel}
-                  onChange={(e) => setNewCategory((prev) => ({ ...prev, channel: e.target.value }))}
-                >
-                  <option value="">Nenhum canal</option>
-                  <option value="SHOPEE">Shopee</option>
-                  <option value="MERCADO_LIVRE">Mercado Livre</option>
-                  <option value="MAGALU">Magalu</option>
-                </select>
-                <div className="md:col-span-2">
-                  <button
-                    onClick={handleAddCategory}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-emerald-500/30"
-                  >
-                    <Plus className="w-4 h-4" /> Salvar categoria
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </section>
 
@@ -860,7 +905,8 @@ type MonthlyDreCardProps = {
   detail: DreDetail;
   draft: Record<string, number | null>;
   onChangeValue: (categoryId: string, value: number | null) => void;
-  onSave: (status?: 'draft' | 'closed') => void;
+  onSave: (status?: 'draft' | 'closed') => Promise<void> | void;
+  onDelete: () => Promise<void> | void;
   saving: boolean;
 };
 
@@ -869,10 +915,12 @@ function MonthlyDreCard({
   draft,
   onChangeValue,
   onSave,
+  onDelete,
   saving,
 }: MonthlyDreCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const handleExport = async () => {
     if (!cardRef.current) return;
@@ -882,6 +930,12 @@ function MonthlyDreCard({
       const dataUrl = await toPng(cardRef.current, {
         cacheBust: true,
         backgroundColor: '#ffffff',
+        filter: (node) => {
+          if (node instanceof HTMLElement) {
+            return node.dataset.ignoreExport !== 'true';
+          }
+          return true;
+        },
       });
       const link = document.createElement('a');
       link.download = `dre-${detail.period.label.replace(/\s+/g, '-').toLowerCase()}.png`;
@@ -900,6 +954,46 @@ function MonthlyDreCard({
     });
     return map;
   }, [detail.categories]);
+
+  const defaultCodes = useMemo(
+    () =>
+      new Set<string>([
+        'VENDAS',
+        'REEMBOLSOS_DEVOLUCOES',
+        'RESSARCIMENTO_DEVOLUCOES',
+        'CMV_IMPOSTOS',
+        'TARIFAS_SHOPEE',
+        'TARIFAS_MERCADO_LIVRE',
+        'TARIFAS_MAGALU',
+        'COOP_FRETES_MAGALU',
+        'FRETES',
+        'CONTADOR',
+        'OUTROS_CUSTOS',
+        'DESPESAS_OPERACIONAIS',
+        'SISTEMA_ERP',
+        'INTERNET',
+        'IA',
+        'MARKETING_PUBLICIDADE',
+        'MATERIAIS_EMBALAGEM',
+        'COMBUSTIVEIS',
+        'PLANO_SAUDE_VITOR',
+        'VALES_VITOR',
+        'OUTROS_DESCONTOS_VITOR',
+        'VALE_COMBUSTIVEL_VITOR',
+        'OUTROS_CREDITOS_VITOR',
+        'PLANO_SAUDE_GABRIELA',
+        'VALES_GABRIELA',
+        'OUTROS_DESCONTOS_GABRIELA',
+        'VALE_COMBUSTIVEL_GABRIELA',
+        'OUTROS_CREDITOS_GABRIELA',
+        'PLANO_SAUDE_NELSON',
+        'VALES_NELSON',
+        'OUTROS_DESCONTOS_NELSON',
+        'VALE_COMBUSTIVEL_NELSON',
+        'OUTROS_CREDITOS_NELSON',
+      ]),
+    []
+  );
 
   const getAmount = (code: string) => {
     const catId = codeToId[code];
@@ -936,6 +1030,12 @@ function MonthlyDreCard({
     { code: 'MATERIAIS_EMBALAGEM', label: '(-) Materiais de Embalagem' },
     { code: 'COMBUSTIVEIS', label: '(-) Combustíveis' },
   ];
+  const customRows = detail.categories.filter((c) => !defaultCodes.has(c.category.code));
+  const customReceitaRows = customRows.filter((c) => c.category.parent_code === 'RECEITA_OPERACAO');
+  const customDespesasRows = customRows.filter((c) => c.category.parent_code === 'DESPESAS');
+  const customVitorRows = customRows.filter((c) => c.category.parent_code === 'VITOR');
+  const customGabRows = customRows.filter((c) => c.category.parent_code === 'GABRIELA');
+  const customNelsonRows = customRows.filter((c) => c.category.parent_code === 'NELSON');
 
   const receitaLiquida =
     getAmount('VENDAS') - getAmount('REEMBOLSOS_DEVOLUCOES') + getAmount('RESSARCIMENTO_DEVOLUCOES');
@@ -1004,16 +1104,12 @@ function MonthlyDreCard({
 
     return (
       <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 leading-none">
-        {icon ? (
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 bg-white/70 dark:bg-white/5 text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0 leading-none">
-            {icon === 'plus' ? (
-              <Plus className="w-3 h-3" strokeWidth={2} />
-            ) : icon === 'minus' ? (
-              <Minus className="w-3 h-3" strokeWidth={2} />
-            ) : (
-              <Equal className="w-3 h-3" strokeWidth={2} />
-            )}
-          </span>
+        {icon === 'plus' ? (
+          <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={2} />
+        ) : icon === 'minus' ? (
+          <Minus className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" strokeWidth={2} />
+        ) : icon === 'equal' ? (
+          <Equal className="w-3.5 h-3.5 text-slate-500 dark:text-slate-300" strokeWidth={2} />
         ) : null}
         <span className="leading-tight">{text}</span>
       </span>
@@ -1025,18 +1121,27 @@ function MonthlyDreCard({
     return (
       <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
         <div className="flex-1 text-slate-700 dark:text-slate-200">{renderLabelWithIcon(label)}</div>
-        <input
-          type="number"
-          step="0.01"
-          className="app-input w-[120px] text-right font-semibold"
-          value={Number.isFinite(amount) ? amount : 0}
-          onChange={(e) => {
-            const value = e.target.value === '' ? null : Number(e.target.value);
-            const catId = codeToId[code];
-            if (!catId) return;
-            onChangeValue(catId, value);
-          }}
-        />
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-slate-500">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              className="app-input w-[120px] text-right font-semibold"
+              value={Number.isFinite(amount) ? amount : 0}
+              onChange={(e) => {
+                const value = e.target.value === '' ? null : Number(e.target.value);
+                const catId = codeToId[code];
+                if (!catId) return;
+                onChangeValue(catId, value);
+              }}
+            />
+          </div>
+        ) : (
+          <div className="w-[140px] text-right font-semibold text-slate-700 dark:text-slate-200">
+            {formatCurrency(amount)}
+          </div>
+        )}
         <div className="w-16 text-right text-xs text-slate-500">
           {showPercent ? `${percent(amount).toFixed(2)}%` : '—'}
         </div>
@@ -1052,28 +1157,54 @@ function MonthlyDreCard({
   );
 
   return (
-    <div className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-5 space-y-2 shadow-sm">
+    <div
+      ref={cardRef}
+      className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-5 space-y-2 shadow-sm"
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Mês</p>
           <h4 className="text-lg font-semibold text-slate-900 dark:text-white">{detail.period.label}</h4>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2" data-ignore-export="true">
           <button
-            className="app-btn-ghost inline-flex items-center gap-2 text-xs"
-            onClick={handleExport}
-            disabled={exporting}
+            className="app-btn-ghost inline-flex items-center justify-center h-9 w-9 p-0 text-xs text-rose-600"
+            onClick={async () => {
+              const confirmDelete = window.confirm('Excluir este mês? Esta ação não pode ser desfeita.');
+              if (!confirmDelete) return;
+              await onDelete();
+            }}
+            disabled={saving}
+            title="Excluir mês"
           >
-            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Exportar PNG
+            <Minus className="w-4 h-4" />
           </button>
           <button
-            className="app-btn-primary inline-flex items-center gap-2 text-xs"
-            onClick={() => onSave('draft')}
+            className="app-btn-ghost inline-flex items-center justify-center h-9 w-9 p-0 text-xs"
+            onClick={handleExport}
+            disabled={exporting}
+            title="Exportar PNG"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          </button>
+          <button
+            className="app-btn-ghost inline-flex items-center justify-center h-9 w-9 p-0 text-xs"
+            onClick={() => setEditing(true)}
+            disabled={editing}
+            title="Editar"
+          >
+            <Edit3 className="w-4 h-4" />
+          </button>
+          <button
+            className="app-btn-primary inline-flex items-center justify-center h-9 w-9 p-0 text-xs"
+            onClick={async () => {
+              await onSave('draft');
+              setEditing(false);
+            }}
             disabled={saving}
+            title="Salvar"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            Salvar
           </button>
         </div>
       </div>
@@ -1084,6 +1215,15 @@ function MonthlyDreCard({
           {receitaRows.map((row) => (
             <div key={row.code}>{editableRow(row.code, row.label, true)}</div>
           ))}
+          {customReceitaRows.map((row) => (
+            <div key={row.category.id}>
+              {editableRow(
+                row.category.code,
+                `${row.category.sign === 'ENTRADA' ? '(+)' : '(-)'} ${row.category.name}`,
+                true
+              )}
+            </div>
+          ))}
         </div>
         {computedRow('Lucro Bruto', lucroBruto)}
       </div>
@@ -1093,6 +1233,15 @@ function MonthlyDreCard({
         <div className="divide-y divide-slate-200/60 dark:divide-white/10">
           {despesasRows.map((row) => (
             <div key={row.code}>{editableRow(row.code, row.label, true)}</div>
+          ))}
+          {customDespesasRows.map((row) => (
+            <div key={row.category.id}>
+              {editableRow(
+                row.category.code,
+                `${row.category.sign === 'ENTRADA' ? '(+)' : '(-)'} ${row.category.name}`,
+                true
+              )}
+            </div>
           ))}
         </div>
         {computedRow('Lucro Líquido', lucroLiquido)}
@@ -1116,6 +1265,15 @@ function MonthlyDreCard({
           {editableRow('OUTROS_DESCONTOS_VITOR', '(-) Outros Descontos', false)}
           {editableRow('VALE_COMBUSTIVEL_VITOR', '(+) Vale Combustível', false)}
           {editableRow('OUTROS_CREDITOS_VITOR', '(+) Outros Créditos', false)}
+          {customVitorRows.map((row) => (
+            <div key={row.category.id}>
+              {editableRow(
+                row.category.code,
+                `${row.category.sign === 'ENTRADA' ? '(+)' : '(-)'} ${row.category.name}`,
+                false
+              )}
+            </div>
+          ))}
         </div>
         {computedRow('(=) Total Vitor', vitorTotal)}
       </div>
@@ -1128,6 +1286,15 @@ function MonthlyDreCard({
           {editableRow('OUTROS_DESCONTOS_GABRIELA', '(-) Outros Descontos', false)}
           {editableRow('VALE_COMBUSTIVEL_GABRIELA', '(+) Vale Combustível', false)}
           {editableRow('OUTROS_CREDITOS_GABRIELA', '(+) Outros Créditos', false)}
+          {customGabRows.map((row) => (
+            <div key={row.category.id}>
+              {editableRow(
+                row.category.code,
+                `${row.category.sign === 'ENTRADA' ? '(+)' : '(-)'} ${row.category.name}`,
+                false
+              )}
+            </div>
+          ))}
         </div>
         {computedRow('(=) Total Gabriela', gabTotal)}
       </div>
@@ -1140,6 +1307,15 @@ function MonthlyDreCard({
           {editableRow('OUTROS_DESCONTOS_NELSON', '(-) Outros Descontos', false)}
           {editableRow('VALE_COMBUSTIVEL_NELSON', '(+) Vale Combustível', false)}
           {editableRow('OUTROS_CREDITOS_NELSON', '(+) Outros Créditos', false)}
+          {customNelsonRows.map((row) => (
+            <div key={row.category.id}>
+              {editableRow(
+                row.category.code,
+                `${row.category.sign === 'ENTRADA' ? '(+)' : '(-)'} ${row.category.name}`,
+                false
+              )}
+            </div>
+          ))}
         </div>
         {computedRow('(=) Total Nelson', nelsonTotal)}
       </div>

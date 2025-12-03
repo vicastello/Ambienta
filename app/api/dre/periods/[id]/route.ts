@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getErrorMessage } from '@/lib/errors';
 import {
   getPeriodDetail,
+  deletePeriod,
   updatePeriod,
   upsertValues,
 } from '@/src/repositories/dreRepository';
@@ -75,6 +76,21 @@ export async function PUT(req: NextRequest, ctx: Params) {
   } catch (error) {
     const message = getErrorMessage(error) || 'Erro ao atualizar o período da DRE.';
     console.error('[API DRE][PUT /periods/:id]', error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: NextRequest, ctx: Params) {
+  try {
+    const { id } = await unwrapParams(ctx.params);
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: 'ID do período inválido.' }, { status: 400 });
+    }
+    await deletePeriod(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = getErrorMessage(error) || 'Erro ao excluir o período da DRE.';
+    console.error('[API DRE][DELETE /periods/:id]', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

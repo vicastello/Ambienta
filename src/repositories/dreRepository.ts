@@ -529,3 +529,8 @@ export async function suggestAutoValuesForPeriod(periodId: string) {
   const channels = computeChannelSummary(ordersData ?? []);
   return getPeriodDetail(periodId).then((detail) => ({ ...detail, channels }));
 }
+
+export async function deletePeriod(periodId: string) {
+  const { error } = await supabaseAdmin.from('dre_periods').delete().eq('id', periodId);
+  if (error) throw error;
+}
