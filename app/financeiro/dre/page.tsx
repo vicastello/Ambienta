@@ -467,7 +467,7 @@ export default function DrePage() {
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <select
-                  className="rounded-2xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40 shadow-sm"
+                  className="app-input w-28"
                   value={monthInput}
                   onChange={(e) => setMonthInput(Number(e.target.value))}
                 >
@@ -479,7 +479,7 @@ export default function DrePage() {
                 </select>
                 <input
                   type="number"
-                  className="w-24 rounded-2xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40 shadow-sm"
+                  className="app-input w-28"
                   value={yearInput}
                   onChange={(e) => setYearInput(Number(e.target.value))}
                 />
@@ -533,7 +533,7 @@ export default function DrePage() {
               <input
                 type="number"
                 step="0.01"
-                className="w-24 rounded-xl bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold border border-white/40"
+                className="app-input w-28 text-right font-semibold"
                 value={targetMargin ?? ''}
                 onChange={(e) => setTargetMargin(e.target.value === '' ? null : Number(e.target.value))}
               />
@@ -543,7 +543,7 @@ export default function DrePage() {
               <input
                 type="number"
                 step="0.01"
-                className="w-24 rounded-xl bg-white/70 dark:bg-white/5 px-3 py-2 text-sm font-semibold border border-white/40"
+                className="app-input w-28 text-right font-semibold"
                 value={reservePercent ?? ''}
                 onChange={(e) =>
                   setReservePercent(e.target.value === '' ? null : Number(e.target.value))
@@ -564,7 +564,7 @@ export default function DrePage() {
             </div>
             <div className="flex items-center gap-3">
               <select
-                className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                className="app-input w-32"
                 value={yearFilter}
                 onChange={(e) => setYearFilter(e.target.value)}
               >
@@ -680,13 +680,13 @@ export default function DrePage() {
             {addCategoryOpen && (
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 <input
-                  className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                  className="app-input w-full"
                   placeholder="Nome"
                   value={newCategory.name}
                   onChange={(e) => setNewCategory((prev) => ({ ...prev, name: e.target.value }))}
                 />
                 <select
-                  className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                  className="app-input w-full"
                   value={newCategory.sign}
                   onChange={(e) => setNewCategory((prev) => ({ ...prev, sign: e.target.value }))}
                 >
@@ -694,7 +694,7 @@ export default function DrePage() {
                   <option value="ENTRADA">Entrada</option>
                 </select>
                 <select
-                  className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                  className="app-input w-full"
                   value={newCategory.group_type}
                   onChange={(e) => setNewCategory((prev) => ({ ...prev, group_type: e.target.value }))}
                 >
@@ -705,7 +705,7 @@ export default function DrePage() {
                   ))}
                 </select>
                 <select
-                  className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                  className="app-input w-full"
                   value={newCategory.channel}
                   onChange={(e) => setNewCategory((prev) => ({ ...prev, channel: e.target.value }))}
                 >
@@ -1009,7 +1009,7 @@ function MonthlyDreCard({
           <input
             type="number"
             step="0.01"
-            className="w-full rounded-xl border border-white/30 bg-white/70 dark:bg-white/5 px-3 py-1.5 text-right font-semibold text-slate-900 dark:text-white"
+            className="app-input w-full text-right font-semibold"
             value={Number.isFinite(amount) ? amount : 0}
             onChange={(e) => {
               const value = e.target.value === '' ? null : Number(e.target.value);
