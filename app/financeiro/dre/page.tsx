@@ -798,9 +798,8 @@ export default function DrePage() {
           </div>
           {!filteredPeriods.length ? (
             <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
-              Nenhum período carregado ainda. Crie/abra um mês acima e os cartões do modelo (Vendas,
-              Reembolsos, CMV, tarifas, fretes, despesas e saques por sócio) aparecem aqui um ao lado
-              do outro.
+              Nenhum período carregado ainda. Crie/abra um mês acima para ver os cartões (Vendas,
+              CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
             </div>
           ) : (
             <div className="grid gap-5 xl:grid-cols-2">
@@ -1130,7 +1129,6 @@ function MonthlyDreCard({
     </div>
   );
 }
-
 function MonthlyDreCardPlaceholder({ label }: { label: string }) {
   const placeholderRows = [
     'Vendas',
