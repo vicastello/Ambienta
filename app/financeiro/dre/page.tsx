@@ -2,11 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  ArrowDownRight,
   ArrowUpRight,
   CheckCircle,
-  ChevronDown,
-  ChevronUp,
   Info,
   Loader2,
   Plus,
@@ -131,15 +128,6 @@ const GROUP_ORDER: GroupKey[] = [
   'OUTROS',
 ];
 
-const HELP_TEXTS: Record<string, string> = {
-  VENDAS: 'Vendas brutas do Tiny (orders_metrics.total_bruto).',
-  FRETES: 'Fretes cobrados/pagos (orders_metrics.total_frete).',
-  REEMBOLSOS_DEVOLUCOES: 'Devoluções/Reembolsos (informar valor positivo que será subtraído).',
-  RESSARCIMENTO_DEVOLUCOES: 'Valores devolvidos pela plataforma referentes às devoluções.',
-  CMV_IMPOSTOS: 'Custo da mercadoria vendida + impostos vinculados.',
-  MARKETING_PUBLICIDADE: 'Investimento em anúncios; separar por canal futuramente.',
-};
-
 const formatCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 
@@ -167,23 +155,19 @@ export default function DrePage() {
   const [periods, setPeriods] = useState<DrePeriodSummary[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DreDetail | null>(null);
-  const [periodDetails, setPeriodDetails] = useState<Record<string, DreDetail>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [yearInput, setYearInput] = useState(now.getUTCFullYear());
   const [monthInput, setMonthInput] = useState(now.getUTCMonth() + 1);
-  const [valuesDraft, setValuesDraft] = useState<Record<string, number | null>>({});
+  const [valuesDraftByPeriod, setValuesDraftByPeriod] = useState<
+    Record<string, Record<string, number | null>>
+  >({});
+  const [periodDetails, setPeriodDetails] = useState<Record<string, DreDetail>>({});
+  const [yearFilter, setYearFilter] = useState<string>('all');
   const [targetMargin, setTargetMargin] = useState<number | null>(null);
   const [reservePercent, setReservePercent] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState<Record<GroupKey, boolean>>({
-    RECEITA: false,
-    CUSTO_VARIAVEL: false,
-    DESPESA_FIXA: false,
-    DESPESA_OPERACIONAL: false,
-    OUTROS: false,
-  });
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -193,10 +177,13 @@ export default function DrePage() {
   });
   const [errorMessage, setErrorMessage] = useState('');
 
-  const vendasDoPeriodo = detail?.metrics.vendas ?? 0;
-
   const chartData = useMemo(() => {
-    const slice = periods.slice(0, 12).reverse();
+    const base = yearFilter === 'all' ? periods : periods.filter((p) => `${p.period.year}` === yearFilter);
+    const sorted = [...base].sort((a, b) => {
+      if (a.period.year !== b.period.year) return b.period.year - a.period.year;
+      return b.period.month - a.period.month;
+    });
+    const slice = sorted.slice(0, 12).reverse();
     return slice.map((item) => ({
       name: `${monthName(item.period.month)}/${item.period.year}`,
       vendas: item.metrics.vendas,
@@ -204,7 +191,7 @@ export default function DrePage() {
       lucroLiquido: item.metrics.lucroLiquido,
       margemLiquida: Number((item.metrics.margemLiquida * 100).toFixed(2)),
     }));
-  }, [periods]);
+  }, [periods, yearFilter]);
 
   const ensureBasePeriods = useCallback(async () => {
     const now = new Date();
@@ -245,7 +232,7 @@ export default function DrePage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPeriodId]);
+  }, [ensureBasePeriods, selectedPeriodId]);
 
   const loadDetail = async (id: string | null) => {
     if (!id) return;
@@ -256,14 +243,14 @@ export default function DrePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao carregar período');
       setDetail(data);
+      setPeriodDetails((prev) => ({ ...prev, [id]: data }));
       setTargetMargin(data.period.target_net_margin ?? null);
       setReservePercent(data.period.reserve_percent ?? 0.1);
       const nextDraft: Record<string, number | null> = {};
       data.categories.forEach((item: DreCategoryValue) => {
-        nextDraft[item.category.id] =
-          item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
+        nextDraft[item.category.id] = item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
       });
-      setValuesDraft(nextDraft);
+      setValuesDraftByPeriod((prev) => ({ ...prev, [id]: nextDraft }));
     } catch (error) {
       setErrorMessage(getErrorMessage(error) || 'Falha ao carregar detalhes.');
     } finally {
@@ -300,6 +287,12 @@ export default function DrePage() {
         results.forEach((entry) => {
           if (entry?.id && entry.data?.period) {
             next[entry.id] = entry.data as DreDetail;
+            const draft: Record<string, number | null> = {};
+            (entry.data as DreDetail).categories.forEach((item: DreCategoryValue) => {
+              draft[item.category.id] =
+                item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
+            });
+            setValuesDraftByPeriod((prevDraft) => ({ ...prevDraft, [entry.id!]: draft }));
           }
         });
         return next;
@@ -333,29 +326,39 @@ export default function DrePage() {
     }
   };
 
-  const handleSave = async (status?: 'draft' | 'closed') => {
-    if (!detail) return;
+  const handleSavePeriod = async (periodId: string, status?: 'draft' | 'closed') => {
+    const draft = valuesDraftByPeriod[periodId];
+    if (!draft) return;
     setSaving(true);
-      setErrorMessage('');
-      try {
-        const valuesPayload = Object.entries(valuesDraft).map(([categoryId, amountManual]) => ({
-          categoryId,
-          amountManual: amountManual === null ? null : amountManual,
-        }));
-
-      const res = await fetch(`/api/dre/periods/${detail.period.id}`, {
+    setErrorMessage('');
+    try {
+      const valuesPayload = Object.entries(draft).map(([categoryId, amountManual]) => ({
+        categoryId,
+        amountManual: amountManual === null ? null : amountManual,
+      }));
+      const res = await fetch(`/api/dre/periods/${periodId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: status ?? detail.period.status,
-          target_net_margin: targetMargin,
-          reserve_percent: reservePercent,
+          status,
           values: valuesPayload,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao salvar DRE');
-      setDetail(data);
+      setPeriodDetails((prev) => ({ ...prev, [periodId]: data }));
+      if (selectedPeriodId === periodId) {
+        setDetail(data);
+        setTargetMargin(data.period.target_net_margin ?? null);
+        setReservePercent(data.period.reserve_percent ?? null);
+      }
+      setValuesDraftByPeriod((prev) => ({
+        ...prev,
+        [periodId]: data.categories.reduce((acc: Record<string, number | null>, item: DreCategoryValue) => {
+          acc[item.category.id] = item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
+          return acc;
+        }, {}),
+      }));
       await loadPeriods();
     } catch (error) {
       setErrorMessage(getErrorMessage(error) || 'Falha ao salvar DRE.');
@@ -364,23 +367,28 @@ export default function DrePage() {
     }
   };
 
-  const handleSuggestAuto = async () => {
-    if (!detail) return;
+  const handleSuggestPeriod = async (periodId: string) => {
     setSuggesting(true);
     setErrorMessage('');
     try {
-      const res = await fetch(`/api/dre/periods/${detail.period.id}/suggest-auto`, {
+      const res = await fetch(`/api/dre/periods/${periodId}/suggest-auto`, {
         method: 'POST',
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Erro ao sugerir valores');
-      setDetail(data);
-      const nextDraft: Record<string, number | null> = {};
-      data.categories.forEach((item: DreCategoryValue) => {
-        nextDraft[item.category.id] =
-          item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
-      });
-      setValuesDraft(nextDraft);
+      setPeriodDetails((prev) => ({ ...prev, [periodId]: data }));
+      if (selectedPeriodId === periodId) {
+        setDetail(data);
+        setTargetMargin(data.period.target_net_margin ?? null);
+        setReservePercent(data.period.reserve_percent ?? null);
+      }
+      setValuesDraftByPeriod((prev) => ({
+        ...prev,
+        [periodId]: data.categories.reduce((acc: Record<string, number | null>, item: DreCategoryValue) => {
+          acc[item.category.id] = item.amountManual ?? item.amountAuto ?? item.finalAmount ?? 0;
+          return acc;
+        }, {}),
+      }));
       await loadPeriods();
     } catch (error) {
       setErrorMessage(getErrorMessage(error) || 'Falha ao sugerir valores.');
@@ -413,22 +421,6 @@ export default function DrePage() {
     }
   };
 
-  const groupedCategories = useMemo<Record<GroupKey, DreCategoryValue[]>>(() => {
-    const base: Record<GroupKey, DreCategoryValue[]> = {
-      RECEITA: [],
-      CUSTO_VARIAVEL: [],
-      DESPESA_FIXA: [],
-      DESPESA_OPERACIONAL: [],
-      OUTROS: [],
-    };
-    if (!detail) return base;
-    return detail.categories.reduce((acc, item) => {
-      const group = (item.category.group_type as GroupKey) || 'OUTROS';
-      acc[group].push(item);
-      return acc;
-    }, base);
-  }, [detail]);
-
   const statusBadge =
     detail?.period.status === 'closed' ? (
       <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 text-emerald-700 px-3 py-1 text-xs font-semibold">
@@ -439,59 +431,6 @@ export default function DrePage() {
         <Sparkles className="w-4 h-4" /> Rascunho
       </span>
     );
-
-  const renderInputRow = (item: DreCategoryValue) => {
-    const percent = vendasDoPeriodo > 0 ? (item.finalAmount / vendasDoPeriodo) * 100 : 0;
-    const disabled = detail?.period.status === 'closed';
-    return (
-      <div
-        key={item.category.id}
-        className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/15 py-3 last:border-0"
-      >
-        <div className="flex items-start gap-3 flex-1">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {item.category.name}
-              </p>
-              {HELP_TEXTS[item.category.code] && (
-                <span title={HELP_TEXTS[item.category.code]}>
-                  <Info className="w-4 h-4 text-slate-400" />
-                </span>
-              )}
-              {item.category.channel && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700">
-                  {item.category.channel}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500">
-              {item.amountAuto !== null
-                ? `Sugerido: ${formatCurrency(item.amountAuto)}`
-                : 'Sem sugestão automática'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-slate-500 w-20 text-right">
-            {percent ? `${percent.toFixed(1)}%` : '-'}
-          </div>
-          <input
-            type="number"
-            step="0.01"
-            inputMode="decimal"
-            disabled={disabled}
-            className="w-32 rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 px-3 py-2 text-right text-sm font-semibold text-slate-900 dark:text-white shadow-sm"
-            value={valuesDraft[item.category.id] ?? 0}
-            onChange={(e) => {
-              const value = e.target.value === '' ? null : Number(e.target.value);
-              setValuesDraft((prev) => ({ ...prev, [item.category.id]: value }));
-            }}
-          />
-        </div>
-      </div>
-    );
-  };
 
   return (
     <AppLayout title="DRE">
@@ -615,15 +554,29 @@ export default function DrePage() {
                 Meses recentes (clique para abrir)
               </h3>
             </div>
-            <button
-              className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-700 hover:text-cyan-600"
-              onClick={loadPeriods}
-            >
-              <RefreshCw className="w-4 h-4" /> Atualizar lista
-            </button>
+            <div className="flex items-center gap-3">
+              <select
+                className="rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-sm border border-white/40"
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+              >
+                <option value="all">Todos os anos</option>
+                {Array.from(new Set(periods.map((p) => p.period.year))).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-700 hover:text-cyan-600"
+                onClick={loadPeriods}
+              >
+                <RefreshCw className="w-4 h-4" /> Atualizar lista
+              </button>
+            </div>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2">
-            {periods.map((item) => (
+            {filteredPeriods.map((item) => (
               <button
                 key={item.period.id}
                 onClick={() => setSelectedPeriodId(item.period.id)}
@@ -709,71 +662,6 @@ export default function DrePage() {
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
-                Lançamentos do mês
-              </p>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Preencha e ajuste as linhas da DRE
-              </h3>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleSuggestAuto}
-                disabled={!detail || suggesting}
-                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/50 text-cyan-700 px-3 py-2 text-sm font-semibold bg-white/80 dark:bg-white/5"
-              >
-                {suggesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Sugerir automático
-              </button>
-              <button
-                onClick={() => handleSave('draft')}
-                disabled={!detail || saving}
-                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-emerald-500/30"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Salvar rascunho
-              </button>
-              <button
-                onClick={() => handleSave('closed')}
-                disabled={!detail || saving}
-                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-slate-900/30"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowDownRight className="w-4 h-4" />}
-                Fechar mês
-              </button>
-            </div>
-          </div>
-
-          {GROUP_ORDER.map((group) => {
-            const rows = groupedCategories[group] || [];
-            if (!rows.length) return null;
-            const isCollapsed = collapsed[group];
-            return (
-              <div
-                key={group}
-                className="rounded-2xl border border-white/40 bg-white/60 dark:bg-white/5 px-4 py-3"
-              >
-                <button
-                  className="w-full flex items-center justify-between text-left"
-                  onClick={() => setCollapsed((prev) => ({ ...prev, [group]: !prev[group] }))}
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {GROUP_LABELS[group]}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {rows.length} linha{rows.length > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                </button>
-                {!isCollapsed && <div className="mt-3">{rows.map((row) => renderInputRow(row))}</div>}
-              </div>
-            );
-          })}
-
           <div className="border-t border-white/30 pt-4 flex flex-col gap-3">
             <button
               onClick={() => setAddCategoryOpen((prev) => !prev)}
@@ -901,64 +789,28 @@ export default function DrePage() {
             </div>
           </div>
           <div className="grid gap-5 xl:grid-cols-2">
-            {periods.map((p) => {
-              const detail = periodDetails[p.period.id];
-              if (!detail) return null;
-              return <MonthlyDreCard key={p.period.id} detail={detail} />;
+            {filteredPeriods.map((p) => {
+              const detailData = periodDetails[p.period.id];
+              const draftData = valuesDraftByPeriod[p.period.id] || {};
+              if (!detailData) return null;
+              return (
+                <MonthlyDreCard
+                  key={p.period.id}
+                  detail={detailData}
+                  draft={draftData}
+                  onChangeValue={(categoryId, value) =>
+                    setValuesDraftByPeriod((prev) => ({
+                      ...prev,
+                      [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                    }))
+                  }
+                  onSave={(status) => handleSavePeriod(p.period.id, status)}
+                  onSuggest={() => handleSuggestPeriod(p.period.id)}
+                  saving={saving}
+                  suggesting={suggesting}
+                />
+              );
             })}
-          </div>
-        </section>
-
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Divisão por sócio</p>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Cartões pré-definidos (Vitor, Gabriela, Nelson)
-              </h3>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {[
-              { nome: 'Vitor', valor: detail?.metrics.saque.vitor ?? 0 },
-              { nome: 'Gabriela', valor: detail?.metrics.saque.gabriela ?? 0 },
-              { nome: 'Nelson', valor: detail?.metrics.saque.nelson ?? 0 },
-            ].map((socio) => (
-              <div
-                key={socio.nome}
-                className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-4 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{socio.nome}</p>
-                  <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Saque</span>
-                </div>
-                <div className="text-xl font-semibold text-slate-900 dark:text-white">
-                  {formatCurrency(socio.valor)}
-                </div>
-                <div className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
-                  <div className="flex justify-between">
-                    <span>Plano de Saúde</span>
-                    <span>{formatCurrency(0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Vales</span>
-                    <span>{formatCurrency(0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Outros Descontos</span>
-                    <span>{formatCurrency(0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Vale Combustível</span>
-                    <span>{formatCurrency(0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Outros Créditos</span>
-                    <span>{formatCurrency(0)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </section>
 
@@ -1023,34 +875,147 @@ function MetricCard({ title, value, subtitle, trendIcon, alert }: MetricCardProp
 
 type MonthlyDreCardProps = {
   detail: DreDetail;
+  draft: Record<string, number | null>;
+  onChangeValue: (categoryId: string, value: number | null) => void;
+  onSave: (status?: 'draft' | 'closed') => void;
+  onSuggest: () => void;
+  saving: boolean;
+  suggesting: boolean;
 };
 
-function MonthlyDreCard({ detail }: MonthlyDreCardProps) {
-  const vendas = detail.metrics.vendas || 0;
+function MonthlyDreCard({
+  detail,
+  draft,
+  onChangeValue,
+  onSave,
+  onSuggest,
+  saving,
+  suggesting,
+}: MonthlyDreCardProps) {
+  const codeToId = useMemo(() => {
+    const map: Record<string, string> = {};
+    detail.categories.forEach((c) => {
+      map[c.category.code] = c.category.id;
+    });
+    return map;
+  }, [detail.categories]);
+
+  const getAmount = (code: string) => {
+    const catId = codeToId[code];
+    if (!catId) return 0;
+    const fromDraft = draft[catId];
+    if (fromDraft !== undefined && fromDraft !== null) return Number(fromDraft) || 0;
+    const cat = detail.categories.find((c) => c.category.id === catId);
+    return cat ? cat.finalAmount : 0;
+  };
+
+  const vendas = getAmount('VENDAS');
   const percent = (value: number) => (vendas > 0 ? (value / vendas) * 100 : 0);
 
-  const grouped = GROUP_ORDER.map((group) => ({
-    group,
-    rows: detail.categories.filter((c) => c.category.group_type === group),
-  }));
+  const receitaRows = [
+    { code: 'VENDAS', label: 'Vendas' },
+    { code: 'REEMBOLSOS_DEVOLUCOES', label: '(-) Reembolsos/Devoluções' },
+    { code: 'RESSARCIMENTO_DEVOLUCOES', label: '(+) Ressarcimento de Devoluções' },
+    { code: 'CMV_IMPOSTOS', label: '(-) CMV + Impostos' },
+    { code: 'TARIFAS_SHOPEE', label: '(-) Tarifas Shopee' },
+    { code: 'TARIFAS_MERCADO_LIVRE', label: '(-) Tarifas Mercado Livre' },
+    { code: 'TARIFAS_MAGALU', label: '(-) Tarifas Magalu' },
+    { code: 'COOP_FRETES_MAGALU', label: '(-) Coop. Fretes Magalu' },
+    { code: 'FRETES', label: '(-) Fretes' },
+    { code: 'CONTADOR', label: '(-) Contador' },
+    { code: 'OUTROS_CUSTOS', label: '(-) Outros Custos' },
+  ];
 
-  const renderRow = (label: string, amount: number, type: 'entrada' | 'saida' | 'calc') => {
-    const pct = percent(amount);
-    const sign = type === 'saida' ? '-' : type === 'entrada' ? '+' : '';
+  const despesasRows = [
+    { code: 'DESPESAS_OPERACIONAIS', label: '(-) Despesas Operacionais' },
+    { code: 'SISTEMA_ERP', label: '(-) Sistema ERP' },
+    { code: 'INTERNET', label: '(-) Internet' },
+    { code: 'IA', label: '(-) IA' },
+    { code: 'MARKETING_PUBLICIDADE', label: '(-) Marketing e Publicidade (Anúncios)' },
+    { code: 'MATERIAIS_EMBALAGEM', label: '(-) Materiais de Embalagem' },
+    { code: 'COMBUSTIVEIS', label: '(-) Combustíveis' },
+  ];
+
+  const receitaLiquida =
+    getAmount('VENDAS') - getAmount('REEMBOLSOS_DEVOLUCOES') + getAmount('RESSARCIMENTO_DEVOLUCOES');
+  const custosVariaveis =
+    getAmount('CMV_IMPOSTOS') +
+    getAmount('TARIFAS_SHOPEE') +
+    getAmount('TARIFAS_MERCADO_LIVRE') +
+    getAmount('TARIFAS_MAGALU') +
+    getAmount('COOP_FRETES_MAGALU') +
+    getAmount('FRETES');
+  const despesasFixas = getAmount('CONTADOR') + getAmount('OUTROS_CUSTOS');
+  const despesasOperacionais = despesasRows.reduce((acc, row) => acc + getAmount(row.code), 0);
+  const lucroBruto = receitaLiquida - custosVariaveis - despesasFixas;
+  const lucroLiquido = lucroBruto - despesasOperacionais;
+
+  const reservaPercent = detail.period.reserve_percent ?? 0;
+  const reserva = Math.max(0, lucroLiquido * reservaPercent);
+  const divisao = lucroLiquido - reserva;
+  const nelsonBase = 2000;
+  const restante = Math.max(divisao - nelsonBase, 0);
+  const vitorBase = restante * 0.5;
+  const gabBase = restante * 0.5;
+
+  const vitorTotal =
+    vitorBase -
+    getAmount('PLANO_SAUDE_VITOR') -
+    getAmount('VALES_VITOR') -
+    getAmount('OUTROS_DESCONTOS_VITOR') +
+    getAmount('VALE_COMBUSTIVEL_VITOR') +
+    getAmount('OUTROS_CREDITOS_VITOR');
+
+  const gabTotal =
+    gabBase -
+    getAmount('PLANO_SAUDE_GABRIELA') -
+    getAmount('VALES_GABRIELA') -
+    getAmount('OUTROS_DESCONTOS_GABRIELA') +
+    getAmount('VALE_COMBUSTIVEL_GABRIELA') +
+    getAmount('OUTROS_CREDITOS_GABRIELA');
+
+  const nelsonTotal =
+    nelsonBase -
+    getAmount('PLANO_SAUDE_NELSON') -
+    getAmount('VALES_NELSON') -
+    getAmount('OUTROS_DESCONTOS_NELSON') +
+    getAmount('VALE_COMBUSTIVEL_NELSON') +
+    getAmount('OUTROS_CREDITOS_NELSON');
+
+  const valorParaSaque = vitorTotal + gabTotal + nelsonTotal;
+
+  const editableRow = (code: string, label: string, showPercent = true) => {
+    const amount = getAmount(code);
     return (
-      <div className="flex items-center justify-between border-b border-white/20 py-1 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-600 dark:text-slate-300">{label}</span>
+      <div className="grid grid-cols-12 items-center border-b border-white/20 py-1 text-sm">
+        <div className="col-span-7 text-slate-700 dark:text-slate-200">{label}</div>
+        <div className="col-span-3">
+          <input
+            type="number"
+            step="0.01"
+            className="w-full rounded-xl border border-white/30 bg-white/70 dark:bg-white/5 px-3 py-1.5 text-right font-semibold text-slate-900 dark:text-white"
+            value={Number.isFinite(amount) ? amount : 0}
+            onChange={(e) => {
+              const value = e.target.value === '' ? null : Number(e.target.value);
+              const catId = codeToId[code];
+              if (!catId) return;
+              onChangeValue(catId, value);
+            }}
+          />
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-slate-500">{pct ? `${pct.toFixed(2)}%` : '—'}</span>
-          <span className="font-semibold text-slate-900 dark:text-white">
-            {sign} {formatCurrency(amount)}
-          </span>
+        <div className="col-span-2 text-right text-xs text-slate-500">
+          {showPercent ? `${percent(amount).toFixed(2)}%` : '—'}
         </div>
       </div>
     );
   };
+
+  const computedRow = (label: string, amount: number) => (
+    <div className="grid grid-cols-12 items-center bg-white/70 dark:bg-white/5 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white">
+      <div className="col-span-8">{label}</div>
+      <div className="col-span-4 text-right">{formatCurrency(amount)}</div>
+    </div>
+  );
 
   return (
     <div className="rounded-2xl border border-white/40 bg-white/70 dark:bg-white/5 p-5 space-y-2 shadow-sm">
@@ -1059,41 +1024,91 @@ function MonthlyDreCard({ detail }: MonthlyDreCardProps) {
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Mês</p>
           <h4 className="text-lg font-semibold text-slate-900 dark:text-white">{detail.period.label}</h4>
         </div>
-        <div className="text-right text-sm text-slate-600 dark:text-slate-400">
-          <p>Lucro Líquido: {formatCurrency(detail.metrics.lucroLiquido)}</p>
-          <p>Margem Líquida: {formatPercent(detail.metrics.margemLiquida)}</p>
+        <div className="flex gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-xs font-semibold border border-white/30"
+            onClick={onSuggest}
+            disabled={suggesting}
+          >
+            {suggesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Sugestão
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 text-white px-3 py-2 text-xs font-semibold shadow-lg shadow-emerald-500/30"
+            onClick={() => onSave('draft')}
+            disabled={saving}
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            Salvar
+          </button>
         </div>
       </div>
 
-      {grouped.map(({ group, rows }) => (
-        <div key={group} className="mt-3">
-          <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mb-1">
-            {GROUP_LABELS[group]}
-          </div>
-          <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
-            {rows.map((item) =>
-              renderRow(
-                item.category.name,
-                item.finalAmount,
-                item.category.sign === 'SAIDA' ? 'saida' : 'entrada'
-              )
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div className="mt-4 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucros</div>
-        {renderRow('Lucro Bruto', detail.metrics.lucroBruto, 'calc')}
-        {renderRow('Lucro Líquido', detail.metrics.lucroLiquido, 'calc')}
+      <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mt-2 mb-1">Receita / Operação</div>
+      <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
+        {receitaRows.map((row) => editableRow(row.code, row.label, true))}
       </div>
-      <div className="mt-2 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+
+      <div className="mt-3 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucro Bruto</div>
+        <div className="flex items-center justify-between text-sm font-semibold text-slate-900 dark:text-white">
+          <span>Lucro Bruto</span>
+          <span>{formatCurrency(lucroBruto)}</span>
+        </div>
+      </div>
+
+      <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mt-2 mb-1">Despesas</div>
+      <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
+        {despesasRows.map((row) => editableRow(row.code, row.label, true))}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3 space-y-1">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucro Líquido</div>
+        <div className="flex items-center justify-between text-sm font-semibold text-slate-900 dark:text-white">
+          <span>Lucro Líquido</span>
+          <span>{formatCurrency(lucroLiquido)}</span>
+        </div>
+      </div>
+
+      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Saques</div>
-        {renderRow('Reserva', detail.metrics.reserva, 'saida')}
-        {renderRow('Divisão', detail.metrics.divisao, 'calc')}
-        {renderRow('Vitor', detail.metrics.saque.vitor, 'saida')}
-        {renderRow('Gabriela', detail.metrics.saque.gabriela, 'saida')}
-        {renderRow('Nelson', detail.metrics.saque.nelson, 'saida')}
+        {computedRow('Reserva', reserva)}
+        {computedRow('Divisão', divisao)}
+      </div>
+
+      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Vitor</div>
+        {editableRow('PLANO_SAUDE_VITOR', '(-) Plano de Saúde', false)}
+        {editableRow('VALES_VITOR', '(-) Vales', false)}
+        {editableRow('OUTROS_DESCONTOS_VITOR', '(-) Outros Descontos', false)}
+        {editableRow('VALE_COMBUSTIVEL_VITOR', '(+) Vale Combustível', false)}
+        {editableRow('OUTROS_CREDITOS_VITOR', '(+) Outros Créditos', false)}
+        {computedRow('(=) Total Vitor', vitorTotal)}
+      </div>
+
+      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Gabriela</div>
+        {editableRow('PLANO_SAUDE_GABRIELA', '(-) Plano de Saúde', false)}
+        {editableRow('VALES_GABRIELA', '(-) Vales', false)}
+        {editableRow('OUTROS_DESCONTOS_GABRIELA', '(-) Outros Descontos', false)}
+        {editableRow('VALE_COMBUSTIVEL_GABRIELA', '(+) Vale Combustível', false)}
+        {editableRow('OUTROS_CREDITOS_GABRIELA', '(+) Outros Créditos', false)}
+        {computedRow('(=) Total Gabriela', gabTotal)}
+      </div>
+
+      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Nelson</div>
+        {editableRow('PLANO_SAUDE_NELSON', '(-) Plano de Saúde', false)}
+        {editableRow('VALES_NELSON', '(-) Vales', false)}
+        {editableRow('OUTROS_DESCONTOS_NELSON', '(-) Outros Descontos', false)}
+        {editableRow('VALE_COMBUSTIVEL_NELSON', '(+) Vale Combustível', false)}
+        {editableRow('OUTROS_CREDITOS_NELSON', '(+) Outros Créditos', false)}
+        {computedRow('(=) Total Nelson', nelsonTotal)}
+      </div>
+
+      <div className="mt-2 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Valor para Saque</div>
+        {computedRow('Valor para Saque', valorParaSaque)}
       </div>
     </div>
   );

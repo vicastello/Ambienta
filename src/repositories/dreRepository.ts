@@ -2,7 +2,6 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import type {
   DreCategoriesInsert,
   DreCategoriesRow,
-  DreCategoriesUpdate,
   DrePeriodsInsert,
   DrePeriodsRow,
   DrePeriodsUpdate,
@@ -62,6 +61,8 @@ export type DrePeriodDetail = {
   channels: DreChannelSummary[];
 };
 
+type TinyOrderChannelRow = { valor: number | null; valor_frete: number | null; canal: string | null };
+
 const DEFAULT_CATEGORY_SEED: DreCategoriesInsert[] = [
   { code: 'VENDAS', name: 'Vendas', group_type: 'RECEITA', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 10, channel: null, parent_code: null },
   { code: 'REEMBOLSOS_DEVOLUCOES', name: 'Reembolsos / Devoluções', group_type: 'RECEITA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 20, channel: null, parent_code: null },
@@ -77,9 +78,28 @@ const DEFAULT_CATEGORY_SEED: DreCategoriesInsert[] = [
   { code: 'SISTEMA_ERP', name: 'Sistema ERP', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 120, channel: null, parent_code: null },
   { code: 'INTERNET', name: 'Internet', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 130, channel: null, parent_code: null },
   { code: 'IA', name: 'IA', group_type: 'DESPESA_FIXA', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 140, channel: null, parent_code: null },
+  { code: 'DESPESAS_OPERACIONAIS', name: 'Despesas Operacionais', group_type: 'DESPESA_OPERACIONAL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 145, channel: null, parent_code: null },
   { code: 'MARKETING_PUBLICIDADE', name: 'Marketing e Publicidade (Anúncios)', group_type: 'DESPESA_OPERACIONAL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 150, channel: null, parent_code: null },
   { code: 'MATERIAIS_EMBALAGEM', name: 'Materiais de Embalagem', group_type: 'CUSTO_VARIAVEL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 160, channel: null, parent_code: null },
   { code: 'COMBUSTIVEIS', name: 'Combustíveis', group_type: 'DESPESA_OPERACIONAL', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 170, channel: null, parent_code: null },
+  // Ajustes pós-divisão (Vitor)
+  { code: 'PLANO_SAUDE_VITOR', name: 'Plano de Saúde (Vitor)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 210, channel: null, parent_code: null },
+  { code: 'VALES_VITOR', name: 'Vales (Vitor)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 211, channel: null, parent_code: null },
+  { code: 'OUTROS_DESCONTOS_VITOR', name: 'Outros Descontos (Vitor)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 212, channel: null, parent_code: null },
+  { code: 'VALE_COMBUSTIVEL_VITOR', name: 'Vale Combustível (Vitor)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 213, channel: null, parent_code: null },
+  { code: 'OUTROS_CREDITOS_VITOR', name: 'Outros Créditos (Vitor)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 214, channel: null, parent_code: null },
+  // Ajustes pós-divisão (Gabriela)
+  { code: 'PLANO_SAUDE_GABRIELA', name: 'Plano de Saúde (Gabriela)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 220, channel: null, parent_code: null },
+  { code: 'VALES_GABRIELA', name: 'Vales (Gabriela)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 221, channel: null, parent_code: null },
+  { code: 'OUTROS_DESCONTOS_GABRIELA', name: 'Outros Descontos (Gabriela)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 222, channel: null, parent_code: null },
+  { code: 'VALE_COMBUSTIVEL_GABRIELA', name: 'Vale Combustível (Gabriela)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 223, channel: null, parent_code: null },
+  { code: 'OUTROS_CREDITOS_GABRIELA', name: 'Outros Créditos (Gabriela)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 224, channel: null, parent_code: null },
+  // Ajustes pós-divisão (Nelson)
+  { code: 'PLANO_SAUDE_NELSON', name: 'Plano de Saúde (Nelson)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 230, channel: null, parent_code: null },
+  { code: 'VALES_NELSON', name: 'Vales (Nelson)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 231, channel: null, parent_code: null },
+  { code: 'OUTROS_DESCONTOS_NELSON', name: 'Outros Descontos (Nelson)', group_type: 'OUTROS', sign: 'SAIDA', is_default: true, is_editable: true, order_index: 232, channel: null, parent_code: null },
+  { code: 'VALE_COMBUSTIVEL_NELSON', name: 'Vale Combustível (Nelson)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 233, channel: null, parent_code: null },
+  { code: 'OUTROS_CREDITOS_NELSON', name: 'Outros Créditos (Nelson)', group_type: 'OUTROS', sign: 'ENTRADA', is_default: true, is_editable: true, order_index: 234, channel: null, parent_code: null },
 ];
 
 const MONTH_LABELS = [
@@ -242,7 +262,7 @@ const computeMetrics = (period: DrePeriodsRow, merged: DreCategoryValue[]): DreM
   };
 };
 
-const computeChannelSummary = (orders: { valor: unknown; valor_frete: unknown; canal: string | null }[]) => {
+const computeChannelSummary = (orders: TinyOrderChannelRow[]) => {
   const map = new Map<string, { totalBruto: number; totalFrete: number }>();
   orders.forEach((order) => {
     const canal = order.canal || 'Indefinido';
@@ -448,12 +468,12 @@ export async function getPeriodDetail(periodId: string): Promise<DrePeriodDetail
   const { start, end } = monthBounds(period.year, period.month);
   const { data: ordersData, error: ordersError } = await supabaseAdmin
     .from('tiny_orders')
-    .select('valor, valor_frete, canal')
+    .select<'valor, valor_frete, canal', TinyOrderChannelRow>('valor, valor_frete, canal')
     .gte('data_criacao', start)
     .lte('data_criacao', end);
 
   if (ordersError) throw ordersError;
-  const channels = computeChannelSummary((ordersData || []) as any[]);
+  const channels = computeChannelSummary(ordersData ?? []);
 
   return { period, categories: merged, metrics, channels };
 }
@@ -469,7 +489,7 @@ export async function suggestAutoValuesForPeriod(periodId: string) {
       supabaseAdmin.rpc('orders_metrics', { p_data_inicial: start, p_data_final: end }),
       supabaseAdmin
         .from('tiny_orders')
-        .select('valor, valor_frete, canal')
+        .select<'valor, valor_frete, canal', TinyOrderChannelRow>('valor, valor_frete, canal')
         .gte('data_criacao', start)
         .lte('data_criacao', end),
     ]);
@@ -506,6 +526,6 @@ export async function suggestAutoValuesForPeriod(periodId: string) {
     if (error) throw error;
   }
 
-  const channels = computeChannelSummary((ordersData || []) as any[]);
+  const channels = computeChannelSummary(ordersData ?? []);
   return getPeriodDetail(periodId).then((detail) => ({ ...detail, channels }));
 }
