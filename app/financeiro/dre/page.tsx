@@ -485,7 +485,7 @@ export default function DrePage() {
                 />
                 <button
                   onClick={handleCreatePeriod}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 text-white px-4 py-2 text-sm font-semibold shadow-lg shadow-emerald-500/30"
+                  className="app-btn-primary inline-flex items-center gap-2"
                   disabled={creating}
                 >
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -576,7 +576,7 @@ export default function DrePage() {
                 ))}
               </select>
               <button
-                className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-700 hover:text-cyan-600"
+                className="app-btn-ghost inline-flex items-center gap-2"
                 onClick={loadPeriods}
               >
                 <RefreshCw className="w-4 h-4" /> Atualizar lista
@@ -1042,7 +1042,7 @@ function MonthlyDreCard({
         </div>
         <div className="flex gap-2">
           <button
-            className="inline-flex items-center gap-2 rounded-xl bg-white/80 dark:bg-white/5 px-3 py-2 text-xs font-semibold border border-white/30"
+            className="app-btn-ghost inline-flex items-center gap-2 text-xs"
             onClick={onSuggest}
             disabled={suggesting}
           >
@@ -1050,7 +1050,7 @@ function MonthlyDreCard({
             Sugestão
           </button>
           <button
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 text-white px-3 py-2 text-xs font-semibold shadow-lg shadow-emerald-500/30"
+            className="app-btn-primary inline-flex items-center gap-2 text-xs"
             onClick={() => onSave('draft')}
             disabled={saving}
           >
