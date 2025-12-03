@@ -9,8 +9,6 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Minus,
-  Equal,
   Sparkles,
   TrendingUp,
 } from 'lucide-react';
@@ -989,33 +987,24 @@ function MonthlyDreCard({
     'rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 space-y-3';
 
   const renderLabelWithIcon = (raw: string) => {
-    let icon: 'plus' | 'minus' | 'equal' | null = null;
+    let iconChar: '+' | '-' | '=' | null = null;
     let text = raw;
     if (raw.startsWith('(-)')) {
-      icon = 'minus';
+      iconChar = '-';
       text = raw.replace('(-)', '').trim();
     } else if (raw.startsWith('(+)')) {
-      icon = 'plus';
+      iconChar = '+';
       text = raw.replace('(+)','').trim();
     } else if (raw.startsWith('(=)')) {
-      icon = 'equal';
+      iconChar = '=';
       text = raw.replace('(=)','').trim();
     }
 
-    const iconEl =
-      icon === 'plus' ? (
-        <Plus className="w-3 h-3 text-slate-600" />
-      ) : icon === 'minus' ? (
-        <Minus className="w-3 h-3 text-slate-600" />
-      ) : icon === 'equal' ? (
-        <Equal className="w-3 h-3 text-slate-600" />
-      ) : null;
-
     return (
       <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 leading-none">
-        {iconEl ? (
-          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0">
-            {iconEl}
+        {iconChar ? (
+          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-slate-300 text-[10px] font-semibold text-slate-700 dark:border-white/30 dark:text-white/80 flex-shrink-0 leading-none">
+            {iconChar}
           </span>
         ) : null}
         <span className="leading-tight">{text}</span>
