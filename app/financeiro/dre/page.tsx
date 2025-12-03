@@ -608,65 +608,47 @@ export default function DrePage() {
           </div>
         </section>
 
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-5">
-          <div className="flex items-center justify-between mb-4">
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Evolução</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Vendas, Lucro e Margens
+                Resumo completo por mês (linhas fixas)
               </h3>
             </div>
           </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tickFormatter={(v) => `${v}%`}
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                />
-                <RechartTooltip />
-                <Legend />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="vendas"
-                  name="Vendas"
-                  stroke="#009DA8"
-                  strokeWidth={3}
-                />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="lucroBruto"
-                  name="Lucro Bruto"
-                  stroke="#6366f1"
-                  strokeWidth={3}
-                />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="lucroLiquido"
-                  name="Lucro Líquido"
-                  stroke="#22c55e"
-                  strokeWidth={3}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="margemLiquida"
-                  name="Margem Líquida (%)"
-                  stroke="#f59e0b"
-                  strokeWidth={3}
-                  strokeDasharray="6 4"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {!filteredPeriods.length ? (
+            <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
+              Nenhum período carregado ainda. Crie/abra um mês acima para ver os cartões (Vendas,
+              CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              {filteredPeriods.map((p) => {
+                const detailData = periodDetails[p.period.id];
+                const draftData = valuesDraftByPeriod[p.period.id] || {};
+                return detailData ? (
+                  <MonthlyDreCard
+                    key={p.period.id}
+                    detail={detailData}
+                    draft={draftData}
+                    onChangeValue={(categoryId, value) =>
+                      setValuesDraftByPeriod((prev) => ({
+                        ...prev,
+                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
+                      }))
+                    }
+                    onSave={(status) => handleSavePeriod(p.period.id, status)}
+                    onSuggest={() => handleSuggestPeriod(p.period.id)}
+                    saving={saving}
+                    suggesting={suggesting}
+                  />
+                ) : (
+                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6 space-y-4">
@@ -787,47 +769,65 @@ export default function DrePage() {
           </div>
         </section>
 
-        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
-          <div className="flex items-center justify-between mb-3">
+        <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-5">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Cartões mensais</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Evolução</p>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Resumo completo por mês (linhas fixas)
+                Vendas, Lucro e Margens
               </h3>
             </div>
           </div>
-          {!filteredPeriods.length ? (
-            <div className="rounded-2xl border border-dashed border-white/40 bg-white/50 dark:bg-white/5 p-6 text-sm text-slate-600 dark:text-slate-300">
-              Nenhum período carregado ainda. Crie/abra um mês acima para ver os cartões (Vendas,
-              CMV, tarifas, fretes, despesas e saques por sócio) lado a lado.
-            </div>
-          ) : (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {filteredPeriods.map((p) => {
-                const detailData = periodDetails[p.period.id];
-                const draftData = valuesDraftByPeriod[p.period.id] || {};
-                return detailData ? (
-                  <MonthlyDreCard
-                    key={p.period.id}
-                    detail={detailData}
-                    draft={draftData}
-                    onChangeValue={(categoryId, value) =>
-                      setValuesDraftByPeriod((prev) => ({
-                        ...prev,
-                        [p.period.id]: { ...(prev[p.period.id] || {}), [categoryId]: value },
-                      }))
-                    }
-                    onSave={(status) => handleSavePeriod(p.period.id, status)}
-                    onSuggest={() => handleSuggestPeriod(p.period.id)}
-                    saving={saving}
-                    suggesting={suggesting}
-                  />
-                ) : (
-                  <MonthlyDreCardPlaceholder key={p.period.id} label={p.period.label} />
-                );
-              })}
-            </div>
-          )}
+          <div className="h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                />
+                <RechartTooltip />
+                <Legend />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="vendas"
+                  name="Vendas"
+                  stroke="#009DA8"
+                  strokeWidth={3}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="lucroBruto"
+                  name="Lucro Bruto"
+                  stroke="#6366f1"
+                  strokeWidth={3}
+                />
+                <Line
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="lucroLiquido"
+                  name="Lucro Líquido"
+                  stroke="#22c55e"
+                  strokeWidth={3}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="margemLiquida"
+                  name="Margem Líquida (%)"
+                  stroke="#f59e0b"
+                  strokeWidth={3}
+                  strokeDasharray="6 4"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </section>
 
         <section className="glass-panel glass-tint rounded-[28px] border border-white/50 dark:border-white/10 p-6">
