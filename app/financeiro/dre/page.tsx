@@ -1419,22 +1419,30 @@ function MonthlyDreCard({
       <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Reserva</div>
         {editing ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              step="0.01"
-              className="app-input w-24 text-right"
-              value={reservaPercent}
-              onChange={(e) => onChangeReserve(e.target.value === '' ? null : Number(e.target.value))}
-            />
-            <span className="text-sm text-slate-500">Fração (ex: 0.10 = 10%)</span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step="0.1"
+                className="app-input w-24 text-right"
+                value={Number(((reservaPercent ?? 0) * 100).toFixed(1))}
+                onChange={(e) => {
+                  const value = e.target.value === '' ? null : Number(e.target.value) / 100;
+                  onChangeReserve(Number.isFinite(value as number) ? value : null);
+                }}
+              />
+              <span className="text-sm text-slate-500">%</span>
+            </div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+              {formatCurrency(reserva)}
+            </div>
           </div>
         ) : (
-          <p className="text-sm text-slate-700 dark:text-slate-200">
-            Reserva {formatPercent(reservaPercent)}
-          </p>
+          <div className="flex items-center justify-between text-sm font-semibold text-slate-900 dark:text-white">
+            <span>{formatPercent(reservaPercent)}</span>
+            <span>{formatCurrency(reserva)}</span>
+          </div>
         )}
-        {computedRow('Reserva', reserva)}
       </div>
 
       <div className={innerCardClass}>
