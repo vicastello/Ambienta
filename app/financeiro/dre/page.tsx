@@ -361,14 +361,20 @@ export default function DrePage() {
     }
   };
 
-  const groupedCategories = useMemo(() => {
-    if (!detail) return {};
+  const groupedCategories = useMemo<Record<GroupKey, DreCategoryValue[]>>(() => {
+    const base: Record<GroupKey, DreCategoryValue[]> = {
+      RECEITA: [],
+      CUSTO_VARIAVEL: [],
+      DESPESA_FIXA: [],
+      DESPESA_OPERACIONAL: [],
+      OUTROS: [],
+    };
+    if (!detail) return base;
     return detail.categories.reduce((acc, item) => {
       const group = (item.category.group_type as GroupKey) || 'OUTROS';
-      if (!acc[group]) acc[group] = [];
       acc[group].push(item);
       return acc;
-    }, {} as Record<GroupKey, DreCategoryValue[]>);
+    }, base);
   }, [detail]);
 
   const statusBadge =
