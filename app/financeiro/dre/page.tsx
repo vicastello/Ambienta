@@ -1006,23 +1006,21 @@ function MonthlyDreCard({
   const editableRow = (code: string, label: string, showPercent = true) => {
     const amount = getAmount(code);
     return (
-      <div className="grid grid-cols-12 items-center border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
-        <div className="col-span-7 text-slate-700 dark:text-slate-200">{label}</div>
-        <div className="col-span-3">
-          <input
-            type="number"
-            step="0.01"
-            className="app-input w-20 text-right font-semibold"
-            value={Number.isFinite(amount) ? amount : 0}
-            onChange={(e) => {
-              const value = e.target.value === '' ? null : Number(e.target.value);
-              const catId = codeToId[code];
-              if (!catId) return;
-              onChangeValue(catId, value);
-            }}
-          />
-        </div>
-        <div className="col-span-2 text-right text-xs text-slate-500">
+      <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
+        <div className="flex-1 text-slate-700 dark:text-slate-200">{label}</div>
+        <input
+          type="number"
+          step="0.01"
+          className="app-input w-[120px] text-right font-semibold"
+          value={Number.isFinite(amount) ? amount : 0}
+          onChange={(e) => {
+            const value = e.target.value === '' ? null : Number(e.target.value);
+            const catId = codeToId[code];
+            if (!catId) return;
+            onChangeValue(catId, value);
+          }}
+        />
+        <div className="w-16 text-right text-xs text-slate-500">
           {showPercent ? `${percent(amount).toFixed(2)}%` : '—'}
         </div>
       </div>
