@@ -519,26 +519,6 @@ export default function DrePage() {
     setDraggingCards(false);
   };
 
-  const snapToNearestCard = () => {
-    const el = cardsScrollRef.current;
-    const track = cardsTrackRef.current;
-    if (!el || !track) return;
-    const children = Array.from(track.children) as HTMLElement[];
-    if (!children.length) return;
-    const current = el.scrollLeft + el.offsetWidth / 2;
-    let target = current;
-    let minDiff = Number.POSITIVE_INFINITY;
-    children.forEach((child) => {
-      const center = child.offsetLeft + child.offsetWidth / 2;
-      const diff = Math.abs(center - current);
-      if (diff < minDiff) {
-        minDiff = diff;
-        target = child.offsetLeft;
-      }
-    });
-    el.scrollTo({ left: target, behavior: 'smooth' });
-  };
-
   const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
@@ -555,7 +535,6 @@ export default function DrePage() {
 
   const handleCardsPointerUp = () => {
     endCardDrag();
-    snapToNearestCard();
   };
 
   const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -578,7 +557,6 @@ export default function DrePage() {
     };
     const handleUp = () => {
       endCardDrag();
-      snapToNearestCard();
     };
     window.addEventListener('pointermove', handleMovePointer);
     window.addEventListener('mousemove', handleMoveMouse);
@@ -739,7 +717,9 @@ export default function DrePage() {
             </div>
           ) : (
             <div
-              className="overflow-x-auto pb-4 snap-x snap-mandatory -mx-2 cursor-grab active:cursor-grabbing select-none touch-pan-y"
+              className={`overflow-x-auto pb-4 -mx-2 cursor-grab active:cursor-grabbing select-none touch-pan-y ${
+                draggingCards ? 'snap-none' : 'snap-x snap-mandatory'
+              }`}
               ref={cardsScrollRef}
               onPointerDown={handleCardsPointerDown}
               onPointerUp={handleCardsPointerUp}
