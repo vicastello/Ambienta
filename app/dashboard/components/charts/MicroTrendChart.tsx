@@ -7,6 +7,7 @@ import { CustomTooltip, type CustomTooltipFormatter } from './ChartTooltips';
 type SparkDatum = {
   label: string;
   value: number;
+  quantidade: number;
 };
 
 type MicroTrendChartProps = {
@@ -31,7 +32,14 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
           <XAxis dataKey="label" hide />
           <YAxis hide />
           <Tooltip content={<CustomTooltip formatter={formatter} />} />
-          <Area type="monotone" dataKey="value" stroke="#a855f7" fill="url(#microSpark)" strokeWidth={3} />
+          <Area
+            type="monotone"
+            dataKey="value"
+            name="Receita"
+            stroke="#a855f7"
+            fill="url(#microSpark)"
+            strokeWidth={3}
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>

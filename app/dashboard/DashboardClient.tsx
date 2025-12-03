@@ -34,6 +34,12 @@ const AMBIENTA_PRIMARY = '#009DA8';
 const COLORS_PALETTE = [AMBIENTA_PRIMARY, '#22c55e', '#f97316', '#0ea5e9', '#a855f7'];
 const GLOBAL_INTERVAL_DAYS = 30;
 const SPARK_WINDOW_DAYS = 7;
+const PRODUTO_CARD_PRESETS = [
+  { id: '30d', label: '30 dias' },
+  { id: 'month', label: 'Mês atual' },
+  { id: 'year', label: 'Ano' },
+] as const;
+type ProdutoCardPreset = (typeof PRODUTO_CARD_PRESETS)[number]['id'];
 const DASHBOARD_AUTO_REFRESH_MS = 60_000; // polling leve para dados mais frescos
 
 type DiaResumo = {
@@ -70,6 +76,12 @@ type CanalResumo = {
   totalPedidos: number;
 };
 
+type ProdutoSerieDia = {
+  data: string;
+  quantidade: number;
+  receita: number;
+};
+
 type ProdutoResumo = {
   produtoId: number | null;
   sku?: string | null;
@@ -80,6 +92,7 @@ type ProdutoResumo = {
   saldo?: number | null;
   reservado?: number | null;
   disponivel?: number | null;
+  serieDiaria?: ProdutoSerieDia[];
 };
 
 type SituacaoDisponivel = {
@@ -192,6 +205,25 @@ const MARKETPLACE_COLORS: Record<string, string> = {
   Tray: '#5f6bff',
   Tiny: AMBIENTA_PRIMARY,
   Outros: '#94a3b8',
+};
+
+const buildProdutoKey = (produto: ProdutoResumo): string => {
+  if (typeof produto.produtoId === 'number' && Number.isFinite(produto.produtoId)) {
+    return `id:${produto.produtoId}`;
+  }
+  if (produto.sku) {
+    return `sku:${produto.sku}`;
+  }
+  return `desc:${produto.descricao.toLowerCase()}`;
+};
+
+const formatSerieLabel = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const date = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
 };
 
 type CacheEntry<T> = {
@@ -379,6 +411,8 @@ export default function DashboardClient() {
   const [loadingTopSituacoesMes, setLoadingTopSituacoesMes] = useState<boolean>(false);
 
   const [filtersLoaded, setFiltersLoaded] = useState(false);
+  const [selectedProdutoKey, setSelectedProdutoKey] = useState<string | null>(null);
+  const [produtoCardPreset, setProdutoCardPreset] = useState<ProdutoCardPreset>('30d');
 
   const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
   const [chartCustomStart, setChartCustomStart] = useState<string | null>(null);
@@ -1220,8 +1254,94 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
   const totalProdutosVendidos = resumoAtual?.totalProdutosVendidos ?? 0;
-  const topProdutos = resumoAtual?.topProdutos?.slice(0, 12) ?? [];
+  const topProdutos = useMemo(() => {
+    const origem = resumoAtual?.topProdutos ?? [];
+    return origem.slice(0, 12);
+  }, [resumoAtual?.topProdutos]);
 
+  useEffect(() => {
+    if (!topProdutos.length) {
+      setSelectedProdutoKey(null);
+      return;
+    }
+    setSelectedProdutoKey((prev) => {
+      if (prev && topProdutos.some((produto) => buildProdutoKey(produto) === prev)) {
+        return prev;
+      }
+      return buildProdutoKey(topProdutos[0]);
+    });
+  }, [topProdutos]);
+
+  const produtoEmFoco = useMemo(() => {
+    if (!topProdutos.length) return null;
+    if (!selectedProdutoKey) return topProdutos[0];
+    return topProdutos.find((produto) => buildProdutoKey(produto) === selectedProdutoKey) ?? topProdutos[0];
+  }, [selectedProdutoKey, topProdutos]);
+
+  const produtoEmFocoKey = produtoEmFoco ? buildProdutoKey(produtoEmFoco) : null;
+
+  const produtoSerieFiltrada = useMemo(() => {
+    if (!produtoEmFoco?.serieDiaria?.length) return [];
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const cutoff = produtoCardPreset === '30d'
+      ? (() => {
+          const date = new Date();
+          date.setDate(date.getDate() - 29);
+          return date;
+        })()
+      : produtoCardPreset === 'month'
+        ? startOfMonth
+        : startOfYear;
+
+    const filtrada = produtoEmFoco.serieDiaria.filter((dia) => {
+      const parsed = new Date(`${dia.data}T00:00:00`);
+      if (Number.isNaN(parsed.getTime())) return false;
+      return parsed >= cutoff;
+    });
+    return filtrada.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+  }, [produtoCardPreset, produtoEmFoco]);
+
+  const produtoSparkData = useMemo(() => {
+    if (!produtoSerieFiltrada.length) return [];
+    if (produtoCardPreset === 'year') {
+      const porMes = new Map<string, { receita: number; quantidade: number }>();
+      for (const dia of produtoSerieFiltrada) {
+        const [ano, mes] = dia.data.split('-');
+        const key = `${ano}-${mes}`;
+        const atual = porMes.get(key) ?? { receita: 0, quantidade: 0 };
+        atual.receita += dia.receita;
+        atual.quantidade += dia.quantidade;
+        porMes.set(key, atual);
+      }
+      return Array.from(porMes.entries())
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([key, info]) => ({
+          label: key.split('-').reverse().join('/'),
+          value: info.receita,
+          quantidade: info.quantidade,
+        }));
+    }
+    return produtoSerieFiltrada.map((dia) => ({
+      label: formatSerieLabel(dia.data),
+      value: dia.receita,
+      quantidade: dia.quantidade,
+    }));
+  }, [produtoCardPreset, produtoSerieFiltrada]);
+
+  const produtoMelhorDia = useMemo(() => {
+    if (!produtoSerieFiltrada.length) return null;
+    return produtoSerieFiltrada.reduce((acc, dia) => {
+      if (!acc) return dia;
+      return dia.receita > acc.receita ? dia : acc;
+    }, produtoSerieFiltrada[0]);
+  }, [produtoSerieFiltrada]);
+
+  const produtoTicketMedio = produtoEmFoco && produtoEmFoco.quantidade > 0
+    ? produtoEmFoco.receita / produtoEmFoco.quantidade
+    : 0;
+  const produtoEstoqueDisponivel = produtoEmFoco?.disponivel ?? produtoEmFoco?.saldo ?? null;
   return (
     <>
       <div className="space-y-8">
@@ -1750,107 +1870,233 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   </div>
                   {topProdutos.length ? (
                     <>
+                      {produtoEmFoco && (
+                        <div className="space-y-4 mb-6">
+                          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="space-y-3">
+                                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Produto em foco</p>
+                                <h3 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">
+                                  {produtoEmFoco.descricao}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                  <span className="font-semibold tracking-[0.3em] uppercase">
+                                    {produtoEmFoco.sku ? `SKU ${produtoEmFoco.sku}` : 'Sem SKU'}
+                                  </span>
+                                  <div className="hidden h-4 w-px bg-slate-200/70 dark:bg-white/10 sm:block" />
+                                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                      Saldo:
+                                      <strong className="text-slate-900 dark:text-white">{produtoEmFoco.saldo ?? '—'}</strong>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                      Reservado:
+                                      <strong className="text-slate-900 dark:text-white">{produtoEmFoco.reservado ?? '—'}</strong>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-200">
+                                      Disponível:
+                                      <strong className="text-slate-900 dark:text-white">{produtoEstoqueDisponivel ?? '—'}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              {produtoEmFoco.imagemUrl ? (
+                                <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-white/60 dark:border-white/10 flex-shrink-0">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={produtoEmFoco.imagemUrl} alt={produtoEmFoco.descricao} className="w-full h-full object-cover" />
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="mt-4 space-y-5">
+                              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
+                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Receita</p>
+                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.receita)}</p>
+                                </div>
+                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
+                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Unidades</p>
+                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">
+                                    {produtoEmFoco.quantidade.toLocaleString('pt-BR')} un
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
+                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Ticket médio</p>
+                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTicketMedio)}</p>
+                                </div>
+                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
+                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Melhor dia</p>
+                                  {produtoMelhorDia ? (
+                                    <div className="space-y-1 text-slate-700 dark:text-slate-200">
+                                      <p className="text-base font-semibold">{formatSerieLabel(produtoMelhorDia.data)}</p>
+                                      <p className="text-xs">{formatBRL(produtoMelhorDia.receita)} · {produtoMelhorDia.quantidade.toLocaleString('pt-BR')} un</p>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xl font-semibold text-slate-400">—</p>
+                                  )}
+                                </div>
+                              </div>
+
+                            </div>
+
+                            <div className="mt-6 rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5 p-4 sm:p-5 shadow-sm">
+                              {produtoSparkData.length ? (
+                                <MicroTrendChart data={produtoSparkData} formatter={formatTooltipCurrency} />
+                              ) : (
+                                <div className="py-8 text-center text-xs text-slate-400">
+                                  Sem registros no período selecionado.
+                                </div>
+                              )}
+                              <div className="mt-4 flex flex-wrap justify-end gap-4 text-xs uppercase tracking-wide">
+                                {PRODUTO_CARD_PRESETS.map((presetOption) => (
+                                  <span
+                                    key={presetOption.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => setProdutoCardPreset(presetOption.id)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault();
+                                        setProdutoCardPreset(presetOption.id);
+                                      }
+                                    }}
+                                    className={`cursor-pointer select-none transition ${
+                                      produtoCardPreset === presetOption.id
+                                        ? 'text-slate-900 dark:text-white font-semibold'
+                                        : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {presetOption.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Desktop / tablet: lista vertical com 5 visíveis e scroll suave */}
                       <div className="hidden md:block">
                         <div className="grid grid-cols-2 gap-4 pr-2">
-                          {topProdutos.map((produto, idx) => (
-                            <div
-                              key={`${produto.produtoId ?? produto.descricao}`}
-                              className="product-card rounded-3xl p-4 flex gap-4 items-stretch"
-                            >
-                              <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
-                                {produto.imagemUrl ? (
-                                  <>
-                                    {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
-                                    {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
-                                    <img
-                                      src={produto.imagemUrl}
-                                      alt={produto.descricao}
-                                      className="absolute inset-0 w-full h-full object-cover"
-                                    />
-                                  </>
-                                ) : (
-                                  <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                    {getInitials(produto.descricao)}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col gap-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-base font-semibold text-slate-900 dark:text-white leading-tight truncate">{produto.descricao}</p>
-                                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
-                                  </div>
-                                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
-                                    {idx + 1}
-                                  </span>
+                          {topProdutos.map((produto, idx) => {
+                            const key = buildProdutoKey(produto);
+                            const ativo = produtoEmFocoKey ? produtoEmFocoKey === key : idx === 0;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => setSelectedProdutoKey(key)}
+                                aria-pressed={ativo}
+                                className={`product-card rounded-3xl p-4 flex gap-4 items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#009DA8] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+                                  ativo
+                                    ? 'ring-2 ring-[#009DA8] shadow-xl shadow-[#009DA8]/20'
+                                    : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
+                                }`}
+                              >
+                                <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
+                                  {produto.imagemUrl ? (
+                                    <>
+                                      {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
+                                      {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
+                                      <img
+                                        src={produto.imagemUrl}
+                                        alt={produto.descricao}
+                                        className="absolute inset-0 w-full h-full object-cover"
+                                      />
+                                    </>
+                                  ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
+                                      {getInitials(produto.descricao)}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="flex items-center justify-between text-sm">
-                                  <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
-                                    <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
-                                    <p>Reservado: {produto.reservado ?? '—'}</p>
-                                    <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-base font-semibold text-slate-900 dark:text-white leading-tight truncate">{produto.descricao}</p>
+                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                    </div>
+                                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
+                                      {idx + 1}
+                                    </span>
                                   </div>
-                                  <div className="text-right">
-                                    <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
-                                    <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                  <div className="flex items-center justify-between text-sm">
+                                    <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                      <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
+                                      <p>Reservado: {produto.reservado ?? '—'}</p>
+                                      <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
+                                      <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-                          ))}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
                       {/* Mobile: carrossel horizontal com snap */}
                       <div className="relative md:hidden -mx-4 px-4">
                         <div className="flex gap-4 overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-3">
-                          {topProdutos.map((produto, idx) => (
-                            <div
-                              key={`${produto.produtoId ?? produto.descricao}`}
-                              className="product-card rounded-3xl p-4 flex gap-4 min-w-[86vw] snap-center items-stretch"
-                            >
-                              <div className="relative w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
-                                {produto.imagemUrl ? (
-                                  <>
-                                    {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
-                                    {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
-                                    <img
-                                      src={produto.imagemUrl}
-                                      alt={produto.descricao}
-                                      className="absolute inset-0 w-full h-full object-cover"
-                                    />
-                                  </>
-                                ) : (
-                                  <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                    {getInitials(produto.descricao)}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col gap-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.descricao}</p>
-                                    <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
-                                  </div>
-                                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
-                                    {idx + 1}
-                                  </span>
+                          {topProdutos.map((produto, idx) => {
+                            const key = buildProdutoKey(produto);
+                            const ativo = produtoEmFocoKey ? produtoEmFocoKey === key : idx === 0;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => setSelectedProdutoKey(key)}
+                                aria-pressed={ativo}
+                                className={`product-card rounded-3xl p-4 flex gap-4 min-w-[86vw] snap-center items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#009DA8] ${
+                                  ativo
+                                    ? 'ring-2 ring-[#009DA8] shadow-xl shadow-[#009DA8]/20'
+                                    : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
+                                }`}
+                              >
+                                <div className="relative w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
+                                  {produto.imagemUrl ? (
+                                    <>
+                                      {/* Tiny envia URLs fora do domínio permitido pelo next/image */}
+                                      {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
+                                      <img
+                                        src={produto.imagemUrl}
+                                        alt={produto.descricao}
+                                        className="absolute inset-0 w-full h-full object-cover"
+                                      />
+                                    </>
+                                  ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
+                                      {getInitials(produto.descricao)}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="flex items-center justify-between text-sm">
-                                  <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
-                                    <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
-                                    <p>Reservado: {produto.reservado ?? '—'}</p>
-                                    <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.descricao}</p>
+                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                    </div>
+                                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
+                                      {idx + 1}
+                                    </span>
                                   </div>
-                                  <div className="text-right">
-                                    <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
-                                    <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                  <div className="flex items-center justify-between text-sm">
+                                    <div className="space-y-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                      <p className="font-semibold text-slate-800 dark:text-slate-200">Estoque: <span className="font-normal">{produto.saldo ?? '—'}</span></p>
+                                      <p>Reservado: {produto.reservado ?? '—'}</p>
+                                      <p>Disponível: {produto.disponivel ?? '—'}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{produto.quantidade.toLocaleString('pt-BR')} un</p>
+                                      <p className="text-xs text-slate-500 font-medium">{formatBRL(produto.receita)}</p>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-                          ))}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </>

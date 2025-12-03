@@ -61,6 +61,12 @@ type VendasCidade = {
   totalPedidos: number;
 };
 
+type ProdutoSerieDia = {
+  data: string;
+  quantidade: number;
+  receita: number;
+};
+
 type ProdutoResumo = {
   produtoId: number | null;
   sku?: string | null;
@@ -71,6 +77,23 @@ type ProdutoResumo = {
   saldo?: number | null;
   reservado?: number | null;
   disponivel?: number | null;
+  serieDiaria?: ProdutoSerieDia[];
+};
+
+type ProdutoResumoInterno = ProdutoResumo & {
+  serieDiariaMap?: Record<string, { quantidade: number; receita: number }>;
+};
+
+const buildProdutoInternalKey = (
+  produtoId: number | null | undefined,
+  descricao: string,
+  sku?: string | null
+) => {
+  if (typeof produtoId === 'number' && Number.isFinite(produtoId)) {
+    return `id:${produtoId}`;
+  }
+  const base = descricao?.trim() || 'Produto sem nome';
+  return `${base}-${sku ?? ''}`;
 };
 
 type TinyPedidoItemWithProduto = Pick<
@@ -198,7 +221,27 @@ function extrairItens(raw: Json | null): TinyRawItem[] {
   return [];
 }
 
-function registrarProduto(map: Map<string, ProdutoResumo>, item: TinyRawItem | null) {
+const updateSerieDiaria = (
+  alvo: ProdutoResumoInterno,
+  dataPedido: string | null | undefined,
+  quantidade: number,
+  receita: number
+) => {
+  if (!dataPedido) return;
+  const dia = dataPedido.slice(0, 10);
+  if (!dia) return;
+  const serie = alvo.serieDiariaMap ?? (alvo.serieDiariaMap = {});
+  const atual = serie[dia] ?? { quantidade: 0, receita: 0 };
+  atual.quantidade += quantidade;
+  atual.receita += receita;
+  serie[dia] = atual;
+};
+
+function registrarProduto(
+  map: Map<string, ProdutoResumoInterno>,
+  item: TinyRawItem | null,
+  dataPedido?: string | null
+) {
   if (!item) return;
   const produtoRaw = isRecord(item.produto) ? item.produto : {};
   const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
@@ -210,7 +253,7 @@ function registrarProduto(map: Map<string, ProdutoResumo>, item: TinyRawItem | n
     (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
     (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
     null;
-  const key = produtoId ? `id:${produtoId}` : `${descricaoBase}-${skuCandidate ?? ''}`;
+  const key = buildProdutoInternalKey(produtoId, descricaoBase, skuCandidate);
   const quantidade = toNumber(item.quantidade);
   const valorUnitario = parseValorTiny(
     toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
@@ -231,7 +274,7 @@ function registrarProduto(map: Map<string, ProdutoResumo>, item: TinyRawItem | n
   if (!imagemUrl && typeof produtoRaw.foto === 'string') imagemUrl = produtoRaw.foto;
   if (!imagemUrl && typeof produtoRaw.imagem_url === 'string') imagemUrl = produtoRaw.imagem_url;
 
-  const atual = map.get(key) ?? {
+  const atual: ProdutoResumoInterno = map.get(key) ?? {
     produtoId,
     sku: skuCandidate ?? undefined,
     descricao: descricaoBase,
@@ -249,12 +292,15 @@ function registrarProduto(map: Map<string, ProdutoResumo>, item: TinyRawItem | n
     atual.imagemUrl = imagemUrl;
   }
 
+  updateSerieDiaria(atual, dataPedido ?? null, quantidade, receita);
+
   map.set(key, atual);
 }
 
 function registrarProdutoPersistido(
-  map: Map<string, ProdutoResumo>,
-  item: TinyPedidoItemWithProduto | null
+  map: Map<string, ProdutoResumoInterno>,
+  item: TinyPedidoItemWithProduto | null,
+  dataPedido?: string | null
 ) {
   if (!item) return;
   const quantidade = toNumber(item.quantidade);
@@ -273,9 +319,9 @@ function registrarProdutoPersistido(
   const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
   const imagemUrl = item.tiny_produtos?.imagem_url ?? null;
   const produtoId = item.id_produto_tiny;
-  const key = produtoId ? `id:${produtoId}` : `${descricao}-${sku ?? ''}`;
+  const key = buildProdutoInternalKey(produtoId, descricao, sku);
 
-  const atual = map.get(key) ?? {
+  const atual: ProdutoResumoInterno = map.get(key) ?? {
     produtoId: produtoId,
     sku: sku ?? undefined,
     descricao,
@@ -292,6 +338,8 @@ function registrarProdutoPersistido(
   if (!atual.imagemUrl && imagemUrl) {
     atual.imagemUrl = imagemUrl;
   }
+
+  updateSerieDiaria(atual, dataPedido ?? null, quantidade, receita);
 
   map.set(key, atual);
 }
@@ -628,8 +676,8 @@ export async function GET(req: NextRequest) {
     const mapaSitAnterior = new Map<number, number>();
 
     const mapaCanalAtual = new Map<string, { totalValor: number; totalPedidos: number }>();
-    const mapaProdutoAtual = new Map<string, ProdutoResumo>();
-    const mapaProdutoAnterior = new Map<string, ProdutoResumo>();
+    const mapaProdutoAtual = new Map<string, ProdutoResumoInterno>();
+    const mapaProdutoAnterior = new Map<string, ProdutoResumoInterno>();
 
     // Mapas geográficos (período atual)
     const mapaUFAtual = new Map<string, { totalValor: number; totalPedidos: number }>();
@@ -653,6 +701,153 @@ export async function GET(req: NextRequest) {
     let totalProdutosAnterior = 0;
     let totalPedidosAnteriorBaseCancel = 0;
     let canceladosAnteriorBase = 0;
+
+    const hydrateTopProdutoSeries = async () => {
+      if (!mapaProdutoAtual.size) {
+        return;
+      }
+
+      const now = new Date();
+      const endDateStr = now.toISOString().slice(0, 10);
+      const endISO = `${endDateStr}T23:59:59Z`;
+      const thirtyDaysAgo = new Date(now);
+      thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
+      const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+      const serieStartDate = thirtyDaysAgo < startOfYear ? thirtyDaysAgo : startOfYear;
+      const serieStartStr = serieStartDate.toISOString().slice(0, 10);
+      const startISO = `${serieStartStr}T00:00:00Z`;
+
+      let serieOrders: OrderSummaryRow[] = [];
+      try {
+        serieOrders = await fetchAllOrdersForPeriod(startISO, endISO);
+      } catch (err) {
+        console.warn('[Dashboard resumo] Falha ao carregar janela de série estendida', err);
+        return;
+      }
+
+      if (!serieOrders.length) {
+        mapaProdutoAtual.forEach((produto) => {
+          produto.serieDiariaMap = {};
+        });
+        return;
+      }
+
+      const serieOrderIds = serieOrders
+        .map((p) => p.id)
+        .filter((id): id is number => typeof id === 'number');
+      const itensSerie = await carregarItensPorPedido(serieOrderIds);
+
+      const produtoLookup = new Map<string, ProdutoResumoInterno>();
+      mapaProdutoAtual.forEach((produto) => {
+        const primaryKey = buildProdutoInternalKey(
+          produto.produtoId ?? null,
+          produto.descricao,
+          produto.sku ?? null
+        );
+        produtoLookup.set(primaryKey, produto);
+        if (typeof produto.produtoId === 'number') {
+          produtoLookup.set(`id:${produto.produtoId}`, produto);
+          const fallbackKey = buildProdutoInternalKey(null, produto.descricao, produto.sku ?? null);
+          produtoLookup.set(fallbackKey, produto);
+        }
+        if (produto.sku) {
+          produtoLookup.set(`sku:${produto.sku}`, produto);
+        }
+        produto.serieDiariaMap = {};
+      });
+
+      const resolveProduto = (candidates: Array<string | null | undefined>) => {
+        for (const candidate of candidates) {
+          if (!candidate) continue;
+          const alvo = produtoLookup.get(candidate);
+          if (alvo) return alvo;
+        }
+        return null;
+      };
+
+      const processPersistedItem = (item: TinyPedidoItemWithProduto, data: string) => {
+        const quantidade = toNumber(item?.quantidade);
+        if (quantidade <= 0) return;
+        const valorUnitario = parseValorTiny(
+          toParseableNumber(item.valor_unitario ?? item.valorUnitario ?? item.valor)
+        );
+        const receita =
+          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+          quantidade * valorUnitario;
+        const descricao =
+          (typeof item.nome_produto === 'string' && item.nome_produto.trim()) ||
+          item.tiny_produtos?.nome ||
+          'Sem descrição';
+        const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
+        const produtoId = item.id_produto_tiny;
+        const fallbackKey = buildProdutoInternalKey(null, descricao, sku);
+        const alvo = resolveProduto([
+          typeof produtoId === 'number' ? `id:${produtoId}` : null,
+          sku ? `sku:${sku}` : null,
+          fallbackKey,
+        ]);
+        if (!alvo) return;
+        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
+      };
+
+      const processRawItem = (item: TinyRawItem, data: string) => {
+        const quantidade = toNumber(item?.quantidade);
+        if (quantidade <= 0) return;
+        const valorUnitario = parseValorTiny(
+          toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
+        );
+        const receita =
+          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+          quantidade * valorUnitario;
+
+        const produtoRaw = isRecord(item.produto) ? item.produto : {};
+        const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
+        const descricaoBase =
+          (typeof produtoRaw.descricao === 'string' && produtoRaw.descricao.trim()) ||
+          (typeof produtoRaw.nome === 'string' && produtoRaw.nome.trim()) ||
+          'Produto sem nome';
+        const skuCandidate =
+          (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
+          (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
+          null;
+        const fallbackKey = buildProdutoInternalKey(null, descricaoBase, skuCandidate);
+        const alvo = resolveProduto([
+          typeof produtoId === 'number' ? `id:${produtoId}` : null,
+          skuCandidate ? `sku:${skuCandidate}` : null,
+          fallbackKey,
+        ]);
+        if (!alvo) return;
+        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
+      };
+
+      for (const order of serieOrders) {
+        const data = order.data_criacao;
+        if (!data) continue;
+        const situacao = typeof order.situacao === 'number' ? order.situacao : -1;
+        const canal = normalizarCanalTiny(order.canal);
+        const passaCanal =
+          !canaisFiltro || canaisFiltro.length === 0 ? true : canaisFiltro.includes(canal);
+        const passaSituacao =
+          !situacoesFiltro || situacoesFiltro.length === 0
+            ? true
+            : situacoesFiltro.includes(situacao);
+        if (!passaCanal || !passaSituacao) continue;
+
+        const itensPersistidos = order.id ? itensSerie.get(order.id) ?? [] : [];
+        if (itensPersistidos.length) {
+          for (const item of itensPersistidos) {
+            processPersistedItem(item, data);
+          }
+          continue;
+        }
+
+        const itensRaw = extrairItens(order.raw);
+        if (!itensRaw.length) continue;
+        for (const rawItem of itensRaw) {
+          processRawItem(rawItem, data);
+        }
+      }
+    };
 
     // Processa período anterior
     for (const p of ordersAnterior ?? []) {
@@ -713,7 +908,7 @@ export async function GET(req: NextRequest) {
         for (const item of itensPersistidos) {
           const qtdProduto = toNumber(item?.quantidade);
           totalProdutosAnterior += qtdProduto;
-          registrarProdutoPersistido(mapaProdutoAnterior, item);
+          registrarProdutoPersistido(mapaProdutoAnterior, item, data);
         }
       } else {
         const itensAnterior = extrairItens(p.raw);
@@ -721,7 +916,7 @@ export async function GET(req: NextRequest) {
           for (const item of itensAnterior) {
             const qtdProduto = toNumber(item?.quantidade);
             totalProdutosAnterior += qtdProduto;
-            registrarProduto(mapaProdutoAnterior, item);
+            registrarProduto(mapaProdutoAnterior, item, data);
           }
         }
       }
@@ -818,7 +1013,7 @@ export async function GET(req: NextRequest) {
         for (const item of itensPersistidos) {
           const qtdProduto = toNumber(item?.quantidade);
           totalProdutosAtual += qtdProduto;
-          registrarProdutoPersistido(mapaProdutoAtual, item);
+          registrarProdutoPersistido(mapaProdutoAtual, item, data);
         }
       } else {
         const itensAtuais = extrairItens(p.raw);
@@ -826,11 +1021,13 @@ export async function GET(req: NextRequest) {
           for (const item of itensAtuais) {
             const qtdProduto = toNumber(item?.quantidade);
             totalProdutosAtual += qtdProduto;
-            registrarProduto(mapaProdutoAtual, item);
+            registrarProduto(mapaProdutoAtual, item, data);
           }
         }
       }
     }
+
+    await hydrateTopProdutoSeries();
 
     const vendasPorDiaAtual: DiaResumo[] = Array.from(mapaDiaAtual.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -913,7 +1110,7 @@ export async function GET(req: NextRequest) {
       console.warn('[Dashboard resumo] Falha ao carregar estoque para top produtos', e);
     }
 
-    const enrichProdutos = (arr: ProdutoResumo[]) =>
+    const enrichProdutos = (arr: ProdutoResumoInterno[]) =>
       arr.map((prod) => {
         const keyId = prod.produtoId ? `id:${prod.produtoId}` : null;
         const keySku = prod.sku ? `sku:${prod.sku}` : null;
@@ -929,6 +1126,16 @@ export async function GET(req: NextRequest) {
           disponivel: found.disponivel,
           imagemUrl: prod.imagemUrl ?? found.imagemUrl ?? undefined,
         };
+      });
+
+    const serializeProdutos = (arr: ProdutoResumoInterno[]): ProdutoResumo[] =>
+      arr.map((prod) => {
+        const { serieDiariaMap, ...rest } = prod;
+        if (!serieDiariaMap) return rest;
+        const serieDiaria = Object.entries(serieDiariaMap)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([data, info]) => ({ data, quantidade: info.quantidade, receita: info.receita }));
+        return { ...rest, serieDiaria };
       });
 
     const periodoAtual: PeriodoResumo = {
@@ -948,10 +1155,12 @@ export async function GET(req: NextRequest) {
         totalPedidosAtualBaseCancel > 0
           ? (canceladosAtualBase / totalPedidosAtualBaseCancel) * 100
           : 0,
-      topProdutos: enrichProdutos(
-        Array.from(mapaProdutoAtual.values())
-          .sort((a, b) => b.quantidade - a.quantidade)
-          .slice(0, 12)
+      topProdutos: serializeProdutos(
+        enrichProdutos(
+          Array.from(mapaProdutoAtual.values())
+            .sort((a, b) => b.quantidade - a.quantidade)
+            .slice(0, 12)
+        )
       ),
     };
 
@@ -974,10 +1183,12 @@ export async function GET(req: NextRequest) {
         totalPedidosAnteriorBaseCancel > 0
           ? (canceladosAnteriorBase / totalPedidosAnteriorBaseCancel) * 100
           : 0,
-      topProdutos: enrichProdutos(
-        Array.from(mapaProdutoAnterior.values())
-          .sort((a, b) => b.quantidade - a.quantidade)
-          .slice(0, 12)
+      topProdutos: serializeProdutos(
+        enrichProdutos(
+          Array.from(mapaProdutoAnterior.values())
+            .sort((a, b) => b.quantidade - a.quantidade)
+            .slice(0, 12)
+        )
       ),
     };
 

@@ -41,27 +41,38 @@ export function CustomTooltip({ active, payload, label, formatter }: CustomToolt
 
   return (
     <div
-      className="rounded-lg p-3 border border-white/40 dark:border-slate-700/40"
+      className="glass-tooltip text-[12px] p-3"
       style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        color: 'var(--text-main)',
-        fontSize: '11px',
         zIndex: 9999,
+        background: 'rgba(255, 255, 255, 0.92)',
+        color: 'var(--text-main, #0f172a)',
+        backdropFilter: 'blur(35px) saturate(1.4)',
+        WebkitBackdropFilter: 'blur(35px) saturate(1.4)',
       }}
     >
-      <p style={{ margin: '0 0 4px 0' }}>{label ? `Dia ${label}` : 'Data'}</p>
+      <p style={{ margin: '0 0 6px 0', fontWeight: 600 }}>{label ? `Dia ${label}` : 'Data'}</p>
       {payload.map((entry, index) => {
         const rawValue = entry?.value;
         const formattedValue =
           formatter && (typeof rawValue === 'number' || typeof rawValue === 'string')
             ? formatter(rawValue)
             : rawValue;
+        const extraData = (entry?.payload as { quantidade?: number } | undefined) ?? null;
+        const quantidade = typeof extraData?.quantidade === 'number' ? extraData.quantidade : null;
+        const lineStyle = {
+          margin: '0',
+          color: entry?.color ?? 'var(--text-main)',
+          fontWeight: 600,
+        } as const;
         return (
-          <p key={entry?.name ?? index} style={{ margin: '2px 0', color: entry?.color }}>
-            <strong>{entry?.name}:</strong> {formattedValue}
-          </p>
+          <div key={entry?.name ?? index} style={{ margin: '4px 0' }}>
+            <p style={lineStyle}>{formattedValue}</p>
+            {quantidade != null ? (
+              <p style={{ ...lineStyle, marginTop: '2px' }}>
+                {quantidade.toLocaleString('pt-BR')} un
+              </p>
+            ) : null}
+          </div>
         );
       })}
     </div>

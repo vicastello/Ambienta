@@ -1,9 +1,11 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Loader2, Package, RefreshCcw, Search } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
+import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
+import type { CustomTooltipFormatter } from "@/app/dashboard/components/charts/ChartTooltips";
 
 type Produto = {
   id: number;
@@ -57,9 +59,46 @@ const formatBRL = (value: number | null) => {
 };
 
 const formatNumber = (value: number | null) => {
-  if (value === null) return "—";
+  if (value === null || Number.isNaN(value)) return "—";
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 };
+
+const formatSerieDayLabel = (date: Date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+};
+
+const formatTooltipCurrency: CustomTooltipFormatter = (value) =>
+  typeof value === "number" ? formatBRL(value) : String(value ?? "");
+
+const PRODUTO_SERIE_PRESETS = [
+  { value: "30d", label: "30d" },
+  { value: "month", label: "Mês" },
+  { value: "year", label: "Ano" },
+] as const;
+
+type ProdutoSeriePreset = (typeof PRODUTO_SERIE_PRESETS)[number]["value"];
+
+type ProdutoDesempenhoPoint = {
+  data: string;
+  quantidade: number;
+  receita: number;
+};
+
+type ProdutoDesempenhoResponse = {
+  produtoId: number;
+  preset: ProdutoSeriePreset;
+  startDate: string;
+  endDate: string;
+  totalQuantidade: number;
+  totalReceita: number;
+  serie: ProdutoDesempenhoPoint[];
+  melhorDia: ProdutoDesempenhoPoint | null;
+};
+
+const PRODUTO_DESEMPENHO_CACHE_TTL_MS = 2 * 60_000;
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
@@ -86,8 +125,17 @@ export default function ProdutosClient() {
   const [fornecedorInput, setFornecedorInput] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [page, setPage] = useState(0);
+  const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<number | null>(null);
+  const [produtoHeroPreset, setProdutoHeroPreset] = useState<ProdutoSeriePreset>("30d");
+  const [produtoDesempenho, setProdutoDesempenho] = useState<ProdutoDesempenhoResponse | null>(null);
+  const [produtoDesempenhoLoading, setProdutoDesempenhoLoading] = useState(false);
+  const [produtoDesempenhoError, setProdutoDesempenhoError] = useState<string | null>(null);
 
   const produtosRequestId = useRef(0);
+  const produtoDesempenhoRequestId = useRef(0);
+  const produtoDesempenhoCacheRef = useRef(
+    new Map<string, { payload: ProdutoDesempenhoResponse; timestamp: number }>()
+  );
 
   const fetchProdutos = useCallback(async () => {
     const requestId = ++produtosRequestId.current;
@@ -144,6 +192,19 @@ export default function ProdutosClient() {
   }, [fetchProdutos]);
 
   useEffect(() => {
+    if (!produtos.length) {
+      setProdutoSelecionadoId(null);
+      return;
+    }
+    setProdutoSelecionadoId((prev) => {
+      if (prev && produtos.some((produto) => produto.id === prev)) {
+        return prev;
+      }
+      return produtos[0].id;
+    });
+  }, [produtos]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       clearCacheByPrefix("produtos:");
       fetchProdutos();
@@ -151,7 +212,116 @@ export default function ProdutosClient() {
     return () => clearInterval(interval);
   }, [fetchProdutos]);
 
+  useEffect(() => {
+    if (!produtoSelecionadoId) {
+      setProdutoDesempenho(null);
+      setProdutoDesempenhoError(null);
+      setProdutoDesempenhoLoading(false);
+      return;
+    }
+
+    const cacheKey = `${produtoSelecionadoId}:${produtoHeroPreset}`;
+    const cached = produtoDesempenhoCacheRef.current.get(cacheKey);
+    const requestId = ++produtoDesempenhoRequestId.current;
+
+    if (cached && Date.now() - cached.timestamp < PRODUTO_DESEMPENHO_CACHE_TTL_MS) {
+      setProdutoDesempenho(cached.payload);
+      setProdutoDesempenhoError(null);
+      setProdutoDesempenhoLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setProdutoDesempenhoLoading(true);
+    setProdutoDesempenhoError(null);
+
+    const fetchDesempenho = async () => {
+      try {
+        const response = await fetch(
+          `/api/produtos/desempenho?produtoId=${produtoSelecionadoId}&preset=${produtoHeroPreset}`,
+          { cache: "no-store", signal: controller.signal }
+        );
+        const json = (await response.json().catch(() => null)) as
+          | ProdutoDesempenhoResponse
+          | ProdutosErrorResponse
+          | null;
+        if (!response.ok) {
+          const errorMessage =
+            (json as ProdutosErrorResponse | null)?.message ||
+            (json as ProdutosErrorResponse | null)?.details ||
+            (json as ProdutosErrorResponse | null)?.error ||
+            "Erro ao carregar desempenho";
+          throw new Error(errorMessage);
+        }
+        if (controller.signal.aborted || produtoDesempenhoRequestId.current !== requestId) return;
+        if (!json) {
+          throw new Error("Resposta inválida da API");
+        }
+        const payload = json as ProdutoDesempenhoResponse;
+        setProdutoDesempenho(payload);
+        produtoDesempenhoCacheRef.current.set(cacheKey, { payload, timestamp: Date.now() });
+      } catch (fetchError) {
+        if (controller.signal.aborted || produtoDesempenhoRequestId.current !== requestId) return;
+        setProdutoDesempenho(null);
+        setProdutoDesempenhoError(getErrorMessage(fetchError) || "Erro ao carregar desempenho");
+      } finally {
+        if (controller.signal.aborted || produtoDesempenhoRequestId.current !== requestId) return;
+        setProdutoDesempenhoLoading(false);
+      }
+    };
+
+    fetchDesempenho();
+
+    return () => {
+      controller.abort();
+    };
+  }, [produtoSelecionadoId, produtoHeroPreset]);
+
   const totalPages = Math.max(1, Math.ceil(total / PRODUTOS_PAGE_SIZE) || 1);
+
+  const produtoEmFoco = useMemo(() => {
+    if (!produtos.length) return null;
+    if (produtoSelecionadoId == null) return produtos[0];
+    return produtos.find((produto) => produto.id === produtoSelecionadoId) ?? produtos[0];
+  }, [produtos, produtoSelecionadoId]);
+
+  const produtoSparkData = useMemo(() => {
+    if (!produtoDesempenho?.serie?.length) return [];
+    return produtoDesempenho.serie.map((ponto) => {
+      const parsed = new Date(`${ponto.data}T00:00:00`);
+      const label = Number.isNaN(parsed.getTime()) ? ponto.data : formatSerieDayLabel(parsed);
+      return {
+        label,
+        value: ponto.receita,
+        quantidade: ponto.quantidade,
+      };
+    });
+  }, [produtoDesempenho]);
+
+  const produtoMelhorDia = produtoDesempenho?.melhorDia ?? null;
+  const produtoTotalReceita = produtoDesempenho?.totalReceita ?? 0;
+  const produtoTotalQuantidade = produtoDesempenho?.totalQuantidade ?? 0;
+  const produtoMelhorDiaLabel = useMemo(() => {
+    if (!produtoMelhorDia?.data) return null;
+    const parsed = new Date(`${produtoMelhorDia.data}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return produtoMelhorDia.data;
+    return formatSerieDayLabel(parsed);
+  }, [produtoMelhorDia]);
+  const tipoProdutoEmFoco = produtoEmFoco
+    ? TIPO_CONFIG[produtoEmFoco.tipo] ?? {
+        label: produtoEmFoco.tipo,
+        color: "bg-slate-100 text-slate-600",
+      }
+    : null;
+  const situacaoProdutoEmFoco = produtoEmFoco
+    ? SITUACAO_CONFIG[produtoEmFoco.situacao] ?? {
+        label: produtoEmFoco.situacao,
+        color: "text-slate-600",
+        bg: "bg-slate-100",
+      }
+    : null;
+  const disponivelEmFoco = produtoEmFoco?.disponivel ?? 0;
+  const estoqueCriticoFoco = disponivelEmFoco > 0 && disponivelEmFoco < 5;
 
   const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
@@ -303,6 +473,146 @@ export default function ProdutosClient() {
         </form>
       </section>
 
+      {produtoEmFoco && (
+        <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/70 dark:bg-white/5 border border-white/60 flex items-center justify-center overflow-hidden">
+                {produtoEmFoco.imagem_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={produtoEmFoco.imagem_url} alt={produtoEmFoco.nome} className="w-full h-full object-cover" />
+                ) : (
+                  <Package className="w-7 h-7 text-slate-400" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Produto em foco</p>
+                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                  <span>Código {produtoEmFoco.codigo || "—"}</span>
+                  <span>GTIN {produtoEmFoco.gtin || "—"}</span>
+                  <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {situacaoProdutoEmFoco && (
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}>
+                  {situacaoProdutoEmFoco.label}
+                </span>
+              )}
+              {tipoProdutoEmFoco && (
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoProdutoEmFoco.color}`}>
+                  {tipoProdutoEmFoco.label}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.2fr)]">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Preço base</p>
+                <p className="text-xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Promoção</p>
+                <p className="text-xl font-semibold text-emerald-600">
+                  {produtoEmFoco.preco_promocional ? formatBRL(produtoEmFoco.preco_promocional) : "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Fornecedor</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white truncate">
+                  {produtoEmFoco.fornecedor_nome || "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Unidade</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white">{produtoEmFoco.unidade || "—"}</p>
+              </div>
+            </div>
+            <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Desempenho de vendas</p>
+                  <p className="text-xs text-slate-500">Receita e unidades vendidas (Tiny)</p>
+                </div>
+                <div className="inline-flex items-center gap-1 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/0 p-1 text-[11px] font-semibold">
+                  {PRODUTO_SERIE_PRESETS.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setProdutoHeroPreset(value)}
+                      className={`px-2.5 py-1 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/60 ${
+                        produtoHeroPreset === value
+                          ? "bg-purple-600 text-white shadow"
+                          : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="relative min-h-[140px]">
+                {produtoDesempenhoLoading && (
+                  <div className="absolute inset-0 z-10 rounded-2xl bg-white/80 dark:bg-slate-900/60 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+                  </div>
+                )}
+                {produtoSparkData.length ? (
+                  <MicroTrendChart data={produtoSparkData} formatter={formatTooltipCurrency} />
+                ) : produtoDesempenhoError ? (
+                  <p className="text-xs text-rose-500">{produtoDesempenhoError}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">Sem vendas registradas para o período selecionado.</p>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Receita período</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</p>
+                </div>
+                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Unidades vendidas</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</p>
+                </div>
+                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Melhor dia</p>
+                  {produtoMelhorDia ? (
+                    <div className="space-y-1">
+                      <p className="text-base font-semibold text-slate-900 dark:text-white">
+                        {produtoMelhorDiaLabel}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatBRL(produtoMelhorDia.receita)} · {formatNumber(produtoMelhorDia.quantidade)} un
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-base font-semibold text-slate-400">—</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">Saldo: <strong className="text-slate-900 dark:text-white">{formatNumber(produtoEmFoco.saldo)}</strong></span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">Reservado: <strong className="text-slate-900 dark:text-white">{formatNumber(produtoEmFoco.reservado)}</strong></span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
+              disponivelEmFoco <= 0
+                ? "bg-rose-100 text-rose-700"
+                : estoqueCriticoFoco
+                ? "bg-amber-100 text-amber-700"
+                : "bg-emerald-100 text-emerald-700"
+            }`}>
+              Disponível: <strong>{formatNumber(produtoEmFoco.disponivel)}</strong>
+            </span>
+          </div>
+        </section>
+      )}
+
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
         {loading ? (
           <div className="px-6 py-12 text-center">
@@ -324,7 +634,12 @@ export default function ProdutosClient() {
           <>
             <div className="md:hidden space-y-3 p-4">
               {produtos.map((produto) => (
-                <ProdutoCard key={produto.id} produto={produto} />
+                <ProdutoCard
+                  key={produto.id}
+                  produto={produto}
+                  selected={produtoEmFoco?.id === produto.id}
+                  onSelect={() => setProdutoSelecionadoId(produto.id)}
+                />
               ))}
             </div>
 
@@ -345,7 +660,12 @@ export default function ProdutosClient() {
                 </thead>
                 <tbody>
                   {produtos.map((produto) => (
-                    <ProdutoTableRow key={produto.id} produto={produto} />
+                    <ProdutoTableRow
+                      key={produto.id}
+                      produto={produto}
+                      selected={produtoEmFoco?.id === produto.id}
+                      onSelect={() => setProdutoSelecionadoId(produto.id)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -387,9 +707,11 @@ export default function ProdutosClient() {
 
 type ProdutoRowProps = {
   produto: Produto;
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
-const ProdutoCard = memo(function ProdutoCard({ produto }: ProdutoRowProps) {
+const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -403,7 +725,21 @@ const ProdutoCard = memo(function ProdutoCard({ produto }: ProdutoRowProps) {
   const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
 
   return (
-    <article className="app-card p-4 flex gap-3">
+    <article
+      role="button"
+      tabIndex={0}
+      aria-pressed={Boolean(selected)}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && onSelect) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`app-card p-4 flex gap-3 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-[#009DA8] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+        selected ? "ring-2 ring-[#009DA8] shadow-lg shadow-[#009DA8]/20" : ""
+      }`}
+    >
       <div className="w-16 h-16 rounded-2xl bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
         {produto.imagem_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -462,7 +798,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto }: ProdutoRowProps) {
   );
 });
 
-const ProdutoTableRow = memo(function ProdutoTableRow({ produto }: ProdutoRowProps) {
+const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -476,7 +812,21 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto }: ProdutoRowPro
   const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
 
   return (
-    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+    <tr
+      className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#009DA8] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+        selected ? "bg-slate-50/80 dark:bg-slate-800/40" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
+      }`}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if ((event.key === "Enter" || event.key === " ") && onSelect) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-pressed={Boolean(selected)}
+    >
       <td className="px-6 py-4">
         <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60">
           {produto.imagem_url ? (
