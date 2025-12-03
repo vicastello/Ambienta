@@ -1027,9 +1027,9 @@ function MonthlyDreCard({
   };
 
   const computedRow = (label: string, amount: number) => (
-    <div className="grid grid-cols-12 items-center bg-white/70 dark:bg-white/5 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white">
-      <div className="col-span-8">{label}</div>
-      <div className="col-span-4 text-right">{formatCurrency(amount)}</div>
+    <div className="grid grid-cols-12 items-center rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 dark:text-white bg-white/60 dark:bg-white/5">
+      <div className="col-span-7">{label}</div>
+      <div className="col-span-5 text-right">{formatCurrency(amount)}</div>
     </div>
   );
 
@@ -1060,69 +1060,69 @@ function MonthlyDreCard({
         </div>
       </div>
 
-      <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mt-2 mb-1">Receita / Operação</div>
-      <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
-        {receitaRows.map((row) => editableRow(row.code, row.label, true))}
-      </div>
-
-      <div className="mt-3 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucro Bruto</div>
-        <div className="flex items-center justify-between text-sm font-semibold text-slate-900 dark:text-white">
-          <span>Lucro Bruto</span>
-          <span>{formatCurrency(lucroBruto)}</span>
+      <div className={innerCardClass}>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Receita / Operação</div>
+        <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {receitaRows.map((row) => editableRow(row.code, row.label, true))}
         </div>
+        {computedRow('Lucro Bruto', lucroBruto)}
       </div>
 
-      <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mt-2 mb-1">Despesas</div>
-      <div className="rounded-xl border border-white/30 bg-white/60 dark:bg-white/5">
-        {despesasRows.map((row) => editableRow(row.code, row.label, true))}
-      </div>
-
-      <div className="mt-3 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3 space-y-1">
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Lucro Líquido</div>
-        <div className="flex items-center justify-between text-sm font-semibold text-slate-900 dark:text-white">
-          <span>Lucro Líquido</span>
-          <span>{formatCurrency(lucroLiquido)}</span>
+      <div className={innerCardClass}>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Despesas</div>
+        <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {despesasRows.map((row) => editableRow(row.code, row.label, true))}
         </div>
+        {computedRow('Lucro Líquido', lucroLiquido)}
       </div>
 
-      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
-        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Reserva e divisão</div>
+      <div className={innerCardClass}>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Reserva</div>
         {computedRow('Reserva', reserva)}
+      </div>
+
+      <div className={innerCardClass}>
+        <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Divisão</div>
         {computedRow('Divisão', divisao)}
       </div>
 
-      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+      <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Vitor</div>
-        {editableRow('PLANO_SAUDE_VITOR', '(-) Plano de Saúde', false)}
-        {editableRow('VALES_VITOR', '(-) Vales', false)}
-        {editableRow('OUTROS_DESCONTOS_VITOR', '(-) Outros Descontos', false)}
-        {editableRow('VALE_COMBUSTIVEL_VITOR', '(+) Vale Combustível', false)}
-        {editableRow('OUTROS_CREDITOS_VITOR', '(+) Outros Créditos', false)}
+        <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {editableRow('PLANO_SAUDE_VITOR', '(-) Plano de Saúde', false)}
+          {editableRow('VALES_VITOR', '(-) Vales', false)}
+          {editableRow('OUTROS_DESCONTOS_VITOR', '(-) Outros Descontos', false)}
+          {editableRow('VALE_COMBUSTIVEL_VITOR', '(+) Vale Combustível', false)}
+          {editableRow('OUTROS_CREDITOS_VITOR', '(+) Outros Créditos', false)}
+        </div>
         {computedRow('(=) Total Vitor', vitorTotal)}
       </div>
 
-      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+      <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Gabriela</div>
-        {editableRow('PLANO_SAUDE_GABRIELA', '(-) Plano de Saúde', false)}
-        {editableRow('VALES_GABRIELA', '(-) Vales', false)}
-        {editableRow('OUTROS_DESCONTOS_GABRIELA', '(-) Outros Descontos', false)}
-        {editableRow('VALE_COMBUSTIVEL_GABRIELA', '(+) Vale Combustível', false)}
-        {editableRow('OUTROS_CREDITOS_GABRIELA', '(+) Outros Créditos', false)}
+        <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {editableRow('PLANO_SAUDE_GABRIELA', '(-) Plano de Saúde', false)}
+          {editableRow('VALES_GABRIELA', '(-) Vales', false)}
+          {editableRow('OUTROS_DESCONTOS_GABRIELA', '(-) Outros Descontos', false)}
+          {editableRow('VALE_COMBUSTIVEL_GABRIELA', '(+) Vale Combustível', false)}
+          {editableRow('OUTROS_CREDITOS_GABRIELA', '(+) Outros Créditos', false)}
+        </div>
         {computedRow('(=) Total Gabriela', gabTotal)}
       </div>
 
-      <div className="mt-2 space-y-2 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+      <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Nelson</div>
-        {editableRow('PLANO_SAUDE_NELSON', '(-) Plano de Saúde', false)}
-        {editableRow('VALES_NELSON', '(-) Vales', false)}
-        {editableRow('OUTROS_DESCONTOS_NELSON', '(-) Outros Descontos', false)}
-        {editableRow('VALE_COMBUSTIVEL_NELSON', '(+) Vale Combustível', false)}
-        {editableRow('OUTROS_CREDITOS_NELSON', '(+) Outros Créditos', false)}
+        <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {editableRow('PLANO_SAUDE_NELSON', '(-) Plano de Saúde', false)}
+          {editableRow('VALES_NELSON', '(-) Vales', false)}
+          {editableRow('OUTROS_DESCONTOS_NELSON', '(-) Outros Descontos', false)}
+          {editableRow('VALE_COMBUSTIVEL_NELSON', '(+) Vale Combustível', false)}
+          {editableRow('OUTROS_CREDITOS_NELSON', '(+) Outros Créditos', false)}
+        </div>
         {computedRow('(=) Total Nelson', nelsonTotal)}
       </div>
 
-      <div className="mt-2 space-y-1 rounded-xl border border-white/40 bg-white/70 dark:bg-white/5 p-3">
+      <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Valor para Saque</div>
         {computedRow('Valor para Saque', valorParaSaque)}
       </div>
