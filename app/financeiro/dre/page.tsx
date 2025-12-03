@@ -1256,6 +1256,10 @@ function MonthlyDreCard({
 
   const innerCardClass =
     'rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-4 space-y-3';
+  const moveCaretToEnd = (input: HTMLInputElement) => {
+    const len = input.value.length;
+    requestAnimationFrame(() => input.setSelectionRange(len, len));
+  };
 
   const renderLabelWithIcon = (raw: string) => {
     let icon: 'plus' | 'minus' | 'equal' | null = null;
@@ -1299,6 +1303,8 @@ function MonthlyDreCard({
               inputMode="numeric"
               className="app-input w-[120px] text-center font-semibold"
               value={displayValue}
+              onFocus={(e) => moveCaretToEnd(e.currentTarget)}
+              onClick={(e) => moveCaretToEnd(e.currentTarget)}
               onChange={(e) => {
                 const digits = e.target.value.replace(/\D/g, '');
                 const value = digits === '' ? 0 : Number(digits) / 100;
@@ -1428,6 +1434,8 @@ function MonthlyDreCard({
                 step="0.1"
                 className="app-input w-24 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 value={Number(((reservaPercent ?? 0) * 100).toFixed(1))}
+                onFocus={(e) => moveCaretToEnd(e.currentTarget)}
+                onClick={(e) => moveCaretToEnd(e.currentTarget)}
                 onChange={(e) => {
                   const value = e.target.value === '' ? null : Number(e.target.value) / 100;
                   onChangeReserve(Number.isFinite(value as number) ? value : null);
