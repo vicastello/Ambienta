@@ -178,28 +178,51 @@ export default function DrePage() {
   const isDraggingCards = useRef(false);
   const dragStartX = useRef(0);
   const dragStartScroll = useRef(0);
-  const DRAG_SCROLL_FACTOR = 3;
+  const DRAG_SCROLL_FACTOR = 3.5;
   const [draggingCards, setDraggingCards] = useState(false);
   const dragPointerId = useRef<number | null>(null);
+  const dragLastX = useRef(0);
+  const dragStartTime = useRef(0);
 
-  const snapToNearestCard = () => {
+  const snapToNearestCard = (withVelocity = false) => {
     const el = cardsScrollRef.current;
     const track = cardsTrackRef.current;
     if (!el || !track) return;
     const children = Array.from(track.children) as HTMLElement[];
     if (!children.length) return;
+    const childWidth = children[0].offsetWidth || el.offsetWidth;
     const viewportCenter = el.scrollLeft + el.offsetWidth / 2;
-    let target = el.scrollLeft;
-    let minDiff = Number.POSITIVE_INFINITY;
-    children.forEach((child) => {
-      const center = child.offsetLeft + child.offsetWidth / 2;
-      const diff = Math.abs(center - viewportCenter);
-      if (diff < minDiff) {
-        minDiff = diff;
-        target = child.offsetLeft;
+
+    const delta = dragLastX.current - dragStartX.current;
+    const duration = Math.max(performance.now() - dragStartTime.current, 1);
+    const velocity = Math.abs(delta) / duration; // px/ms
+    const direction = Math.sign(delta);
+
+    const currentIndex = Math.round(el.scrollLeft / childWidth);
+    let targetIndex = currentIndex;
+
+    if (withVelocity) {
+      const absDelta = Math.abs(delta);
+      if (absDelta > childWidth * 0.4 || velocity > 0.6) {
+        targetIndex = currentIndex + direction * 2;
+      } else if (absDelta > childWidth * 0.1 || velocity > 0.25) {
+        targetIndex = currentIndex + direction * 1;
       }
-    });
-    el.scrollTo({ left: target, behavior: 'smooth' });
+    } else {
+      let minDiff = Number.POSITIVE_INFINITY;
+      children.forEach((child, idx) => {
+        const center = child.offsetLeft + child.offsetWidth / 2;
+        const diff = Math.abs(center - viewportCenter);
+        if (diff < minDiff) {
+          minDiff = diff;
+          targetIndex = idx;
+        }
+      });
+    }
+
+    targetIndex = Math.max(0, Math.min(children.length - 1, targetIndex));
+    const targetLeft = children[targetIndex].offsetLeft;
+    el.scrollTo({ left: targetLeft, behavior: 'smooth' });
   };
   const [newCategory, setNewCategory] = useState({
     name: '',
@@ -521,6 +544,7 @@ export default function DrePage() {
     const el = cardsScrollRef.current;
     if (!el || !isDraggingCards.current) return;
     const walk = clientX - dragStartX.current;
+    dragLastX.current = clientX;
     el.scrollLeft = dragStartScroll.current - walk * DRAG_SCROLL_FACTOR;
   };
 
@@ -545,6 +569,8 @@ export default function DrePage() {
     const target = e.target as HTMLElement;
     if (target.closest('input, select, textarea, button')) return;
     beginCardDrag(e.clientX, e.pointerId);
+    dragLastX.current = e.clientX;
+    dragStartTime.current = performance.now();
     e.preventDefault();
   };
 
@@ -556,7 +582,7 @@ export default function DrePage() {
 
   const handleCardsPointerUp = () => {
     endCardDrag();
-    snapToNearestCard();
+    snapToNearestCard(true);
   };
 
   const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -564,6 +590,8 @@ export default function DrePage() {
     const target = e.target as HTMLElement;
     if (target.closest('input, select, textarea, button')) return;
     beginCardDrag(e.clientX);
+    dragLastX.current = e.clientX;
+    dragStartTime.current = performance.now();
     e.preventDefault();
   };
 
@@ -579,7 +607,7 @@ export default function DrePage() {
     };
     const handleUp = () => {
       endCardDrag();
-      snapToNearestCard();
+      snapToNearestCard(true);
     };
     window.addEventListener('pointermove', handleMovePointer);
     window.addEventListener('mousemove', handleMoveMouse);
