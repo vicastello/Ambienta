@@ -355,15 +355,15 @@ export async function createCustomCategory(params: {
     order_index: params.order_index ?? maxOrder + 10,
   };
 
-  const { data, error } = await supabaseAdmin
+  const { data } = await supabaseAdmin
     .from('dre_categories')
     .insert(payload as DreCategoriesInsert)
-    .select()
-    .maybeSingle();
+    .select<'*', DreCategoriesRow>('*')
+    .maybeSingle()
+    .throwOnError();
 
-  if (error) throw error;
   if (!data) throw new Error('Não foi possível criar a categoria.');
-  return data as DreCategoriesRow;
+  return data;
 }
 
 export async function listPeriodsWithSummary(): Promise<DrePeriodSummary[]> {
