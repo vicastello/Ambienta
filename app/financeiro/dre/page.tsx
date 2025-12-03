@@ -1155,12 +1155,13 @@ function MonthlyDreCard({
         'OUTROS_DESCONTOS_GABRIELA',
         'VALE_COMBUSTIVEL_GABRIELA',
         'OUTROS_CREDITOS_GABRIELA',
-        'PLANO_SAUDE_NELSON',
-        'VALES_NELSON',
-        'OUTROS_DESCONTOS_NELSON',
-        'VALE_COMBUSTIVEL_NELSON',
-        'OUTROS_CREDITOS_NELSON',
-      ]),
+    'PLANO_SAUDE_NELSON',
+    'VALES_NELSON',
+    'OUTROS_DESCONTOS_NELSON',
+    'VALE_COMBUSTIVEL_NELSON',
+    'OUTROS_CREDITOS_NELSON',
+    'NELSON_BASE',
+  ]),
     []
   );
 
@@ -1244,6 +1245,8 @@ function MonthlyDreCard({
     getAmount('VALE_COMBUSTIVEL_GABRIELA') +
     getAmount('OUTROS_CREDITOS_GABRIELA');
 
+  const nelsonBaseFromCat = codeToId['NELSON_BASE'] ? getAmount('NELSON_BASE') : 2000;
+  const nelsonBase = Number.isFinite(nelsonBaseFromCat) ? nelsonBaseFromCat : 2000;
   const nelsonTotal =
     nelsonBase -
     getAmount('PLANO_SAUDE_NELSON') -
@@ -1505,6 +1508,7 @@ function MonthlyDreCard({
       <div className={innerCardClass}>
         <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Nelson</div>
         <div className="divide-y divide-slate-200/60 dark:divide-white/10">
+          {editableRow('NELSON_BASE', '(=) Base Nelson', false)}
           {editableRow('PLANO_SAUDE_NELSON', '(-) Plano de Saúde', false)}
           {editableRow('VALES_NELSON', '(-) Vales', false)}
           {editableRow('OUTROS_DESCONTOS_NELSON', '(-) Outros Descontos', false)}
