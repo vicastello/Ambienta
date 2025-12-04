@@ -159,6 +159,31 @@ type ProdutoSerieAggregateRow = {
   receita: number;
 };
 
+const buildHourlyBuckets = () =>
+  Array.from({ length: 24 }).map((_, hour) => ({
+    hour,
+    valor: 0,
+    quantidade: 0,
+  }));
+
+const hourInTimeZone = (iso: string | null | undefined, tz: string) => {
+  if (!iso) return null;
+  try {
+    const date = new Date(iso);
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(date);
+    const hourPart = parts.find((p) => p.type === 'hour')?.value;
+    const hourNum = hourPart ? Number(hourPart) : NaN;
+    return Number.isFinite(hourNum) ? hourNum : null;
+  } catch {
+    return null;
+  }
+};
+
 type OrderSummaryRow = Pick<
   TinyOrdersRow,
   'id' | 'tiny_id' | 'data_criacao' | 'valor' | 'valor_frete' | 'situacao' | 'canal' | 'raw' | 'inserted_at'
@@ -207,6 +232,13 @@ type DashboardResposta = {
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
+  microTrendHoras?: Array<{
+    hour: string;
+    hoje: number;
+    ontem: number;
+    hojeQtd: number;
+    ontemQtd: number;
+  }>;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: Array<{ codigo: number; descricao: string }>;
@@ -928,9 +960,64 @@ export async function GET(req: NextRequest) {
       return allOrdersForPeriod;
     };
 
+    const fetchOrdersByInsertedRange = async (startIso: string, endIso: string) => {
+      const { data, error } = await supabaseAdmin
+        .from('tiny_orders')
+        .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at')
+        .gte('inserted_at', startIso)
+        .lte('inserted_at', endIso)
+        .order('inserted_at', { ascending: true })
+        .throwOnError();
+      if (error) throw error;
+      return (data ?? []) as OrderSummaryRow[];
+    };
+
     // Busca período anterior e período atual separadamente
     const ordersAnterior = await fetchAllOrdersForPeriod(dataInicialAnteriorISO, dataFinalAnteriorISO);
     const ordersAtual = await fetchAllOrdersForPeriod(dataInicialISO, dataFinalISO);
+
+    // Microtrend hora-a-hora: hoje x ontem
+    const hojeTzStr = hojeTimezoneStr;
+    const ontemTzDate = addDias(new Date(`${hojeTzStr}T00:00:00`), -1);
+    const ontemTzStr = ontemTzDate.toISOString().slice(0, 10);
+    const ordersHoje = await fetchOrdersByInsertedRange(
+      `${hojeTzStr}T00:00:00Z`,
+      `${hojeTzStr}T23:59:59Z`
+    );
+    const ordersOntem = await fetchOrdersByInsertedRange(
+      `${ontemTzStr}T00:00:00Z`,
+      `${ontemTzStr}T23:59:59Z`
+    );
+    const bucketHoje = buildHourlyBuckets();
+    const bucketOntem = buildHourlyBuckets();
+
+    const acumularHoras = (orders: OrderSummaryRow[], bucket: ReturnType<typeof buildHourlyBuckets>) => {
+      for (const p of orders) {
+        const hora = hourInTimeZone(p.data_criacao, DEFAULT_REPORT_TIMEZONE);
+        if (hora === null || hora < 0 || hora > 23) continue;
+        const valorFallback = parseValorTiny(p.valor);
+        const freteFallback = parseValorTiny(p.valor_frete);
+        const { bruto, frete } = extrairValoresDoTiny(p.raw, {
+          valorBruto: valorFallback,
+          valorFrete: freteFallback,
+        });
+        const valor = bruto > 0 ? bruto : valorFallback;
+        if (!valor || valor <= 0) continue;
+        bucket[hora].valor += valor;
+        bucket[hora].quantidade += 1;
+      }
+    };
+
+    acumularHoras(ordersHoje, bucketHoje);
+    acumularHoras(ordersOntem, bucketOntem);
+
+    const microTrendHoras = bucketHoje.map((h, idx) => ({
+      hour: String(idx).padStart(2, '0'),
+      hoje: h.valor,
+      ontem: bucketOntem[idx]?.valor ?? 0,
+      hojeQtd: h.quantidade,
+      ontemQtd: bucketOntem[idx]?.quantidade ?? 0,
+    }));
 
     const idsAnterior = ordersAnterior
       .map((p) => p.id)
@@ -1557,6 +1644,7 @@ export async function GET(req: NextRequest) {
       periodoAtual,
       periodoAnterior,
       periodoAnteriorCards,
+      microTrendHoras,
       canais,
       canaisDisponiveis: Array.from(canaisDisponiveisSet),
       situacoesDisponiveis: [...TODAS_SITUACOES],

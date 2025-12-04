@@ -389,8 +389,8 @@ export default function ProdutosClient() {
       const label = Number.isNaN(parsed.getTime()) ? ponto.data : formatSerieDayLabel(parsed);
       return {
         label,
-        value: ponto.receita,
-        quantidade: ponto.quantidade,
+        hoje: ponto.receita,
+        ontem: 0,
       };
     });
   }, [produtoDesempenho]);

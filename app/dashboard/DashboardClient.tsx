@@ -124,6 +124,13 @@ type DashboardResumo = {
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
+  microTrendHoras?: Array<{
+    hour: string;
+    hoje: number;
+    ontem: number;
+    hojeQtd: number;
+    ontemQtd: number;
+  }>;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: SituacaoDisponivel[];
@@ -1322,15 +1329,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const resumoGlobalAtual = dashboardGlobalSource?.periodoAtual;
 
   const sparkData = useMemo(() => {
-    if (!resumoGlobalAtual) return [];
-    return resumoGlobalAtual.vendasPorDia
-      .slice(-SPARK_WINDOW_DAYS)
-      .map((dia) => ({
-        label: dia.data.split('-')[2],
-        value: dia.totalDia,
-        quantidade: dia.quantidade,
-      }));
-  }, [resumoGlobalAtual]);
+    const origem = dashboardSource?.microTrendHoras;
+    if (!origem?.length) return [];
+    return origem.map((item) => ({
+      label: `${item.hour}h`,
+      hoje: item.hoje,
+      ontem: item.ontem,
+    }));
+  }, [dashboardSource?.microTrendHoras]);
 
   const topSituacoes = useMemo(() => {
     if (topSituacoesMes.length) return topSituacoesMes;
@@ -1521,14 +1527,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         .sort(([a], [b]) => (a < b ? -1 : 1))
         .map(([key, info]) => ({
           label: key.split('-').reverse().join('/'),
-          value: info.receita,
-          quantidade: info.quantidade,
+          hoje: info.receita,
+          ontem: 0,
         }));
     }
     return produtoSerieFiltrada.map((dia) => ({
       label: formatSerieLabel(dia.data),
-      value: dia.receita,
-      quantidade: dia.quantidade,
+      hoje: dia.receita,
+      ontem: 0,
     }));
   }, [produtoCardPreset, produtoSerieFiltrada]);
 
