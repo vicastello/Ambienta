@@ -3,7 +3,10 @@
 import type { ReactNode } from 'react';
 
 export type ChartTooltipValue = number | string;
-export type CustomTooltipFormatter = (value: ChartTooltipValue) => ReactNode;
+export type CustomTooltipFormatter = (
+  value: ChartTooltipValue,
+  entry?: ChartTooltipPayload
+) => ReactNode;
 
 export type ChartTooltipPayload = {
   value?: ChartTooltipValue;
@@ -64,7 +67,7 @@ export function CustomTooltip({ active, payload, label, formatter }: CustomToolt
         const rawValue = entry?.value;
         const formattedValue =
           formatter && (typeof rawValue === 'number' || typeof rawValue === 'string')
-            ? formatter(rawValue)
+            ? formatter(rawValue, entry)
             : rawValue;
         const extraData =
           (entry?.payload as { quantidade?: number; quantidadeOntem?: number } | undefined) ?? null;
