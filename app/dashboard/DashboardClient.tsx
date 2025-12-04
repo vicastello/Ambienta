@@ -523,7 +523,7 @@ export default function DashboardClient() {
   const [selectedZoomLevelKey, setSelectedZoomLevelKey] = useState<string | null>(null);
   const [produtoCardPreset, setProdutoCardPreset] = useState<ProdutoCardPreset>('30d');
 
-  const [chartPreset, setChartPreset] = useState<ChartPreset>('today');
+  const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
   const [chartCustomStart, setChartCustomStart] = useState<string | null>(null);
   const [chartCustomEnd, setChartCustomEnd] = useState<string | null>(null);
   const [resumoChart, setResumoChart] = useState<DashboardResumo | null>(null);
