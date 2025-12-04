@@ -993,7 +993,7 @@ export async function GET(req: NextRequest) {
 
     const acumularHoras = (orders: OrderSummaryRow[], bucket: ReturnType<typeof buildHourlyBuckets>) => {
       for (const p of orders) {
-        const hora = hourInTimeZone(p.data_criacao, DEFAULT_REPORT_TIMEZONE);
+        const hora = hourInTimeZone(p.inserted_at ?? p.data_criacao, DEFAULT_REPORT_TIMEZONE);
         if (hora === null || hora < 0 || hora > 23) continue;
         const valorFallback = parseValorTiny(p.valor);
         const freteFallback = parseValorTiny(p.valor_frete);
