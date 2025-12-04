@@ -13,6 +13,7 @@ export type ChartTooltipPayload = {
   name?: string;
   color?: string;
   fill?: string;
+  dataKey?: string;
   payload?: Record<string, unknown> | null;
 };
 
