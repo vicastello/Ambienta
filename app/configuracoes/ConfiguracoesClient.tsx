@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { defaultDreHelp, DRE_HELP_STORAGE_KEY, type DreHelpMap } from "@/src/config/dreHelp";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import type { CalendarDayStatus } from "@/app/api/admin/sync/calendar/route";
 import type { SyncProdutosResult } from "@/src/lib/sync/produtos";
@@ -163,6 +164,25 @@ const CRON_SETTINGS_DEFAULTS: CronSettingsState = {
   cronProdutosEnrichEstoque: true,
 };
 
+type DreHelpForm = {
+  code: string;
+  label: string;
+  url: string;
+  tooltip: string;
+};
+
+const DRE_HELP_FIELDS: DreHelpForm[] = [
+  { code: "VENDAS", label: "Vendas", url: "", tooltip: "" },
+  { code: "REEMBOLSOS_DEVOLUCOES", label: "Reembolsos/Devoluções", url: "", tooltip: "" },
+  { code: "RESSARCIMENTO_DEVOLUCOES", label: "Ressarcimento de Devoluções", url: "", tooltip: "" },
+  { code: "CMV_IMPOSTOS", label: "CMV + Impostos", url: "", tooltip: "" },
+  { code: "TARIFAS_SHOPEE", label: "Tarifas Shopee", url: "", tooltip: "" },
+  { code: "TARIFAS_MERCADO_LIVRE", label: "Tarifas Mercado Livre", url: "", tooltip: "" },
+  { code: "TARIFAS_MAGALU", label: "Tarifas Magalu", url: "", tooltip: "" },
+  { code: "COOP_FRETES_MAGALU", label: "Coop. Fretes Magalu", url: "", tooltip: "" },
+  { code: "FRETES", label: "Fretes", url: "", tooltip: "" },
+];
+
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) {
     return error.message;
@@ -193,10 +213,58 @@ export default function ConfiguracoesClient() {
     setConnecting(true);
     window.location.href = "/api/tiny/auth/login";
   };
+  const [dreHelpState, setDreHelpState] = useState<DreHelpMap>(defaultDreHelp);
 
   const [overview, setOverview] = useState<SyncOverviewResponse | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const dreHelpList: DreHelpForm[] = useMemo(() => {
+    return DRE_HELP_FIELDS.map((item) => ({
+      ...item,
+      url: dreHelpState[item.code]?.url ?? defaultDreHelp[item.code]?.url ?? "",
+      tooltip: dreHelpState[item.code]?.tooltip ?? defaultDreHelp[item.code]?.tooltip ?? "",
+    }));
+  }, [dreHelpState]);
+  const handleChangeDreHelp = (code: string, field: "url" | "tooltip", value: string) => {
+    setDreHelpState((prev) => ({
+      ...prev,
+      [code]: {
+        ...defaultDreHelp[code],
+        ...(prev[code] ?? {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveDreHelp = () => {
+    try {
+      localStorage.setItem(DRE_HELP_STORAGE_KEY, JSON.stringify(dreHelpState));
+    } catch (error) {
+      console.error("Erro ao salvar links da DRE", error);
+    }
+  };
+
+  const handleResetDreHelp = () => {
+    setDreHelpState(defaultDreHelp);
+    try {
+      localStorage.removeItem(DRE_HELP_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(DRE_HELP_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as DreHelpMap;
+        setDreHelpState({ ...defaultDreHelp, ...parsed });
+      }
+    } catch {
+      setDreHelpState(defaultDreHelp);
+    }
+  }, []);
 
   const fetchOverview = useCallback(async () => {
     setOverviewLoading(true);
@@ -1967,6 +2035,58 @@ export default function ConfiguracoesClient() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section className={`${SECTION_PANEL_CLASS} p-6 md:p-8 space-y-5`}>
+          <div className="space-y-2">
+            <h3 className="text-base font-semibold text-slate-900">
+              Links e descrições da DRE (cartões mensais)
+            </h3>
+            <p className="text-sm text-slate-600">
+              Ajuste os links e tooltips exibidos ao lado das linhas dos cartões mensais da DRE.
+              Os dados ficam salvos neste navegador (localStorage) e aplicam-se na próxima vez que a página de DRE for carregada.
+            </p>
+          </div>
+          <div className="grid gap-3">
+            {dreHelpList.map((item) => (
+              <div key={item.code} className={`${CARD_PANEL_CLASS} p-4 space-y-2`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="text-xs text-slate-500 font-mono">{item.code}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <input
+                    className="app-input w-full"
+                    placeholder="URL"
+                    value={item.url}
+                    onChange={(e) => handleChangeDreHelp(item.code, "url", e.target.value)}
+                  />
+                  <input
+                    className="app-input w-full"
+                    placeholder="Tooltip / descrição"
+                    value={item.tooltip}
+                    onChange={(e) => handleChangeDreHelp(item.code, "tooltip", e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSaveDreHelp}
+              className="px-4 py-2 rounded-full bg-emerald-500 text-white text-sm font-semibold"
+            >
+              Salvar links/descrições
+            </button>
+            <button
+              onClick={handleResetDreHelp}
+              className="px-4 py-2 rounded-full bg-slate-100 text-slate-700 text-sm font-semibold border border-slate-200"
+            >
+              Restaurar padrões
+            </button>
           </div>
         </section>
       </div>

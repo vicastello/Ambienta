@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Sparkles,
   TrendingUp,
+  ExternalLink,
 } from 'lucide-react';
 import {
   CartesianGrid,
@@ -27,6 +28,7 @@ import {
 } from 'recharts';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { getErrorMessage } from '@/lib/errors';
+import { defaultDreHelp, type DreHelpMap, DRE_HELP_STORAGE_KEY } from '@/src/config/dreHelp';
 
 type DrePeriod = {
   id: string;
@@ -183,6 +185,7 @@ export default function DrePage() {
   const dragPointerId = useRef<number | null>(null);
   const dragLastX = useRef(0);
   const dragStartTime = useRef(0);
+  const [dreHelp, setDreHelp] = useState<DreHelpMap>(defaultDreHelp);
 
   const snapToNearestCard = (withVelocity = false) => {
     const el = cardsScrollRef.current;
@@ -342,6 +345,19 @@ export default function DrePage() {
       loadDetail(selectedPeriodId);
     }
   }, [selectedPeriodId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(DRE_HELP_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as DreHelpMap;
+        setDreHelp({ ...defaultDreHelp, ...parsed });
+      }
+    } catch {
+      setDreHelp(defaultDreHelp);
+    }
+  }, []);
 
   useEffect(() => {
     const loadInitialDetails = async () => {
@@ -567,7 +583,7 @@ export default function DrePage() {
   const handleCardsPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea, button')) return;
+    if (target.closest('input, select, textarea, button, a')) return;
     beginCardDrag(e.clientX, e.pointerId);
     dragLastX.current = e.clientX;
     dragStartTime.current = performance.now();
@@ -588,7 +604,7 @@ export default function DrePage() {
   const handleCardsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('input, select, textarea, button')) return;
+    if (target.closest('input, select, textarea, button, a')) return;
     beginCardDrag(e.clientX);
     dragLastX.current = e.clientX;
     dragStartTime.current = performance.now();
@@ -807,6 +823,7 @@ export default function DrePage() {
                           onChangeReserve={(value) => {
                             setReserveDraftByPeriod((prev) => ({ ...prev, [p.period.id]: value }));
                           }}
+                          helpMap={dreHelp}
                           saving={saving}
                         />
                       ) : (
@@ -1074,6 +1091,7 @@ type MonthlyDreCardProps = {
   onDelete: () => Promise<void> | void;
   reservePercent: number | null;
   onChangeReserve: (value: number | null) => void;
+  helpMap: DreHelpMap;
   saving: boolean;
 };
 
@@ -1085,6 +1103,7 @@ function MonthlyDreCard({
   onDelete,
   reservePercent,
   onChangeReserve,
+  helpMap,
   saving,
 }: MonthlyDreCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -1264,7 +1283,7 @@ function MonthlyDreCard({
     requestAnimationFrame(() => input.setSelectionRange(len, len));
   };
 
-  const renderLabelWithIcon = (raw: string) => {
+  const renderLabelWithIcon = (raw: string, code?: string) => {
     let icon: 'plus' | 'minus' | 'equal' | null = null;
     let text = raw;
     if (raw.startsWith('(-)')) {
@@ -1278,6 +1297,8 @@ function MonthlyDreCard({
       text = raw.replace('(=)','').trim();
     }
 
+    const help = code ? helpMap[code] : undefined;
+
     return (
       <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 leading-none">
         {icon === 'plus' ? (
@@ -1287,7 +1308,20 @@ function MonthlyDreCard({
         ) : icon === 'equal' ? (
           <Equal className="w-3.5 h-3.5 text-slate-500 dark:text-slate-300" strokeWidth={2} />
         ) : null}
-        <span className="leading-tight">{text}</span>
+        <span className="leading-tight" title={help?.tooltip || undefined}>
+          {text}
+        </span>
+        {help?.url ? (
+          <a
+            href={help.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+            title="Abrir link relacionado"
+          >
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        ) : null}
       </span>
     );
   };
@@ -1297,7 +1331,7 @@ function MonthlyDreCard({
     const displayValue = Number.isFinite(amount) ? (amount as number).toFixed(2).replace('.', ',') : '0,00';
     return (
       <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-white/10 py-1 text-sm last:border-b-0">
-        <div className="flex-1 text-slate-700 dark:text-slate-200">{renderLabelWithIcon(label)}</div>
+        <div className="flex-1 text-slate-700 dark:text-slate-200">{renderLabelWithIcon(label, code)}</div>
         {editing ? (
           <div className="flex items-center gap-1">
             <span className="text-xs text-slate-500">R$</span>
