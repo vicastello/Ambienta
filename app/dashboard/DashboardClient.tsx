@@ -598,6 +598,10 @@ export default function DashboardClient() {
   const lastResumoFetchRef = useRef(0);
   const lastGlobalFetchRef = useRef(0);
   const lastSituacoesFetchRef = useRef(0);
+  const resumoAbortRef = useRef<AbortController | null>(null);
+  const globalAbortRef = useRef<AbortController | null>(null);
+  const situacoesAbortRef = useRef<AbortController | null>(null);
+  const resumoReadyRef = useRef(false);
   const isLoadingInsightsBaseRef = useRef(false);
   const insightsScrollRef = useRef<HTMLDivElement | null>(null);
   const heroCardRef = useRef<HTMLDivElement | null>(null);
@@ -684,6 +688,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const force = options?.force ?? false;
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
+    resumoReadyRef.current = false;
+    if (resumoAbortRef.current) resumoAbortRef.current.abort();
+    const controller = new AbortController();
+    resumoAbortRef.current = controller;
 
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
@@ -699,6 +707,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         setErro(null);
       }
       if (!force && cacheValid) {
+        resumoReadyRef.current = true;
+        void carregarResumoGlobal({ force: true });
+        void carregarTopSituacoesMes({ force: true });
         return;
       }
       const params = new URLSearchParams();
@@ -712,13 +723,20 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
       const parsedResumo = json as DashboardResumo;
       if (requestId === resumoRequestId.current) {
         setResumo(parsedResumo);
         lastResumoFetchRef.current = Date.now();
+        resumoReadyRef.current = true;
+        // encadeia chamadas secundárias assim que o principal chega
+        void carregarResumoGlobal({ force: true });
+        void carregarTopSituacoesMes({ force: true });
       }
       safeWriteCache(cacheKey, parsedResumo);
       try {
@@ -746,6 +764,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         // swallow
       }
     } catch (error) {
+      if ((error as Error).name === 'AbortError') return;
       if (requestId === resumoRequestId.current) {
         setErro(getErrorMessage(error) || 'Erro inesperado ao carregar dashboard');
       }
@@ -758,9 +777,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   async function carregarResumoGlobal(options?: { force?: boolean }) {
     if (!filtersLoaded) return;
+    if (!resumoReadyRef.current) return; // só roda depois do resumo principal
     const force = options?.force ?? false;
     const requestId = ++globalRequestId.current;
-
+    if (globalAbortRef.current) globalAbortRef.current.abort();
+    const controller = new AbortController();
+    globalAbortRef.current = controller;
     try {
       const { inicio, fim } = resolverIntervaloGlobal();
       const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
@@ -781,7 +803,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataFinal', fim);
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
       const parsedGlobal = json as DashboardResumo;
@@ -791,6 +816,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
       safeWriteCache(cacheKey, parsedGlobal);
     } catch (error) {
+      if ((error as Error).name === 'AbortError') return;
       if (requestId === globalRequestId.current) {
         setErroGlobal(getErrorMessage(error) || 'Erro inesperado ao carregar visão consolidada');
       }
@@ -803,8 +829,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   async function carregarTopSituacoesMes(options?: { force?: boolean }) {
     if (!filtersLoaded) return;
+    if (!resumoReadyRef.current) return;
     const force = options?.force ?? false;
     const requestId = ++situacoesRequestId.current;
+    if (situacoesAbortRef.current) situacoesAbortRef.current.abort();
+    const controller = new AbortController();
+    situacoesAbortRef.current = controller;
     try {
       const { inicio, fim } = resolverIntervaloMesAtual();
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
@@ -826,7 +856,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataFinal', fim);
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar situações do mês');
       const parsed = json as DashboardResumo;
@@ -835,7 +868,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         lastSituacoesFetchRef.current = Date.now();
       }
       safeWriteCache(cacheKey, parsed);
-    } catch {
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') return;
       if (requestId === situacoesRequestId.current) {
         setTopSituacoesMes([]);
         setSituacoesMes([]);
@@ -883,17 +917,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarResumo
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
-  useEffect(() => {
-    if (!filtersLoaded) return;
-    carregarResumoGlobal({ force: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- efeito depende apenas de filtros para evitar loop com carregarResumoGlobal
-  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
-
-  useEffect(() => {
-    if (!filtersLoaded) return;
-    carregarTopSituacoesMes({ force: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarTopSituacoesMes
-  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
+  // carregamentos encadeados: global e situações são disparados pelo carregarResumo ao concluir
 
   useEffect(() => {
     carregarResumoInsightsBase();
@@ -904,8 +928,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     if (!filtersLoaded) return;
     const interval = setInterval(() => {
       carregarResumo({ force: false });
-      carregarResumoGlobal({ force: false });
-      carregarTopSituacoesMes({ force: false });
     }, DASHBOARD_AUTO_REFRESH_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar intervalo a cada render
