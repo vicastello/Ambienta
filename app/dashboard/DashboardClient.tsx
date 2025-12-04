@@ -124,13 +124,6 @@ type DashboardResumo = {
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
-  microTrendHoras?: Array<{
-    hour: string;
-    hoje: number;
-    ontem: number;
-    hojeQtd: number;
-    ontemQtd: number;
-  }>;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: SituacaoDisponivel[];
@@ -350,76 +343,6 @@ function formatBRL(valor: number | null | undefined) {
   });
 }
 
-function useAnimatedNumber(target: number, duration?: number) {
-  const [display, setDisplay] = useState(target);
-  const rafRef = useRef<number | null>(null);
-  const currentRef = useRef(target);
-
-  useEffect(() => {
-    const start = currentRef.current;
-    const end = target;
-    if (!Number.isFinite(end)) {
-      setDisplay(0);
-      currentRef.current = 0;
-      return;
-    }
-    if (Math.abs(end - start) < 0.001) {
-      setDisplay(end);
-      currentRef.current = end;
-      return;
-    }
-
-    const baseDuration = typeof duration === 'number' ? duration : 700;
-    const delta = Math.abs(end - start);
-    const tunedDuration = Math.max(320, Math.min(baseDuration + delta * 0.05, 1400));
-
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    setDisplay(start);
-    const startTime = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - startTime) / tunedDuration);
-      // ease-out mais suave no final para desacelerar perto do número final
-      const eased = 1 - Math.pow(1 - progress, 4); // easeOutQuart
-      const next = start + (end - start) * eased;
-      currentRef.current = next;
-      setDisplay(next);
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [target, duration]);
-
-  return display;
-}
-
-function AnimatedNumber({
-  value,
-  formatter,
-  className,
-  duration,
-  fallback = '—',
-}: {
-  value: number | null | undefined;
-  formatter?: (value: number) => string;
-  className?: string;
-  duration?: number;
-  fallback?: string;
-}) {
-  const isFiniteNumber = typeof value === 'number' && Number.isFinite(value);
-  const safeTarget = isFiniteNumber ? (value as number) : 0;
-  const animated = useAnimatedNumber(safeTarget, duration);
-  const formatted = isFiniteNumber
-    ? formatter
-      ? formatter(animated)
-      : animated.toLocaleString('pt-BR')
-    : fallback;
-  return <span className={className}>{formatted}</span>;
-}
-
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -497,11 +420,8 @@ function getInitials(text?: string | null) {
 
 type ChartPreset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
-const DEFAULT_SITUACOES = [3, 4, 5, 6, 7, 1, 0]; // aprovada, preparando, enviada, entregue, pronto envio, faturada, aberta
-const DEFAULT_PRESET: DatePreset = 'today';
-
 export default function DashboardClient() {
-  const [preset, setPreset] = useState<DatePreset>(DEFAULT_PRESET);
+  const [preset, setPreset] = useState<DatePreset>('7d');
   const [customStart, setCustomStart] = useState<string | null>(null);
   const [customEnd, setCustomEnd] = useState<string | null>(null);
 
@@ -513,7 +433,7 @@ export default function DashboardClient() {
   const [erroGlobal, setErroGlobal] = useState<string | null>(null);
 
   const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>([]);
-  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>(DEFAULT_SITUACOES);
+  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>([]);
   const [topSituacoesMes, setTopSituacoesMes] = useState<SituacaoResumo[]>([]);
   const [situacoesMes, setSituacoesMes] = useState<SituacaoResumo[]>([]);
   const [loadingTopSituacoesMes, setLoadingTopSituacoesMes] = useState<boolean>(false);
@@ -605,11 +525,6 @@ export default function DashboardClient() {
   const lastResumoFetchRef = useRef(0);
   const lastGlobalFetchRef = useRef(0);
   const lastSituacoesFetchRef = useRef(0);
-  const resumoAbortRef = useRef<AbortController | null>(null);
-  const globalAbortRef = useRef<AbortController | null>(null);
-  const situacoesAbortRef = useRef<AbortController | null>(null);
-  const resumoReadyRef = useRef(false);
-  const resumoFullKeysRef = useRef<Set<string>>(new Set());
   const isLoadingInsightsBaseRef = useRef(false);
   const insightsScrollRef = useRef<HTMLDivElement | null>(null);
   const heroCardRef = useRef<HTMLDivElement | null>(null);
@@ -618,11 +533,11 @@ export default function DashboardClient() {
     if (typeof window === 'undefined') return;
     const saved = loadSavedFilters();
     if (saved) {
-      setPreset(saved.preset ?? DEFAULT_PRESET);
+      setPreset(saved.preset ?? '7d');
       setCustomStart(saved.customStart ?? null);
       setCustomEnd(saved.customEnd ?? null);
       setCanaisSelecionados(saved.canaisSelecionados ?? []);
-      setSituacoesSelecionadas(saved.situacoesSelecionadas ?? DEFAULT_SITUACOES);
+      setSituacoesSelecionadas(saved.situacoesSelecionadas ?? []);
     }
     setFiltersLoaded(true);
   }, []);
@@ -691,39 +606,25 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     setSituacoesMes(situacoes);
   }
 
-  async function carregarResumo(options?: { force?: boolean; mode?: 'lite' | 'full' | 'auto' }) {
+  async function carregarResumo(options?: { force?: boolean }) {
     if (!filtersLoaded) return;
     const force = options?.force ?? false;
-    const mode = options?.mode ?? 'auto';
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
-    resumoReadyRef.current = false;
-    if (resumoAbortRef.current) resumoAbortRef.current.abort();
-    const controller = new AbortController();
-    resumoAbortRef.current = controller;
 
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
-      const fullKey = `${cacheKey}:full`;
-      const shouldUseLite = mode === 'lite' || (mode === 'auto' && !resumoFullKeysRef.current.has(fullKey));
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ?? null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
-      const cacheValid = cacheFresh && !!cachedResumo;
-      if (cacheValid) {
+      if (cachedResumo) {
         setResumo(cachedResumo);
       }
       if (requestId === resumoRequestId.current) {
-        setLoading(!cacheValid);
+        setLoading(!cachedResumo);
         setErro(null);
       }
-      if (!force && cacheValid) {
-        if (shouldUseLite && !resumoFullKeysRef.current.has(fullKey)) {
-          void carregarResumo({ force: true, mode: 'full' });
-        }
-        resumoReadyRef.current = true;
-        void carregarResumoGlobal({ force: true });
-        void carregarTopSituacoesMes({ force: true });
+      if (!force && cacheFresh) {
         return;
       }
       const params = new URLSearchParams();
@@ -737,27 +638,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      if (shouldUseLite) params.set('lite', '1');
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
       const parsedResumo = json as DashboardResumo;
       if (requestId === resumoRequestId.current) {
         setResumo(parsedResumo);
         lastResumoFetchRef.current = Date.now();
-        resumoReadyRef.current = true;
-        if (!shouldUseLite) {
-          resumoFullKeysRef.current.add(fullKey);
-        }
-        // encadeia chamadas secundárias assim que o principal chega
-        void carregarResumoGlobal({ force: true });
-        void carregarTopSituacoesMes({ force: true });
-        if (shouldUseLite && !resumoFullKeysRef.current.has(fullKey)) {
-          void carregarResumo({ force: true, mode: 'full' });
-        }
       }
       safeWriteCache(cacheKey, parsedResumo);
       try {
@@ -785,7 +672,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         // swallow
       }
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
       if (requestId === resumoRequestId.current) {
         setErro(getErrorMessage(error) || 'Erro inesperado ao carregar dashboard');
       }
@@ -798,25 +684,21 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   async function carregarResumoGlobal(options?: { force?: boolean }) {
     if (!filtersLoaded) return;
-    if (!resumoReadyRef.current) return; // só roda depois do resumo principal
     const force = options?.force ?? false;
     const requestId = ++globalRequestId.current;
-    if (globalAbortRef.current) globalAbortRef.current.abort();
-    const controller = new AbortController();
-    globalAbortRef.current = controller;
+
     try {
       const { inicio, fim } = resolverIntervaloGlobal();
       const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
       const cachedGlobal = cacheEntry?.data ?? null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
-      const cacheValid = cacheFresh && !!cachedGlobal;
-      if (cacheValid && requestId === globalRequestId.current) setResumoGlobal(cachedGlobal);
+      if (cachedGlobal && requestId === globalRequestId.current) setResumoGlobal(cachedGlobal);
       if (requestId === globalRequestId.current) {
-        setLoadingGlobal(!cacheValid);
+        setLoadingGlobal(!cachedGlobal);
         setErroGlobal(null);
       }
-      if (!force && cacheValid) {
+      if (!force && cacheFresh) {
         return;
       }
       const params = new URLSearchParams();
@@ -824,10 +706,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataFinal', fim);
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
       const parsedGlobal = json as DashboardResumo;
@@ -837,7 +716,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
       safeWriteCache(cacheKey, parsedGlobal);
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
       if (requestId === globalRequestId.current) {
         setErroGlobal(getErrorMessage(error) || 'Erro inesperado ao carregar visão consolidada');
       }
@@ -850,26 +728,21 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   async function carregarTopSituacoesMes(options?: { force?: boolean }) {
     if (!filtersLoaded) return;
-    if (!resumoReadyRef.current) return;
     const force = options?.force ?? false;
     const requestId = ++situacoesRequestId.current;
-    if (situacoesAbortRef.current) situacoesAbortRef.current.abort();
-    const controller = new AbortController();
-    situacoesAbortRef.current = controller;
     try {
       const { inicio, fim } = resolverIntervaloMesAtual();
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ?? null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, SITUACOES_CACHE_FRESH_MS);
-      const cacheValid = cacheFresh && !!cachedResumo;
-      if (cacheValid && requestId === situacoesRequestId.current) {
+      if (cachedResumo && requestId === situacoesRequestId.current) {
         aplicarSituacoesResumo(cachedResumo);
       }
       if (requestId === situacoesRequestId.current) {
-        setLoadingTopSituacoesMes(!cacheValid);
+        setLoadingTopSituacoesMes(!cachedResumo);
       }
-      if (!force && cacheValid) {
+      if (!force && cacheFresh) {
         return;
       }
       const params = new URLSearchParams();
@@ -877,10 +750,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataFinal', fim);
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
+      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar situações do mês');
       const parsed = json as DashboardResumo;
@@ -889,8 +759,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         lastSituacoesFetchRef.current = Date.now();
       }
       safeWriteCache(cacheKey, parsed);
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
+    } catch {
       if (requestId === situacoesRequestId.current) {
         setTopSituacoesMes([]);
         setSituacoesMes([]);
@@ -938,7 +807,17 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarResumo
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
-  // carregamentos encadeados: global e situações são disparados pelo carregarResumo ao concluir
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    carregarResumoGlobal({ force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- efeito depende apenas de filtros para evitar loop com carregarResumoGlobal
+  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
+
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    carregarTopSituacoesMes({ force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dependências limitadas para evitar loop com carregarTopSituacoesMes
+  }, [filtersLoaded, canaisSelecionados, situacoesSelecionadas]);
 
   useEffect(() => {
     carregarResumoInsightsBase();
@@ -949,6 +828,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     if (!filtersLoaded) return;
     const interval = setInterval(() => {
       carregarResumo({ force: false });
+      carregarResumoGlobal({ force: false });
+      carregarTopSituacoesMes({ force: false });
     }, DASHBOARD_AUTO_REFRESH_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar intervalo a cada render
@@ -1329,14 +1210,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const resumoGlobalAtual = dashboardGlobalSource?.periodoAtual;
 
   const sparkData = useMemo(() => {
-    const origem = dashboardSource?.microTrendHoras;
-    if (!origem?.length) return [];
-    return origem.map((item) => ({
-      label: `${item.hour}h`,
-      hoje: item.hoje,
-      ontem: item.ontem,
-    }));
-  }, [dashboardSource?.microTrendHoras]);
+    if (!resumoGlobalAtual) return [];
+    return resumoGlobalAtual.vendasPorDia
+      .slice(-SPARK_WINDOW_DAYS)
+      .map((dia) => ({
+        label: dia.data.split('-')[2],
+        value: dia.totalDia,
+        quantidade: dia.quantidade,
+      }));
+  }, [resumoGlobalAtual]);
 
   const topSituacoes = useMemo(() => {
     if (topSituacoesMes.length) return topSituacoesMes;
@@ -1379,29 +1261,25 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     return [
       {
         label: 'Média diária',
-        value: mediaDiaria,
-        formatter: formatBRL,
+        value: formatBRL(mediaDiaria),
         helper: `${diasMonitorados} dias monitorados`,
       },
       {
         label: 'Frete total',
-        value: resumoGlobalAtual.totalFreteTotal,
-        formatter: formatBRL,
+        value: formatBRL(resumoGlobalAtual.totalFreteTotal),
         helper: `${fretePerc.toFixed(1)}% do bruto`,
       },
       melhorDia && {
         label: 'Melhor dia',
-        value: melhorDia.totalDia,
-        formatter: formatBRL,
+        value: formatBRL(melhorDia.totalDia),
         helper: melhorDia.data,
       },
       melhorCanal && {
         label: 'Maior canal',
-        value: melhorCanal.totalValor,
-        formatter: formatBRL,
+        value: formatBRL(melhorCanal.totalValor),
         helper: `${melhorCanal.canal} · ${melhorCanal.totalPedidos} pedidos`,
       },
-    ].filter(Boolean) as Array<{ label: string; value: number; helper: string; formatter?: (value: number) => string }>;
+    ].filter(Boolean) as Array<{ label: string; value: string; helper: string }>;
   }, [resumoGlobalAtual, dashboardSource]);
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
@@ -1527,14 +1405,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         .sort(([a], [b]) => (a < b ? -1 : 1))
         .map(([key, info]) => ({
           label: key.split('-').reverse().join('/'),
-          hoje: info.receita,
-          ontem: 0,
+          value: info.receita,
+          quantidade: info.quantidade,
         }));
     }
     return produtoSerieFiltrada.map((dia) => ({
       label: formatSerieLabel(dia.data),
-      hoje: dia.receita,
-      ontem: 0,
+      value: dia.receita,
+      quantidade: dia.quantidade,
     }));
   }, [produtoCardPreset, produtoSerieFiltrada]);
 
@@ -1650,11 +1528,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                       <span className="sm:hidden">Líquido</span>
                       <span className="hidden sm:inline">Faturamento líquido</span>
                     </p>
-                    <AnimatedNumber
-                      value={resumoAtual?.totalValorLiquido ?? 0}
-                      formatter={formatBRL}
-                      className="text-2xl sm:text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] break-words"
-                    />
+                    <p className="text-2xl sm:text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
                     <div className="mt-3 min-h-[32px] flex flex-wrap items-center gap-2 text-xs sm:text-sm min-w-0">
                       {variacaoValorCards.abs >= 0 ? (
                         <>
@@ -1680,11 +1554,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                       <span className="sm:hidden">Bruto</span>
                       <span className="hidden sm:inline">Faturamento bruto</span>
                     </p>
-                    <AnimatedNumber
-                      value={resumoAtual?.totalValor ?? 0}
-                      formatter={formatBRL}
-                      className="text-2xl sm:text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] break-words"
-                    />
+                    <p className="text-2xl sm:text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] break-words">{formatBRL(resumoAtual?.totalValor ?? 0)}</p>
                     <div className="mt-3 min-h-[32px] flex items-center min-w-0">
                       <p className="text-xs sm:text-sm text-slate-500 truncate">Após frete {formatBRL(resumoAtual?.totalFreteTotal ?? 0)}</p>
                     </div>
@@ -1693,35 +1563,23 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4 text-sm text-slate-500">
                   <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-slate-400 truncate">Pedidos</p>
-                    <AnimatedNumber
-                      value={resumoAtual?.totalPedidos ?? 0}
-                      formatter={(v) => v.toLocaleString('pt-BR')}
-                      className="text-xl font-semibold text-slate-900 dark:text-white truncate"
-                    />
+                    <p className="text-xl font-semibold text-slate-900 dark:text-white truncate" suppressHydrationWarning>
+                      {resumoAtual?.totalPedidos.toLocaleString('pt-BR') ?? '0'}
+                    </p>
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-slate-400 truncate">Ticket médio</p>
-                    <AnimatedNumber
-                      value={resumoAtual?.ticketMedio ?? 0}
-                      formatter={formatBRL}
-                      className="text-xl font-semibold text-slate-900 dark:text-white truncate"
-                    />
+                    <p className="text-xl font-semibold text-slate-900 dark:text-white truncate">{formatBRL(resumoAtual?.ticketMedio ?? 0)}</p>
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-slate-400 truncate">% cancelamentos</p>
-                    <AnimatedNumber
-                      value={cancelamentoPerc}
-                      formatter={(v) => formatPercent(v)}
-                      className="text-xl font-semibold text-slate-900 dark:text-white truncate"
-                    />
+                    <p className="text-xl font-semibold text-slate-900 dark:text-white truncate">{formatPercent(cancelamentoPerc)}</p>
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs uppercase tracking-wide text-slate-400 truncate">Produtos vendidos</p>
-                    <AnimatedNumber
-                      value={totalProdutosVendidos}
-                      formatter={(v) => v.toLocaleString('pt-BR')}
-                      className="text-xl font-semibold text-slate-900 dark:text-white truncate"
-                    />
+                    <p className="text-xl font-semibold text-slate-900 dark:text-white truncate" suppressHydrationWarning>
+                      {totalProdutosVendidos.toLocaleString('pt-BR')}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1747,11 +1605,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 flex flex-col gap-1"
                   >
                     <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
-                    <AnimatedNumber
-                      value={item.value}
-                      formatter={item.formatter}
-                      className="text-2xl font-semibold text-slate-900 dark:text-white"
-                    />
+                    <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
                     <p className="text-xs text-slate-400">{item.helper}</p>
                   </div>
                 ))
@@ -1917,11 +1771,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento líquido</p>
                   <TrendingUp className="w-5 h-5 text-[#5b21b6] dark:text-[#a78bfa] shrink-0" />
                 </div>
-                <AnimatedNumber
-                  value={resumoAtual.totalValorLiquido}
-                  formatter={formatBRL}
-                  className="text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] truncate"
-                />
+                <p className="text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] truncate">{formatBRL(resumoAtual.totalValorLiquido)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
@@ -1930,11 +1780,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento bruto</p>
                   <TrendingUp className="w-5 h-5 text-[#009DA8] dark:text-[#6fe8ff] shrink-0" />
                 </div>
-                <AnimatedNumber
-                  value={resumoAtual.totalValor}
-                  formatter={formatBRL}
-                  className="text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] truncate"
-                />
+                <p className="text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] truncate">{formatBRL(resumoAtual.totalValor)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
@@ -1943,11 +1789,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Pedidos</p>
                   <ShoppingCart className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
                 </div>
-                <AnimatedNumber
-                  value={resumoAtual.totalPedidos}
-                  formatter={(v) => v.toLocaleString('pt-BR')}
-                  className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate"
-                />
+                <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
+                  {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
+                </p>
                   <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - dashboardSource.periodoAnteriorCards.totalPedidos}</p>
               </div>
 
@@ -1956,11 +1800,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Produtos vendidos</p>
                   <Package className="w-5 h-5 text-purple-500 dark:text-[#b794f4] shrink-0" />
                 </div>
-                <AnimatedNumber
-                  value={totalProdutosVendidos}
-                  formatter={(v) => v.toLocaleString('pt-BR')}
-                  className="text-3xl font-semibold text-purple-500 dark:text-[#b794f4] truncate"
-                />
+                <p className="text-3xl font-semibold text-purple-500 dark:text-[#b794f4] truncate" suppressHydrationWarning>
+                  {totalProdutosVendidos.toLocaleString('pt-BR')}
+                </p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Total de itens</p>
               </div>
 
@@ -1969,11 +1811,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Ticket médio</p>
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
-                <AnimatedNumber
-                  value={resumoAtual.ticketMedio}
-                  formatter={formatBRL}
-                  className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate"
-                />
+                <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - dashboardSource.periodoAnteriorCards.ticketMedio)}</p>
               </div>
 
@@ -1982,11 +1820,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Variação</p>
                   {variacaoValorCards.abs >= 0 ? <ArrowUpRight className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" /> : <ArrowDownRight className="w-5 h-5 text-rose-500 dark:text-[#ff6b7d] shrink-0" />}
                 </div>
-                <AnimatedNumber
-                  value={variacaoValorCards.perc}
-                  formatter={(v) => `${v.toFixed(1)}%`}
-                  className={`text-3xl font-semibold truncate ${variacaoValorCards.abs >= 0 ? 'text-emerald-500 dark:text-[#33e2a7]' : 'text-rose-500 dark:text-[#ff6b7d]'}`}
-                />
+                <p className={`text-3xl font-semibold truncate ${variacaoValorCards.abs >= 0 ? 'text-emerald-500 dark:text-[#33e2a7]' : 'text-rose-500 dark:text-[#ff6b7d]'}`}>{variacaoValorCards.perc.toFixed(1)}%</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Impacto {formatBRL(Math.abs(variacaoValorCards.abs))}</p>
               </div>
             </div>

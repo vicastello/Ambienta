@@ -569,6 +569,18 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   contain: paint;
 }
 
+/* Remover totalmente sombras dos cards de produtos (claro/escuro) */
+.product-card,
+.product-card::before,
+.product-card::after {
+  box-shadow: none !important;
+}
+:root.dark .product-card,
+:root.dark .product-card::before,
+:root.dark .product-card::after {
+  box-shadow: none !important;
+}
+
 .fade-bottom {
   pointer-events: none;
   position: absolute;

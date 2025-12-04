@@ -39,6 +39,15 @@ const PIE_LABEL_RAD = Math.PI / 180;
 export function CustomTooltip({ active, payload, label, formatter }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
 
+  const toReadableColor = (color: string | undefined) => {
+    if (!color) return 'var(--text-main)';
+    const normalized = color.toLowerCase();
+    if (normalized === '#e4e4e9' || normalized === 'rgb(228, 228, 233)') {
+      return '#475569'; // cinza mais escuro para legibilidade
+    }
+    return color;
+  };
+
   return (
     <div
       className="glass-tooltip text-[12px] p-3"
@@ -57,11 +66,19 @@ export function CustomTooltip({ active, payload, label, formatter }: CustomToolt
           formatter && (typeof rawValue === 'number' || typeof rawValue === 'string')
             ? formatter(rawValue)
             : rawValue;
-        const extraData = (entry?.payload as { quantidade?: number } | undefined) ?? null;
-        const quantidade = typeof extraData?.quantidade === 'number' ? extraData.quantidade : null;
+        const extraData =
+          (entry?.payload as { quantidade?: number; quantidadeOntem?: number } | undefined) ?? null;
+        const quantidade =
+          entry?.name?.toString().toLowerCase().includes('ontem')
+            ? typeof extraData?.quantidadeOntem === 'number'
+              ? extraData.quantidadeOntem
+              : null
+            : typeof extraData?.quantidade === 'number'
+              ? extraData.quantidade
+              : null;
         const lineStyle = {
           margin: '0',
-          color: entry?.color ?? 'var(--text-main)',
+          color: toReadableColor(entry?.color),
           fontWeight: 600,
         } as const;
         return (

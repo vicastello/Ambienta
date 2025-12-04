@@ -13,7 +13,8 @@ import {
 } from 'recharts';
 import { CustomTooltip, type CustomTooltipFormatter } from './ChartTooltips';
 
-const AMBIENTA_PRIMARY = '#009DA8';
+const PRIMARY_COLOR = 'rgb(168, 85, 247)'; // novo roxo
+const SECONDARY_COLOR = '#E4E4E9';
 
 type RevenueDatum = {
   data: string;
@@ -37,21 +38,51 @@ const DailyRevenueChartComponent = ({ data, ticks, formatter }: DailyRevenueChar
         <AreaChart data={chartData}>
           <defs>
             <linearGradient id="colorAtual" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={AMBIENTA_PRIMARY} stopOpacity={0.5} />
-              <stop offset="100%" stopColor={AMBIENTA_PRIMARY} stopOpacity={0.05} />
+              <stop offset="0%" stopColor={PRIMARY_COLOR} stopOpacity={0.6} />
+              <stop offset="100%" stopColor={PRIMARY_COLOR} stopOpacity={0.05} />
             </linearGradient>
             <linearGradient id="colorAnterior" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#a5b4fc" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#a5b4fc" stopOpacity={0.05} />
+              <stop offset="0%" stopColor={SECONDARY_COLOR} stopOpacity={0.5} />
+              <stop offset="100%" stopColor={SECONDARY_COLOR} stopOpacity={0.05} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} />
           <XAxis dataKey="data" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
           <YAxis yAxisId="values" ticks={chartTicks} hide />
           <Tooltip content={<CustomTooltip formatter={formatter} />} />
-          <Legend wrapperStyle={{ fontSize: '12px' }} />
-          <Area yAxisId="values" type="monotone" dataKey="anterior" name="Período anterior" stroke="#a5b4fc" fill="url(#colorAnterior)" strokeWidth={3} strokeDasharray="6 6" />
-          <Area yAxisId="values" type="monotone" dataKey="atual" name="Período atual" stroke={AMBIENTA_PRIMARY} fill="url(#colorAtual)" strokeWidth={3} />
+          <Legend
+            wrapperStyle={{ fontSize: '12px' }}
+            formatter={(value, entry) => {
+              const color =
+                entry && typeof entry === 'object' && 'color' in entry && entry?.color === SECONDARY_COLOR
+                  ? '#475569'
+                  : (entry as any)?.color;
+              return <span style={{ color }}>{value}</span>;
+            }}
+          />
+          <Area
+            yAxisId="values"
+            type="monotone"
+            dataKey="anterior"
+            name="Período anterior"
+            stroke={SECONDARY_COLOR}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="url(#colorAnterior)"
+            strokeWidth={1.75}
+            strokeDasharray="6 6"
+          />
+          <Area
+            yAxisId="values"
+            type="monotone"
+            dataKey="atual"
+            name="Período atual"
+            stroke={PRIMARY_COLOR}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="url(#colorAtual)"
+            strokeWidth={1.75}
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>

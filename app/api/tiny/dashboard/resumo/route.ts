@@ -151,38 +151,6 @@ type TinyPedidoItemWithProduto = Pick<
 };
 
 type PedidoItensMap = Map<number, TinyPedidoItemWithProduto[]>;
-type ProdutoSerieAggregateRow = {
-  produto_id: number | null;
-  codigo: string | null;
-  data: string;
-  quantidade: number;
-  receita: number;
-};
-
-const buildHourlyBuckets = () =>
-  Array.from({ length: 24 }).map((_, hour) => ({
-    hour,
-    valor: 0,
-    quantidade: 0,
-  }));
-
-const hourInTimeZone = (iso: string | null | undefined, tz: string) => {
-  if (!iso) return null;
-  try {
-    const date = new Date(iso);
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      hour: '2-digit',
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(date);
-    const hourPart = parts.find((p) => p.type === 'hour')?.value;
-    const hourNum = hourPart ? Number(hourPart) : NaN;
-    return Number.isFinite(hourNum) ? hourNum : null;
-  } catch {
-    return null;
-  }
-};
 
 type OrderSummaryRow = Pick<
   TinyOrdersRow,
@@ -232,29 +200,12 @@ type DashboardResposta = {
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
-  microTrendHoras?: Array<{
-    hour: string;
-    hoje: number;
-    ontem: number;
-    hojeQtd: number;
-    ontemQtd: number;
-  }>;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: Array<{ codigo: number; descricao: string }>;
   mapaVendasUF: VendasUF[];
   mapaVendasCidade: VendasCidade[];
 };
-
-type DashboardRespostaLite = Pick<
-  DashboardResposta,
-  | 'periodoAtual'
-  | 'periodoAnterior'
-  | 'periodoAnteriorCards'
-  | 'canais'
-  | 'canaisDisponiveis'
-  | 'situacoesDisponiveis'
->;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -264,7 +215,6 @@ const SUPABASE_MAX_RETRIES = 3;
 const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network request failed)/i;
 const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
-const MAX_PRODUTOS_SERIE = 250;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -808,12 +758,6 @@ async function enrichOrdersWithFrete(
 }
 
 export async function GET(req: NextRequest) {
-  const nowMs = () =>
-    typeof performance !== 'undefined' && typeof performance.now === 'function'
-      ? performance.now()
-      : Date.now();
-  const t0 = nowMs();
-  console.log('[dashboard/resumo] etapa=start ms=0');
   try {
     // Token
     let accessToken = req.cookies.get('tiny_access_token')?.value || null;
@@ -827,7 +771,6 @@ export async function GET(req: NextRequest) {
     const diasParam = searchParams.get('dias');
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
-    const isLite = searchParams.get('lite') === '1';
     const complementParam = searchParams.get('complement');
     const doComplement = complementParam === '1' || complementParam === 'true';
     const horaComparacaoParam = searchParams.get('horaComparacaoMinutos');
@@ -960,64 +903,9 @@ export async function GET(req: NextRequest) {
       return allOrdersForPeriod;
     };
 
-    const fetchOrdersByInsertedRange = async (startIso: string, endIso: string) => {
-      const { data, error } = await supabaseAdmin
-        .from('tiny_orders')
-        .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at')
-        .gte('inserted_at', startIso)
-        .lte('inserted_at', endIso)
-        .order('inserted_at', { ascending: true })
-        .throwOnError();
-      if (error) throw error;
-      return (data ?? []) as OrderSummaryRow[];
-    };
-
     // Busca período anterior e período atual separadamente
     const ordersAnterior = await fetchAllOrdersForPeriod(dataInicialAnteriorISO, dataFinalAnteriorISO);
     const ordersAtual = await fetchAllOrdersForPeriod(dataInicialISO, dataFinalISO);
-
-    // Microtrend hora-a-hora: hoje x ontem
-    const hojeTzStr = hojeTimezoneStr;
-    const ontemTzDate = addDias(new Date(`${hojeTzStr}T00:00:00`), -1);
-    const ontemTzStr = ontemTzDate.toISOString().slice(0, 10);
-    const ordersHoje = await fetchOrdersByInsertedRange(
-      `${hojeTzStr}T00:00:00Z`,
-      `${hojeTzStr}T23:59:59Z`
-    );
-    const ordersOntem = await fetchOrdersByInsertedRange(
-      `${ontemTzStr}T00:00:00Z`,
-      `${ontemTzStr}T23:59:59Z`
-    );
-    const bucketHoje = buildHourlyBuckets();
-    const bucketOntem = buildHourlyBuckets();
-
-    const acumularHoras = (orders: OrderSummaryRow[], bucket: ReturnType<typeof buildHourlyBuckets>) => {
-      for (const p of orders) {
-        const hora = hourInTimeZone(p.inserted_at ?? p.data_criacao, DEFAULT_REPORT_TIMEZONE);
-        if (hora === null || hora < 0 || hora > 23) continue;
-        const valorFallback = parseValorTiny(p.valor);
-        const freteFallback = parseValorTiny(p.valor_frete);
-        const { bruto, frete } = extrairValoresDoTiny(p.raw, {
-          valorBruto: valorFallback,
-          valorFrete: freteFallback,
-        });
-        const valor = bruto > 0 ? bruto : valorFallback;
-        if (!valor || valor <= 0) continue;
-        bucket[hora].valor += valor;
-        bucket[hora].quantidade += 1;
-      }
-    };
-
-    acumularHoras(ordersHoje, bucketHoje);
-    acumularHoras(ordersOntem, bucketOntem);
-
-    const microTrendHoras = bucketHoje.map((h, idx) => ({
-      hour: String(idx).padStart(2, '0'),
-      hoje: h.valor,
-      ontem: bucketOntem[idx]?.valor ?? 0,
-      hojeQtd: h.quantidade,
-      ontemQtd: bucketOntem[idx]?.quantidade ?? 0,
-    }));
 
     const idsAnterior = ordersAnterior
       .map((p) => p.id)
@@ -1029,9 +917,7 @@ export async function GET(req: NextRequest) {
       carregarItensPorPedido(idsAnterior),
       carregarItensPorPedido(idsAtual),
     ]);
-    const tResumo = nowMs();
-    console.log('[dashboard/resumo] etapa=resumo_principal ms=', (tResumo - t0).toFixed(1), 'pedidosAtual=', ordersAtual.length, 'pedidosAnterior=', ordersAnterior.length);
-    const parentMappingPromise = isLite ? null : loadProdutoParentMapping();
+    const parentMappingPromise = loadProdutoParentMapping();
     
     console.log(`[DEBUG] Período anterior (${dataInicialAnteriorStr} a ${dataFinalAnteriorStr}): ${ordersAnterior.length} pedidos`);
     console.log(`[DEBUG] Período atual (${dataInicialStr} a ${dataFinalStr}): ${ordersAtual.length} pedidos`);
@@ -1073,21 +959,39 @@ export async function GET(req: NextRequest) {
     let canceladosAnteriorBase = 0;
 
     const hydrateTopProdutoSeries = async () => {
-      if (!mapaProdutoAtual.size) return;
-      if (mapaProdutoAtual.size > MAX_PRODUTOS_SERIE) {
-        console.warn(
-          `[dashboard/resumo] hydrateTopProdutoSeries pulado: ${mapaProdutoAtual.size} produtos (limite ${MAX_PRODUTOS_SERIE})`
-        );
+      if (!mapaProdutoAtual.size) {
         return;
       }
 
       const now = new Date();
       const endDateStr = now.toISOString().slice(0, 10);
+      const endISO = `${endDateStr}T23:59:59Z`;
       const thirtyDaysAgo = new Date(now);
       thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
       const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
       const serieStartDate = thirtyDaysAgo < startOfYear ? thirtyDaysAgo : startOfYear;
       const serieStartStr = serieStartDate.toISOString().slice(0, 10);
+      const startISO = `${serieStartStr}T00:00:00Z`;
+
+      let serieOrders: OrderSummaryRow[] = [];
+      try {
+        serieOrders = await fetchAllOrdersForPeriod(startISO, endISO);
+      } catch (err) {
+        console.warn('[Dashboard resumo] Falha ao carregar janela de série estendida', err);
+        return;
+      }
+
+      if (!serieOrders.length) {
+        mapaProdutoAtual.forEach((produto) => {
+          produto.serieDiariaMap = {};
+        });
+        return;
+      }
+
+      const serieOrderIds = serieOrders
+        .map((p) => p.id)
+        .filter((id): id is number => typeof id === 'number');
+      const itensSerie = await carregarItensPorPedido(serieOrderIds);
 
       const produtoLookup = new Map<string, ProdutoResumoInterno>();
       mapaProdutoAtual.forEach((produto) => {
@@ -1098,42 +1002,106 @@ export async function GET(req: NextRequest) {
         );
         produtoLookup.set(primaryKey, produto);
         if (typeof produto.produtoId === 'number') {
-          produtoLookup.set(`ID:${produto.produtoId}`, produto);
+          produtoLookup.set(`id:${produto.produtoId}`, produto);
+          const fallbackKey = buildProdutoInternalKey(null, produto.descricao, produto.sku ?? null);
+          produtoLookup.set(fallbackKey, produto);
         }
         if (produto.sku) {
-          produtoLookup.set(`COD:${produto.sku.toUpperCase()}`, produto);
+          produtoLookup.set(`sku:${produto.sku}`, produto);
         }
         produto.serieDiariaMap = {};
       });
 
-      const resolveProduto = (id: number | null, codigo: string | null) => {
-        const byId = typeof id === 'number' ? produtoLookup.get(`ID:${id}`) : null;
-        if (byId) return byId;
-        const normCode = codigo ? codigo.toUpperCase() : null;
-        if (normCode) {
-          const byCode = produtoLookup.get(`COD:${normCode}`);
-          if (byCode) return byCode;
+      const resolveProduto = (candidates: Array<string | null | undefined>) => {
+        for (const candidate of candidates) {
+          if (!candidate) continue;
+          const alvo = produtoLookup.get(candidate);
+          if (alvo) return alvo;
         }
         return null;
       };
 
-      try {
-        const { data, error } = await supabaseAdmin.rpc('dashboard_produto_series', {
-          p_data_inicio: serieStartStr,
-          p_data_fim: endDateStr,
-          p_canais: canaisFiltro && canaisFiltro.length ? canaisFiltro : null,
-          p_situacoes: situacoesFiltro && situacoesFiltro.length ? situacoesFiltro : null,
-        });
-        if (error) throw error;
-        const rows = (data ?? []) as ProdutoSerieAggregateRow[];
-        if (!rows.length) return;
-        for (const row of rows) {
-          const alvo = resolveProduto(row.produto_id, row.codigo);
-          if (!alvo) continue;
-          updateSerieDiaria(alvo, row.data, row.quantidade, row.receita);
+      const processPersistedItem = (item: TinyPedidoItemWithProduto, data: string) => {
+        const quantidade = toNumber(item?.quantidade);
+        if (quantidade <= 0) return;
+        const valorUnitario = parseValorTiny(
+          toParseableNumber(item.valor_unitario ?? item.valorUnitario ?? item.valor)
+        );
+        const receita =
+          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+          quantidade * valorUnitario;
+        const descricao =
+          (typeof item.nome_produto === 'string' && item.nome_produto.trim()) ||
+          item.tiny_produtos?.nome ||
+          'Sem descrição';
+        const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
+        const produtoId = item.id_produto_tiny;
+        const fallbackKey = buildProdutoInternalKey(null, descricao, sku);
+        const alvo = resolveProduto([
+          typeof produtoId === 'number' ? `id:${produtoId}` : null,
+          sku ? `sku:${sku}` : null,
+          fallbackKey,
+        ]);
+        if (!alvo) return;
+        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
+      };
+
+      const processRawItem = (item: TinyRawItem, data: string) => {
+        const quantidade = toNumber(item?.quantidade);
+        if (quantidade <= 0) return;
+        const valorUnitario = parseValorTiny(
+          toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
+        );
+        const receita =
+          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
+          quantidade * valorUnitario;
+
+        const produtoRaw = isRecord(item.produto) ? item.produto : {};
+        const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
+        const descricaoBase =
+          (typeof produtoRaw.descricao === 'string' && produtoRaw.descricao.trim()) ||
+          (typeof produtoRaw.nome === 'string' && produtoRaw.nome.trim()) ||
+          'Produto sem nome';
+        const skuCandidate =
+          (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
+          (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
+          null;
+        const fallbackKey = buildProdutoInternalKey(null, descricaoBase, skuCandidate);
+        const alvo = resolveProduto([
+          typeof produtoId === 'number' ? `id:${produtoId}` : null,
+          skuCandidate ? `sku:${skuCandidate}` : null,
+          fallbackKey,
+        ]);
+        if (!alvo) return;
+        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
+      };
+
+      for (const order of serieOrders) {
+        const data = order.data_criacao;
+        if (!data) continue;
+        const situacao = typeof order.situacao === 'number' ? order.situacao : -1;
+        const canal = normalizarCanalTiny(order.canal);
+        const passaCanal =
+          !canaisFiltro || canaisFiltro.length === 0 ? true : canaisFiltro.includes(canal);
+        const passaSituacao =
+          !situacoesFiltro || situacoesFiltro.length === 0
+            ? true
+            : situacoesFiltro.includes(situacao);
+        if (!passaCanal || !passaSituacao) continue;
+
+        const itensPersistidos = order.id ? itensSerie.get(order.id) ?? [] : [];
+        if (itensPersistidos.length) {
+          for (const item of itensPersistidos) {
+            processPersistedItem(item, data);
+          }
+          continue;
         }
-      } catch (err) {
-        console.warn('[dashboard/resumo] Falha ao carregar séries agregadas', err);
+
+        const itensRaw = extrairItens(order.raw);
+        if (!itensRaw.length) continue;
+        for (const rawItem of itensRaw) {
+          processRawItem(rawItem, data);
+        }
       }
     };
 
@@ -1315,27 +1283,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    let tGlobal = tResumo;
-    if (!isLite) {
-      if (mapaProdutoAtual.size) {
-        await hydrateTopProdutoSeries();
-      } else {
-        console.log('[dashboard/resumo] skip hydrateTopProdutoSeries (sem produtos relevantes)');
-      }
-      tGlobal = nowMs();
-      // Perf: agregação via RPC + índices (ver migration 20251204120000) — alvo <5s vs ~20s anteriores nos logs
-      console.log('[dashboard/resumo] etapa=global ms=', (tGlobal - tResumo).toFixed(1));
-    } else {
-      console.log('[dashboard/resumo] lite=1 pulando global/hydrate/parent mapping');
-    }
+    await hydrateTopProdutoSeries();
 
-    const produtoParentMapping = !isLite && parentMappingPromise ? await parentMappingPromise : null;
-    const mapaProdutoAtualFinal = produtoParentMapping
-      ? consolidarProdutosPorPai(mapaProdutoAtual, produtoParentMapping)
-      : mapaProdutoAtual;
-    const mapaProdutoAnteriorFinal = produtoParentMapping
-      ? consolidarProdutosPorPai(mapaProdutoAnterior, produtoParentMapping)
-      : mapaProdutoAnterior;
+    const produtoParentMapping = await parentMappingPromise;
+    const mapaProdutoAtualFinal = consolidarProdutosPorPai(
+      mapaProdutoAtual,
+      produtoParentMapping
+    );
+    const mapaProdutoAnteriorFinal = consolidarProdutosPorPai(
+      mapaProdutoAnterior,
+      produtoParentMapping
+    );
 
     const vendasPorDiaAtual: DiaResumo[] = Array.from(mapaDiaAtual.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -1541,8 +1499,6 @@ export async function GET(req: NextRequest) {
 
     // Carregar dados para cards do período anterior (até hoje do mês passado)
     const ordersAnteriorCards = await fetchAllOrdersForPeriod(dataInicialAnteriorCardsISO, dataFinalAnteriorCardsISO);
-    const tTopSituacoesFetch = nowMs();
-    console.log('[dashboard/resumo] etapa=top_situacoes_fetch ms=', (tTopSituacoesFetch - tGlobal).toFixed(1), 'pedidosAnteriorCards=', ordersAnteriorCards.length);
     let totalPedidosAnteriorCards = 0;
     let totalValorAnteriorCards = 0;
     let totalValorLiquidoAnteriorCards = 0;
@@ -1644,7 +1600,6 @@ export async function GET(req: NextRequest) {
       periodoAtual,
       periodoAnterior,
       periodoAnteriorCards,
-      microTrendHoras,
       canais,
       canaisDisponiveis: Array.from(canaisDisponiveisSet),
       situacoesDisponiveis: [...TODAS_SITUACOES],
@@ -1656,8 +1611,6 @@ export async function GET(req: NextRequest) {
         .sort((a, b) => b.totalValor - a.totalValor),
     };
 
-    const tEnd = nowMs();
-    console.log('[dashboard/resumo] etapa=done ms_total=', (tEnd - t0).toFixed(1), 'ms_until_resumo=', (tResumo - t0).toFixed(1), 'ms_until_global=', (tGlobal - t0).toFixed(1), 'ms_until_top_situacoes=', (tTopSituacoesFetch - t0).toFixed(1));
     return NextResponse.json(resposta);
   } catch (error) {
     console.error('[API] Erro em /api/tiny/dashboard/resumo', error);
