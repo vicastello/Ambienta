@@ -343,7 +343,7 @@ function formatBRL(valor: number | null | undefined) {
   });
 }
 
-function useAnimatedNumber(target: number, duration = 500) {
+function useAnimatedNumber(target: number, duration?: number) {
   const [display, setDisplay] = useState(target);
   const rafRef = useRef<number | null>(null);
   const currentRef = useRef(target);
@@ -362,10 +362,17 @@ function useAnimatedNumber(target: number, duration = 500) {
       return;
     }
 
+    const baseDuration = typeof duration === 'number' ? duration : 700;
+    const delta = Math.abs(end - start);
+    const tunedDuration = Math.max(320, Math.min(baseDuration + delta * 0.05, 1400));
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    setDisplay(start);
     const startTime = performance.now();
     const tick = (now: number) => {
-      const progress = Math.min(1, (now - startTime) / duration);
-      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+      const progress = Math.min(1, (now - startTime) / tunedDuration);
+      // ease-out mais suave no final para desacelerar perto do número final
+      const eased = 1 - Math.pow(1 - progress, 4); // easeOutQuart
       const next = start + (end - start) * eased;
       currentRef.current = next;
       setDisplay(next);
