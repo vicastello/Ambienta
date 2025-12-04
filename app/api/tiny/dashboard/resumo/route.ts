@@ -758,6 +758,12 @@ async function enrichOrdersWithFrete(
 }
 
 export async function GET(req: NextRequest) {
+  const nowMs = () =>
+    typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+  const t0 = nowMs();
+  console.log('[dashboard/resumo] etapa=start ms=0');
   try {
     // Token
     let accessToken = req.cookies.get('tiny_access_token')?.value || null;
@@ -917,6 +923,8 @@ export async function GET(req: NextRequest) {
       carregarItensPorPedido(idsAnterior),
       carregarItensPorPedido(idsAtual),
     ]);
+    const tResumo = nowMs();
+    console.log('[dashboard/resumo] etapa=resumo_principal ms=', (tResumo - t0).toFixed(1), 'pedidosAtual=', ordersAtual.length, 'pedidosAnterior=', ordersAnterior.length);
     const parentMappingPromise = loadProdutoParentMapping();
     
     console.log(`[DEBUG] Período anterior (${dataInicialAnteriorStr} a ${dataFinalAnteriorStr}): ${ordersAnterior.length} pedidos`);
@@ -1284,6 +1292,8 @@ export async function GET(req: NextRequest) {
     }
 
     await hydrateTopProdutoSeries();
+    const tGlobal = nowMs();
+    console.log('[dashboard/resumo] etapa=global ms=', (tGlobal - tResumo).toFixed(1));
 
     const produtoParentMapping = await parentMappingPromise;
     const mapaProdutoAtualFinal = consolidarProdutosPorPai(
@@ -1499,6 +1509,8 @@ export async function GET(req: NextRequest) {
 
     // Carregar dados para cards do período anterior (até hoje do mês passado)
     const ordersAnteriorCards = await fetchAllOrdersForPeriod(dataInicialAnteriorCardsISO, dataFinalAnteriorCardsISO);
+    const tTopSituacoesFetch = nowMs();
+    console.log('[dashboard/resumo] etapa=top_situacoes_fetch ms=', (tTopSituacoesFetch - tGlobal).toFixed(1), 'pedidosAnteriorCards=', ordersAnteriorCards.length);
     let totalPedidosAnteriorCards = 0;
     let totalValorAnteriorCards = 0;
     let totalValorLiquidoAnteriorCards = 0;
@@ -1611,6 +1623,8 @@ export async function GET(req: NextRequest) {
         .sort((a, b) => b.totalValor - a.totalValor),
     };
 
+    const tEnd = nowMs();
+    console.log('[dashboard/resumo] etapa=done ms_total=', (tEnd - t0).toFixed(1), 'ms_until_resumo=', (tResumo - t0).toFixed(1), 'ms_until_global=', (tGlobal - t0).toFixed(1), 'ms_until_top_situacoes=', (tTopSituacoesFetch - t0).toFixed(1));
     return NextResponse.json(resposta);
   } catch (error) {
     console.error('[API] Erro em /api/tiny/dashboard/resumo', error);
