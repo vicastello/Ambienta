@@ -288,8 +288,8 @@ export async function loadProdutoParentMapping(): Promise<ProdutoParentMapping> 
   try {
     const { data } = await supabaseAdmin
       .from('tiny_produtos')
-      .select<'id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url', TinyProdutoParentRow>(
-        'id_produto_tiny,codigo,nome,tipo,raw_payload,imagem_url'
+      .select<'id_produto_tiny,codigo,nome,tipo,raw_payload', TinyProdutoParentRow>(
+        'id_produto_tiny,codigo,nome,tipo,raw_payload'
       )
       .in('tipo', ['P', 'V', 'K'])
       .throwOnError();

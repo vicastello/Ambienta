@@ -602,6 +602,7 @@ export default function DashboardClient() {
   const globalAbortRef = useRef<AbortController | null>(null);
   const situacoesAbortRef = useRef<AbortController | null>(null);
   const resumoReadyRef = useRef(false);
+  const resumoFullKeysRef = useRef<Set<string>>(new Set());
   const isLoadingInsightsBaseRef = useRef(false);
   const insightsScrollRef = useRef<HTMLDivElement | null>(null);
   const heroCardRef = useRef<HTMLDivElement | null>(null);
@@ -683,9 +684,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     setSituacoesMes(situacoes);
   }
 
-  async function carregarResumo(options?: { force?: boolean }) {
+  async function carregarResumo(options?: { force?: boolean; mode?: 'lite' | 'full' | 'auto' }) {
     if (!filtersLoaded) return;
     const force = options?.force ?? false;
+    const mode = options?.mode ?? 'auto';
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
     resumoReadyRef.current = false;
@@ -695,6 +697,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
+      const fullKey = `${cacheKey}:full`;
+      const shouldUseLite = mode === 'lite' || (mode === 'auto' && !resumoFullKeysRef.current.has(fullKey));
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ?? null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
@@ -707,6 +711,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         setErro(null);
       }
       if (!force && cacheValid) {
+        if (shouldUseLite && !resumoFullKeysRef.current.has(fullKey)) {
+          void carregarResumo({ force: true, mode: 'full' });
+        }
         resumoReadyRef.current = true;
         void carregarResumoGlobal({ force: true });
         void carregarTopSituacoesMes({ force: true });
@@ -723,6 +730,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
+      if (shouldUseLite) params.set('lite', '1');
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, {
         cache: 'no-store',
         signal: controller.signal,
@@ -734,9 +742,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         setResumo(parsedResumo);
         lastResumoFetchRef.current = Date.now();
         resumoReadyRef.current = true;
+        if (!shouldUseLite) {
+          resumoFullKeysRef.current.add(fullKey);
+        }
         // encadeia chamadas secundárias assim que o principal chega
         void carregarResumoGlobal({ force: true });
         void carregarTopSituacoesMes({ force: true });
+        if (shouldUseLite && !resumoFullKeysRef.current.has(fullKey)) {
+          void carregarResumo({ force: true, mode: 'full' });
+        }
       }
       safeWriteCache(cacheKey, parsedResumo);
       try {

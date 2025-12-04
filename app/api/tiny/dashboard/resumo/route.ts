@@ -151,6 +151,13 @@ type TinyPedidoItemWithProduto = Pick<
 };
 
 type PedidoItensMap = Map<number, TinyPedidoItemWithProduto[]>;
+type ProdutoSerieAggregateRow = {
+  produto_id: number | null;
+  codigo: string | null;
+  data: string;
+  quantidade: number;
+  receita: number;
+};
 
 type OrderSummaryRow = Pick<
   TinyOrdersRow,
@@ -207,6 +214,16 @@ type DashboardResposta = {
   mapaVendasCidade: VendasCidade[];
 };
 
+type DashboardRespostaLite = Pick<
+  DashboardResposta,
+  | 'periodoAtual'
+  | 'periodoAnterior'
+  | 'periodoAnteriorCards'
+  | 'canais'
+  | 'canaisDisponiveis'
+  | 'situacoesDisponiveis'
+>;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SUPABASE_PAGE_SIZE = 250;
@@ -215,6 +232,7 @@ const SUPABASE_MAX_RETRIES = 3;
 const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network request failed)/i;
 const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
+const MAX_PRODUTOS_SERIE = 250;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -777,6 +795,7 @@ export async function GET(req: NextRequest) {
     const diasParam = searchParams.get('dias');
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
+    const isLite = searchParams.get('lite') === '1';
     const complementParam = searchParams.get('complement');
     const doComplement = complementParam === '1' || complementParam === 'true';
     const horaComparacaoParam = searchParams.get('horaComparacaoMinutos');
@@ -925,7 +944,7 @@ export async function GET(req: NextRequest) {
     ]);
     const tResumo = nowMs();
     console.log('[dashboard/resumo] etapa=resumo_principal ms=', (tResumo - t0).toFixed(1), 'pedidosAtual=', ordersAtual.length, 'pedidosAnterior=', ordersAnterior.length);
-    const parentMappingPromise = loadProdutoParentMapping();
+    const parentMappingPromise = isLite ? null : loadProdutoParentMapping();
     
     console.log(`[DEBUG] Período anterior (${dataInicialAnteriorStr} a ${dataFinalAnteriorStr}): ${ordersAnterior.length} pedidos`);
     console.log(`[DEBUG] Período atual (${dataInicialStr} a ${dataFinalStr}): ${ordersAtual.length} pedidos`);
@@ -967,39 +986,21 @@ export async function GET(req: NextRequest) {
     let canceladosAnteriorBase = 0;
 
     const hydrateTopProdutoSeries = async () => {
-      if (!mapaProdutoAtual.size) {
+      if (!mapaProdutoAtual.size) return;
+      if (mapaProdutoAtual.size > MAX_PRODUTOS_SERIE) {
+        console.warn(
+          `[dashboard/resumo] hydrateTopProdutoSeries pulado: ${mapaProdutoAtual.size} produtos (limite ${MAX_PRODUTOS_SERIE})`
+        );
         return;
       }
 
       const now = new Date();
       const endDateStr = now.toISOString().slice(0, 10);
-      const endISO = `${endDateStr}T23:59:59Z`;
       const thirtyDaysAgo = new Date(now);
       thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
       const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
       const serieStartDate = thirtyDaysAgo < startOfYear ? thirtyDaysAgo : startOfYear;
       const serieStartStr = serieStartDate.toISOString().slice(0, 10);
-      const startISO = `${serieStartStr}T00:00:00Z`;
-
-      let serieOrders: OrderSummaryRow[] = [];
-      try {
-        serieOrders = await fetchAllOrdersForPeriod(startISO, endISO);
-      } catch (err) {
-        console.warn('[Dashboard resumo] Falha ao carregar janela de série estendida', err);
-        return;
-      }
-
-      if (!serieOrders.length) {
-        mapaProdutoAtual.forEach((produto) => {
-          produto.serieDiariaMap = {};
-        });
-        return;
-      }
-
-      const serieOrderIds = serieOrders
-        .map((p) => p.id)
-        .filter((id): id is number => typeof id === 'number');
-      const itensSerie = await carregarItensPorPedido(serieOrderIds);
 
       const produtoLookup = new Map<string, ProdutoResumoInterno>();
       mapaProdutoAtual.forEach((produto) => {
@@ -1010,106 +1011,42 @@ export async function GET(req: NextRequest) {
         );
         produtoLookup.set(primaryKey, produto);
         if (typeof produto.produtoId === 'number') {
-          produtoLookup.set(`id:${produto.produtoId}`, produto);
-          const fallbackKey = buildProdutoInternalKey(null, produto.descricao, produto.sku ?? null);
-          produtoLookup.set(fallbackKey, produto);
+          produtoLookup.set(`ID:${produto.produtoId}`, produto);
         }
         if (produto.sku) {
-          produtoLookup.set(`sku:${produto.sku}`, produto);
+          produtoLookup.set(`COD:${produto.sku.toUpperCase()}`, produto);
         }
         produto.serieDiariaMap = {};
       });
 
-      const resolveProduto = (candidates: Array<string | null | undefined>) => {
-        for (const candidate of candidates) {
-          if (!candidate) continue;
-          const alvo = produtoLookup.get(candidate);
-          if (alvo) return alvo;
+      const resolveProduto = (id: number | null, codigo: string | null) => {
+        const byId = typeof id === 'number' ? produtoLookup.get(`ID:${id}`) : null;
+        if (byId) return byId;
+        const normCode = codigo ? codigo.toUpperCase() : null;
+        if (normCode) {
+          const byCode = produtoLookup.get(`COD:${normCode}`);
+          if (byCode) return byCode;
         }
         return null;
       };
 
-      const processPersistedItem = (item: TinyPedidoItemWithProduto, data: string) => {
-        const quantidade = toNumber(item?.quantidade);
-        if (quantidade <= 0) return;
-        const valorUnitario = parseValorTiny(
-          toParseableNumber(item.valor_unitario ?? item.valorUnitario ?? item.valor)
-        );
-        const receita =
-          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
-          quantidade * valorUnitario;
-        const descricao =
-          (typeof item.nome_produto === 'string' && item.nome_produto.trim()) ||
-          item.tiny_produtos?.nome ||
-          'Sem descrição';
-        const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
-        const produtoId = item.id_produto_tiny;
-        const fallbackKey = buildProdutoInternalKey(null, descricao, sku);
-        const alvo = resolveProduto([
-          typeof produtoId === 'number' ? `id:${produtoId}` : null,
-          sku ? `sku:${sku}` : null,
-          fallbackKey,
-        ]);
-        if (!alvo) return;
-        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
-      };
-
-      const processRawItem = (item: TinyRawItem, data: string) => {
-        const quantidade = toNumber(item?.quantidade);
-        if (quantidade <= 0) return;
-        const valorUnitario = parseValorTiny(
-          toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
-        );
-        const receita =
-          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
-          quantidade * valorUnitario;
-
-        const produtoRaw = isRecord(item.produto) ? item.produto : {};
-        const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
-        const descricaoBase =
-          (typeof produtoRaw.descricao === 'string' && produtoRaw.descricao.trim()) ||
-          (typeof produtoRaw.nome === 'string' && produtoRaw.nome.trim()) ||
-          'Produto sem nome';
-        const skuCandidate =
-          (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
-          (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
-          null;
-        const fallbackKey = buildProdutoInternalKey(null, descricaoBase, skuCandidate);
-        const alvo = resolveProduto([
-          typeof produtoId === 'number' ? `id:${produtoId}` : null,
-          skuCandidate ? `sku:${skuCandidate}` : null,
-          fallbackKey,
-        ]);
-        if (!alvo) return;
-        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
-      };
-
-      for (const order of serieOrders) {
-        const data = order.data_criacao;
-        if (!data) continue;
-        const situacao = typeof order.situacao === 'number' ? order.situacao : -1;
-        const canal = normalizarCanalTiny(order.canal);
-        const passaCanal =
-          !canaisFiltro || canaisFiltro.length === 0 ? true : canaisFiltro.includes(canal);
-        const passaSituacao =
-          !situacoesFiltro || situacoesFiltro.length === 0
-            ? true
-            : situacoesFiltro.includes(situacao);
-        if (!passaCanal || !passaSituacao) continue;
-
-        const itensPersistidos = order.id ? itensSerie.get(order.id) ?? [] : [];
-        if (itensPersistidos.length) {
-          for (const item of itensPersistidos) {
-            processPersistedItem(item, data);
-          }
-          continue;
+      try {
+        const { data, error } = await supabaseAdmin.rpc('dashboard_produto_series', {
+          p_data_inicio: serieStartStr,
+          p_data_fim: endDateStr,
+          p_canais: canaisFiltro && canaisFiltro.length ? canaisFiltro : null,
+          p_situacoes: situacoesFiltro && situacoesFiltro.length ? situacoesFiltro : null,
+        });
+        if (error) throw error;
+        const rows = (data ?? []) as ProdutoSerieAggregateRow[];
+        if (!rows.length) return;
+        for (const row of rows) {
+          const alvo = resolveProduto(row.produto_id, row.codigo);
+          if (!alvo) continue;
+          updateSerieDiaria(alvo, row.data, row.quantidade, row.receita);
         }
-
-        const itensRaw = extrairItens(order.raw);
-        if (!itensRaw.length) continue;
-        for (const rawItem of itensRaw) {
-          processRawItem(rawItem, data);
-        }
+      } catch (err) {
+        console.warn('[dashboard/resumo] Falha ao carregar séries agregadas', err);
       }
     };
 
@@ -1291,19 +1228,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    await hydrateTopProdutoSeries();
-    const tGlobal = nowMs();
-    console.log('[dashboard/resumo] etapa=global ms=', (tGlobal - tResumo).toFixed(1));
+    let tGlobal = tResumo;
+    if (!isLite) {
+      if (mapaProdutoAtual.size) {
+        await hydrateTopProdutoSeries();
+      } else {
+        console.log('[dashboard/resumo] skip hydrateTopProdutoSeries (sem produtos relevantes)');
+      }
+      tGlobal = nowMs();
+      // Perf: agregação via RPC + índices (ver migration 20251204120000) — alvo <5s vs ~20s anteriores nos logs
+      console.log('[dashboard/resumo] etapa=global ms=', (tGlobal - tResumo).toFixed(1));
+    } else {
+      console.log('[dashboard/resumo] lite=1 pulando global/hydrate/parent mapping');
+    }
 
-    const produtoParentMapping = await parentMappingPromise;
-    const mapaProdutoAtualFinal = consolidarProdutosPorPai(
-      mapaProdutoAtual,
-      produtoParentMapping
-    );
-    const mapaProdutoAnteriorFinal = consolidarProdutosPorPai(
-      mapaProdutoAnterior,
-      produtoParentMapping
-    );
+    const produtoParentMapping = !isLite && parentMappingPromise ? await parentMappingPromise : null;
+    const mapaProdutoAtualFinal = produtoParentMapping
+      ? consolidarProdutosPorPai(mapaProdutoAtual, produtoParentMapping)
+      : mapaProdutoAtual;
+    const mapaProdutoAnteriorFinal = produtoParentMapping
+      ? consolidarProdutosPorPai(mapaProdutoAnterior, produtoParentMapping)
+      : mapaProdutoAnterior;
 
     const vendasPorDiaAtual: DiaResumo[] = Array.from(mapaDiaAtual.entries())
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
