@@ -490,8 +490,11 @@ function getInitials(text?: string | null) {
 
 type ChartPreset = 'today' | '7d' | '30d' | 'month' | 'custom';
 
+const DEFAULT_SITUACOES = [3, 4, 5, 6, 7, 1, 0]; // aprovada, preparando, enviada, entregue, pronto envio, faturada, aberta
+const DEFAULT_PRESET: DatePreset = 'today';
+
 export default function DashboardClient() {
-  const [preset, setPreset] = useState<DatePreset>('7d');
+  const [preset, setPreset] = useState<DatePreset>(DEFAULT_PRESET);
   const [customStart, setCustomStart] = useState<string | null>(null);
   const [customEnd, setCustomEnd] = useState<string | null>(null);
 
@@ -503,7 +506,7 @@ export default function DashboardClient() {
   const [erroGlobal, setErroGlobal] = useState<string | null>(null);
 
   const [canaisSelecionados, setCanaisSelecionados] = useState<string[]>([]);
-  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>([]);
+  const [situacoesSelecionadas, setSituacoesSelecionadas] = useState<number[]>(DEFAULT_SITUACOES);
   const [topSituacoesMes, setTopSituacoesMes] = useState<SituacaoResumo[]>([]);
   const [situacoesMes, setSituacoesMes] = useState<SituacaoResumo[]>([]);
   const [loadingTopSituacoesMes, setLoadingTopSituacoesMes] = useState<boolean>(false);
@@ -513,7 +516,7 @@ export default function DashboardClient() {
   const [selectedZoomLevelKey, setSelectedZoomLevelKey] = useState<string | null>(null);
   const [produtoCardPreset, setProdutoCardPreset] = useState<ProdutoCardPreset>('30d');
 
-  const [chartPreset, setChartPreset] = useState<ChartPreset>('month');
+  const [chartPreset, setChartPreset] = useState<ChartPreset>('today');
   const [chartCustomStart, setChartCustomStart] = useState<string | null>(null);
   const [chartCustomEnd, setChartCustomEnd] = useState<string | null>(null);
   const [resumoChart, setResumoChart] = useState<DashboardResumo | null>(null);
@@ -603,11 +606,11 @@ export default function DashboardClient() {
     if (typeof window === 'undefined') return;
     const saved = loadSavedFilters();
     if (saved) {
-      setPreset(saved.preset ?? '7d');
+      setPreset(saved.preset ?? DEFAULT_PRESET);
       setCustomStart(saved.customStart ?? null);
       setCustomEnd(saved.customEnd ?? null);
       setCanaisSelecionados(saved.canaisSelecionados ?? []);
-      setSituacoesSelecionadas(saved.situacoesSelecionadas ?? []);
+      setSituacoesSelecionadas(saved.situacoesSelecionadas ?? DEFAULT_SITUACOES);
     }
     setFiltersLoaded(true);
   }, []);
