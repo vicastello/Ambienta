@@ -167,7 +167,7 @@ export default function MercadoLivrePage() {
         if (requestId !== requestIdRef.current) return;
 
         if (!res.ok || !json.ok) {
-          if (!json.ok && json.error?.code === "MELI_NOT_CONFIGURED") {
+          if (!json.ok && json.error?.code === "ML_NOT_CONFIGURED") {
             setNotConfigured(true);
             setOrders([]);
             setHasMore(false);
@@ -1154,7 +1154,7 @@ function MeliNotConfiguredCard({ onRetry, loading }: { onRetry: () => void; load
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-300" />
         </div>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Defina MELI_SELLER_ID e MELI_ACCESS_TOKEN nas variáveis de ambiente e autorize o app para seguir.
+        Defina ML_APP_ID e ML_ACCESS_TOKEN nas variáveis de ambiente e autorize o app para seguir.
         </p>
         <ul className="list-disc pl-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
           <li>1. Autorize o app Ambienta Mercado Livre.</li>

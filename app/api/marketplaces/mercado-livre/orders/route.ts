@@ -4,7 +4,7 @@ import type { MeliOrder, MeliOrdersSearchResponse } from '@/src/types/mercadoLiv
 
 const DEFAULT_PERIOD_DAYS = 30;
 const DEFAULT_PAGE_SIZE = 50;
-const MELI_MOCK_MODE = process.env.MELI_MOCK_MODE === 'true';
+const MELI_MOCK_MODE = process.env.ML_MOCK_MODE === 'true';
 
 function buildIsoDate(timestampMs: number) {
   return new Date(timestampMs).toISOString();
@@ -78,14 +78,17 @@ export async function GET(req: Request) {
   const timeToIso = buildIsoDate(now);
   const timeFromIso = buildIsoDate(now - periodDays * 24 * 60 * 60 * 1000);
 
-  if (!process.env.MELI_SELLER_ID || !process.env.MELI_ACCESS_TOKEN) {
+  const appId = process.env.ML_APP_ID;
+  const accessToken = process.env.ML_ACCESS_TOKEN;
+
+  if (!appId || !accessToken) {
     return NextResponse.json(
       {
         ok: false,
         error: {
-          code: 'MELI_NOT_CONFIGURED',
+          code: 'ML_NOT_CONFIGURED',
           message:
-            'Mercado Livre não configurado. Defina MELI_SELLER_ID e MELI_ACCESS_TOKEN nas variáveis de ambiente.',
+            'Mercado Livre não configurado. Defina ML_APP_ID e ML_ACCESS_TOKEN após completar o OAuth.',
         },
       },
       { status: 503 }
@@ -102,8 +105,7 @@ export async function GET(req: Request) {
           limit: pageSize,
         })
       : await listMeliOrders({
-          sellerId: process.env.MELI_SELLER_ID,
-          accessToken: process.env.MELI_ACCESS_TOKEN,
+          accessToken,
           dateFrom: timeFromIso,
           dateTo: timeToIso,
           status,
@@ -135,10 +137,12 @@ export async function GET(req: Request) {
       {
         ok: false,
         error: {
-          message,
+          code: 'ML_API_ERROR',
+          message: 'Falha ao consultar pedidos no Mercado Livre',
+          details: message,
         },
       },
-      { status: 500 }
+      { status: 502 }
     );
   }
 }

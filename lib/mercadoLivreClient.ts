@@ -3,7 +3,7 @@ import type { MeliOrdersSearchResponse } from '@/src/types/mercadoLivre';
 const MELI_BASE_URL = 'https://api.mercadolibre.com';
 
 export interface ListMeliOrdersParams {
-  sellerId: string;
+  sellerId?: string;
   accessToken: string;
   dateFrom?: string;
   dateTo?: string;
@@ -18,7 +18,7 @@ export async function listMeliOrders(params: ListMeliOrdersParams): Promise<Meli
 
   const endpoint = recent ? '/orders/search/recent' : '/orders/search';
   const url = new URL(MELI_BASE_URL + endpoint);
-  url.searchParams.set('seller', sellerId);
+  if (sellerId) url.searchParams.set('seller', sellerId);
   url.searchParams.set('offset', String(offset));
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('sort', 'date_desc');
@@ -31,6 +31,7 @@ export async function listMeliOrders(params: ListMeliOrdersParams): Promise<Meli
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/json',
+      'Content-Type': 'application/json',
     },
   });
 
