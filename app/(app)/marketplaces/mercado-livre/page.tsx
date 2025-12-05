@@ -178,7 +178,7 @@ export default function MercadoLivrePage() {
           }
           const message = !res.ok
             ? `Erro ${res.status}: ${res.statusText || "falha ao buscar pedidos"}`
-            : json.error.message;
+            : (json as MeliOrdersApiError).error?.message || "Erro ao buscar pedidos do Mercado Livre.";
           throw new Error(message);
         }
 
