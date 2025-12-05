@@ -163,7 +163,7 @@ export default function MagaluPage() {
           }
           const message = !res.ok
             ? `Erro ${res.status}: ${res.statusText || "falha ao buscar pedidos"}`
-            : json.error.message;
+            : (json as MagaluOrdersApiError).error?.message || "Erro ao buscar pedidos do Magalu.";
           throw new Error(message);
         }
 
