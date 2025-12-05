@@ -150,16 +150,14 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
   const handleNavHover = useCallback((index: number) => {
     const target = NAV_ITEMS[index];
-    if (target?.href === '/marketplaces') {
-      setShowMarketplaceMenu(true);
-    }
+    if (!target || target.href === '/marketplaces') return;
+    setShowMarketplaceMenu(false);
   }, []);
 
   const handleMobileNavHover = useCallback((index: number) => {
     const target = MOBILE_NAV_ITEMS[index];
-    if (target?.href === '/marketplaces') {
-      setShowMarketplaceMenu(true);
-    }
+    if (!target || target.href === '/marketplaces') return;
+    setShowMarketplaceMenu(false);
   }, []);
   const logoIcon = (
     <div className="relative h-10 w-10 flex-shrink-0">
@@ -207,9 +205,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       />
 
       {/* Desktop sidebar (only visible on lg+) */}
-      <aside
-        className="hidden lg:block fixed left-5 top-0 h-full z-40 w-14 transition-all duration-300 ease-out"
-      >
+      <aside className="hidden lg:block fixed left-5 top-0 h-full z-40 w-14 transition-all duration-300 ease-out">
         <div className="relative h-full flex flex-col">
           <div className="flex flex-col items-center gap-6 w-full pt-8">
             <div className="flex w-10 justify-center">{logoIcon}</div>
@@ -231,7 +227,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {showMarketplaceMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowMarketplaceMenu(false)} />
-          <div className="fixed z-50 left-12 top-20">
+          <div className="fixed z-50 left-12 top-24">
             <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
                 Escolha o marketplace
