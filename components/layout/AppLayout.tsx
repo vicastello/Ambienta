@@ -231,7 +231,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {showMarketplaceMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowMarketplaceMenu(false)} />
-          <div className="fixed z-50 left-20 top-24">
+          <div className="fixed z-50 left-12 top-20">
             <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
                 Escolha o marketplace

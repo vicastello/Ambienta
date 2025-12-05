@@ -101,7 +101,9 @@ export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className
                 aria-label={label}
                 aria-pressed={isActive}
                 onClick={() => onChange?.(index)}
-                onMouseEnter={() => onItemHover?.(index)}
+                onMouseEnter={() => {
+                  if (!item.disableTooltip) onItemHover?.(index);
+                }}
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
@@ -180,7 +182,9 @@ export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, classNa
                 aria-label={label}
                 aria-pressed={isActive}
                 onClick={() => onChange?.(index)}
-                onMouseEnter={() => onItemHover?.(index)}
+                onMouseEnter={() => {
+                  if (!item.disableTooltip) onItemHover?.(index);
+                }}
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
