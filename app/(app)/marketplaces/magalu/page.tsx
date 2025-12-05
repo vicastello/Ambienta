@@ -1,0 +1,1130 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import {
+  AlertCircle,
+  BarChart2,
+  CalendarDays,
+  CheckCircle2,
+  Info,
+  PackageCheck,
+  Percent,
+  RefreshCcw,
+  Search,
+  ShoppingBag,
+  Truck,
+  TruckIcon,
+  Wallet,
+  XCircle,
+  Zap,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { AppLayout } from "@/components/layout/AppLayout";
+import type { MagaluOrder } from "@/src/types/magalu";
+
+type MagaluOrdersApiSuccess = {
+  ok: true;
+  data: {
+    orders: MagaluOrder[];
+    hasMore: boolean;
+    nextCursor?: string;
+  };
+  meta: {
+    page?: number;
+    perPage?: number;
+    status?: string | null;
+    mock?: boolean;
+  };
+};
+
+type MagaluOrdersApiError = {
+  ok: false;
+  error: { message: string; code?: string };
+};
+
+const STATUS_OPTIONS = [
+  { label: "Todos", value: "ALL" },
+  { label: "approved", value: "approved" },
+  { label: "ready_to_ship", value: "ready_to_ship" },
+  { label: "shipped", value: "shipped" },
+  { label: "delivered", value: "delivered" },
+  { label: "canceled", value: "canceled" },
+];
+
+const STATUS_COLORS: Record<string, string> = {
+  approved: "bg-emerald-100/80 text-emerald-700",
+  ready_to_ship: "bg-amber-100/80 text-amber-700",
+  shipped: "bg-sky-100/80 text-sky-700",
+  delivered: "bg-indigo-100/80 text-indigo-700",
+  canceled: "bg-rose-100/80 text-rose-700",
+};
+
+const STATUS_HEX: Record<string, string> = {
+  approved: "#10b981",
+  ready_to_ship: "#f59e0b",
+  shipped: "#0ea5e9",
+  delivered: "#6366f1",
+  canceled: "#f87171",
+};
+
+const formatCurrency = (value: number) =>
+  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+
+const formatDate = (dateStr?: string | null) =>
+  dateStr
+    ? new Date(dateStr).toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
+type Metrics = ReturnType<typeof buildMetricsFromOrders>;
+
+export default function MagaluPage() {
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [orders, setOrders] = useState<MagaluOrder[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [isMockMode, setIsMockMode] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const requestIdRef = useRef(0);
+
+  const metrics: Metrics = useMemo(() => buildMetricsFromOrders(orders), [orders]);
+
+  const filteredOrders = useMemo(() => {
+    if (!searchTerm.trim()) return orders;
+    const term = searchTerm.toLowerCase();
+    return orders.filter(
+      (o) =>
+        String(o.IdOrder).toLowerCase().includes(term) ||
+        o.ReceiverName?.toLowerCase().includes(term) ||
+        (o.DeliveryAddressCity?.toLowerCase().includes(term) ?? false)
+    );
+  }, [orders, searchTerm]);
+
+  const fetchOrders = useCallback(
+    async (opts?: { cursor?: string; append?: boolean }) => {
+      const requestId = ++requestIdRef.current;
+      if (opts?.append) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+      setNotConfigured(false);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("pageSize", "100");
+        if (statusFilter !== "ALL") params.set("status", statusFilter);
+        if (opts?.cursor) params.set("cursor", opts.cursor);
+
+        const res = await fetch(`/api/marketplaces/magalu/orders?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const text = await res.text();
+        let json: MagaluOrdersApiSuccess | MagaluOrdersApiError;
+        try {
+          json = JSON.parse(text) as MagaluOrdersApiSuccess | MagaluOrdersApiError;
+        } catch {
+          throw new Error(
+            text?.toLowerCase().includes("<!doctype") || text?.toLowerCase().includes("<html")
+              ? "O Magalu retornou HTML em vez de JSON (possível login/erro interno)."
+              : `Resposta inválida do Magalu: ${text?.slice(0, 120) ?? "desconhecida"}`
+          );
+        }
+
+        if (requestId !== requestIdRef.current) return;
+
+        if (!res.ok || !json.ok) {
+          if (!json.ok && json.error?.code === "MAGALU_NOT_CONFIGURED") {
+            setNotConfigured(true);
+            setOrders([]);
+            setHasMore(false);
+            setNextCursor(undefined);
+            setIsMockMode(false);
+            setLastUpdated(null);
+            return;
+          }
+          const message = !res.ok
+            ? `Erro ${res.status}: ${res.statusText || "falha ao buscar pedidos"}`
+            : json.error.message;
+          throw new Error(message);
+        }
+
+        const payload = json.data;
+        setOrders((prev) => (opts?.append ? [...prev, ...payload.orders] : payload.orders));
+        setHasMore(payload.hasMore);
+        setNextCursor(payload.nextCursor);
+        setIsMockMode(Boolean((json as MagaluOrdersApiSuccess).meta.mock));
+        setLastUpdated(Date.now());
+      } catch (err) {
+        if (requestId !== requestIdRef.current) return;
+        const message = err instanceof Error ? err.message : "Erro ao carregar pedidos do Magalu.";
+        setError(message);
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [statusFilter]
+  );
+
+  useEffect(() => {
+    setOrders([]);
+    setNextCursor(undefined);
+    fetchOrders();
+  }, [fetchOrders]);
+
+  return (
+    <AppLayout title="Magalu">
+      <div className="space-y-6 pb-12">
+        <MagaluHeader
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          loading={loading}
+          onRefresh={() => fetchOrders()}
+          isMockMode={isMockMode}
+          lastUpdated={lastUpdated}
+          notConfigured={notConfigured}
+          totalOrders={orders.length}
+        />
+
+        <MagaluSummaryPanel summaries={metrics.summary} loading={loading && orders.length === 0} />
+
+        <MagaluChartsSection metrics={metrics} loading={loading && orders.length === 0} />
+
+        <MagaluRankingsSection rankings={metrics.rankings} loading={loading && orders.length === 0} />
+
+        <MagaluOrdersSection
+          orders={filteredOrders}
+          totalOrders={orders.length}
+          loading={loading}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
+          nextCursor={nextCursor}
+          error={error}
+          notConfigured={notConfigured}
+          isMockMode={isMockMode}
+          onRetry={() => fetchOrders()}
+          onLoadMore={() => nextCursor && fetchOrders({ cursor: nextCursor, append: true })}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          expandedOrders={expandedOrders}
+          setExpandedOrders={setExpandedOrders}
+        />
+      </div>
+    </AppLayout>
+  );
+}
+
+// Helpers
+function buildMetricsFromOrders(orders: MagaluOrder[]) {
+  const totalPedidos = orders.length;
+  const totalValor = orders.reduce((sum, order) => sum + (Number(order.TotalAmount) || 0), 0);
+  const itensVendidos = orders.reduce(
+    (sum, order) => sum + order.Products.reduce((acc, item) => acc + (item.Quantity || 0), 0),
+    0
+  );
+  const cancelados = orders.filter((o) => o.OrderStatus === "canceled" || o.OrderStatus === "cancelled").length;
+  const pagos = orders.filter((o) => o.OrderStatus === "approved").length;
+  const ticketMedio = totalPedidos ? totalValor / totalPedidos : 0;
+  const cancelRate = totalPedidos ? (cancelados / totalPedidos) * 100 : 0;
+
+  const perDay = orders.reduce<Record<string, { valor: number; pedidos: number; status: Record<string, number> }>>(
+    (acc, order) => {
+      const day = order.PurchasedDate
+        ? new Date(order.PurchasedDate).toLocaleDateString("pt-BR")
+        : new Date(order.InsertedDate ?? Date.now()).toLocaleDateString("pt-BR");
+      if (!acc[day]) acc[day] = { valor: 0, pedidos: 0, status: {} };
+      acc[day].valor += Number(order.TotalAmount) || 0;
+      acc[day].pedidos += 1;
+      acc[day].status[order.OrderStatus] = (acc[day].status[order.OrderStatus] ?? 0) + 1;
+      return acc;
+    },
+    {}
+  );
+
+  const dailySeries = Object.entries(perDay)
+    .sort((a, b) => {
+      const [da] = a;
+      const [db] = b;
+      const [dayA, monthA, yearA] = da.split("/").map(Number);
+      const [dayB, monthB, yearB] = db.split("/").map(Number);
+      return new Date(yearA + 2000, monthA - 1, dayA).getTime() - new Date(yearB + 2000, monthB - 1, dayB).getTime();
+    })
+    .map(([date, info]) => ({
+      date,
+      valor: Number(info.valor.toFixed(2)),
+      pedidos: info.pedidos,
+    }));
+
+  const allStatuses = Array.from(new Set(orders.map((o) => o.OrderStatus)));
+  const topStatuses = allStatuses.slice(0, 6);
+  const statusTimeline = Object.entries(perDay)
+    .sort((a, b) => {
+      const [da] = a;
+      const [db] = b;
+      const [dayA, monthA, yearA] = da.split("/").map(Number);
+      const [dayB, monthB, yearB] = db.split("/").map(Number);
+      return new Date(yearA + 2000, monthA - 1, dayA).getTime() - new Date(yearB + 2000, monthB - 1, dayB).getTime();
+    })
+    .map(([date, info]) => {
+      const entry: Record<string, number | string> = { date };
+      topStatuses.forEach((status) => {
+        entry[status] = info.status[status] ?? 0;
+      });
+      return entry;
+    });
+
+  const statusCounts = orders.reduce<Record<string, number>>((acc, order) => {
+    acc[order.OrderStatus] = (acc[order.OrderStatus] ?? 0) + 1;
+    return acc;
+  }, {});
+  const statusDistribution = Object.entries(statusCounts)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([status, count]) => ({
+      status,
+      count,
+      percent: totalPedidos ? Math.round((count / totalPedidos) * 100) : 0,
+    }));
+
+  const productMap = new Map<string, { units: number; revenue: number; orders: number }>();
+  orders.forEach((order) => {
+    const seen = new Set<string>();
+    order.Products.forEach((p) => {
+      const key = p.IdSku;
+      const price = Number(p.Price) || 0;
+      const prev = productMap.get(key) ?? { units: 0, revenue: 0, orders: 0 };
+      prev.units += p.Quantity || 0;
+      prev.revenue += price * (p.Quantity || 0);
+      if (!seen.has(key)) {
+        prev.orders += 1;
+        seen.add(key);
+      }
+      productMap.set(key, prev);
+    });
+  });
+  const products = Array.from(productMap.entries())
+    .map(([sku, data]) => ({
+      name: sku,
+      units: data.units,
+      revenue: Number(data.revenue.toFixed(2)),
+      orders: data.orders,
+      revenuePerc: totalValor ? Math.round((data.revenue / totalValor) * 100) : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
+  const cityMap = new Map<string, { pedidos: number; valor: number }>();
+  orders.forEach((order) => {
+    const city = order.DeliveryAddressCity ?? "Cidade não informada";
+    const state = order.DeliveryAddressState ?? "";
+    const cityKey = `${city}${state ? ` - ${state}` : ""}`;
+    const prev = cityMap.get(cityKey) ?? { pedidos: 0, valor: 0 };
+    prev.pedidos += 1;
+    prev.valor += Number(order.TotalAmount) || 0;
+    cityMap.set(cityKey, prev);
+  });
+  const cities = Array.from(cityMap.entries())
+    .sort((a, b) => b[1].valor - a[1].valor)
+    .slice(0, 5)
+    .map(([city, info]) => ({
+      city,
+      pedidos: info.pedidos,
+      valor: Number(info.valor.toFixed(2)),
+      percent: totalPedidos ? Math.round((info.pedidos / totalPedidos) * 100) : 0,
+    }));
+
+  const carrierMap = new Map<string, { pedidos: number; valor: number }>();
+  orders.forEach((order) => {
+    const carrier = order.StoreName || order.MarketplaceName || "Indefinido";
+    const prev = carrierMap.get(carrier) ?? { pedidos: 0, valor: 0 };
+    prev.pedidos += 1;
+    prev.valor += Number(order.TotalAmount) || 0;
+    carrierMap.set(carrier, prev);
+  });
+  const carriers = Array.from(carrierMap.entries())
+    .sort((a, b) => b[1].pedidos - a[1].pedidos)
+    .slice(0, 5)
+    .map(([carrier, info]) => ({
+      carrier,
+      pedidos: info.pedidos,
+      valor: Number(info.valor.toFixed(2)),
+      percent: totalPedidos ? Math.round((info.pedidos / totalPedidos) * 100) : 0,
+    }));
+
+  const insights = buildInsights(orders, totalValor, cancelados, totalPedidos, carriers, cities);
+
+  return {
+    summary: {
+      totalPedidos,
+      totalValor,
+      ticketMedio,
+      totalItens: itensVendidos,
+      cancelRate,
+      pagos,
+    },
+    dailySeries,
+    statusTimeline,
+    statusDistribution,
+    rankings: { products, cities, carriers },
+    insights,
+    topStatuses,
+  };
+}
+
+function buildInsights(
+  orders: MagaluOrder[],
+  totalValor: number,
+  cancelados: number,
+  totalPedidos: number,
+  carriers: Array<{ carrier: string; pedidos: number }>,
+  cities: Array<{ city: string; pedidos: number }>
+) {
+  if (!orders.length) return [];
+  const maior = [...orders].sort((a, b) => Number(b.TotalAmount) - Number(a.TotalAmount))[0];
+  const cancelPerc = totalPedidos ? Math.round((cancelados / totalPedidos) * 100) : 0;
+  const topCarrier = carriers[0];
+  const topCity = cities[0];
+
+  return [
+    {
+      title: "Maior pedido",
+      body: `${formatCurrency(Number(maior.TotalAmount) || 0)} · ${formatDate(maior.PurchasedDate || maior.InsertedDate)} (${maior.IdOrder})`,
+      icon: Wallet,
+    },
+    {
+      title: "Taxa de cancelamento",
+      body: `${cancelPerc}% dos pedidos no período`,
+      icon: Percent,
+    },
+    topCarrier && {
+      title: "Loja/Transportadora destaque",
+      body: `${topCarrier.carrier} · ${topCarrier.pedidos} pedidos`,
+      icon: TruckIcon,
+    },
+    topCity && {
+      title: "Cidade/UF em destaque",
+      body: `${topCity.city} · ${topCity.pedidos} pedidos`,
+      icon: Info,
+    },
+    {
+      title: "Volume total",
+      body: `Faturamento somado: ${formatCurrency(totalValor)}`,
+      icon: CheckCircle2,
+    },
+  ].filter(Boolean) as Array<{ title: string; body: string; icon: ComponentType<{ className?: string }> }>;
+}
+
+// Components
+type HeaderProps = {
+  statusFilter: string;
+  setStatusFilter: (value: string) => void;
+  loading: boolean;
+  onRefresh: () => void;
+  isMockMode: boolean;
+  lastUpdated: number | null;
+  notConfigured: boolean;
+  totalOrders: number;
+};
+
+function MagaluHeader({
+  statusFilter,
+  setStatusFilter,
+  loading,
+  onRefresh,
+  isMockMode,
+  lastUpdated,
+  notConfigured,
+  totalOrders,
+}: HeaderProps) {
+  return (
+    <header className="relative overflow-hidden rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 sm:p-8 space-y-6 shadow-2xl">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#009DA8]/14 via-transparent to-white/12 dark:from-[#009DA8]/22 dark:to-slate-900/30" />
+      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400">Visão geral dos pedidos e desempenho de vendas no Magalu.</p>
+          <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Magalu</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-slate-900/60 px-3 py-1 text-xs text-slate-700 dark:text-slate-200">
+              <ShoppingBag className="w-4 h-4" />
+              {totalOrders} pedidos carregados
+            </span>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`rounded-full border px-4 py-2 text-sm font-semibold shadow-sm backdrop-blur ${
+              notConfigured
+                ? "border-amber-400 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+                : "border-emerald-300/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200"
+            }`}
+          >
+            {notConfigured ? "Integração pendente" : "Conectado (env vars)"}
+          </span>
+          {isMockMode && (
+            <span className="rounded-full border border-amber-300/70 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-700 dark:text-amber-200 shadow-sm backdrop-blur">
+              Modo demonstração (dados mock)
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="relative grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto]">
+        <div className="rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-500 dark:text-slate-300">Status</p>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="app-input w-full"
+          >
+            {STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 transition hover:shadow-xl hover:shadow-[#009DA8]/40 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </button>
+        </div>
+      </div>
+
+      {lastUpdated && (
+        <p className="relative text-xs text-slate-500 dark:text-slate-400">
+          Atualizado em {new Date(lastUpdated).toLocaleString("pt-BR")}
+        </p>
+      )}
+    </header>
+  );
+}
+
+type SummaryPanelProps = {
+  summaries: Metrics["summary"];
+  loading: boolean;
+};
+
+function MagaluSummaryPanel({ summaries, loading }: SummaryPanelProps) {
+  const cards = [
+    { title: "Vendas (R$)", value: formatCurrency(summaries.totalValor), icon: Wallet, color: "text-[#009DA8] dark:text-[#00B5C3]" },
+    { title: "Pedidos", value: summaries.totalPedidos.toString(), icon: ShoppingBag, color: "text-emerald-500 dark:text-emerald-400" },
+    { title: "Ticket médio", value: summaries.totalPedidos ? formatCurrency(summaries.ticketMedio) : "—", icon: BarChart2, color: "text-amber-500 dark:text-amber-300" },
+    { title: "Itens vendidos", value: summaries.totalItens.toString(), icon: PackageCheck, color: "text-indigo-500 dark:text-indigo-300" },
+    { title: "Taxa de cancelamento", value: `${summaries.cancelRate.toFixed(1)}%`, icon: Percent, color: "text-rose-500 dark:text-rose-300" },
+    { title: "Pedidos aprovados", value: summaries.pagos.toString(), icon: CheckCircle2, color: "text-sky-500 dark:text-sky-300" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {cards.map((_, idx) => (
+          <div key={idx} className="h-28 rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {cards.map((card) => (
+        <SummaryCard key={card.title} title={card.title} value={card.value} icon={card.icon} colorClass={card.color} />
+      ))}
+    </section>
+  );
+}
+
+function MagaluChartsSection({ metrics, loading }: { metrics: Metrics; loading: boolean }) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Tendência de vendas e pedidos</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Valor total x quantidade por dia</p>
+          </div>
+          <Wallet className="w-5 h-5 text-[#009DA8]" />
+        </div>
+        <div className="h-64">
+          {loading ? (
+            <div className="h-full rounded-2xl bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={metrics.dailySeries}>
+                <defs>
+                  <linearGradient id="magaluValor" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#009DA8" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#009DA8" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="magaluPedidos" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="valor" stroke="#009DA8" fill="url(#magaluValor)" strokeWidth={2.2} name="Vendas (R$)" />
+                <Area type="monotone" dataKey="pedidos" stroke="#f59e0b" fill="url(#magaluPedidos)" strokeWidth={2.2} name="Pedidos" />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Status ao longo do tempo</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Volume diário por status</p>
+          </div>
+        </div>
+        <div className="h-64">
+          {loading ? (
+            <div className="h-full rounded-2xl bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={metrics.statusTimeline} stackOffset="none">
+                <defs>
+                  {metrics.topStatuses.map((status) => (
+                    <linearGradient key={status} id={`magalu-${status}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={statusColor(status)} stopOpacity={0.35} />
+                      <stop offset="95%" stopColor={statusColor(status)} stopOpacity={0.05} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                {metrics.topStatuses.map((status) => (
+                  <Area
+                    key={status}
+                    type="monotone"
+                    dataKey={status}
+                    stackId="1"
+                    stroke={statusColor(status)}
+                    fill={`url(#magalu-${status})`}
+                    name={status}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type RankingsSectionProps = {
+  rankings: Metrics["rankings"];
+  loading: boolean;
+};
+
+function MagaluRankingsSection({ rankings, loading }: RankingsSectionProps) {
+  return (
+    <section className="grid gap-4 lg:grid-cols-3">
+      <RankingCard
+        title="Top produtos"
+        subtitle="Itens mais vendidos (unidades)"
+        icon={PackageCheck}
+        loading={loading}
+        headers={["Produto", "Unidades", "Faturamento", "% Fat."]}
+        rows={rankings.products.map((p) => [p.name, p.units, formatCurrency(p.revenue), `${p.revenuePerc}%`])}
+      />
+      <RankingCard
+        title="Top cidades/UF"
+        subtitle="Destinos com mais pedidos"
+        icon={Truck}
+        loading={loading}
+        headers={["Cidade/UF", "Pedidos", "Faturamento", "% Ped."]}
+        rows={rankings.cities.map((c) => [c.city, c.pedidos, formatCurrency(c.valor), `${c.percent}%`])}
+      />
+      <RankingCard
+        title="Lojas/Transportadoras"
+        subtitle="Uso por loja/transportadora"
+        icon={TruckIcon}
+        loading={loading}
+        headers={["Loja/Transportadora", "Pedidos", "% Ped.", "Valor"]}
+        rows={rankings.carriers.map((c) => [c.carrier, c.pedidos, `${c.percent}%`, formatCurrency(c.valor)])}
+      />
+    </section>
+  );
+}
+
+function RankingCard({
+  title,
+  subtitle,
+  icon: Icon,
+  loading,
+  headers,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ComponentType<{ className?: string }>;
+  loading: boolean;
+  headers: string[];
+  rows: Array<(string | number)[]>;
+}) {
+  return (
+    <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+        </div>
+        <Icon className="w-5 h-5 text-[#009DA8]" />
+      </div>
+      {loading ? (
+        <div className="space-y-2">
+          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">Sem dados suficientes.</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid grid-cols-4 text-xs text-slate-500 dark:text-slate-400">
+            {headers.map((h) => (
+              <span key={h} className="truncate">
+                {h}
+              </span>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {rows.map((row, idx) => (
+              <div key={idx} className="grid grid-cols-4 text-sm text-slate-800 dark:text-slate-100">
+                {row.map((cell, cidx) => (
+                  <span key={cidx} className="truncate">
+                    {cell}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type OrdersSectionProps = {
+  orders: MagaluOrder[];
+  totalOrders: number;
+  loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
+  error: string | null;
+  notConfigured: boolean;
+  isMockMode: boolean;
+  onRetry: () => void;
+  onLoadMore: () => void;
+  searchTerm: string;
+  setSearchTerm: (value: string) => void;
+  expandedOrders: Record<string, boolean>;
+  setExpandedOrders: (value: Record<string, boolean>) => void;
+};
+
+function MagaluOrdersSection({
+  orders,
+  totalOrders,
+  loading,
+  loadingMore,
+  hasMore,
+  nextCursor,
+  error,
+  notConfigured,
+  isMockMode,
+  onRetry,
+  onLoadMore,
+  searchTerm,
+  setSearchTerm,
+  expandedOrders,
+  setExpandedOrders,
+}: OrdersSectionProps) {
+  const isInitialLoading = loading && totalOrders === 0;
+  const friendlyError =
+    error && (error.toLowerCase().includes("doctype") || error.toLowerCase().includes("html"))
+      ? "O Magalu retornou HTML (login ou erro interno) em vez de JSON. Verifique se o app está autorizado e se o token é válido."
+      : error;
+  const renderEmpty = !isInitialLoading && orders.length === 0 && !error && !notConfigured;
+
+  return (
+    <section className="glass-panel glass-tint border border-white/60 dark:border-white/10 rounded-[36px] shadow-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Pedidos</h2>
+          <p className="text-sm text-slate-500">Lista dos pedidos recentes do Magalu</p>
+        </div>
+        <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+          <span className="rounded-full bg-white/70 dark:bg-slate-800/60 px-3 py-1 border border-white/50 dark:border-slate-800/50">
+            {orders.length} pedidos exibidos
+          </span>
+          {loading && totalOrders > 0 && (
+            <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+              <RefreshCcw className="w-4 h-4 animate-spin" /> Atualizando...
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="px-6 pb-4">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            className="app-input pl-9"
+            placeholder="Buscar por número do pedido ou cliente"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {error && !notConfigured && <MagaluErrorAlert message={friendlyError ?? "Erro ao carregar pedidos."} onRetry={onRetry} />}
+
+      {notConfigured && <MagaluNotConfiguredCard onRetry={onRetry} loading={loading} />}
+
+      {isMockMode && (
+        <p className="px-6 text-xs text-amber-600 dark:text-amber-300">
+          Dados simulados para testes. Os números podem não corresponder à loja real.
+        </p>
+      )}
+
+      {isInitialLoading && (
+        <div className="px-6 pb-6 space-y-3">
+          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
+          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
+          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
+          <p className="text-sm text-slate-500 dark:text-slate-400 px-1">Carregando pedidos do Magalu...</p>
+        </div>
+      )}
+
+      {renderEmpty && (
+        <div className="px-6 pb-6">
+          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/50 p-6 text-center text-slate-500 dark:text-slate-400 space-y-2">
+            <AlertCircle className="w-5 h-5 mx-auto text-slate-400" />
+            <p className="font-semibold">Nenhum pedido encontrado neste período.</p>
+            <p className="text-sm">Tente ampliar o período ou alterar o status.</p>
+          </div>
+        </div>
+      )}
+
+      {orders.length > 0 && !notConfigured && (
+        <>
+          <div className="hidden md:block overflow-x-auto px-6 pb-6">
+            <MagaluOrdersTable orders={orders} expandedOrders={expandedOrders} setExpandedOrders={setExpandedOrders} />
+          </div>
+
+          <div className="md:hidden px-6 pb-6 space-y-3">
+            <MagaluOrdersCardsMobile orders={orders} expandedOrders={expandedOrders} setExpandedOrders={setExpandedOrders} />
+          </div>
+
+          {(hasMore || nextCursor) && (
+            <div className="px-6 pb-6">
+              <button
+                type="button"
+                disabled={loadingMore || !nextCursor}
+                onClick={onLoadMore}
+                className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-[#009DA8]/60 bg-white/70 dark:bg-slate-900/60 px-4 py-2 text-sm font-semibold text-[#009DA8] dark:text-[#00B5C3] shadow-sm hover:bg-[#009DA8]/10 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {loadingMore ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                {loadingMore ? "Carregando..." : "Carregar mais pedidos"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function MagaluOrdersTable({
+  orders,
+  expandedOrders,
+  setExpandedOrders,
+}: {
+  orders: MagaluOrder[];
+  expandedOrders: Record<string, boolean>;
+  setExpandedOrders: (value: Record<string, boolean>) => void;
+}) {
+  const toggle = (id: string) => {
+    setExpandedOrders({ ...expandedOrders, [id]: !expandedOrders[id] });
+  };
+
+  return (
+    <table className="min-w-full text-sm text-left">
+      <thead>
+        <tr className="text-slate-500 dark:text-slate-400">
+          <th className="py-3 pr-4">ID</th>
+          <th className="py-3 pr-4">Status</th>
+          <th className="py-3 pr-4">Data</th>
+          <th className="py-3 pr-4">Valor</th>
+          <th className="py-3 pr-4">Itens</th>
+          <th className="py-3 pr-4">Cliente</th>
+          <th className="py-3 pr-4">Cidade/UF</th>
+          <th className="py-3 pr-4">Marketplace</th>
+          <th className="py-3 pr-4">Detalhes</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-white/40 dark:divide-slate-800/60">
+        {orders.map((order) => {
+          const statusClass = STATUS_COLORS[order.OrderStatus] ?? "bg-slate-100/80 text-slate-700";
+          const qtdItens = order.Products?.reduce((acc, item) => acc + (item.Quantity || 0), 0) ?? 0;
+          const city = order.DeliveryAddressCity ?? "—";
+          const state = order.DeliveryAddressState ?? "";
+          const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
+          const expanded = expandedOrders[order.IdOrder];
+          return (
+            <tr key={order.IdOrder} className="text-slate-800 dark:text-slate-100 align-top">
+              <td className="py-3 pr-4 font-semibold">{order.IdOrder}</td>
+              <td className="py-3 pr-4">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
+                  {order.OrderStatus}
+                </span>
+              </td>
+              <td className="py-3 pr-4">{formatDate(order.PurchasedDate || order.InsertedDate)}</td>
+              <td className="py-3 pr-4">{formatCurrency(Number(order.TotalAmount) || 0)}</td>
+              <td className="py-3 pr-4">{qtdItens || "—"}</td>
+              <td className="py-3 pr-4">{order.ReceiverName || "—"}</td>
+              <td className="py-3 pr-4 max-w-[200px] truncate">{cityInfo}</td>
+              <td className="py-3 pr-4">{order.MarketplaceName || order.StoreName || "—"}</td>
+              <td className="py-3 pr-4">
+                <button
+                  type="button"
+                  onClick={() => toggle(order.IdOrder)}
+                  className="text-xs font-semibold text-[#009DA8] hover:underline"
+                >
+                  {expanded ? "Esconder itens" : "Ver itens"}
+                </button>
+              </td>
+              {expanded && (
+                <td className="py-3 pr-4" colSpan={9}>
+                  <MagaluOrderItemsList items={order.Products} />
+                </td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function MagaluOrdersCardsMobile({
+  orders,
+  expandedOrders,
+  setExpandedOrders,
+}: {
+  orders: MagaluOrder[];
+  expandedOrders: Record<string, boolean>;
+  setExpandedOrders: (value: Record<string, boolean>) => void;
+}) {
+  const toggle = (id: string) => {
+    setExpandedOrders({ ...expandedOrders, [id]: !expandedOrders[id] });
+  };
+
+  return (
+    <>
+      {orders.map((order) => {
+        const statusClass = STATUS_COLORS[order.OrderStatus] ?? "bg-slate-100/80 text-slate-700";
+        const qtdItens = order.Products?.reduce((acc, item) => acc + (item.Quantity || 0), 0) ?? 0;
+        const city = order.DeliveryAddressCity ?? "—";
+        const state = order.DeliveryAddressState ?? "";
+        const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
+        const expanded = expandedOrders[order.IdOrder];
+        return (
+          <div
+            key={order.IdOrder}
+            className="rounded-2xl border border-white/60 dark:border-slate-800 glass-panel glass-tint p-4 shadow-sm"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Pedido</p>
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">{order.IdOrder}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">Valor</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white">
+                  {formatCurrency(Number(order.TotalAmount) || 0)}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="flex flex-col gap-1">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
+                  {order.OrderStatus}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-white/70 dark:bg-slate-800/70 px-3 py-1 text-xs text-slate-700 dark:text-slate-200">
+                  {formatDate(order.PurchasedDate || order.InsertedDate)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 text-right">
+                <p className="text-xs text-slate-500">Marketplace</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">{order.MarketplaceName || order.StoreName || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Cliente</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">{order.ReceiverName || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Cidade/UF</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">{cityInfo}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Qtd. itens</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">{qtdItens || "—"}</p>
+              </div>
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => toggle(order.IdOrder)}
+                className="text-xs font-semibold text-[#009DA8] hover:underline"
+              >
+                {expanded ? "Esconder itens" : "Ver itens"}
+              </button>
+              {expanded && <MagaluOrderItemsList items={order.Products} />}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function MagaluOrderItemsList({ items }: { items: MagaluOrder["Products"] }) {
+  if (!items || items.length === 0) {
+    return <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Sem itens informados.</p>;
+  }
+  return (
+    <div className="mt-3 rounded-2xl border border-white/50 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 p-3 space-y-2">
+      {items.map((item) => (
+        <div key={`${item.IdSku}`} className="flex justify-between text-xs text-slate-700 dark:text-slate-200">
+          <div className="space-y-1">
+            <p className="font-semibold text-slate-900 dark:text-white">{item.IdSku}</p>
+            <p className="text-slate-500 dark:text-slate-400">Pacote: {item.IdOrderPackage ?? "—"}</p>
+          </div>
+          <div className="text-right space-y-1">
+            <p>{formatCurrency(Number(item.Price) || 0)}</p>
+            <p className="text-slate-500 dark:text-slate-400">Qtd: {item.Quantity || 0}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// UI atoms
+type SummaryCardProps = {
+  title: string;
+  value: string;
+  icon: ComponentType<{ className?: string }>;
+  colorClass?: string;
+  helper?: string;
+};
+
+function SummaryCard({ title, value, icon: Icon, colorClass = "text-[var(--accent)]", helper }: SummaryCardProps) {
+  return (
+    <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{title}</p>
+        <Icon className={`w-5 h-5 ${colorClass} shrink-0`} />
+      </div>
+      <p className={`text-3xl font-semibold ${colorClass} truncate`}>{value}</p>
+      {helper && <p className="text-xs text-slate-500 mt-2 truncate">{helper}</p>}
+    </div>
+  );
+}
+
+function MagaluErrorAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="px-6 pb-4">
+      <div className="rounded-2xl border border-rose-200 bg-rose-50/80 text-rose-700 px-4 py-3 flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 mt-1" />
+        <div className="flex-1">
+          <p className="font-semibold">Não foi possível carregar os pedidos do Magalu.</p>
+          <p className="text-sm">{message}</p>
+        </div>
+        <button
+          onClick={onRetry}
+          className="text-xs font-semibold underline decoration-rose-500 hover:opacity-80"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MagaluNotConfiguredCard({ onRetry, loading }: { onRetry: () => void; loading: boolean }) {
+  return (
+    <div className="px-6 pb-6">
+      <div className="rounded-[28px] glass-panel glass-tint border border-amber-200/60 dark:border-amber-500/20 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-amber-600 dark:text-amber-300">Ação necessária</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Integração Magalu pendente</h3>
+          </div>
+          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-300" />
+        </div>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Defina MAGALU_API_KEY nas variáveis de ambiente e autorize o app para seguir.
+        </p>
+        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+          <li>1. Configure a chave da API do Magalu (IntegraCommerce).</li>
+          <li>2. Garanta que a loja esteja ativa e autorizada.</li>
+          <li>3. Volte aqui e recarregue a página.</li>
+        </ul>
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 transition hover:shadow-xl hover:shadow-[#009DA8]/40 disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={loading}
+          >
+            <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function statusColor(status: string) {
+  return STATUS_HEX[status] ?? "#94a3b8";
+}

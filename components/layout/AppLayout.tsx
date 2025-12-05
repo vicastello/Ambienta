@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   ShoppingCart,
+  Store,
 } from 'lucide-react';
 import { GlassHorizontalNav, GlassVerticalNav } from '@/src/components/navigation/GlassVerticalNav';
 
@@ -25,6 +26,7 @@ type AppLayoutProps = {
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/pedidos', label: 'Pedidos', icon: ShoppingBag },
+  { href: '/marketplaces', label: 'Marketplaces', icon: Store },
   { href: '/produtos', label: 'Produtos', icon: Package },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/compras', label: 'Compras', icon: ShoppingCart },
@@ -33,7 +35,7 @@ const NAV_ITEMS = [
 ];
 
 const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) =>
-  ['/dashboard', '/pedidos', '/produtos', '/financeiro', '/compras'].includes(item.href)
+  ['/dashboard', '/pedidos', '/produtos', '/financeiro', '/compras', '/marketplaces'].includes(item.href)
 );
 const GLASS_NAV_ITEMS = NAV_ITEMS.map(({ label, icon }) => ({ id: label, label, icon }));
 const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({ id: label, label, icon }));
@@ -41,6 +43,7 @@ const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({ id: labe
 export function AppLayout({ title, children }: AppLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [showMarketplaceMenu, setShowMarketplaceMenu] = useState(false);
   const computeNavIndex = useCallback(
     (path?: string | null) => {
       if (!path) return 0;
@@ -87,6 +90,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     };
   }, [isMobileMenuOpen]);
 
+  useEffect(() => {
+    setShowMarketplaceMenu(false);
+  }, [pathname]);
+
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
   const activeMobileNavIndex = useMemo(
     () => computeMobileNavIndex(pathname),
@@ -97,6 +104,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     (index: number) => {
       const target = NAV_ITEMS[index];
       if (!target || pathname === target.href) return;
+      if (target.href === '/marketplaces') {
+        setShowMarketplaceMenu(true);
+        return;
+      }
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         startTransition(() => {
@@ -111,6 +122,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     (index: number) => {
       const target = MOBILE_NAV_ITEMS[index];
       if (!target || pathname === target.href) return;
+      if (target.href === '/marketplaces') {
+        setShowMarketplaceMenu(true);
+        return;
+      }
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
       navTimerRef.current = setTimeout(() => {
         startTransition(() => {
@@ -120,6 +135,20 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     },
     [pathname, router]
   );
+
+  const handleNavHover = useCallback((index: number) => {
+    const target = NAV_ITEMS[index];
+    if (target?.href === '/marketplaces') {
+      setShowMarketplaceMenu(true);
+    }
+  }, []);
+
+  const handleMobileNavHover = useCallback((index: number) => {
+    const target = MOBILE_NAV_ITEMS[index];
+    if (target?.href === '/marketplaces') {
+      setShowMarketplaceMenu(true);
+    }
+  }, []);
   const logoIcon = (
     <div className="relative h-10 w-10 flex-shrink-0">
       <Image
@@ -172,12 +201,13 @@ export function AppLayout({ title, children }: AppLayoutProps) {
         <div className="relative h-full flex flex-col">
           <div className="flex flex-col items-center gap-6 w-full pt-8">
             <div className="flex w-10 justify-center">{logoIcon}</div>
-            <GlassVerticalNav
-              activeIndex={activeNavIndex}
-              onChange={handleNavChange}
-              items={GLASS_NAV_ITEMS}
-              className="w-10"
-            />
+          <GlassVerticalNav
+            activeIndex={activeNavIndex}
+            onChange={handleNavChange}
+            onItemHover={handleNavHover}
+            items={GLASS_NAV_ITEMS}
+            className="w-10"
+          />
           </div>
           <div className="pb-6 pt-6">
             <div className="text-[10px] text-center text-slate-500 dark:text-slate-600 font-mono uppercase tracking-wider opacity-70">
@@ -186,6 +216,47 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           </div>
         </div>
       </aside>
+      {showMarketplaceMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowMarketplaceMenu(false)} />
+          <div className="fixed z-50 left-20 top-24">
+            <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
+                Escolha o marketplace
+              </p>
+              <div className="space-y-2">
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowMarketplaceMenu(false);
+                    router.push('/marketplaces/shopee');
+                  }}
+                >
+                  Shopee
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowMarketplaceMenu(false);
+                    router.push('/marketplaces/mercado-livre');
+                  }}
+                >
+                  Mercado Livre
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowMarketplaceMenu(false);
+                    router.push('/marketplaces/magalu');
+                  }}
+                >
+                  Magalu
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile drawer */}
       <aside
@@ -283,22 +354,24 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       <main className="flex-1 transition-all duration-300 ml-0 lg:ml-[4.5rem]">
         <div className="w-full max-w-[1600px] mx-auto relative z-10">
           <div className="relative min-h-screen px-4 sm:px-6 lg:px-12 pt-20 pb-28 lg:pt-8 lg:pb-10">
-          <div className="pointer-events-none absolute inset-0 ">
-            <div className="absolute -top-20 left-20 h-64 w-64 rounded-full bg-[#c7d7ff] blur-[140px] opacity-70" />
-            <div className="absolute top-20 right-10 h-72 w-72 rounded-full bg-[#ffd6ff] blur-[160px] opacity-60" />
-            <div className="absolute bottom-10 left-1/3 h-72 w-72 rounded-full bg-[#d1fff0] blur-[150px] opacity-50" />
-          </div>
-
-          <div className="relative z-10 space-y-6" data-page-title={title ?? undefined}>
-            {title && (
-              <h1 className="sr-only" aria-live="polite">
-                {title}
-              </h1>
-            )}
-            <div className="pb-4">
-              {children}
+            <div className="pointer-events-none fixed inset-0 overflow-hidden flex justify-center">
+              <div className="relative w-full max-w-[1600px] h-full">
+                <div className="absolute -top-20 left-20 h-64 w-64 rounded-full bg-[#c7d7ff] blur-[140px] opacity-70" />
+                <div className="absolute top-20 right-10 h-72 w-72 rounded-full bg-[#ffd6ff] blur-[160px] opacity-60" />
+                <div className="absolute bottom-10 left-1/3 h-72 w-72 rounded-full bg-[#d1fff0] blur-[150px] opacity-50" />
+              </div>
             </div>
-          </div>
+
+            <div className="relative z-10 space-y-6" data-page-title={title ?? undefined}>
+              {title && (
+                <h1 className="sr-only" aria-live="polite">
+                  {title}
+                </h1>
+              )}
+              <div className="pb-4">
+                {children}
+              </div>
+            </div>
         </div>
         </div>
       </main>
@@ -309,6 +382,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           <GlassHorizontalNav
             activeIndex={activeMobileNavIndex}
             onChange={handleMobileNavChange}
+            onItemHover={handleMobileNavHover}
             items={MOBILE_GLASS_ITEMS}
           />
         </div>

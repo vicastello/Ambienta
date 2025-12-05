@@ -15,6 +15,7 @@ type NavItem = {
 type GlassVerticalNavProps = {
   activeIndex: number;
   onChange?: (index: number) => void;
+  onItemHover?: (index: number) => void;
   className?: string;
   items?: NavItem[];
 };
@@ -43,7 +44,7 @@ const H_STEP = H_ITEM_SIZE + H_GAP;
 const H_SHELL_PADDING = 26; // px
 const H_THUMB_LEFT = (index: number) => H_SHELL_PADDING + index * H_STEP + H_ITEM_SIZE / 2 - H_THUMB_WIDTH / 2;
 
-export function GlassVerticalNav({ activeIndex, onChange, className, items }: GlassVerticalNavProps) {
+export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className, items }: GlassVerticalNavProps) {
   const resolvedItems = useMemo(() => (items?.length ? items : DEFAULT_ITEMS), [items]);
   const clampedIndex = useMemo(() => {
     if (Number.isNaN(activeIndex)) return 0;
@@ -99,6 +100,7 @@ export function GlassVerticalNav({ activeIndex, onChange, className, items }: Gl
                 aria-label={label}
                 aria-pressed={isActive}
                 onClick={() => onChange?.(index)}
+                onMouseEnter={() => onItemHover?.(index)}
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
@@ -114,7 +116,7 @@ export function GlassVerticalNav({ activeIndex, onChange, className, items }: Gl
   );
 }
 
-export function GlassHorizontalNav({ activeIndex, onChange, className, items }: GlassVerticalNavProps) {
+export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, className, items }: GlassVerticalNavProps) {
   const resolvedItems = useMemo(() => (items?.length ? items : DEFAULT_ITEMS), [items]);
   const clampedIndex = useMemo(() => {
     if (Number.isNaN(activeIndex)) return 0;
@@ -177,6 +179,7 @@ export function GlassHorizontalNav({ activeIndex, onChange, className, items }: 
                 aria-label={label}
                 aria-pressed={isActive}
                 onClick={() => onChange?.(index)}
+                onMouseEnter={() => onItemHover?.(index)}
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
