@@ -4,26 +4,18 @@ import type { ShopeeOrderListResponse, ShopeeOrderStatus } from '@/src/types/sho
 
 const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com/api/v2';
 
-const SHOPEE_PARTNER_ID = process.env.SHOPEE_PARTNER_ID;
-const SHOPEE_PARTNER_KEY = process.env.SHOPEE_PARTNER_KEY;
-const SHOPEE_SHOP_ID = process.env.SHOPEE_SHOP_ID;
-const SHOPEE_ACCESS_TOKEN = process.env.SHOPEE_ACCESS_TOKEN;
-
-if (!SHOPEE_PARTNER_ID) {
-  throw new Error('Missing SHOPEE_PARTNER_ID env var');
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing ${name} env var`);
+  }
+  return value;
 }
 
-if (!SHOPEE_PARTNER_KEY) {
-  throw new Error('Missing SHOPEE_PARTNER_KEY env var');
-}
-
-if (!SHOPEE_SHOP_ID) {
-  throw new Error('Missing SHOPEE_SHOP_ID env var');
-}
-
-if (!SHOPEE_ACCESS_TOKEN) {
-  throw new Error('Missing SHOPEE_ACCESS_TOKEN env var');
-}
+const SHOPEE_PARTNER_ID = requireEnv('SHOPEE_PARTNER_ID');
+const SHOPEE_PARTNER_KEY = requireEnv('SHOPEE_PARTNER_KEY');
+const SHOPEE_SHOP_ID = requireEnv('SHOPEE_SHOP_ID');
+const SHOPEE_ACCESS_TOKEN = requireEnv('SHOPEE_ACCESS_TOKEN');
 
 type ShopeeSignatureOptions = {
   accessToken?: string;
