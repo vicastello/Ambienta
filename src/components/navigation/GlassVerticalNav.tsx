@@ -10,6 +10,7 @@ type NavItem = {
   id: string;
   icon: LucideIcon;
   label?: string;
+  disableTooltip?: boolean;
 };
 
 type GlassVerticalNavProps = {
@@ -104,7 +105,7 @@ export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
-                data-tooltip={label}
+                data-tooltip={item.disableTooltip ? undefined : label}
               >
                 <Icon strokeWidth={1.6} size={24} />
               </button>
@@ -183,6 +184,7 @@ export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, classNa
                 className={[styles.button, isActive ? styles.buttonActive : null]
                   .filter(Boolean)
                   .join(' ')}
+                data-tooltip={item.disableTooltip ? undefined : label}
               >
                 <Icon strokeWidth={1.6} size={18} />
               </button>

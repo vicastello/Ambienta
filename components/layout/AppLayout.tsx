@@ -37,8 +37,18 @@ const NAV_ITEMS = [
 const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) =>
   ['/dashboard', '/pedidos', '/produtos', '/financeiro', '/compras', '/marketplaces'].includes(item.href)
 );
-const GLASS_NAV_ITEMS = NAV_ITEMS.map(({ label, icon }) => ({ id: label, label, icon }));
-const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({ id: label, label, icon }));
+const GLASS_NAV_ITEMS = NAV_ITEMS.map(({ label, icon }) => ({
+  id: label,
+  label,
+  icon,
+  disableTooltip: label === 'Marketplaces',
+}));
+const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({
+  id: label,
+  label,
+  icon,
+  disableTooltip: label === 'Marketplaces',
+}));
 
 export function AppLayout({ title, children }: AppLayoutProps) {
   const pathname = usePathname();
