@@ -290,6 +290,11 @@
   stroke: currentColor !important;
 }
 
+.noTooltip::after {
+  content: none !important;
+  display: none !important;
+}
+
 .tooltip {
   display: none;
 }

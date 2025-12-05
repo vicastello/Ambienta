@@ -101,10 +101,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   }, [isMobileMenuOpen]);
 
   useEffect(() => {
-    if (!showMarketplaceMenu) return;
-    const raf = window.requestAnimationFrame(() => setShowMarketplaceMenu(false));
-    return () => window.cancelAnimationFrame(raf);
-  }, [pathname, showMarketplaceMenu]);
+    setShowMarketplaceMenu(false);
+  }, [pathname]);
 
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
   const activeMobileNavIndex = useMemo(
@@ -150,14 +148,14 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
   const handleNavHover = useCallback((index: number) => {
     const target = NAV_ITEMS[index];
-    if (!target || target.href === '/marketplaces') return;
-    setShowMarketplaceMenu(false);
+    if (!target || target.href !== '/marketplaces') return;
+    // Hover no marketplace não abre/fecha nada para evitar flicker
   }, []);
 
   const handleMobileNavHover = useCallback((index: number) => {
     const target = MOBILE_NAV_ITEMS[index];
-    if (!target || target.href === '/marketplaces') return;
-    setShowMarketplaceMenu(false);
+    if (!target || target.href !== '/marketplaces') return;
+    // Hover no marketplace não abre/fecha nada para evitar flicker
   }, []);
   const logoIcon = (
     <div className="relative h-10 w-10 flex-shrink-0">

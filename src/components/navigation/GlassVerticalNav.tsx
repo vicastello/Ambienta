@@ -94,17 +94,20 @@ export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className
             const Icon = item.icon;
             const isActive = index === clampedIndex;
             const label = item.label ?? item.id;
-            const tooltipProps = item.disableTooltip
-              ? { 'aria-label': label }
-              : { 'data-tooltip': label, 'aria-label': label };
+            const isMarketplace = item.disableTooltip && item.id.toLowerCase().includes('marketplace');
+            const tooltipProps = isMarketplace ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
+            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, isMarketplace ? styles.noTooltip : null]
+              .filter(Boolean)
+              .join(' ');
             return (
               <button
                 key={item.id}
                 type="button"
                 aria-pressed={isActive}
+                aria-label={label}
                 onClick={() => onChange?.(index)}
                 onMouseEnter={() => onItemHover?.(index)}
-                className={[styles.button, isActive ? styles.buttonActive : null].filter(Boolean).join(' ')}
+                className={buttonClass}
                 {...tooltipProps}
               >
                 <Icon strokeWidth={1.6} size={24} />
@@ -173,17 +176,20 @@ export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, classNa
             const Icon = item.icon;
             const isActive = index === clampedIndex;
             const label = item.label ?? item.id;
-            const tooltipProps = item.disableTooltip
-              ? { 'aria-label': label }
-              : { 'data-tooltip': label, 'aria-label': label };
+            const isMarketplace = item.disableTooltip && item.id.toLowerCase().includes('marketplace');
+            const tooltipProps = isMarketplace ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
+            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, isMarketplace ? styles.noTooltip : null]
+              .filter(Boolean)
+              .join(' ');
             return (
               <button
                 key={item.id}
                 type="button"
                 aria-pressed={isActive}
+                aria-label={label}
                 onClick={() => onChange?.(index)}
                 onMouseEnter={() => onItemHover?.(index)}
-                className={[styles.button, isActive ? styles.buttonActive : null].filter(Boolean).join(' ')}
+                className={buttonClass}
                 {...tooltipProps}
               >
                 <Icon strokeWidth={1.6} size={18} />
