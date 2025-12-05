@@ -183,7 +183,7 @@ export default function ShopeePage() {
           }
           const message = !res.ok
             ? `Erro ${res.status}: ${res.statusText || "falha ao buscar pedidos"}`
-            : json.error.message;
+            : (json as ShopeeOrdersApiError).error?.message || "Erro ao buscar pedidos da Shopee.";
           throw new Error(message);
         }
 
