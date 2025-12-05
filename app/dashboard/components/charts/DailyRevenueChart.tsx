@@ -53,10 +53,9 @@ const DailyRevenueChartComponent = ({ data, ticks, formatter }: DailyRevenueChar
           <Legend
             wrapperStyle={{ fontSize: '12px' }}
             formatter={(value, entry) => {
+              const legendEntry = entry as { color?: string } | undefined;
               const color =
-                entry && typeof entry === 'object' && 'color' in entry && entry?.color === SECONDARY_COLOR
-                  ? '#475569'
-                  : (entry as any)?.color;
+                legendEntry?.color === SECONDARY_COLOR ? '#475569' : legendEntry?.color;
               return <span style={{ color }}>{value}</span>;
             }}
           />

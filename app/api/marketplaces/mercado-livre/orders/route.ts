@@ -71,7 +71,8 @@ export async function GET(req: Request) {
   const periodDays = Number(url.searchParams.get('periodDays') || DEFAULT_PERIOD_DAYS);
   const status = url.searchParams.get('status') || undefined;
   const cursor = url.searchParams.get('cursor');
-  const pageSize = Number(url.searchParams.get('pageSize') || DEFAULT_PAGE_SIZE);
+  const pageSizeRaw = Number(url.searchParams.get('pageSize') || DEFAULT_PAGE_SIZE);
+  const pageSize = Math.min(Math.max(pageSizeRaw, 1), 200);
   const offset = cursor ? Number(cursor) || 0 : 0;
 
   const now = Date.now();

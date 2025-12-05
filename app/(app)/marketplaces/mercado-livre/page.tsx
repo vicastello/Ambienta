@@ -265,6 +265,7 @@ function buildMetricsFromOrders(orders: MeliOrder[]) {
   const ticketMedio = totalPedidos ? totalValor / totalPedidos : 0;
   const cancelRate = totalPedidos ? (cancelados / totalPedidos) * 100 : 0;
 
+  // Using 'date_created' as the primary order date anchor for charts/timeline
   const perDay = orders.reduce<Record<string, { valor: number; pedidos: number; status: Record<string, number> }>>(
     (acc, order) => {
       const day = new Date(order.date_created).toLocaleDateString("pt-BR");
@@ -933,6 +934,8 @@ function MeliOrdersTable({
   expandedOrders: Record<string, boolean>;
   setExpandedOrders: (value: Record<string, boolean>) => void;
 }) {
+  // Mapping: using id as order code, date_created as main date, total_amount as BRL total, buyer.nickname as customer name,
+  // city/state from shipping.receiver_address, and shipping_mode as carrier label.
   const toggle = (id: string | number) => {
     setExpandedOrders({ ...expandedOrders, [String(id)]: !expandedOrders[String(id)] });
   };

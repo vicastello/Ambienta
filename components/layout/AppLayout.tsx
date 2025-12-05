@@ -91,8 +91,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   }, [isMobileMenuOpen]);
 
   useEffect(() => {
-    setShowMarketplaceMenu(false);
-  }, [pathname]);
+    if (!showMarketplaceMenu) return;
+    const raf = window.requestAnimationFrame(() => setShowMarketplaceMenu(false));
+    return () => window.cancelAnimationFrame(raf);
+  }, [pathname, showMarketplaceMenu]);
 
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
   const activeMobileNavIndex = useMemo(
