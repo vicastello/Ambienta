@@ -4,18 +4,24 @@ import type { ShopeeOrderListResponse, ShopeeOrderStatus } from '@/src/types/sho
 
 const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com/api/v2';
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing ${name} env var`);
-  }
-  return value;
-}
+function getShopeeConfig() {
+  const partnerId = process.env.SHOPEE_PARTNER_ID;
+  const partnerKey = process.env.SHOPEE_PARTNER_KEY;
+  const shopId = process.env.SHOPEE_SHOP_ID;
+  const accessToken = process.env.SHOPEE_ACCESS_TOKEN;
 
-const SHOPEE_PARTNER_ID = requireEnv('SHOPEE_PARTNER_ID');
-const SHOPEE_PARTNER_KEY = requireEnv('SHOPEE_PARTNER_KEY');
-const SHOPEE_SHOP_ID = requireEnv('SHOPEE_SHOP_ID');
-const SHOPEE_ACCESS_TOKEN = requireEnv('SHOPEE_ACCESS_TOKEN');
+  if (!partnerId) throw new Error('Missing SHOPEE_PARTNER_ID env var');
+  if (!partnerKey) throw new Error('Missing SHOPEE_PARTNER_KEY env var');
+  if (!shopId) throw new Error('Missing SHOPEE_SHOP_ID env var');
+  if (!accessToken) throw new Error('Missing SHOPEE_ACCESS_TOKEN env var');
+
+  return {
+    partnerId,
+    partnerKey,
+    shopId,
+    accessToken,
+  };
+}
 
 type ShopeeSignatureOptions = {
   accessToken?: string;
@@ -27,8 +33,9 @@ export function generateShopeeSignature(
   timestamp: number,
   opts?: ShopeeSignatureOptions
 ): string {
-  const baseString = `${SHOPEE_PARTNER_ID}${path}${timestamp}${opts?.accessToken ?? ''}${opts?.shopId ?? ''}`;
-  const hmac = crypto.createHmac('sha256', SHOPEE_PARTNER_KEY);
+  const { partnerId, partnerKey } = getShopeeConfig();
+  const baseString = `${partnerId}${path}${timestamp}${opts?.accessToken ?? ''}${opts?.shopId ?? ''}`;
+  const hmac = crypto.createHmac('sha256', partnerKey);
   hmac.update(baseString);
   return hmac.digest('hex');
 }
@@ -40,6 +47,7 @@ async function shopeeRequest<T>(
 ): Promise<T> {
   const timestamp = Math.floor(Date.now() / 1000);
   const isShopLevel = Boolean(options?.accessToken && options?.shopId);
+  const { partnerId } = getShopeeConfig();
 
   const sign = generateShopeeSignature(path, timestamp, {
     accessToken: isShopLevel ? options?.accessToken : undefined,
@@ -49,7 +57,7 @@ async function shopeeRequest<T>(
   const url = new URL(SHOPEE_BASE_URL + path);
   const searchParams = url.searchParams;
 
-  searchParams.set('partner_id', SHOPEE_PARTNER_ID);
+  searchParams.set('partner_id', partnerId);
   searchParams.set('timestamp', String(timestamp));
   searchParams.set('sign', sign);
 
@@ -114,8 +122,9 @@ export async function getShopeeOrders(params: {
 
   // Para estender para outros endpoints, reutilize shopeeRequest alterando path e params.
   // Por exemplo: /order/get_order_detail ou /product/get_model_list.
+  const { accessToken, shopId } = getShopeeConfig();
   return shopeeRequest<ShopeeOrderListResponse>(path, queryParams, {
-    accessToken: SHOPEE_ACCESS_TOKEN,
-    shopId: SHOPEE_SHOP_ID,
+    accessToken,
+    shopId,
   });
 }
