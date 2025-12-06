@@ -65,16 +65,21 @@ const readState = (row?: SyncSettingsRow | null): RoundRobinState => {
   return { last_id: lastId };
 };
 
-async function writeState(newState: RoundRobinState) {
-  await ensureSyncSettingsRow();
+async function writeState(row: SyncSettingsRow | null, newState: RoundRobinState) {
+  const baseRow = row ?? (await ensureSyncSettingsRow());
+  const currentSettings = (baseRow as any)?.settings ?? {};
+  const nextSettings = {
+    ...currentSettings,
+    [ROUND_ROBIN_KEY]: {
+      ...(currentSettings?.[ROUND_ROBIN_KEY] ?? {}),
+      last_id: newState.last_id,
+    },
+  };
+
   const { error } = await supabaseAdmin
     .from('sync_settings')
     .update({
-      settings: {
-        [ROUND_ROBIN_KEY]: {
-          last_id: newState.last_id,
-        },
-      },
+      settings: nextSettings,
     })
     .eq('id', 1);
 
@@ -87,6 +92,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
   const settingsRow = await ensureSyncSettingsRow();
   const state = readState(settingsRow);
   const previousLastId = state.last_id;
+  console.log('[tinyEstoqueRoundRobin] start', { previousLastId, batchSize });
 
   const baseQuery = supabaseAdmin
     .from('tiny_produtos')
@@ -115,7 +121,8 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
   }
 
   if (!produtosBatch.length) {
-    await writeState({ last_id: null });
+    await writeState(settingsRow, { last_id: null });
+    console.log('[tinyEstoqueRoundRobin] empty batch', { wrapped });
     return { processed: 0, lastId: null, wrapped, rateLimited: false };
   }
 
@@ -127,6 +134,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
     data_atualizacao_tiny: string;
   }[] = [];
   let rateLimited = false;
+  let lastSuccessfulId: number | null = null;
 
   for (const produto of produtosBatch) {
     const id = produto.id_produto_tiny;
@@ -141,6 +149,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
         disponivel: snapshot.disponivel,
         data_atualizacao_tiny: new Date().toISOString(),
       });
+      lastSuccessfulId = id;
     } catch (error) {
       const status = (error as any)?.status;
       if (status === 429) {
@@ -164,23 +173,35 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
     await upsertProdutosEstoque(upserts);
   }
 
-  const lastProcessedId = upserts.length
-    ? upserts[upserts.length - 1]?.id_produto_tiny ?? null
-    : null;
+  const lastProcessedId = lastSuccessfulId ?? null;
 
-  // Se deu rate limit, não avança o cursor (fica no valor anterior para reprocessar na próxima execução)
-  if (!rateLimited) {
-    const cursorToPersist =
-      lastProcessedId != null ? lastProcessedId : produtosBatch[produtosBatch.length - 1]?.id_produto_tiny ?? null;
-    await writeState({ last_id: cursorToPersist });
+  let newLastId: number | null = previousLastId;
+  if (rateLimited) {
+    // Se houve 429, só avança se houve sucesso parcial
+    if (upserts.length > 0 && lastProcessedId != null) {
+      newLastId = lastProcessedId;
+    }
   } else {
-    // Mantém cursor anterior para reprocessar o mesmo lote na próxima execução
-    await writeState({ last_id: previousLastId });
+    newLastId =
+      lastProcessedId ??
+      produtosBatch[produtosBatch.length - 1]?.id_produto_tiny ??
+      previousLastId ??
+      null;
   }
+
+  await writeState(settingsRow, { last_id: newLastId });
+  console.log('[tinyEstoqueRoundRobin] finish', {
+    previousLastId,
+    lastSuccessfulId,
+    newLastId,
+    processed: upserts.length,
+    rateLimited,
+    wrapped,
+  });
 
   return {
     processed: upserts.length,
-    lastId: rateLimited ? previousLastId : lastProcessedId,
+    lastId: newLastId,
     wrapped,
     rateLimited,
   };
