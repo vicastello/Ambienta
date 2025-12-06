@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   AlertCircle,
   BarChart2,
   CalendarDays,
   CheckCircle2,
+  Cloud,
   Info,
   PackageCheck,
   Percent,
@@ -15,26 +17,23 @@ import {
   Truck,
   TruckIcon,
   Wallet,
-  XCircle,
-  Zap,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
+import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { MeliOrder } from "@/src/types/mercadoLivre";
+import { GlassCard } from "@/components/ui/GlassCard";
+import { chartColors, chartDefaults } from "@/components/charts/chartTheme";
+
+type MeliOrderDb = MeliOrder & {
+  buyer_full_name?: string | null;
+  shipping_city?: string | null;
+  shipping_state?: string | null;
+};
 
 type MeliOrdersApiSuccess = {
   ok: true;
   data: {
-    orders: MeliOrder[];
+    orders: Array<MeliOrder>;
     hasMore: boolean;
     nextCursor?: string;
   };
@@ -43,6 +42,7 @@ type MeliOrdersApiSuccess = {
     timeTo: string;
     status?: string | null;
     mock?: boolean;
+    source?: string | null;
   };
 };
 
@@ -52,6 +52,7 @@ type MeliOrdersApiError = {
 };
 
 const PERIOD_OPTIONS = [
+  { label: "3 dias", days: 3 },
   { label: "7 dias", days: 7 },
   { label: "30 dias", days: 30 },
   { label: "90 dias", days: 90 },
@@ -98,7 +99,7 @@ const formatDate = (dateStr: string) =>
 type Metrics = ReturnType<typeof buildMetricsFromOrders>;
 
 export default function MercadoLivrePage() {
-  const [periodDays, setPeriodDays] = useState<number>(30);
+  const [periodDays, setPeriodDays] = useState<number>(3);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [orders, setOrders] = useState<MeliOrder[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -108,18 +109,11 @@ export default function MercadoLivrePage() {
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [isMockMode, setIsMockMode] = useState(false);
+  const [source, setSource] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(0);
-
-  const { timeFromIso, timeToIso } = useMemo(() => {
-    const now = Date.now();
-    return {
-      timeToIso: new Date(now).toISOString(),
-      timeFromIso: new Date(now - periodDays * 24 * 60 * 60 * 1000).toISOString(),
-    };
-  }, [periodDays]);
 
   const metrics: Metrics = useMemo(() => buildMetricsFromOrders(orders), [orders]);
 
@@ -141,21 +135,22 @@ export default function MercadoLivrePage() {
       else setLoading(true);
       setError(null);
       setNotConfigured(false);
+      setSource(null);
 
       try {
         const params = new URLSearchParams();
         params.set("periodDays", String(periodDays));
-        params.set("pageSize", "100");
+        params.set("pageSize", "50");
         if (statusFilter !== "ALL") params.set("status", statusFilter);
         if (opts?.cursor) params.set("cursor", opts.cursor);
 
-        const res = await fetch(`/api/marketplaces/mercado-livre/orders?${params.toString()}`, {
+        const res = await fetch(`/api/marketplaces/mercado-livre/orders/db?${params.toString()}`, {
           cache: "no-store",
         });
         const text = await res.text();
-        let json: MeliOrdersApiSuccess | MeliOrdersApiError;
+        let parsed: unknown;
         try {
-          json = JSON.parse(text) as MeliOrdersApiSuccess | MeliOrdersApiError;
+          parsed = JSON.parse(text);
         } catch {
           throw new Error(
             text?.toLowerCase().includes("<!doctype") || text?.toLowerCase().includes("<html")
@@ -163,11 +158,16 @@ export default function MercadoLivrePage() {
               : `Resposta inválida do Mercado Livre: ${text?.slice(0, 120) ?? "desconhecida"}`
           );
         }
+        const isSuccess = (data: unknown): data is MeliOrdersApiSuccess =>
+          typeof data === "object" && data !== null && (data as { ok?: unknown }).ok === true;
+        const isError = (data: unknown): data is MeliOrdersApiError =>
+          typeof data === "object" && data !== null && (data as { ok?: unknown }).ok === false;
+        const json = parsed as MeliOrdersApiSuccess | MeliOrdersApiError;
 
         if (requestId !== requestIdRef.current) return;
 
-        if (!res.ok || !json.ok) {
-          if (!json.ok && json.error?.code === "ML_NOT_CONFIGURED") {
+        if (!res.ok || !isSuccess(json)) {
+          if (isError(json) && json.error?.code === "ML_NOT_CONFIGURED") {
             setNotConfigured(true);
             setOrders([]);
             setHasMore(false);
@@ -178,15 +178,32 @@ export default function MercadoLivrePage() {
           }
           const message = !res.ok
             ? `Erro ${res.status}: ${res.statusText || "falha ao buscar pedidos"}`
-            : (json as MeliOrdersApiError).error?.message || "Erro ao buscar pedidos do Mercado Livre.";
+            : (isError(json) && json.error?.message) || "Erro ao buscar pedidos do Mercado Livre.";
           throw new Error(message);
         }
 
         const payload = json.data;
-        setOrders((prev) => (opts?.append ? [...prev, ...payload.orders] : payload.orders));
+        const normalizedOrders = (payload.orders ?? []).map((order) => {
+          const dbOrder = order as MeliOrderDb;
+          return {
+            ...order,
+            buyer_full_name: dbOrder.buyer_full_name ?? null,
+            shipping_city: dbOrder.shipping_city,
+            shipping_state: dbOrder.shipping_state,
+            order_items: Array.isArray(dbOrder.order_items) ? dbOrder.order_items : [],
+            total_amount: Number((dbOrder as { total_amount?: number | string }).total_amount ?? 0),
+            coverImageUrl: (
+              dbOrder.order_items?.find(
+                (it) => (it as { item_thumbnail_url?: string | null }).item_thumbnail_url
+              ) as { item_thumbnail_url?: string | null } | undefined
+            )?.item_thumbnail_url ?? null,
+          };
+        });
+        setOrders((prev) => (opts?.append ? [...prev, ...normalizedOrders] : normalizedOrders));
         setHasMore(payload.hasMore);
         setNextCursor(payload.nextCursor);
         setIsMockMode(Boolean((json as MeliOrdersApiSuccess).meta.mock));
+        setSource((json as MeliOrdersApiSuccess).meta.source ?? null);
         setLastUpdated(Date.now());
       } catch (err) {
         if (requestId !== requestIdRef.current) return;
@@ -222,6 +239,7 @@ export default function MercadoLivrePage() {
           lastUpdated={lastUpdated}
           notConfigured={notConfigured}
           totalOrders={orders.length}
+          source={source}
         />
 
         <MeliSummaryPanel summaries={metrics.summary} loading={loading && orders.length === 0} />
@@ -255,9 +273,11 @@ export default function MercadoLivrePage() {
 // Helpers
 function buildMetricsFromOrders(orders: MeliOrder[]) {
   const totalPedidos = orders.length;
-  const totalValor = orders.reduce((sum, order) => sum + (order.total_amount || 0), 0);
+  const totalValor = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
   const itensVendidos = orders.reduce(
-    (sum, order) => sum + order.order_items.reduce((acc, item) => acc + (item.quantity || 0), 0),
+    (sum, order) =>
+      sum +
+      (order.order_items ?? []).reduce((acc, item) => acc + (Number(item.quantity) || 0), 0),
     0
   );
   const cancelados = orders.filter((o) => o.status === "cancelled").length;
@@ -328,7 +348,7 @@ function buildMetricsFromOrders(orders: MeliOrder[]) {
   const productMap = new Map<string, { name: string; units: number; revenue: number; orders: number }>();
   orders.forEach((order) => {
     const seen = new Set<string>();
-    order.order_items.forEach((item) => {
+    (order.order_items ?? []).forEach((item) => {
       const key = item.item.id;
       const price = item.unit_price || 0;
       const prev =
@@ -472,6 +492,7 @@ type HeaderProps = {
   lastUpdated: number | null;
   notConfigured: boolean;
   totalOrders: number;
+  source: string | null;
 };
 
 function MeliHeaderSection({
@@ -485,12 +506,12 @@ function MeliHeaderSection({
   lastUpdated,
   notConfigured,
   totalOrders,
+  source,
 }: HeaderProps) {
   const periodLabel = PERIOD_OPTIONS.find((p) => p.days === periodDays)?.label ?? `${periodDays} dias`;
 
   return (
     <header className="relative overflow-hidden rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 sm:p-8 space-y-6 shadow-2xl">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#009DA8]/14 via-transparent to-white/12 dark:from-[#009DA8]/22 dark:to-slate-900/30" />
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <p className="text-sm text-slate-500 dark:text-slate-400">Visão geral dos pedidos e desempenho de vendas no Mercado Livre.</p>
@@ -504,6 +525,12 @@ function MeliHeaderSection({
               <ShoppingBag className="w-4 h-4" />
               {totalOrders} pedidos carregados
             </span>
+            {source && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-slate-900/60 px-3 py-1 text-xs text-slate-700 dark:text-slate-200">
+                <Cloud className="w-4 h-4" />
+                Fonte: {source}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -617,7 +644,7 @@ function MeliSummaryPanel({ summaries, loading }: SummaryPanelProps) {
 function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: boolean }) {
   return (
     <section className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+      <GlassCard className="p-5 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Tendência de vendas e pedidos</h3>
@@ -652,9 +679,9 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
             </ResponsiveContainer>
           )}
         </div>
-      </div>
+      </GlassCard>
 
-      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+      <GlassCard className="p-5 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Status ao longo do tempo</h3>
@@ -695,7 +722,7 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
             </ResponsiveContainer>
           )}
         </div>
-      </div>
+      </GlassCard>
     </section>
   );
 }
@@ -752,7 +779,7 @@ function RankingCard({
   rows: Array<(string | number)[]>;
 }) {
   return (
-    <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+    <GlassCard className="p-5 sm:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
@@ -790,7 +817,7 @@ function RankingCard({
           </div>
         </div>
       )}
-    </div>
+    </GlassCard>
   );
 }
 
@@ -930,7 +957,12 @@ function MeliOrdersTable({
   expandedOrders,
   setExpandedOrders,
 }: {
-  orders: MeliOrder[];
+  orders: Array<
+    MeliOrder & {
+      items?: { id: string; title: string; quantity: number; unit_price: number; sku: string | null }[];
+      coverImageUrl?: string | null;
+    }
+  >;
   expandedOrders: Record<string, boolean>;
   setExpandedOrders: (value: Record<string, boolean>) => void;
 }) {
@@ -956,16 +988,61 @@ function MeliOrdersTable({
         </tr>
       </thead>
       <tbody className="divide-y divide-white/40 dark:divide-slate-800/60">
-        {orders.map((order) => {
+        {orders.map((order, idx) => {
+          const dbOrder = order as MeliOrderDb;
           const statusClass = STATUS_COLORS[order.status] ?? "bg-slate-100/80 text-slate-700";
-          const qtdItens = order.order_items?.reduce((acc, item) => acc + (item.quantity || 0), 0) ?? 0;
-          const city = order.shipping?.receiver_address?.city?.name ?? "—";
-          const state = order.shipping?.receiver_address?.state?.id ?? order.shipping?.receiver_address?.state?.name ?? "";
-          const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
+          const qtdItens =
+            (order.order_items ?? []).reduce((acc, item) => acc + (Number(item.quantity) || 0), 0) ?? 0;
+          const city =
+            dbOrder.shipping_city ??
+            order.shipping?.receiver_address?.city?.name ??
+            order.shipping?.receiver_address?.city?.id ??
+            "—";
+          const state =
+            dbOrder.shipping_state ??
+            order.shipping?.receiver_address?.state?.id ??
+            order.shipping?.receiver_address?.state?.name ??
+            "";
+          const cityInfo =
+            city && city !== "—"
+              ? `${city}${state ? ` / ${state}` : ""}`
+              : state
+              ? state
+              : "—";
+          const clientName =
+            dbOrder.buyer_full_name ||
+            order.buyer?.nickname ||
+            order.buyer?.email ||
+            order.shipping?.receiver_address?.city?.name ||
+            order.shipping?.receiver_address?.state?.name ||
+            order.shipping?.receiver_address?.city?.id ||
+            "—";
+          const coverAlt =
+            clientName && clientName !== "—"
+              ? `Pedido de ${clientName}`
+              : `Pedido ${order.id ?? `#${idx + 1}`}`;
+          const carrier = order.shipping?.shipping_mode || order.shipping?.id || "—";
           const expanded = expandedOrders[String(order.id)];
           return (
-            <tr key={order.id} className="text-slate-800 dark:text-slate-100 align-top">
-              <td className="py-3 pr-4 font-semibold">{order.id}</td>
+            <tr key={`ml-order-${order.id ?? idx}`} className="text-slate-800 dark:text-slate-100 align-top">
+              <td className="py-3 pr-4">
+                {order.coverImageUrl ? (
+                  <div className="relative h-12 w-12 rounded-xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/10 shadow-sm">
+                    <Image
+                      src={order.coverImageUrl}
+                      alt={coverAlt}
+                      fill
+                      sizes="48px"
+                      className="object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-12 w-12 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-[10px] text-white/50 uppercase tracking-wide">
+                    sem imagem
+                  </div>
+                )}
+              </td>
+              <td className="py-3 pr-4 font-semibold">{order.id ?? `#${idx + 1}`}</td>
               <td className="py-3 pr-4">
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
                   {order.status}
@@ -974,9 +1051,9 @@ function MeliOrdersTable({
               <td className="py-3 pr-4">{formatDate(order.date_created)}</td>
               <td className="py-3 pr-4">{formatCurrency(order.total_amount || 0)}</td>
               <td className="py-3 pr-4">{qtdItens || "—"}</td>
-              <td className="py-3 pr-4">{order.buyer?.nickname || "—"}</td>
+              <td className="py-3 pr-4">{clientName}</td>
               <td className="py-3 pr-4 max-w-[200px] truncate">{cityInfo}</td>
-              <td className="py-3 pr-4">{order.shipping?.shipping_mode || "—"}</td>
+              <td className="py-3 pr-4">{carrier}</td>
               <td className="py-3 pr-4">
                 <button
                   type="button"
@@ -1004,7 +1081,12 @@ function MeliOrdersCardsMobile({
   expandedOrders,
   setExpandedOrders,
 }: {
-  orders: MeliOrder[];
+  orders: Array<
+    MeliOrder & {
+      items?: { id: string; title: string; quantity: number; unit_price: number; sku: string | null }[];
+      coverImageUrl?: string | null;
+    }
+  >;
   expandedOrders: Record<string, boolean>;
   setExpandedOrders: (value: Record<string, boolean>) => void;
 }) {
@@ -1014,16 +1096,42 @@ function MeliOrdersCardsMobile({
 
   return (
     <>
-      {orders.map((order) => {
+      {orders.map((order, idx) => {
+        const dbOrder = order as MeliOrderDb;
         const statusClass = STATUS_COLORS[order.status] ?? "bg-slate-100/80 text-slate-700";
-        const qtdItens = order.order_items?.reduce((acc, item) => acc + (item.quantity || 0), 0) ?? 0;
-        const city = order.shipping?.receiver_address?.city?.name ?? "—";
-        const state = order.shipping?.receiver_address?.state?.id ?? order.shipping?.receiver_address?.state?.name ?? "";
-        const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
+        const qtdItens =
+          (order.order_items ?? []).reduce((acc, item) => acc + (Number(item.quantity) || 0), 0) ?? 0;
+        const city =
+          dbOrder.shipping_city ??
+          order.shipping?.receiver_address?.city?.name ??
+          order.shipping?.receiver_address?.city?.id ??
+          "—";
+        const state =
+          dbOrder.shipping_state ??
+          order.shipping?.receiver_address?.state?.id ??
+          order.shipping?.receiver_address?.state?.name ??
+          "";
+        const cityInfo =
+          city && city !== "—"
+            ? `${city}${state ? ` / ${state}` : ""}`
+            : state
+            ? state
+            : "—";
+        const clientName =
+          dbOrder.buyer_full_name ||
+          order.buyer?.nickname ||
+          order.buyer?.email ||
+          order.shipping?.receiver_address?.city?.name ||
+          order.shipping?.receiver_address?.state?.name ||
+          order.shipping?.receiver_address?.city?.id ||
+          "—";
+        const coverAlt =
+          clientName && clientName !== "—" ? `Pedido de ${clientName}` : `Pedido ${order.id ?? `#${idx + 1}`}`;
+        const carrier = order.shipping?.shipping_mode || order.shipping?.id || "—";
         const expanded = expandedOrders[String(order.id)];
         return (
           <div
-            key={order.id}
+            key={`ml-order-card-${order.id ?? idx}`}
             className="rounded-2xl border border-white/60 dark:border-slate-800 glass-panel glass-tint p-4 shadow-sm"
           >
             <div className="flex items-center justify-between">
@@ -1038,6 +1146,17 @@ function MeliOrdersCardsMobile({
                 </p>
               </div>
             </div>
+            {order.coverImageUrl && (
+              <div className="relative mt-3 mb-1 h-32 w-full rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/10">
+                <Image
+                  src={order.coverImageUrl}
+                  alt={coverAlt}
+                  fill
+                  sizes="100vw"
+                  className="object-cover"
+                />
+              </div>
+            )}
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <div className="flex flex-col gap-1">
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
@@ -1053,7 +1172,7 @@ function MeliOrdersCardsMobile({
               </div>
               <div>
                 <p className="text-xs text-slate-500">Cliente</p>
-                <p className="font-medium text-slate-800 dark:text-slate-100">{order.buyer?.nickname || "—"}</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">{clientName}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Cidade/UF</p>
@@ -1072,7 +1191,7 @@ function MeliOrdersCardsMobile({
               >
                 {expanded ? "Esconder itens" : "Ver itens"}
               </button>
-              {expanded && <MeliOrderItemsList items={order.order_items} />}
+              {expanded && <MeliOrderItemsList items={order.order_items ?? []} />}
             </div>
           </div>
         );
@@ -1081,7 +1200,7 @@ function MeliOrdersCardsMobile({
   );
 }
 
-function MeliOrderItemsList({ items }: { items: MeliOrder["order_items"] }) {
+function MeliOrderItemsList({ items }: { items: NonNullable<MeliOrder["order_items"]> }) {
   if (!items || items.length === 0) {
     return <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Sem itens informados.</p>;
   }
@@ -1114,14 +1233,14 @@ type SummaryCardProps = {
 
 function SummaryCard({ title, value, icon: Icon, colorClass = "text-[var(--accent)]", helper }: SummaryCardProps) {
   return (
-    <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+    <GlassCard className="p-5 min-w-0">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{title}</p>
         <Icon className={`w-5 h-5 ${colorClass} shrink-0`} />
       </div>
       <p className={`text-3xl font-semibold ${colorClass} truncate`}>{value}</p>
       {helper && <p className="text-xs text-slate-500 mt-2 truncate">{helper}</p>}
-    </div>
+    </GlassCard>
   );
 }
 

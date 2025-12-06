@@ -101,6 +101,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   }, [isMobileMenuOpen]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowMarketplaceMenu(false);
   }, [pathname]);
 
@@ -211,6 +212,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
             activeIndex={activeNavIndex}
             onChange={handleNavChange}
             onItemHover={handleNavHover}
+            onMarketplaceHover={() => setShowMarketplaceMenu(true)}
             items={GLASS_NAV_ITEMS}
             className="w-10"
           />
@@ -389,6 +391,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
             activeIndex={activeMobileNavIndex}
             onChange={handleMobileNavChange}
             onItemHover={handleMobileNavHover}
+            onMarketplaceHover={() => setShowMarketplaceMenu(true)}
             items={MOBILE_GLASS_ITEMS}
           />
         </div>

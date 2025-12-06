@@ -220,6 +220,83 @@ export interface DreValuesRow {
   updated_at: string | null; // timestamptz
 }
 
+export interface MeliOrdersRow {
+  meli_order_id: number;
+  seller_id: number;
+  status: string;
+  date_created: string;
+  last_updated: string;
+  currency_id: string;
+  total_amount: string;
+  total_amount_with_shipping: string | null;
+  shipping_cost: string | null;
+  buyer_id: number | null;
+  buyer_nickname: string | null;
+  buyer_full_name: string | null;
+  buyer_email: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  tags: string[] | null;
+  raw_payload: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MeliOrdersInsert = {
+  meli_order_id: number;
+  seller_id: number;
+  status: string;
+  date_created: string;
+  last_updated: string;
+  currency_id: string;
+  total_amount: string;
+  total_amount_with_shipping?: string | null;
+  shipping_cost?: string | null;
+  buyer_id?: number | null;
+  buyer_nickname?: string | null;
+  buyer_full_name?: string | null;
+  buyer_email?: string | null;
+  shipping_city?: string | null;
+  shipping_state?: string | null;
+  tags?: string[] | null;
+  raw_payload: Json;
+};
+
+export type MeliOrdersUpdate = Partial<MeliOrdersInsert>;
+
+export interface MeliOrderItemsRow {
+  id: number;
+  meli_order_id: number;
+  item_id: string;
+  title: string;
+  sku: string | null;
+  quantity: number;
+  unit_price: string;
+  currency_id: string;
+  category_id: string | null;
+  variation_id: string | null;
+  item_thumbnail_url: string | null;
+  raw_payload: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MeliOrderItemsInsert = {
+  meli_order_id: number;
+  item_id: string;
+  title: string;
+  sku?: string | null;
+  quantity: number;
+  unit_price: string;
+  currency_id: string;
+  category_id?: string | null;
+  variation_id?: string | null;
+  item_thumbnail_url?: string | null;
+  raw_payload: Json;
+};
+
+export type MeliOrderItemsUpdate = Partial<MeliOrderItemsInsert>;
+
 /* ============================================================================
  * INSERT / UPDATE TYPES
  * ========================================================================== */
@@ -505,6 +582,32 @@ export type DatabasePublicSchema = GenericSupabaseSchema & {
       Insert: ComprasSavedOrderInsert;
       Update: ComprasSavedOrderUpdate;
       Relationships: [];
+    };
+    meli_orders: {
+      Row: MeliOrdersRow;
+      Insert: MeliOrdersInsert;
+      Update: MeliOrdersUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "meli_order_items_meli_order_id_fkey";
+          columns: ["meli_order_id"];
+          referencedRelation: "meli_order_items";
+          referencedColumns: ["meli_order_id"];
+        }
+      ];
+    };
+    meli_order_items: {
+      Row: MeliOrderItemsRow;
+      Insert: MeliOrderItemsInsert;
+      Update: MeliOrderItemsUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "meli_order_items_meli_order_id_fkey";
+          columns: ["meli_order_id"];
+          referencedRelation: "meli_orders";
+          referencedColumns: ["meli_order_id"];
+        }
+      ];
     };
   };
   Views: Record<string, never>;

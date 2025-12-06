@@ -41,6 +41,14 @@ type Sugestao = {
   originalIndex?: number;
 };
 
+type EstoqueSnapshot = {
+  saldo: number;
+  reservado: number;
+  disponivel: number;
+  updatedAt?: string | null;
+  source?: string | null;
+};
+
 type SortDirection = 'asc' | 'desc';
 type SortKey =
   | 'nome'
@@ -183,6 +191,8 @@ export default function ComprasClient() {
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all');
   const [pedidoOverrides, setPedidoOverrides] = useState<Record<number, number>>({});
   const [pedidoInputDrafts, setPedidoInputDrafts] = useState<Record<number, string>>({});
+  const [estoqueLive, setEstoqueLive] = useState<Record<number, EstoqueSnapshot>>({});
+  const [estoqueLoading, setEstoqueLoading] = useState<Record<number, boolean>>({});
   const [sortConfig, setSortConfig] = useState<Array<{ key: SortKey; direction: SortDirection }>>([]);
   const [currentOrderName, setCurrentOrderName] = useState(() => buildDefaultOrderName());
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
@@ -553,6 +563,46 @@ export default function ComprasClient() {
       {renderSortIcon(key)}
     </div>
   );
+
+  const formatRecency = (iso?: string | null) => {
+    if (!iso) return null;
+    const ts = Date.parse(iso);
+    if (Number.isNaN(ts)) return null;
+    const diffMin = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+    if (diffMin < 1) return 'agora';
+    if (diffMin === 1) return 'há 1 min';
+    if (diffMin < 60) return `há ${diffMin} min`;
+    const hours = Math.floor(diffMin / 60);
+    return `há ${hours}h`;
+  };
+
+  const fetchEstoqueLive = useCallback(async (id_produto_tiny: number) => {
+    setEstoqueLoading((prev) => ({ ...prev, [id_produto_tiny]: true }));
+    try {
+      const res = await fetch(`/api/tiny/produtos/${id_produto_tiny}/estoque?source=hybrid`, {
+        cache: 'no-store',
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error?.message ?? 'Falha ao atualizar estoque');
+      }
+      const data = json.data ?? {};
+      setEstoqueLive((prev) => ({
+        ...prev,
+        [id_produto_tiny]: {
+          saldo: Number(data.saldo ?? 0),
+          reservado: Number(data.reservado ?? 0),
+          disponivel: Number(data.disponivel ?? 0),
+          updatedAt: data.updatedAt ?? null,
+          source: json.source ?? null,
+        },
+      }));
+    } catch (error) {
+      console.error('[Compras] Falha ao buscar estoque live', error);
+    } finally {
+      setEstoqueLoading((prev) => ({ ...prev, [id_produto_tiny]: false }));
+    }
+  }, []);
 
   const totalCompra = useMemo(
     () => derivados.reduce((acc, cur) => acc + (cur.sugestao_ajustada || 0), 0),
@@ -1802,10 +1852,47 @@ export default function ComprasClient() {
                       }}
                     />
                   </td>
-                  <td className="px-4 py-3 w-[90px]">
-                    <div className="text-slate-900 dark:text-white font-semibold">{p.disponivel.toLocaleString('pt-BR')}</div>
-                    <div className="text-[11px] text-slate-500">Saldo {p.saldo ?? 0} · Reservado {p.reservado ?? 0}</div>
-                  </td>
+                <td className="px-4 py-3 w-[110px]">
+                  {(() => {
+                    const live = estoqueLive[p.id_produto_tiny];
+                    const saldo = live ? live.saldo : p.saldo ?? 0;
+                    const reservado = live ? live.reservado : p.reservado ?? 0;
+                    const disponivel = live ? live.disponivel : p.disponivel;
+                    const source = live?.source;
+                    const updatedAt = live?.updatedAt ?? null;
+                    const loadingLive = estoqueLoading[p.id_produto_tiny];
+                    return (
+                      <div className="space-y-1">
+                        <div className="text-slate-900 dark:text-white font-semibold">
+                          {disponivel.toLocaleString('pt-BR')}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Saldo {saldo.toLocaleString('pt-BR')} · Reservado {reservado.toLocaleString('pt-BR')}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-[11px] px-2 py-1 rounded-full bg-white/60 dark:bg-white/10 border border-white/50 dark:border-white/5 text-slate-700 dark:text-slate-200 transition hover:border-[var(--accent)]"
+                            onClick={() => fetchEstoqueLive(p.id_produto_tiny)}
+                            disabled={loadingLive}
+                          >
+                            {loadingLive ? 'Atualizando…' : 'Atualizar estoque'}
+                          </button>
+                          {source && (
+                            <div className="flex flex-col text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                              <span>{source.includes('live') ? 'Live' : 'Cache'}</span>
+                              {source.includes('cache') && updatedAt && (
+                                <span className="normal-case tracking-normal text-[11px] text-slate-500">
+                                  {formatRecency(updatedAt)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </td>
                   <td className="px-4 py-3 text-slate-900 dark:text-white w-[90px]">{p.consumo_periodo.toLocaleString('pt-BR')}</td>
                   <td className="px-4 py-3 text-slate-900 dark:text-white w-[80px]">{p.consumo_mensal.toFixed(1)}</td>
                   <td className="px-4 py-3 w-[80px]">

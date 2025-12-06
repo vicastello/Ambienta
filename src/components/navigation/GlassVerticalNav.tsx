@@ -17,6 +17,7 @@ type GlassVerticalNavProps = {
   activeIndex: number;
   onChange?: (index: number) => void;
   onItemHover?: (index: number) => void;
+  onMarketplaceHover?: () => void;
   className?: string;
   items?: NavItem[];
 };
@@ -45,7 +46,14 @@ const H_STEP = H_ITEM_SIZE + H_GAP;
 const H_SHELL_PADDING = 26; // px
 const H_THUMB_LEFT = (index: number) => H_SHELL_PADDING + index * H_STEP + H_ITEM_SIZE / 2 - H_THUMB_WIDTH / 2;
 
-export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className, items }: GlassVerticalNavProps) {
+export function GlassVerticalNav({
+  activeIndex,
+  onChange,
+  onItemHover,
+  onMarketplaceHover,
+  className,
+  items,
+}: GlassVerticalNavProps) {
   const resolvedItems = useMemo(() => (items?.length ? items : DEFAULT_ITEMS), [items]);
   const clampedIndex = useMemo(() => {
     if (Number.isNaN(activeIndex)) return 0;
@@ -106,7 +114,13 @@ export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className
                 aria-pressed={isActive}
                 aria-label={label}
                 onClick={() => onChange?.(index)}
-                onMouseEnter={() => onItemHover?.(index)}
+                onMouseEnter={() => {
+                  if (isMarketplace) {
+                    onMarketplaceHover?.();
+                  } else {
+                    onItemHover?.(index);
+                  }
+                }}
                 className={buttonClass}
                 {...tooltipProps}
               >
@@ -120,7 +134,14 @@ export function GlassVerticalNav({ activeIndex, onChange, onItemHover, className
   );
 }
 
-export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, className, items }: GlassVerticalNavProps) {
+export function GlassHorizontalNav({
+  activeIndex,
+  onChange,
+  onItemHover,
+  onMarketplaceHover,
+  className,
+  items,
+}: GlassVerticalNavProps) {
   const resolvedItems = useMemo(() => (items?.length ? items : DEFAULT_ITEMS), [items]);
   const clampedIndex = useMemo(() => {
     if (Number.isNaN(activeIndex)) return 0;
@@ -188,7 +209,13 @@ export function GlassHorizontalNav({ activeIndex, onChange, onItemHover, classNa
                 aria-pressed={isActive}
                 aria-label={label}
                 onClick={() => onChange?.(index)}
-                onMouseEnter={() => onItemHover?.(index)}
+                onMouseEnter={() => {
+                  if (isMarketplace) {
+                    onMarketplaceHover?.();
+                  } else {
+                    onItemHover?.(index);
+                  }
+                }}
                 className={buttonClass}
                 {...tooltipProps}
               >
