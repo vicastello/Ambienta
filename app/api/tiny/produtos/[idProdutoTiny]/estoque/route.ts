@@ -17,14 +17,22 @@ const isStale = (updatedAt?: string | null) => {
   return diffMinutes > STALE_MINUTES;
 };
 
+/**
+ * Rota: GET /api/tiny/produtos/:idProdutoTiny/estoque
+ * O idProdutoTiny vem do segmento [idProdutoTiny] do caminho acima.
+ * debug=1 retorna paramsRaw e parsedId para troubleshooting.
+ */
 export async function GET(req: NextRequest, { params }: { params: { idProdutoTiny: string } }) {
   try {
     console.log('[tiny/produtos/estoque] START', { url: req.url, params });
+    console.log('[DEBUG ESTOQUE TINY] req.url =', req.url);
+    console.log('[DEBUG ESTOQUE TINY] params object =', params);
+
     // idProdutoTiny vem do segmento [idProdutoTiny] da rota /api/tiny/produtos/:idProdutoTiny/estoque
-    const idParam = params.idProdutoTiny;
+    const idParam = params?.idProdutoTiny;
     const idProdutoTiny = Number(idParam);
-    console.log('[DEBUG ESTOQUE TINY] params.idProdutoTiny =', idParam);
-    console.log('[DEBUG ESTOQUE TINY] parsed id =', idProdutoTiny);
+    console.log('[DEBUG ESTOQUE TINY] idParam =', idParam);
+    console.log('[DEBUG ESTOQUE TINY] idProdutoTiny(Number) =', idProdutoTiny);
 
     const { searchParams } = new URL(req.url);
     const debugMode = searchParams.get('debug') === '1';
