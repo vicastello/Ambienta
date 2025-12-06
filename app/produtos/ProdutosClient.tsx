@@ -157,6 +157,15 @@ export default function ProdutosClient() {
   const [produtoAtualizandoId, setProdutoAtualizandoId] = useState<number | null>(null);
   const [produtoAtualizacaoErro, setProdutoAtualizacaoErro] = useState<string | null>(null);
   const [produtoAtualizacaoMeta, setProdutoAtualizacaoMeta] = useState<ProdutoAtualizacaoMeta | null>(null);
+  const [estoqueLive, setEstoqueLive] = useState<{
+    saldo: number | null;
+    reservado: number | null;
+    disponivel: number | null;
+    source?: string | null;
+    updatedAt: number;
+  } | null>(null);
+  const [estoqueLiveLoading, setEstoqueLiveLoading] = useState(false);
+  const [estoqueLiveError, setEstoqueLiveError] = useState<string | null>(null);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -382,6 +391,52 @@ export default function ProdutosClient() {
     return produtos.find((produto) => produto.id_produto_tiny === produtoSelecionadoId) ?? produtos[0];
   }, [produtos, produtoSelecionadoId]);
 
+  const carregarEstoqueLive = useCallback(
+    async (mode: "hybrid" | "live" = "hybrid") => {
+      if (!produtoSelecionadoId) return;
+      setEstoqueLiveLoading(true);
+      setEstoqueLiveError(null);
+      try {
+        const response = await fetch(
+          `/api/tiny/produtos/${produtoSelecionadoId}/estoque?source=${mode}`,
+          { cache: "no-store" }
+        );
+        const payload = (await response.json().catch(() => null)) as {
+          ok?: boolean;
+          source?: string;
+          data?: { saldo?: number | null; reservado?: number | null; disponivel?: number | null };
+          error?: { code?: string; message?: string; details?: string };
+        } | null;
+
+        if (!response.ok || !payload?.ok) {
+          const message =
+            payload?.error?.message || payload?.error?.code || "Falha ao consultar estoque em tempo real";
+          throw new Error(message);
+        }
+
+        setEstoqueLive({
+          saldo: payload.data?.saldo ?? null,
+          reservado: payload.data?.reservado ?? null,
+          disponivel: payload.data?.disponivel ?? null,
+          source: payload.source ?? mode,
+          updatedAt: Date.now(),
+        });
+      } catch (fetchError) {
+        setEstoqueLiveError(getErrorMessage(fetchError) || "Falha ao consultar estoque em tempo real");
+      } finally {
+        setEstoqueLiveLoading(false);
+      }
+    },
+    [produtoSelecionadoId]
+  );
+
+  useEffect(() => {
+    setEstoqueLive(null);
+    setEstoqueLiveError(null);
+    if (!produtoSelecionadoId) return;
+    carregarEstoqueLive("hybrid");
+  }, [carregarEstoqueLive, produtoSelecionadoId]);
+
   const produtoSparkData = useMemo(() => {
     if (!produtoDesempenho?.serie?.length) return [];
     return produtoDesempenho.serie.map((ponto) => {
@@ -439,7 +494,14 @@ export default function ProdutosClient() {
         bg: "bg-slate-100",
       }
     : null;
-  const disponivelEmFoco = produtoEmFoco?.disponivel ?? 0;
+  const estoqueExibido = estoqueLive ?? {
+    saldo: produtoEmFoco?.saldo ?? null,
+    reservado: produtoEmFoco?.reservado ?? null,
+    disponivel: produtoEmFoco?.disponivel ?? null,
+    source: "snapshot",
+    updatedAt: 0,
+  };
+  const disponivelEmFoco = estoqueExibido.disponivel ?? 0;
   const estoqueCriticoFoco = disponivelEmFoco > 0 && disponivelEmFoco < 5;
 
   const handleFiltersSubmit = () => {
@@ -869,18 +931,53 @@ export default function ProdutosClient() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">Saldo: <strong className="text-slate-900 dark:text-white">{formatNumber(produtoEmFoco.saldo)}</strong></span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">Reservado: <strong className="text-slate-900 dark:text-white">{formatNumber(produtoEmFoco.reservado)}</strong></span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
-              disponivelEmFoco <= 0
-                ? "bg-rose-100 text-rose-700"
-                : estoqueCriticoFoco
-                ? "bg-amber-100 text-amber-700"
-                : "bg-emerald-100 text-emerald-700"
-            }`}>
-              Disponível: <strong>{formatNumber(produtoEmFoco.disponivel)}</strong>
-            </span>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                Saldo: <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueExibido.saldo)}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                Reservado:{" "}
+                <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueExibido.reservado)}</strong>
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
+                  disponivelEmFoco <= 0
+                    ? "bg-rose-100 text-rose-700"
+                    : estoqueCriticoFoco
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-emerald-100 text-emerald-700"
+                }`}
+              >
+                Disponível: <strong>{formatNumber(estoqueExibido.disponivel)}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {estoqueLiveLoading ? (
+                <span className="inline-flex items-center gap-1 text-slate-500">
+                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                  Atualizando estoque em tempo real...
+                </span>
+              ) : estoqueLiveError ? (
+                <span className="text-rose-500">Falha ao consultar estoque em tempo real · usando último snapshot</span>
+              ) : estoqueLive ? (
+                <span className="inline-flex items-center gap-1 text-slate-500">
+                  Fonte: {estoqueLive.source || "hybrid"} · atualizado agora
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-slate-500">
+                  Fonte: snapshot do Supabase
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => carregarEstoqueLive("live")}
+                className="inline-flex items-center gap-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1 font-semibold text-slate-700 dark:text-slate-200 text-xs"
+              >
+                <RefreshCcw className="w-3 h-3" />
+                Atualizar estoque agora
+              </button>
+            </div>
           </div>
         </section>
       )}

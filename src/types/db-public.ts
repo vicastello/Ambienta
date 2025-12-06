@@ -46,6 +46,7 @@ export interface SyncSettingsRow {
   cron_produtos_enrich_estoque: boolean | null;
   created_at: string | null; // timestamptz
   updated_at: string | null; // timestamptz
+  settings?: Json | null;
 }
 
 export interface SyncJobsRow {
