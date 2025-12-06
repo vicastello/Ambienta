@@ -25,19 +25,11 @@
 - **Função**: `sync_tiny_orders_efficient()`
 - **Status**: ✅ Ativo
 
-### Produtos (Nova migration criada)
-### Produtos (pg_cron ativo)
-- **Migrations**: `20251121120000_cron_sync_produtos.sql` + `20251201150000_refresh_sync_produtos_function.sql` + `20251202170000_preserve_manual_produto_fields.sql`
-- **Frequência**: A cada **2 minutos**
-- **Função**: `sync_produtos_from_tiny()`
-- **Status**: ✅ Aplicado (preserva campos locais)
-
----
-1. **Campos locais preservados**: Desde `20251202170000_preserve_manual_produto_fields.sql`, o `ON CONFLICT` mantém `fornecedor_codigo`, `embalagem_qtd` e `observacao_compras` já armazenados no banco, evitando que edições feitas na tela de Compras sejam apagadas.
-2. **Rate Limit do Tiny**: A API do Tiny tem limite de 100 req/min
-  - pg_cron faz apenas 1 request a cada 2 min = seguro
-  - Ajuste `limit=100` na URL se quiser processar mais produtos por vez
-3. **Estoque não é sincronizado no pg_cron**: 
+### Produtos
+- **Fluxo oficial**: rota `/api/admin/cron/sync-produtos` (passando por `lib/tinyApi.ts` e cursores `produtos_sync_cursor`).
+- **Função SQL**: `sync_produtos_from_tiny()` foi aposentada e será removida pela migration `20251206120000_drop_sync_produtos_from_tiny.sql`.
+- **Frequência**: seguir o cron HTTP configurado no app (atual: 2 minutos via pg_cron chamando a rota).
+- **Status**: manter somente o caminho HTTP; não use SELECT direto no banco.
 
 ### Opção 1: Via Supabase Dashboard (Recomendado)
 1. Acesse: https://supabase.com/dashboard
@@ -84,33 +76,14 @@ LIMIT 10;
 ```
 
 ### Executar manualmente para testar
-```sql
-SELECT * FROM sync_produtos_from_tiny();
-```
+- Para produtos, use as rotas HTTP (`/api/admin/sync/produtos` ou `/api/admin/cron/sync-produtos`) em vez de chamadas SQL.
 
 ---
 
 ## ⚙️ Ajustar Frequência
 
-### Para rodar a cada 1 minuto (mais agressivo)
-```sql
-SELECT cron.unschedule('sync-produtos-supabase');
-SELECT cron.schedule(
-  'sync-produtos-supabase',
-  '*/1 * * * *',  -- Cada 1 minuto
-  'SELECT sync_produtos_from_tiny();'
-);
-```
-
-### Para rodar a cada 5 minutos (mais conservador)
-```sql
-SELECT cron.unschedule('sync-produtos-supabase');
-SELECT cron.schedule(
-  'sync-produtos-supabase',
-  '*/5 * * * *',  -- Cada 5 minutos
-  'SELECT sync_produtos_from_tiny();'
-);
-```
+### Ajustar frequência
+- Ajuste o cron que chama `/api/admin/cron/sync-produtos` no banco (pg_cron) alterando a migration correspondente; não use mais `SELECT sync_produtos_from_tiny();`.
 
 ---
 
@@ -137,7 +110,7 @@ Recomendo **manter** o Vercel cron como backup:
 | Recurso | Método | Frequência | Objetivo |
 |---------|--------|------------|----------|
 | **Pedidos** | Supabase pg_cron | 1 minuto | Tempo real |
-| **Produtos (preço/básico)** | Supabase pg_cron | 2 minutos | Quase tempo real |
+| **Produtos (preço/básico)** | App API (pg_cron → `/api/admin/cron/sync-produtos`) | 2 minutos | Quase tempo real |
 | **Produtos (estoque/imagem)** | Vercel cron | 6 horas | Backup + dados pesados |
 | **Token refresh** | Vercel cron | 6 horas | Manutenção |
 

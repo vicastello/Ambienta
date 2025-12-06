@@ -48,7 +48,7 @@ scripts/devCronServer.ts espelha o cron de produção localmente e normaliza can
 
 Sync de produtos:
 
-pg_cron (20251121120000_cron_sync_produtos.sql + 20251202170000_preserve_manual_produto_fields.sql) chama sync_produtos_from_tiny() a cada 2 minutos, preservando fornecedor_codigo, embalagem_qtd, observacao_compras.
+Fluxo oficial via app/api: cron chama `/api/admin/cron/sync-produtos` (pipeline `lib/tinyApi.ts` + cursores em `produtos_sync_cursor`). A função SQL `sync_produtos_from_tiny()` foi aposentada e será removida pelo drop migration.
 
 Cron da Vercel (vercel.json) renova tokens do Tiny diariamente.
 
