@@ -20,10 +20,29 @@ const isStale = (updatedAt?: string | null) => {
 export async function GET(req: NextRequest, { params }: { params: { idProdutoTiny: string } }) {
   try {
     console.log('[tiny/produtos/estoque] START', { url: req.url, params });
-    console.log('[DEBUG ESTOQUE TINY] params.idProdutoTiny =', params?.idProdutoTiny);
-    const idRaw = params?.idProdutoTiny;
-    const idProdutoTiny = Number(idRaw);
+    // Leitura bruta do id vindo do parâmetro de rota
+    const idParam = params?.idProdutoTiny;
+    const idProdutoTiny = Number(idParam);
+    console.log('[DEBUG ESTOQUE TINY] params.idProdutoTiny =', idParam);
     console.log('[DEBUG ESTOQUE TINY] parsed id =', idProdutoTiny);
+
+    // Parse de query params e modo debug
+    const { searchParams } = new URL(req.url);
+    const debugMode = searchParams.get('debug') === '1';
+    if (debugMode) {
+      // Debug helper: retorna o valor bruto e o parse do id, sem tocar a API do Tiny.
+      return NextResponse.json(
+        {
+          ok: true,
+          debug: true,
+          paramsRaw: idParam,
+          parsedId: idProdutoTiny,
+        },
+        { status: 200 }
+      );
+    }
+
+    // Validação do id (inteiro positivo)
     if (!Number.isFinite(idProdutoTiny) || !Number.isInteger(idProdutoTiny) || idProdutoTiny <= 0) {
       return NextResponse.json(
         {
@@ -37,7 +56,6 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
       );
     }
 
-    const { searchParams } = new URL(req.url);
     const sourceParam = (searchParams.get('source') as SourceMode | null) ?? 'hybrid';
     const source: SourceMode = sourceParam === 'cache' || sourceParam === 'live' ? sourceParam : 'hybrid';
 
@@ -123,7 +141,7 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
       console.log('[DEBUG HYBRID ESTOQUE] idProdutoTiny =', idProdutoTiny, 'mode=hybrid-live', 'data_atualizacao_tiny=', snapshot.updatedAt ?? null);
       return NextResponse.json({ ok: true, source: 'hybrid-live', data: snapshot });
     } catch (error: any) {
-      console.error('[tiny/produtos/estoque] Tiny error', error);
+      console.error('[DEBUG ESTOQUE TINY] Tiny error', error);
       return NextResponse.json(
         {
           ok: false,
