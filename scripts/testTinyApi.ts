@@ -16,7 +16,8 @@ async function main() {
       offset: 0,
       orderBy: 'desc',
       fields: 'valorFrete,valorTotalPedido,valorTotalProdutos,valorDesconto,valorOutrasDespesas,transportador',
-    }
+    },
+    { context: 'scripts/testTinyApi' }
   );
   
   console.log('📦 Pedidos retornados:', result1.itens?.length || 0);
@@ -35,7 +36,12 @@ async function main() {
   // Teste 2: Buscar pedido individual para ver se tem mais detalhes
   if (primeiro?.id) {
     console.log(`\n\n🔍 Buscando detalhes do pedido #${primeiro.id} individualmente\n`);
-    const detalhado: any = await tinyGet(`/pedidos/${primeiro.id}`, token, {});
+    const detalhado: any = await tinyGet(
+      `/pedidos/${primeiro.id}`,
+      token,
+      {},
+      { context: 'scripts/testTinyApi', endpointLabel: `/pedidos/${primeiro.id}` }
+    );
     
     console.log('valorFrete no detalhe:', detalhado.valorFrete || '❌ não retornado');
     console.log('transportador no detalhe:', JSON.stringify(detalhado.transportador, null, 2) || '❌ não retornado');

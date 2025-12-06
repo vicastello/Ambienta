@@ -19,17 +19,14 @@
 
 ## 📊 Configuração Atual
 
-### Pedidos (Já configurado no Supabase)
-- **Migration**: `008_efficient_sql_polling.sql`
-- **Frequência**: A cada **1 minuto**
-- **Função**: `sync_tiny_orders_efficient()`
-- **Status**: ✅ Ativo
+### Pedidos
+- **Fluxo**: pg_cron chama `/api/admin/cron/run-sync` (job `tiny_sync_every_15min` na migration `20251128120000_cron_run_tiny_sync.sql`). Esse endpoint enfileira pedidos recentes, roda enriquecimento e normalização.
+- **Status**: ativo. Ajuste a frequência alterando o cron no banco.
 
 ### Produtos
-- **Fluxo oficial**: rota `/api/admin/cron/sync-produtos` (passando por `lib/tinyApi.ts` e cursores `produtos_sync_cursor`).
-- **Função SQL**: `sync_produtos_from_tiny()` foi aposentada e será removida pela migration `20251206120000_drop_sync_produtos_from_tiny.sql`.
-- **Frequência**: seguir o cron HTTP configurado no app (atual: 2 minutos via pg_cron chamando a rota).
-- **Status**: manter somente o caminho HTTP; não use SELECT direto no banco.
+- **Fluxo oficial**: HTTP via `/api/admin/sync/produtos` (ou `callInternalJson` em `/api/admin/cron/run-sync`), sempre passando por `lib/tinyApi.ts` + `tinyUsageLogger`.
+- **SQL legacy**: `sync_produtos_from_tiny()` foi aposentada (migration `20251206120000_drop_sync_produtos_from_tiny.sql`); o script `scripts/applyViaSql.ts` está bloqueado por padrão.
+- **Frequência recomendada**: poucas vezes ao dia (ou manual), com `limit` baixo (10–40) e `workers=1`. Rate limiter interno está em ~90 req/min (estoque-only ~110 req/min) para não desperdiçar quota do Tiny em `/produtos`.
 
 ### Opção 1: Via Supabase Dashboard (Recomendado)
 1. Acesse: https://supabase.com/dashboard
@@ -118,16 +115,11 @@ Recomendo **manter** o Vercel cron como backup:
 
 ## ⚠️ Observações Importantes
 
-1. **Rate Limit do Tiny**: A API do Tiny tem limite de 100 req/min
-   - pg_cron faz apenas 1 request a cada 2 min = seguro
-   - Ajuste `limit=100` na URL se quiser processar mais produtos por vez
+1. **Rate Limit do Tiny (~120 req/min)**: o catálogo usa rate limiter interno (~90 req/min ou 110 em estoque-only). Evite crons agressivos em `/produtos`; prefira execuções poucas vezes ao dia.
 
-2. **Estoque não é sincronizado no pg_cron**: 
-   - Para manter rápido, o cron SQL não busca estoque
-   - Estoque é atualizado via Vercel cron (a cada 6h)
-   - Para estoque mais atual, rode o script manual: `npx tsx scripts/updateProdutosEstoqueImagem.ts`
+2. **Estoque**: o fluxo recomendado é o round-robin HTTP `/api/tiny/cron/estoque-round-robin` (a cada 5 min) com batch padrão 200 e delay 450ms/req + 3s em 429. Não use funções SQL com http() para consultar Tiny.
 
-3. **Logs**: Use as tabelas `cron.job_run_details` para monitorar
+3. **Logs**: monitore `tiny_api_usage` para ver contexts/endpoints/429 e `cron.job_run_details` para histórico do pg_cron.
 
 ---
 

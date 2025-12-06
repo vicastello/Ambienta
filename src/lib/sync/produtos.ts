@@ -361,7 +361,8 @@ export async function syncProdutosFromTiny(
   const cursorInitialUpdatedSince = cursorRow?.updated_since ?? null;
   const cursorInitialLatest = cursorRow?.latest_data_alteracao ?? null;
 
-  const limiter = new RateLimiter(estoqueOnly ? 800 : 1300); // Estoque-only recebe mais 429, usa limite mais conservador
+  // Respeita limites Tiny: estoque-only pode ser mais agressivo, porém ainda <120 req/min
+  const limiter = new RateLimiter(estoqueOnly ? 110 : 90);
   let accessToken: string | null = null;
   const tokenRefreshState = { attempts: 0 };
   let totalSincronizados = 0;
@@ -484,6 +485,7 @@ export async function syncProdutosFromTiny(
                   obterProduto(accessToken!, produto.id ?? 0, {
                     headers,
                     allowNotModified: true,
+                    context: 'cron_produtos',
                   }),
                 limiter,
                 stats,
@@ -502,6 +504,7 @@ export async function syncProdutosFromTiny(
                       obterEstoqueProduto(accessToken!, produto.id ?? 0, {
                         headers,
                         allowNotModified: true,
+                        context: 'cron_produtos',
                       }),
                     limiter,
                     stats,
@@ -744,12 +747,16 @@ export async function syncProdutosFromTiny(
         () =>
           tinyRequest<TinyListarProdutosResponse>({
             fn: () =>
-              listarProdutos(accessToken!, {
-                limit: limitForPage,
-                offset: offsetForPage,
-                situacao: situacaoParam,
-                dataAlteracao: dataAlteracaoParam ?? undefined,
-              }),
+              listarProdutos(
+                accessToken!,
+                {
+                  limit: limitForPage,
+                  offset: offsetForPage,
+                  situacao: situacaoParam,
+                  dataAlteracao: dataAlteracaoParam ?? undefined,
+                },
+                'cron_produtos'
+              ),
             limiter,
             stats,
             log,

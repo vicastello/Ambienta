@@ -6,11 +6,13 @@ export async function POST(req: NextRequest) {
   const batchSize =
     typeof body?.batchSize === 'number' && body.batchSize > 0 ? body.batchSize : undefined;
 
-  const result = await syncTinyEstoqueRoundRobin({ batchSize });
+  const effectiveBatchSize = batchSize ?? 200; // default agressivo para varrer mais produtos
+
+  const result = await syncTinyEstoqueRoundRobin({ batchSize: effectiveBatchSize });
 
   return NextResponse.json({
     ok: true,
-    batchSize: batchSize ?? undefined,
+    batchSize: effectiveBatchSize,
     ...result,
   });
 }

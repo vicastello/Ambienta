@@ -1,5 +1,7 @@
 /**
- * Aplicar migration via API do Supabase (método alternativo)
+ * LEGACY – não usar em produção.
+ * Mantido apenas para histórico do antigo fluxo SQL que chamava Tiny direto via http extension.
+ * O caminho oficial hoje é HTTP via app (`/api/admin/sync/produtos`), com logging em tiny_api_usage.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -10,6 +12,11 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error("❌ Variáveis de ambiente não configuradas");
+  process.exit(1);
+}
+
+if (process.env.ALLOW_LEGACY_TINY_SQL !== 'true') {
+  console.error("⚠️  Script LEGACY desabilitado. Use o fluxo HTTP via /api/admin/sync/produtos (tinyApi + tinyUsageLogger).");
   process.exit(1);
 }
 

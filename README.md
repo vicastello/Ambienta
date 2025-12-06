@@ -20,8 +20,8 @@
 
 ## Pipeline Tiny → Supabase
 1. `POST /api/tiny/sync` ou `npm run sync:month -- --start=YYYY-MM-DD --end=YYYY-MM-DD` agrupa a janela desejada e enfileira `sync_jobs`.
-2. `lib/syncProcessor.ts` chama Tiny (`listarPedidosTinyPorPeriodo`), aplica backoff em 429 e usa `upsertOrdersPreservingEnriched` para não sobrescrever frete/canal/cidade/UF manualmente enriquecidos.
-3. Pós-processamento automático: `runFreteEnrichment`, `normalizeMissingOrderChannels`, `sincronizarItensAutomaticamente` e o sync de produtos via `/api/admin/sync/produtos` (cron `cron_run_produtos_backfill` + cursor `catalog_backfill`, passando pelo `lib/tinyApi.ts`). A antiga função SQL `sync_produtos_from_tiny()` foi aposentada (veja `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`).
+2. `lib/syncProcessor.ts` chama Tiny (`listarPedidosTinyPorPeriodo`) via `tinyApi.ts` (tudo logado em `tiny_api_usage`), aplica backoff em 429 e usa `upsertOrdersPreservingEnriched` para não sobrescrever frete/canal/cidade/UF manualmente enriquecidos.
+3. Pós-processamento automático: `runFreteEnrichment`, `normalizeMissingOrderChannels`, `sincronizarItensAutomaticamente` e o sync de produtos via `/api/admin/sync/produtos` (cron `cron_run_produtos_backfill` + cursor `catalog_backfill`, passando pelo `lib/tinyApi.ts`). A antiga função SQL `sync_produtos_from_tiny()` foi aposentada (veja `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql` e script legacy `scripts/applyViaSql.ts` está bloqueado).
 4. `/api/tiny/dashboard/resumo` agrega períodos atuais/anterior + canais/mapa, respeitando timezone `America/Sao_Paulo` e itens persistidos.
 
 > **Produção**: `public.cron_run_tiny_sync()` (definida em `supabase/migrations/20251128120000_cron_run_tiny_sync.sql`) chama `POST https://gestor-tiny.vercel.app/api/admin/cron/run-sync` a cada 15 min (`cron.schedule('tiny_sync_every_15min', '*/15 * * * *', ...)`). Ajuste a frequência alterando a migration ou executando `cron.unschedule/cron.schedule` direto no banco. O Vercel Cron ficou restrito a tarefas diárias (ex.: refresh de token).
@@ -58,7 +58,8 @@
 - **Rate Limits Tiny**: scripts já aplicam delay; não reduza `batchDelayMs` sem testar, ou os 429s quebram o job. Todos os writes em `tiny_orders` devem passar por `upsertOrdersPreservingEnriched`.
 
 ## Produtos & Estoque
-- `cron_run_produtos_backfill` (migration `20251129122000*` + ajustes `20251202*`) chama `/api/admin/sync/produtos` de hora em hora usando `mode: 'backfill'`, `limit: 10`, `workers: 1` e `cursorKey: 'catalog_backfill'`. O helper `syncProdutosFromTiny` converte o cursor em offsets lineares e persiste o próximo ponto na tabela `produtos_sync_cursor`.
+- **Round-robin de estoque**: cron `/api/tiny/cron/estoque-round-robin` roda a cada 5 min com `batchSize` padrão 200 (clamp em `MAX_PRODUCTS_PER_JOB=200`). Respeita ~120 req/min com `BASE_REQUEST_DELAY_MS=450ms`, tolera até `MAX_429_PER_JOB=8` (delay 3s em cada 429) e avança o cursor apenas até o último sucesso.
+- **Catálogo**: `cron_run_produtos_backfill` (migration `20251129122000*` + ajustes `20251202*`) chama `/api/admin/sync/produtos` em modo backfill com `limit: 10`, `workers: 1` e `cursorKey: 'catalog_backfill'`. Para evitar bater demais em `/produtos`, o rate limiter agora trava em ~90 req/min (estoque-only em ~110 req/min) e o cron deve rodar poucas vezes ao dia ou manualmente.
 - Há dois cursores ativos: `catalog` (incremental por `latest_data_alteracao`) e `catalog_backfill` (offset/epoch). O cron só mexe no segundo; execuções manuais podem escolher um deles passando `cursorKey`.
 - Scripts úteis:
 	- `npx tsx scripts/runProdutosBackfill.ts [limit]` — roda uma janela manual em modo backfill e atualiza o cursor.
