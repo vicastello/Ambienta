@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import {
   getCachedEstoque,
   getEstoqueProdutoRealTime,
@@ -21,9 +20,11 @@ const isStale = (updatedAt?: string | null) => {
 export async function GET(req: NextRequest, { params }: { params: { idProdutoTiny: string } }) {
   try {
     console.log('[tiny/produtos/estoque] START', { url: req.url, params });
+    console.log('[DEBUG ESTOQUE TINY] params.idProdutoTiny =', params?.idProdutoTiny);
     const idRaw = params?.idProdutoTiny;
     const idProdutoTiny = Number(idRaw);
-    if (!Number.isFinite(idProdutoTiny) || idProdutoTiny <= 0) {
+    console.log('[DEBUG ESTOQUE TINY] parsed id =', idProdutoTiny);
+    if (!Number.isFinite(idProdutoTiny) || !Number.isInteger(idProdutoTiny) || idProdutoTiny <= 0) {
       return NextResponse.json(
         {
           ok: false,
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
         const snapshot = await getEstoqueProdutoRealTime(idProdutoTiny);
         return NextResponse.json({ ok: true, source: 'live', data: snapshot });
       } catch (error: any) {
+        console.error('[DEBUG ESTOQUE TINY] error live', error);
         const status = error?.status ?? 502;
         return NextResponse.json(
           {
@@ -102,6 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
       : null;
 
     if (cachedSnapshot && !isStale(cachedSnapshot.updatedAt)) {
+      console.log('[DEBUG HYBRID ESTOQUE] idProdutoTiny =', idProdutoTiny, 'mode=hybrid-cache', 'data_atualizacao_tiny=', cachedSnapshot.updatedAt);
       return NextResponse.json({ ok: true, source: 'hybrid-cache', data: cachedSnapshot });
     }
 
@@ -117,6 +120,7 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
           }
         : await getEstoqueProdutoRealTime(idProdutoTiny);
 
+      console.log('[DEBUG HYBRID ESTOQUE] idProdutoTiny =', idProdutoTiny, 'mode=hybrid-live', 'data_atualizacao_tiny=', snapshot.updatedAt ?? null);
       return NextResponse.json({ ok: true, source: 'hybrid-live', data: snapshot });
     } catch (error: any) {
       console.error('[tiny/produtos/estoque] Tiny error', error);
@@ -133,7 +137,7 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
       );
     }
   } catch (error: any) {
-    console.error('[tiny/produtos/estoque] FATAL', error);
+    console.error('[DEBUG ESTOQUE TINY] error', error);
     return NextResponse.json(
       {
         ok: false,

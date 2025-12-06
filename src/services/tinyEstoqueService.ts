@@ -50,6 +50,7 @@ const mapEstoquePayload = (payload: any, idProdutoTiny: number): TinyEstoqueSnap
  * Busca estoque “ao vivo” via Tiny API v3 (GET /estoque/{idProduto}).
  */
 export async function getEstoqueProdutoRealTime(idProdutoTiny: number): Promise<TinyEstoqueSnapshot> {
+  console.log('[DEBUG TINY LIVE ESTOQUE] idProdutoTiny =', idProdutoTiny);
   const accessToken = await getAccessTokenFromDbOrRefresh();
   try {
     const payload = await obterEstoqueProduto(accessToken, idProdutoTiny, { allowNotModified: false });
