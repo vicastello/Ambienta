@@ -20,6 +20,7 @@ const parseBatchSize = (value?: number | string | null) => {
 };
 
 const DEFAULT_BATCH_SIZE = parseBatchSize(process.env.TINY_ESTOQUE_BATCH_SIZE) ?? 200;
+const SAMPLE_IDS_MAX = 10;
 
 async function getSyncSettingsRow(): Promise<SyncSettingsRow | null> {
   const { data, error } = await supabaseAdmin
@@ -119,6 +120,12 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
     if (restartError) throw restartError;
     produtosBatch = (restartBatch || []) as Pick<TinyProdutosRow, 'id_produto_tiny'>[];
   }
+
+  console.log('[tinyEstoqueRoundRobin] batch fetched', {
+    totalProductsInBatch: produtosBatch.length,
+    firstIds: produtosBatch.slice(0, SAMPLE_IDS_MAX).map((p) => p.id_produto_tiny),
+    wrapped,
+  });
 
   if (!produtosBatch.length) {
     await writeState(settingsRow, { last_id: null });
