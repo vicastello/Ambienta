@@ -20,16 +20,18 @@ const isStale = (updatedAt?: string | null) => {
 /**
  * Rota: GET /api/tiny/produtos/:idProdutoTiny/estoque
  * O idProdutoTiny vem do segmento [idProdutoTiny] do caminho acima.
+ * No Next 16, params chega como Promise — por isso usamos await antes de ler idProdutoTiny.
  * debug=1 retorna paramsRaw e parsedId para troubleshooting.
  */
-export async function GET(req: NextRequest, { params }: { params: { idProdutoTiny: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ idProdutoTiny: string }> }) {
   try {
-    console.log('[tiny/produtos/estoque] START', { url: req.url, params });
+    console.log('[tiny/produtos/estoque] START', { url: req.url });
+    const resolvedParams = await params;
     console.log('[DEBUG ESTOQUE TINY] req.url =', req.url);
-    console.log('[DEBUG ESTOQUE TINY] params object =', params);
+    console.log('[DEBUG ESTOQUE TINY] params resolved =', resolvedParams);
 
     // idProdutoTiny vem do segmento [idProdutoTiny] da rota /api/tiny/produtos/:idProdutoTiny/estoque
-    const idParam = params?.idProdutoTiny;
+    const idParam = resolvedParams?.idProdutoTiny;
     const idProdutoTiny = Number(idParam);
     console.log('[DEBUG ESTOQUE TINY] idParam =', idParam);
     console.log('[DEBUG ESTOQUE TINY] idProdutoTiny(Number) =', idProdutoTiny);
