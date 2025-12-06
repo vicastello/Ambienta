@@ -20,13 +20,12 @@ const isStale = (updatedAt?: string | null) => {
 export async function GET(req: NextRequest, { params }: { params: { idProdutoTiny: string } }) {
   try {
     console.log('[tiny/produtos/estoque] START', { url: req.url, params });
-    // Leitura bruta do id vindo do parâmetro de rota
-    const idParam = params?.idProdutoTiny;
+    // idProdutoTiny vem do segmento [idProdutoTiny] da rota /api/tiny/produtos/:idProdutoTiny/estoque
+    const idParam = params.idProdutoTiny;
     const idProdutoTiny = Number(idParam);
     console.log('[DEBUG ESTOQUE TINY] params.idProdutoTiny =', idParam);
     console.log('[DEBUG ESTOQUE TINY] parsed id =', idProdutoTiny);
 
-    // Parse de query params e modo debug
     const { searchParams } = new URL(req.url);
     const debugMode = searchParams.get('debug') === '1';
     if (debugMode) {
