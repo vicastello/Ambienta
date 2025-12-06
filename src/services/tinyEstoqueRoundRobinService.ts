@@ -86,6 +86,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
 
   const settingsRow = await ensureSyncSettingsRow();
   const state = readState(settingsRow);
+  const previousLastId = state.last_id;
 
   const baseQuery = supabaseAdmin
     .from('tiny_produtos')
@@ -115,7 +116,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
 
   if (!produtosBatch.length) {
     await writeState({ last_id: null });
-    return { processed: 0, lastId: null, wrapped };
+    return { processed: 0, lastId: null, wrapped, rateLimited: false };
   }
 
   const upserts: {
@@ -125,6 +126,7 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
     disponivel: number;
     data_atualizacao_tiny: string;
   }[] = [];
+  let rateLimited = false;
 
   for (const produto of produtosBatch) {
     const id = produto.id_produto_tiny;
@@ -140,6 +142,15 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
         data_atualizacao_tiny: new Date().toISOString(),
       });
     } catch (error) {
+      const status = (error as any)?.status;
+      if (status === 429) {
+        console.error('[tinyEstoqueRoundRobin] rate limit 429 ao processar produto, abortando lote', {
+          id_produto_tiny: id,
+          message: (error as any)?.message,
+        });
+        rateLimited = true;
+        break; // aborta o lote; cursor não avança
+      }
       console.error('[tinyEstoqueRoundRobin] erro ao buscar estoque', {
         id_produto_tiny: id,
         message: (error as any)?.message,
@@ -153,12 +164,24 @@ export async function syncTinyEstoqueRoundRobin(options?: { batchSize?: number }
     await upsertProdutosEstoque(upserts);
   }
 
-  const lastProcessedId = produtosBatch[produtosBatch.length - 1]?.id_produto_tiny ?? null;
-  await writeState({ last_id: lastProcessedId });
+  const lastProcessedId = upserts.length
+    ? upserts[upserts.length - 1]?.id_produto_tiny ?? null
+    : null;
+
+  // Se deu rate limit, não avança o cursor (fica no valor anterior para reprocessar na próxima execução)
+  if (!rateLimited) {
+    const cursorToPersist =
+      lastProcessedId != null ? lastProcessedId : produtosBatch[produtosBatch.length - 1]?.id_produto_tiny ?? null;
+    await writeState({ last_id: cursorToPersist });
+  } else {
+    // Mantém cursor anterior para reprocessar o mesmo lote na próxima execução
+    await writeState({ last_id: previousLastId });
+  }
 
   return {
     processed: upserts.length,
-    lastId: lastProcessedId,
+    lastId: rateLimited ? previousLastId : lastProcessedId,
     wrapped,
+    rateLimited,
   };
 }
