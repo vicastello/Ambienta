@@ -49,11 +49,17 @@ const mapEstoquePayload = (payload: any, idProdutoTiny: number): TinyEstoqueSnap
 /**
  * Busca estoque “ao vivo” via Tiny API v3 (GET /estoque/{idProduto}).
  */
-export async function getEstoqueProdutoRealTime(idProdutoTiny: number): Promise<TinyEstoqueSnapshot> {
+export async function getEstoqueProdutoRealTime(
+  idProdutoTiny: number,
+  context: string = 'unknown'
+): Promise<TinyEstoqueSnapshot> {
   console.log('[DEBUG TINY LIVE ESTOQUE] idProdutoTiny =', idProdutoTiny);
   const accessToken = await getAccessTokenFromDbOrRefresh();
   try {
-    const payload = await obterEstoqueProduto(accessToken, idProdutoTiny, { allowNotModified: false });
+    const payload = await obterEstoqueProduto(accessToken, idProdutoTiny, {
+      allowNotModified: false,
+      context,
+    });
     return mapEstoquePayload(payload, idProdutoTiny);
   } catch (error: any) {
     const status = error?.status ?? error?.response?.status;
@@ -69,9 +75,10 @@ export async function getEstoqueProdutoRealTime(idProdutoTiny: number): Promise<
  * Atualiza o estoque de um produto no Supabase usando o snapshot ao vivo do Tiny.
  */
 export async function refreshEstoqueProdutoInSupabase(
-  idProdutoTiny: number
+  idProdutoTiny: number,
+  context: string = 'unknown'
 ): Promise<TinyProdutosRow | null> {
-  const snapshot = await getEstoqueProdutoRealTime(idProdutoTiny);
+  const snapshot = await getEstoqueProdutoRealTime(idProdutoTiny, context);
 
   await upsertProdutosEstoque([
     {

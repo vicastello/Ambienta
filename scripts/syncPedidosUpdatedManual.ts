@@ -45,7 +45,7 @@ async function syncPedidosAtualizados() {
           limit,
           offset,
           orderBy: 'desc',
-        });
+        }, 'cron_pedidos');
 
         const pedidos = response?.itens || [];
         

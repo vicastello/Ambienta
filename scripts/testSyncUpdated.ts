@@ -35,7 +35,7 @@ async function main() {
       limit,
       offset,
       orderBy: 'desc',
-    });
+    }, 'cron_pedidos');
 
     const pedidos = response?.itens || [];
     

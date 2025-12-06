@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { obterPedidoDetalhado } from '../lib/tinyApi';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,20 +44,8 @@ async function debugFrete() {
   console.log('\n🔍 INVESTIGANDO PEDIDO:', order.numero_pedido || order.tiny_id);
   console.log('='.repeat(60));
 
-  // Buscar detalhes completos na API
-  const res = await fetch(`https://api.tiny.com.br/public-api/v3/pedidos/${order.tiny_id}`, {
-    headers: {
-      'Authorization': `Bearer ${token.data.access_token}`,
-      'Accept': 'application/json'
-    }
-  });
-
-  if (!res.ok) {
-    console.error('Erro na API:', res.status);
-    return;
-  }
-
-  const json = await res.json();
+  // Buscar detalhes completos na API (log em tiny_api_usage)
+  const json = await obterPedidoDetalhado(token.data.access_token, order.tiny_id, 'pedido_helper');
   console.log('\n📦 RESPOSTA COMPLETA DA API:');
   console.log(JSON.stringify(json, null, 2));
 

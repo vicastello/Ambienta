@@ -131,7 +131,8 @@ async function syncItensRecentes(dias: number): Promise<SyncStats> {
       // Buscar detalhes do pedido na API
       const pedidoDetalhado = await obterPedidoDetalhado(
         accessToken,
-        pedido.tiny_id
+        pedido.tiny_id,
+        'pedido_helper'
       );
 
       // Extrair itens

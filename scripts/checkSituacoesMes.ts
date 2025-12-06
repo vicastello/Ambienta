@@ -40,11 +40,11 @@ async function fetchPageWithRetry(
   let attempt = 0;
   while (true) {
     try {
-      return await listarPedidosTinyPorPeriodo(accessToken, {
+         return await listarPedidosTinyPorPeriodo(accessToken, {
         ...params,
         orderBy: 'asc',
         fields: 'situacao,numeroPedido,dataCriacao',
-      });
+         }, 'cron_pedidos');
     } catch (err: any) {
       if (err instanceof TinyApiError && err.status === 429) {
         attempt += 1;

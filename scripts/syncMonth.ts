@@ -107,7 +107,7 @@ async function main() {
           dataFinal: end,
           limit,
           offset,
-        });
+        }, 'cron_pedidos');
       } catch (err) {
         if (err instanceof TinyApiError && err.status === 429) {
           console.warn(
@@ -133,6 +133,7 @@ async function main() {
             batchSize: 5,
             delayMs: 500,
             skipIfHasFrete: true,
+            context: 'cron_pedidos',
           });
           
           // Aplicar frete aos itens (tanto no item quanto no raw que será salvo)

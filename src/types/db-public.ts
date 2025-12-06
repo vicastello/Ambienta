@@ -332,6 +332,32 @@ export type SyncLogsInsert = Omit<SyncLogsRow, "id" | "created_at"> & {
 
 export type SyncLogsUpdate = Partial<SyncLogsRow>;
 
+export interface TinyApiUsageRow {
+  id: number;
+  created_at: string;
+  context: string;
+  endpoint: string;
+  method: string;
+  status_code: number | null;
+  success: boolean | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export type TinyApiUsageInsert = {
+  id?: number;
+  created_at?: string;
+  context: string;
+  endpoint: string;
+  method?: string;
+  status_code?: number | null;
+  success?: boolean | null;
+  error_code?: string | null;
+  error_message?: string | null;
+};
+
+export type TinyApiUsageUpdate = Partial<TinyApiUsageInsert>;
+
 export type TinyOrdersInsert = Omit<
   TinyOrdersRow,
   | "id"
@@ -475,6 +501,12 @@ export type DatabasePublicSchema = GenericSupabaseSchema & {
           referencedColumns: ["id"];
         }
       ];
+    };
+    tiny_api_usage: {
+      Row: TinyApiUsageRow;
+      Insert: TinyApiUsageInsert;
+      Update: TinyApiUsageUpdate;
+      Relationships: [];
     };
     tiny_orders: {
       Row: TinyOrdersRow;

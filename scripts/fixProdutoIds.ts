@@ -55,7 +55,7 @@ async function main() {
 
     try {
       // Fetch detailed order
-      const detalhado = await obterPedidoDetalhado(accessToken, order.tiny_id);
+      const detalhado = await obterPedidoDetalhado(accessToken, order.tiny_id, 'pedido_helper');
       const itens = detalhado.itens || [];
 
       if (itens.length === 0) {

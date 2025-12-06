@@ -40,7 +40,7 @@ async function fetchPageWithRetry(
       return await listarPedidosTinyPorPeriodo(accessToken, {
         ...params,
         orderBy: 'asc',
-      });
+      }, 'cron_pedidos');
     } catch (err: any) {
       if (err instanceof TinyApiError && err.status === 429) {
         attempt += 1;

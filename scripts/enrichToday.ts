@@ -1,58 +1,62 @@
 import { createClient } from '@supabase/supabase-js';
+import { TinyApiError, tinyGet } from '../lib/tinyApi';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const TINY_API_BASE = 'https://api.tiny.com.br/public-api/v3';
 const REQUESTS_PER_MINUTE = 120;
 const DELAY_MS = Math.ceil(60000 / REQUESTS_PER_MINUTE); // ~500ms entre chamadas
+const TINY_CONTEXT = 'scripts/enrichToday';
 
 let requestCount = 0;
 let windowStart = Date.now();
 
-async function rateLimitedFetch(url: string, token: string) {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function rateLimitWindow() {
   const now = Date.now();
-  
+
   // Reset counter a cada minuto
   if (now - windowStart >= 60000) {
     console.log(`[Rate Limit] Janela resetada. Requisições no último minuto: ${requestCount}`);
     requestCount = 0;
     windowStart = now;
   }
-  
+
   // Aguardar se atingiu o limite
   if (requestCount >= REQUESTS_PER_MINUTE) {
     const waitTime = 60000 - (now - windowStart);
-    console.log(`[Rate Limit] Limite atingido (${REQUESTS_PER_MINUTE}). Aguardando ${Math.ceil(waitTime/1000)}s...`);
-    await new Promise(resolve => setTimeout(resolve, waitTime + 1000));
+    console.log(`[Rate Limit] Limite atingido (${REQUESTS_PER_MINUTE}). Aguardando ${Math.ceil(waitTime / 1000)}s...`);
+    await sleep(waitTime + 1000);
     requestCount = 0;
     windowStart = Date.now();
   }
-  
+
   // Delay entre requisições
-  await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-  
+  await sleep(DELAY_MS);
   requestCount++;
-  
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Accept': 'application/json'
+}
+
+async function fetchPedidoDetalhado(accessToken: string, tinyId: number) {
+  await rateLimitWindow();
+
+  try {
+    return await tinyGet<any>(`/pedidos/${tinyId}`, accessToken, {}, {
+      context: TINY_CONTEXT,
+      endpointLabel: `/pedidos/${tinyId}`,
+    });
+  } catch (err) {
+    if (err instanceof TinyApiError && err.status === 429) {
+      console.log(`[Rate Limit] 429 recebido. Aguardando 60s...`);
+      await sleep(60000);
+      requestCount = 0;
+      windowStart = Date.now();
+      return fetchPedidoDetalhado(accessToken, tinyId);
     }
-  });
-  
-  // Retry em caso de 429
-  if (res.status === 429) {
-    console.log(`[Rate Limit] 429 recebido. Aguardando 60s...`);
-    await new Promise(resolve => setTimeout(resolve, 60000));
-    requestCount = 0;
-    windowStart = Date.now();
-    return rateLimitedFetch(url, token);
+    throw err;
   }
-  
-  return res;
 }
 
 async function getAccessToken(): Promise<string> {
@@ -112,23 +116,15 @@ async function enrichTodayOrders() {
     const progress = `[${i + 1}/${orders.length}]`;
     
     try {
-      console.log(`${progress} Buscando pedido ${order.numero_pedido || order.tiny_id}...`);
-      
-      const res = await rateLimitedFetch(
-        `${TINY_API_BASE}/pedidos/${order.tiny_id}`,
-        token
-      );
-      
-      if (!res.ok) {
-        const text = await res.text();
-        console.log(`   ⚠️  Erro ${res.status}: ${text.substring(0, 100)}`);
-        failed++;
+      if (!order.tiny_id) {
+        console.log(`${progress} Pedido sem tiny_id, pulando...`);
+        skipped++;
         continue;
       }
-      
-      const json = await res.json();
-      const pedido = json; // A API retorna direto, não tem .data
-      
+
+      console.log(`${progress} Buscando pedido ${order.numero_pedido || order.tiny_id}...`);
+      const pedido = await fetchPedidoDetalhado(token, order.tiny_id);
+
       if (!pedido) {
         console.log(`   ⚠️  Sem dados`);
         skipped++;

@@ -211,7 +211,7 @@ export async function processJob(jobId: string) {
                 limit,
                 offset,
                 orderBy: 'desc',
-              });
+              }, 'cron_pedidos');
               totalRequests++;
               pagesJanela++;
             } catch (err: any) {
@@ -244,7 +244,7 @@ export async function processJob(jobId: string) {
                   message: 'Tiny rejeitou período (400); usando listagem genérica', 
                   meta: { janela: `${janelaIniStr}/${janelaFimStr}` } 
                 });
-                page = await listarPedidosTiny(accessToken!, { limit, offset, orderBy: 'desc' });
+                page = await listarPedidosTiny(accessToken!, { limit, offset, orderBy: 'desc' }, 'cron_pedidos');
                 totalRequests++;
                 pagesJanela++;
               } else {
@@ -275,6 +275,7 @@ export async function processJob(jobId: string) {
                 batchSize: 5,
                 delayMs: 500,
                 skipIfHasFrete: true,
+                context: 'cron_pedidos',
               });
               
               // Aplicar frete enriquecido aos itens (tanto no objeto quanto no raw)
@@ -400,7 +401,7 @@ export async function processJob(jobId: string) {
 
       while (page === null && attempt429 <= MAX_429_ATTEMPTS) {
         try {
-          page = await listarPedidosTiny(accessToken!, { limit, offset, orderBy: 'desc' });
+          page = await listarPedidosTiny(accessToken!, { limit, offset, orderBy: 'desc' }, 'cron_pedidos');
           totalRequests++;
           pages++;
         } catch (err: any) {

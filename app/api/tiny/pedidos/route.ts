@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
       offset,
       orderBy,
       situacao,
-    });
+    }, 'api_pedidos_sync');
 
     return NextResponse.json(tinyResponse);
   } catch (err) {
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
           limit: TINY_PAGE_LIMIT,
           offset,
           orderBy: "desc",
-        });
+        }, 'api_pedidos_sync');
 
         const items = page.itens ?? [];
         if (items.length === 0) {

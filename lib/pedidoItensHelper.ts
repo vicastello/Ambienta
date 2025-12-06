@@ -20,10 +20,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchAndUpsertProduto(accessToken: string, id: number) {
   try {
-    const detalhe: any = await obterProduto(accessToken, id, {});
+    const detalhe: any = await obterProduto(accessToken, id, { context: 'pedido_itens_helper' });
     let estoque: any = null;
     try {
-      estoque = await obterEstoqueProduto(accessToken, id, {});
+      estoque = await obterEstoqueProduto(accessToken, id, { context: 'pedido_itens_helper' });
     } catch (err) {
       console.warn('[Itens Pedido] Estoque falhou para produto', id, err);
     }
@@ -85,7 +85,7 @@ async function atualizarEstoqueProdutos(accessToken: string, ids: number[]) {
     let tentativa = 0;
     while (!atualizado) {
       try {
-        const estoque: any = await obterEstoqueProduto(accessToken, id, {});
+        const estoque: any = await obterEstoqueProduto(accessToken, id, { context: 'pedido_itens_helper' });
         await upsertProdutosEstoque([
           {
             id_produto_tiny: id,
@@ -215,7 +215,7 @@ export async function salvarItensPedido(
     }
 
     // Buscar detalhes do pedido
-    const pedidoDetalhado = await obterPedidoDetalhado(accessToken, idPedidoTiny);
+    const pedidoDetalhado = await obterPedidoDetalhado(accessToken, idPedidoTiny, 'pedido_helper');
 
     // Extrair itens do formato da API do Tiny (v3 pode devolver em níveis diferentes)
     const itens =

@@ -68,7 +68,7 @@ async function syncPedidosAtualizados(): Promise<boolean> {
           limit,
           offset,
           orderBy: 'desc',
-        });
+        }, 'cron_pedidos');
 
         const pedidos = response?.itens || [];
         

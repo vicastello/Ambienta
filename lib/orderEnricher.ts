@@ -17,9 +17,10 @@ export async function enrichOrderWithDetails(
   options: {
     skipIfHasFrete?: boolean; // se já tem frete no pedido, pula
     delayMs?: number; // delay entre chamadas para rate limit
+    context?: string; // contexto para tiny_api_usage
   } = {}
 ): Promise<EnrichmentResult> {
-  const { skipIfHasFrete = true, delayMs = 0 } = options;
+  const { skipIfHasFrete = true, delayMs = 0, context = 'pedido_helper' } = options;
 
   // Se já tem valorFrete no pedido da listagem, não precisa buscar
   if (skipIfHasFrete) {
@@ -38,7 +39,7 @@ export async function enrichOrderWithDetails(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
-    const detalhado = await obterPedidoDetalhado(accessToken, pedido.id);
+    const detalhado = await obterPedidoDetalhado(accessToken, pedido.id, context);
     const valorFrete = extrairFreteFromRaw(detalhado);
 
     return { valorFrete, detailsFetched: true };
@@ -58,9 +59,10 @@ export async function enrichOrdersBatch(
     batchSize?: number; // quantos buscar em paralelo
     delayMs?: number; // delay entre batches
     skipIfHasFrete?: boolean;
+    context?: string; // contexto para tiny_api_usage
   } = {}
 ): Promise<Map<number, number>> {
-  const { batchSize = 5, delayMs = 500, skipIfHasFrete = true } = options;
+  const { batchSize = 5, delayMs = 500, skipIfHasFrete = true, context = 'pedido_helper' } = options;
   
   const freteMap = new Map<number, number>();
   
@@ -72,6 +74,7 @@ export async function enrichOrdersBatch(
         const result = await enrichOrderWithDetails(accessToken, pedido, {
           skipIfHasFrete,
           delayMs: 0, // delay é entre batches, não entre itens do batch
+          context,
         });
         return { id: pedido.id, frete: result.valorFrete };
       })

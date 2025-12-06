@@ -151,7 +151,7 @@ export async function runFreteEnrichment(
 
     const results = await Promise.allSettled(
       batch.map(async (order) => {
-        const detail = await obterPedidoDetalhado(token, order.tiny_id);
+        const detail = await obterPedidoDetalhado(token, order.tiny_id, 'frete_enricher');
         const valorFrete = resolveValorFrete(detail);
         const mergedRaw = {
           ...(order.raw ?? {}),

@@ -76,6 +76,8 @@ export interface TinyPedidoListaItem {
 export type TinyGetOptions = {
   headers?: Record<string, string>;
   allowNotModified?: boolean;
+  context?: string;
+  endpointLabel?: string;
 };
 
 export async function tinyGet<T>(
@@ -84,6 +86,8 @@ export async function tinyGet<T>(
   params: TinyGetParams = {},
   options: TinyGetOptions = {}
 ): Promise<T> {
+  const context = options.context ?? 'unknown';
+  const endpointLabel = options.endpointLabel ?? path;
   const url = new URL(TINY_BASE_URL + path);
 
   for (const [key, value] of Object.entries(params)) {
@@ -91,37 +95,81 @@ export async function tinyGet<T>(
     url.searchParams.set(key, String(value));
   }
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-      ...(options.headers ?? {}),
-    },
-  });
-
-  const text = await res.text();
-
-  if (res.status === 304 && options.allowNotModified) {
-    return { notModified: true } as unknown as T;
-  }
-
-  if (!res.ok) {
-    console.error("[TinyApi] Erro ao chamar Tiny", res.status, text, {
-      url: url.toString(),
-    });
-    throw new TinyApiError(
-      `Erro ao chamar Tiny (${res.status})`,
-      res.status,
-      text
-    );
-  }
-
+  let res: Response | null = null;
+  let text = '';
   try {
-    return JSON.parse(text) as T;
-  } catch (err) {
-    console.error("[TinyApi] Erro ao parsear JSON Tiny", err, text);
-    throw new TinyApiError("Erro ao ler resposta do Tiny.", res.status, text);
+    res = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        ...(options.headers ?? {}),
+      },
+    });
+
+    text = await res.text();
+
+    if (res.status === 304 && options.allowNotModified) {
+      return { notModified: true } as unknown as T;
+    }
+
+    const logPayload = {
+      context,
+      endpoint: endpointLabel,
+      method: 'GET',
+      statusCode: res.status,
+      success: res.ok,
+      errorCode: null as string | null,
+      errorMessage: null as string | null,
+    };
+
+    if (!res.ok) {
+      try {
+        const json = JSON.parse(text);
+        logPayload.errorCode = (json?.error as string) ?? (json?.code as string) ?? null;
+        logPayload.errorMessage = (json?.message as string) ?? text;
+      } catch {
+        logPayload.errorMessage = text;
+      }
+      // Fire and forget logging
+      import('@/src/lib/tinyUsageLogger').then(({ logTinyUsage }) =>
+        logTinyUsage(logPayload).catch(() => {})
+      );
+
+      throw new TinyApiError(
+        `Erro ao chamar Tiny (${res.status})`,
+        res.status,
+        text
+      );
+    }
+
+    // Log sucesso
+    import('@/src/lib/tinyUsageLogger').then(({ logTinyUsage }) =>
+      logTinyUsage(logPayload).catch(() => {})
+    );
+
+    try {
+      return JSON.parse(text) as T;
+    } catch (err) {
+      console.error("[TinyApi] Erro ao parsear JSON Tiny", err, text);
+      throw new TinyApiError("Erro ao ler resposta do Tiny.", res.status, text);
+    }
+  } catch (error: any) {
+    // Falha de rede ou erro antes de obter res
+    if (!res) {
+      import('@/src/lib/tinyUsageLogger').then(({ logTinyUsage }) =>
+        logTinyUsage({
+          context,
+          endpoint: endpointLabel,
+          method: 'GET',
+          statusCode: null,
+          success: false,
+          errorCode: 'NETWORK_ERROR',
+          errorMessage: error?.message ?? String(error),
+        }).catch(() => {})
+      );
+    }
+    throw error;
   }
 }
 
@@ -138,7 +186,8 @@ export async function listarPedidosTiny(
     situacao?: number; // 0,1,2,... conforme enum
     fields?: string;
     dataAtualizacao?: string; // yyyy-mm-dd - busca pedidos atualizados desde essa data
-  }
+  },
+  context?: string
 ): Promise<TinyListarPedidosResponse> {
   const { limit = 100, offset = 0, orderBy = "desc", situacao, fields, dataAtualizacao } = options ?? {};
 
@@ -158,7 +207,10 @@ export async function listarPedidosTiny(
     params.dataAtualizacao = dataAtualizacao;
   }
 
-  return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params);
+  return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params, {
+    context,
+    endpointLabel: '/pedidos',
+  });
 }
 
 /**
@@ -176,7 +228,8 @@ export async function listarPedidosTinyPorPeriodo(
     orderBy?: "asc" | "desc";
     situacao?: number;
     fields?: string; // comma-separated fields to include
-  }
+  },
+  context?: string
 ): Promise<TinyListarPedidosResponse> {
   const {
     dataInicial,
@@ -202,7 +255,10 @@ export async function listarPedidosTinyPorPeriodo(
     params.situacao = situacao;
   }
 
-  return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params);
+  return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params, {
+    context,
+    endpointLabel: '/pedidos',
+  });
 }
 
 /**
@@ -240,9 +296,13 @@ export interface TinyPedidoDetalhado {
  */
 export async function obterPedidoDetalhado(
   accessToken: string,
-  pedidoId: number
+  pedidoId: number,
+  context?: string
 ): Promise<TinyPedidoDetalhado> {
-  return tinyGet<TinyPedidoDetalhado>(`/pedidos/${pedidoId}`, accessToken, {});
+  return tinyGet<TinyPedidoDetalhado>(`/pedidos/${pedidoId}`, accessToken, {}, {
+    context,
+    endpointLabel: `/pedidos/${pedidoId}`,
+  });
 }
 
 // ==================== PRODUTOS ====================
@@ -351,7 +411,8 @@ export async function listarProdutos(
     dataAlteracao?: string; // yyyy-mm-dd HH:mm:ss
     limit?: number;
     offset?: number;
-  }
+  },
+  context?: string
 ): Promise<TinyListarProdutosResponse> {
   const {
     nome,
@@ -376,7 +437,10 @@ export async function listarProdutos(
   if (dataCriacao) params.dataCriacao = dataCriacao;
   if (dataAlteracao) params.dataAlteracao = dataAlteracao;
 
-  return tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, params);
+  return tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, params, {
+    context,
+    endpointLabel: '/produtos',
+  });
 }
 
 /**
@@ -388,7 +452,11 @@ export async function obterProduto(
   produtoId: number,
   opts?: TinyGetOptions
 ): Promise<TinyProdutoDetalhado> {
-  return tinyGet<TinyProdutoDetalhado>(`/produtos/${produtoId}`, accessToken, {}, opts);
+  return tinyGet<TinyProdutoDetalhado>(`/produtos/${produtoId}`, accessToken, {}, {
+    ...opts,
+    context: opts?.context,
+    endpointLabel: `/produtos/${produtoId}`,
+  });
 }
 
 /**
@@ -400,5 +468,9 @@ export async function obterEstoqueProduto(
   produtoId: number,
   opts?: TinyGetOptions
 ): Promise<TinyEstoqueProduto> {
-  return tinyGet<TinyEstoqueProduto>(`/estoque/${produtoId}`, accessToken, {}, opts);
+  return tinyGet<TinyEstoqueProduto>(`/estoque/${produtoId}`, accessToken, {}, {
+    ...opts,
+    context: opts?.context,
+    endpointLabel: `/estoque/${produtoId}`,
+  });
 }

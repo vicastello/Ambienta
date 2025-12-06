@@ -41,7 +41,7 @@ async function main() {
       limit: 100,
       offset,
       orderBy: 'desc',
-    });
+    }, 'cron_pedidos');
 
     const items = page.itens ?? [];
     if (!items.length) {

@@ -34,7 +34,7 @@ async function testUpdatedSync() {
     limit: 5,
     offset: 0,
     orderBy: 'desc',
-  });
+  }, 'cron_pedidos');
 
   const pedidos = response?.itens || [];
   console.log(`📦 Encontrados: ${pedidos.length} pedidos\n`);

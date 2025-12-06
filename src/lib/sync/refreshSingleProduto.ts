@@ -69,10 +69,10 @@ export async function refreshProdutoFromTiny(
   };
 
   const [detalhe, estoqueDetalhado, registroAtual] = await Promise.all([
-    callTiny((token) => obterProduto(token, produtoId, {})),
+    callTiny((token) => obterProduto(token, produtoId, { context: 'api_produtos_refresh' })),
     enrichEstoque
       ? callTiny((token) =>
-          obterEstoqueProduto(token, produtoId, {}).catch((error) => {
+          obterEstoqueProduto(token, produtoId, { context: 'api_produtos_refresh' }).catch((error) => {
             if (error instanceof TinyApiError && error.status === 404) {
               return null;
             }

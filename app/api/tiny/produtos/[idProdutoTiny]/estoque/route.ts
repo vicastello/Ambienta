@@ -99,7 +99,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ idPr
     // Live only
     if (source === 'live') {
       try {
-        const snapshot = await getEstoqueProdutoRealTime(idProdutoTiny);
+        const snapshot = await getEstoqueProdutoRealTime(idProdutoTiny, 'api_estoque_produto');
         return NextResponse.json({ ok: true, source: 'live', data: snapshot });
       } catch (error: any) {
         console.error('[DEBUG ESTOQUE TINY] error live', error);
@@ -136,7 +136,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ idPr
     }
 
     try {
-      const refreshed = await refreshEstoqueProdutoInSupabase(idProdutoTiny);
+      const refreshed = await refreshEstoqueProdutoInSupabase(idProdutoTiny, 'api_estoque_produto');
       const snapshot =
         refreshed && typeof refreshed === 'object'
           ? {
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ idPr
               disponivel: refreshed.disponivel ?? 0,
               updatedAt: refreshed.data_atualizacao_tiny ?? null,
             }
-          : await getEstoqueProdutoRealTime(idProdutoTiny);
+          : await getEstoqueProdutoRealTime(idProdutoTiny, 'api_estoque_produto');
 
       console.log(
         '[DEBUG HYBRID ESTOQUE] idProdutoTiny =',

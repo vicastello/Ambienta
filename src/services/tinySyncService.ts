@@ -38,7 +38,7 @@ export async function runTinyOrdersIncrementalSync() {
       orderBy: 'asc',
       limit,
       offset,
-    });
+    }, 'cron_pedidos_incremental');
     totalRequests++;
     const pedidos: TinyPedidoListaItem[] = resp.itens || [];
     if (!pedidos.length) break;
