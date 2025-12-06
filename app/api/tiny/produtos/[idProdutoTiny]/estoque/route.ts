@@ -128,17 +128,24 @@ export async function GET(req: NextRequest, { params }: { params: { idProdutoTin
 
     try {
       const refreshed = await refreshEstoqueProdutoInSupabase(idProdutoTiny);
-      const snapshot = refreshed
-        ? {
-            idProdutoTiny,
-            saldo: refreshed.saldo ?? 0,
-            reservado: refreshed.reservado ?? 0,
-            disponivel: refreshed.disponivel ?? 0,
-            updatedAt: refreshed.data_atualizacao_tiny ?? null,
-          }
-        : await getEstoqueProdutoRealTime(idProdutoTiny);
+      const snapshot =
+        refreshed && typeof refreshed === 'object'
+          ? {
+              idProdutoTiny,
+              saldo: refreshed.saldo ?? 0,
+              reservado: refreshed.reservado ?? 0,
+              disponivel: refreshed.disponivel ?? 0,
+              updatedAt: refreshed.data_atualizacao_tiny ?? null,
+            }
+          : await getEstoqueProdutoRealTime(idProdutoTiny);
 
-      console.log('[DEBUG HYBRID ESTOQUE] idProdutoTiny =', idProdutoTiny, 'mode=hybrid-live', 'data_atualizacao_tiny=', snapshot.updatedAt ?? null);
+      console.log(
+        '[DEBUG HYBRID ESTOQUE] idProdutoTiny =',
+        idProdutoTiny,
+        'mode=hybrid-live',
+        'data_atualizacao_tiny=',
+        (snapshot as any)?.updatedAt ?? null
+      );
       return NextResponse.json({ ok: true, source: 'hybrid-live', data: snapshot });
     } catch (error: any) {
       console.error('[DEBUG ESTOQUE TINY] Tiny error', error);
