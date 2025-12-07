@@ -154,7 +154,16 @@ type PedidoItensMap = Map<number, TinyPedidoItemWithProduto[]>;
 
 type OrderSummaryRow = Pick<
   TinyOrdersRow,
-  'id' | 'tiny_id' | 'data_criacao' | 'valor' | 'valor_frete' | 'situacao' | 'canal' | 'raw' | 'inserted_at'
+  | 'id'
+  | 'tiny_id'
+  | 'data_criacao'
+  | 'valor'
+  | 'valor_frete'
+  | 'situacao'
+  | 'canal'
+  | 'raw'
+  | 'inserted_at'
+  | 'updated_at'
 >;
 
 type TinyPedidoRaw = Record<string, unknown> & {
@@ -205,6 +214,7 @@ type DashboardResposta = {
   situacoesDisponiveis: Array<{ codigo: number; descricao: string }>;
   mapaVendasUF: VendasUF[];
   mapaVendasCidade: VendasCidade[];
+  lastUpdatedAt: string | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -847,7 +857,7 @@ export async function GET(req: NextRequest) {
     ): Promise<OrderSummaryRow[]> => {
       const { data, error } = await supabaseAdmin
         .from('tiny_orders')
-        .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at')
+        .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at, updated_at')
         .gte('data_criacao', dataInicial)
         .lte('data_criacao', dataFinal)
         .order('id', { ascending: true })
@@ -903,9 +913,34 @@ export async function GET(req: NextRequest) {
       return allOrdersForPeriod;
     };
 
+    const computeLastUpdatedAt = (orderLists: OrderSummaryRow[][]): string | null => {
+      let maxTs = 0;
+      const pushTs = (value: unknown) => {
+        const ts =
+          typeof value === 'string'
+            ? Date.parse(value)
+            : value instanceof Date
+              ? value.getTime()
+              : null;
+        if (ts && Number.isFinite(ts)) {
+          maxTs = Math.max(maxTs, ts);
+        }
+      };
+
+      for (const list of orderLists) {
+        for (const order of list) {
+          pushTs(order.inserted_at);
+          pushTs(order.updated_at);
+        }
+      }
+
+      return maxTs > 0 ? new Date(maxTs).toISOString() : null;
+    };
+
     // Busca período anterior e período atual separadamente
     const ordersAnterior = await fetchAllOrdersForPeriod(dataInicialAnteriorISO, dataFinalAnteriorISO);
     const ordersAtual = await fetchAllOrdersForPeriod(dataInicialISO, dataFinalISO);
+    const lastUpdatedAt = computeLastUpdatedAt([ordersAnterior, ordersAtual]);
 
     const idsAnterior = ordersAnterior
       .map((p) => p.id)
@@ -1609,6 +1644,7 @@ export async function GET(req: NextRequest) {
       mapaVendasCidade: Array.from(mapaCidadeAtual.entries())
         .map(([key, info]) => ({ cidade: key.split('|')[0], uf: info.uf, totalValor: info.totalValor, totalPedidos: info.totalPedidos }))
         .sort((a, b) => b.totalValor - a.totalValor),
+      lastUpdatedAt,
     };
 
     return NextResponse.json(resposta);

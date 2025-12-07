@@ -16,6 +16,7 @@ import {
   BarChart3,
   Info,
   Package,
+  RefreshCcw,
   ShoppingCart,
   Sparkles,
   Target,
@@ -129,6 +130,7 @@ type DashboardResumo = {
   situacoesDisponiveis: SituacaoDisponivel[];
   mapaVendasUF?: Array<{ uf: string; totalValor: number; totalPedidos: number }>;
   mapaVendasCidade?: Array<{ cidade: string; uf: string | null; totalValor: number; totalPedidos: number }>;
+  lastUpdatedAt?: string | null;
 };
 
 type InsightTone = 'info' | 'opportunity' | 'risk' | 'action';
@@ -426,8 +428,10 @@ export default function DashboardClient() {
   const [customEnd, setCustomEnd] = useState<string | null>(null);
 
   const [resumo, setResumo] = useState<DashboardResumo | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [resumoGlobal, setResumoGlobal] = useState<DashboardResumo | null>(null);
   const [loadingGlobal, setLoadingGlobal] = useState<boolean>(true);
   const [erroGlobal, setErroGlobal] = useState<string | null>(null);
@@ -464,6 +468,26 @@ export default function DashboardClient() {
   const dashboardSource = deferredResumo ?? resumo;
   const dashboardGlobalSource = deferredResumoGlobal ?? resumoGlobal;
   const dashboardChartSource = deferredResumoChart ?? resumoChart;
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedAt) return null;
+    const parsed = Date.parse(lastUpdatedAt);
+    if (!Number.isFinite(parsed)) return null;
+    const diffMs = Math.max(0, nowTick - parsed);
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 1) return 'agora';
+    if (minutes < 60) return `há ${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `há ${hours} h`;
+    const days = Math.floor(hours / 24);
+    return `há ${days} d`;
+  }, [lastUpdatedAt, nowTick]);
 
   type RecentOrder = {
     tinyId: number;
@@ -606,25 +630,38 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     setSituacoesMes(situacoes);
   }
 
-  async function carregarResumo(options?: { force?: boolean }) {
+  async function carregarResumo(options?: { force?: boolean; background?: boolean }) {
     if (!filtersLoaded) return;
     const force = options?.force ?? false;
+    const background = options?.background ?? false;
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
-
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ?? null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
-      if (cachedResumo) {
+      const shouldFetch = force || !cacheFresh;
+      if (cachedResumo && requestId === resumoRequestId.current) {
         setResumo(cachedResumo);
+        setLastUpdatedAt(cachedResumo.lastUpdatedAt ?? null);
       }
       if (requestId === resumoRequestId.current) {
-        setLoading(!cachedResumo);
+        if (!resumo && !cachedResumo) {
+          setIsInitialLoading(true);
+        } else if (shouldFetch || background) {
+          setIsRefreshing(true);
+        } else {
+          setIsInitialLoading(false);
+          setIsRefreshing(false);
+        }
         setErro(null);
       }
-      if (!force && cacheFresh) {
+      if (!shouldFetch) {
+        if (requestId === resumoRequestId.current) {
+          setIsInitialLoading(false);
+          setIsRefreshing(false);
+        }
         return;
       }
       const params = new URLSearchParams();
@@ -644,6 +681,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const parsedResumo = json as DashboardResumo;
       if (requestId === resumoRequestId.current) {
         setResumo(parsedResumo);
+        setLastUpdatedAt(parsedResumo.lastUpdatedAt ?? null);
         lastResumoFetchRef.current = Date.now();
       }
       safeWriteCache(cacheKey, parsedResumo);
@@ -677,7 +715,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       }
     } finally {
       if (requestId === resumoRequestId.current) {
-        setLoading(false);
+        setIsInitialLoading(false);
+        setIsRefreshing(false);
       }
     }
   }
@@ -827,7 +866,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   useEffect(() => {
     if (!filtersLoaded) return;
     const interval = setInterval(() => {
-      carregarResumo({ force: false });
+      carregarResumo({ force: false, background: true });
       carregarResumoGlobal({ force: false });
       carregarTopSituacoesMes({ force: false });
     }, DASHBOARD_AUTO_REFRESH_MS);
@@ -1440,6 +1479,20 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
               <div>
                 <h2 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Dashboard</h2>
               </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                {isRefreshing && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50/80 dark:bg-amber-500/15 px-3 py-1 text-amber-700 dark:text-amber-200">
+                    <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                    Atualizando…
+                  </span>
+                )}
+                {lastUpdatedLabel && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                    Atualizado {lastUpdatedLabel}
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-3 gap-2 w-full min-w-0 max-w-full md:flex md:flex-nowrap md:justify-end md:overflow-visible">
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3">
                   <p className="text-xs text-slate-400 uppercase tracking-wide mb-2 truncate">Período</p>
@@ -1752,7 +1805,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
           </aside>
         </section>
 
-        {loading && (
+        {isInitialLoading && !dashboardSource && (
           <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 text-sm text-slate-500">
             Carregando dados do Tiny…
           </div>
@@ -1763,7 +1816,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
           </div>
         )}
 
-        {!loading && !erro && dashboardSource && resumoAtual && (
+        {dashboardSource && resumoAtual && (
           <div className="space-y-8">
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
