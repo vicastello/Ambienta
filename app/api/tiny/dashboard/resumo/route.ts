@@ -1030,9 +1030,9 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
   try {
     const { data, error } = await supabaseAdmin
       .from('tiny_orders')
-      .select('data_criacao,valor')
-      .gte('data_criacao', rangeStart.toISOString())
-      .lte('data_criacao', rangeEnd.toISOString());
+      .select('data_criacao,valor,inserted_at,updated_at')
+      .gte('inserted_at', rangeStart.toISOString())
+      .lte('inserted_at', rangeEnd.toISOString());
     if (error) {
       console.error('[dashboard] falha ao carregar microtrend por hora', error);
       return buildHourlyTrendSeries(new Map(), new Map());
@@ -1041,19 +1041,19 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
     const todayBuckets = new Map<number, { valor: number; quantidade: number }>();
     const yesterdayBuckets = new Map<number, { valor: number; quantidade: number }>();
     for (const row of data ?? []) {
-      const timestamp = row?.data_criacao;
+      const timestamp = (row as any).updated_at ?? (row as any).inserted_at ?? (row as any).data_criacao;
       if (!timestamp) continue;
       const parsedDate = new Date(timestamp);
       if (Number.isNaN(parsedDate.getTime())) continue;
       const dayLabel = formatDateInTimeZone(parsedDate, timeZone);
-      const minutes = minutesOfDayInTimeZone(timestamp, timeZone);
+      const minutes = minutesOfDayInTimeZone(parsedDate.toISOString(), timeZone);
       if (minutes === null) continue;
       const hour = Math.min(HOURLY_TREND_HOURS - 1, Math.max(0, Math.floor(minutes / 60)));
       const targetBuckets =
         dayLabel === todayLabel ? todayBuckets : dayLabel === yesterdayLabel ? yesterdayBuckets : null;
       if (!targetBuckets) continue;
       const bucket = targetBuckets.get(hour) ?? { valor: 0, quantidade: 0 };
-      bucket.valor += toNumberSafe(row.valor ?? 0);
+      bucket.valor += toNumberSafe((row as any).valor ?? 0);
       bucket.quantidade += 1;
       targetBuckets.set(hour, bucket);
     }
