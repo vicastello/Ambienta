@@ -2,21 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
 import { getErrorMessage } from '@/lib/errors';
-import {
-  descricaoSituacao,
-  extrairDataISO,
-  normalizarCanalTiny,
-  parseValorTiny,
-  TODAS_SITUACOES,
-  extractCidadeUfFromRaw,
-} from '@/lib/tinyMapping';
-import {
-  loadProdutoParentMapping,
-  ProdutoParentMapping,
+import { descricaoSituacao, parseValorTiny, TODAS_SITUACOES } from '@/lib/tinyMapping';
+import { resolveParentChain } from '@/lib/productRelationships';
+import type {
   ProdutoParentInfo,
-  resolveParentChain,
+  ProdutoParentMapping,
 } from '@/lib/productRelationships';
 import type { Json, TinyOrdersRow, TinyPedidoItensRow, TinyProdutosRow } from '@/src/types/db-public';
 
@@ -757,32 +748,262 @@ function extrairFrete(raw: Json | TinyOrderRawPayload | null): number {
  * Atualiza raw JSON no banco com valorFrete
  * Agora é sincronous com timeout!
  */
-async function enrichOrdersWithFrete(
-  accessToken: string,
-  orderIds: number[],
-  maxToFetch: number = 50
-): Promise<void> {
-  // TODO: Implement frete enrichment in separate sync job
-  // For now, returning without doing anything to avoid blocking
-  return;
-}
+type CacheOrderFact = {
+  data: string;
+  canal: string | null;
+  situacao: number | null;
+  cidade: string | null;
+  uf: string | null;
+  pedidos: number;
+  valor_bruto: number;
+  valor_frete: number;
+  valor_liquido: number;
+};
+
+type CacheProdutoFact = {
+  data: string;
+  canal: string | null;
+  situacao: number | null;
+  produto_id: number;
+  sku: string | null;
+  descricao: string;
+  quantidade: number;
+  receita: number;
+};
+
+type DashboardCacheRow = {
+  periodo_inicio: string;
+  periodo_fim: string;
+  order_facts: CacheOrderFact[] | null;
+  produto_facts: CacheProdutoFact[] | null;
+  last_refreshed_at: string | null;
+  total_pedidos: number | null;
+  total_valor: number | null;
+  total_valor_liquido: number | null;
+  total_frete_total: number | null;
+  total_produtos_vendidos: number | null;
+};
+
+const toNumberSafe = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const withinRange = (dateStr: string | null | undefined, inicio: string, fim: string) => {
+  if (!dateStr) return false;
+  return dateStr >= inicio && dateStr <= fim;
+};
+
+const filterOrders = (
+  facts: CacheOrderFact[],
+  inicio: string,
+  fim: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null
+) =>
+  facts.filter((f) =>
+    withinRange(f.data, inicio, fim) &&
+    (!canaisFiltro?.length || (f.canal ? canaisFiltro.includes(f.canal) : false)) &&
+    (!situacoesFiltro?.length || situacoesFiltro.includes(toNumberSafe(f.situacao ?? -1)))
+  );
+
+const filterProdutos = (
+  facts: CacheProdutoFact[],
+  inicio: string,
+  fim: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null
+) =>
+  facts.filter((f) =>
+    withinRange(f.data, inicio, fim) &&
+    (!canaisFiltro?.length || (f.canal ? canaisFiltro.includes(f.canal) : false)) &&
+    (!situacoesFiltro?.length || situacoesFiltro.includes(Number(f.situacao ?? -1)))
+  );
+
+const aggregateMap = <T, K extends string | number>(items: T[], keyGetter: (item: T) => K, updater: (acc: any, item: T) => void) => {
+  const map = new Map<K, any>();
+  items.forEach((item) => {
+    const key = keyGetter(item);
+    const current = map.get(key) ?? {};
+    updater(current, item);
+    map.set(key, current);
+  });
+  return map;
+};
+
+const computeTopProdutos = (
+  produtoFacts: CacheProdutoFact[],
+  limite = 12
+): ProdutoResumo[] => {
+  const produtosMap = aggregateMap(
+    produtoFacts,
+    (p) => `${p.produto_id}:${p.sku ?? ''}:${p.descricao}`,
+    (acc: any, item) => {
+      acc.produtoId = Number.isFinite(item.produto_id) ? item.produto_id : null;
+      acc.sku = item.sku ?? null;
+      acc.descricao = item.descricao;
+      acc.quantidade = (acc.quantidade ?? 0) + (item.quantidade ?? 0);
+      acc.receita = (acc.receita ?? 0) + (item.receita ?? 0);
+      const serieMap: Record<string, { quantidade: number; receita: number }> = acc.serieDiariaMap ?? {};
+      const dia = item.data;
+      if (dia) {
+        const atual = serieMap[dia] ?? { quantidade: 0, receita: 0 };
+        atual.quantidade += item.quantidade ?? 0;
+        atual.receita += item.receita ?? 0;
+        serieMap[dia] = atual;
+        acc.serieDiariaMap = serieMap;
+      }
+    }
+  );
+
+  return Array.from(produtosMap.values())
+    .sort((a, b) => (b.quantidade ?? 0) - (a.quantidade ?? 0))
+    .slice(0, limite)
+    .map((p) => ({
+      produtoId: p.produtoId,
+      sku: p.sku,
+      descricao: p.descricao,
+      quantidade: p.quantidade ?? 0,
+      receita: p.receita ?? 0,
+      serieDiaria: p.serieDiariaMap
+        ? Object.entries(
+          p.serieDiariaMap as Record<string, { quantidade: number; receita: number }>
+          )
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([data, info]) => ({ data, quantidade: info.quantidade, receita: info.receita }))
+        : undefined,
+    }));
+};
+
+const computePeriodoResumo = (
+  orders: CacheOrderFact[],
+  produtos: CacheProdutoFact[],
+  dataInicialStr: string,
+  dataFinalStr: string
+): PeriodoResumo => {
+  const vendasPorDiaMap = aggregateMap(
+    orders,
+    (o) => o.data,
+    (acc: any, item) => {
+      acc.data = item.data;
+      acc.quantidade = (acc.quantidade ?? 0) + toNumberSafe(item.pedidos ?? 0);
+      acc.totalDia = (acc.totalDia ?? 0) + toNumberSafe(item.valor_bruto ?? 0);
+    }
+  );
+
+  const pedidosPorSituacaoMap = aggregateMap(
+    orders,
+    (o) => toNumberSafe(o.situacao ?? -1),
+    (acc: any, item) => {
+      acc.situacao = toNumberSafe(item.situacao ?? -1);
+      acc.descricao = descricaoSituacao(acc.situacao);
+      acc.quantidade = (acc.quantidade ?? 0) + toNumberSafe(item.pedidos ?? 0);
+    }
+  );
+
+  const totalPedidos = orders.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
+  const totalValor = orders.reduce((acc, o) => acc + toNumberSafe(o.valor_bruto ?? 0), 0);
+  const totalFrete = orders.reduce((acc, o) => acc + toNumberSafe(o.valor_frete ?? 0), 0);
+  const totalProdutosVendidos = produtos.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0);
+  const cancelamentoBase = orders.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
+  const cancelados = orders.reduce(
+    (acc, o) =>
+      CANCELAMENTO_SITUACOES.has(toNumberSafe(o.situacao ?? -1))
+        ? acc + toNumberSafe(o.pedidos ?? 0)
+        : acc,
+    0
+  );
+
+  const topProdutos = computeTopProdutos(produtos);
+
+  return {
+    dataInicial: dataInicialStr,
+    dataFinal: dataFinalStr,
+    dias: diffDias(new Date(`${dataInicialStr}T00:00:00`), new Date(`${dataFinalStr}T00:00:00`)) + 1,
+    totalPedidos,
+    totalValor,
+    totalValorLiquido: Math.max(0, totalValor - totalFrete),
+    totalFreteTotal: totalFrete,
+    ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
+    vendasPorDia: Array.from(vendasPorDiaMap.values()).sort((a, b) => (a.data < b.data ? -1 : 1)),
+    pedidosPorSituacao: Array.from(pedidosPorSituacaoMap.values()),
+    totalProdutosVendidos,
+    percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
+    topProdutos,
+  };
+};
+
+const computeCanais = (orders: CacheOrderFact[]): CanalResumo[] => {
+  const canaisMap = aggregateMap(
+    orders,
+    (o) => o.canal ?? 'Outros',
+    (acc: any, item) => {
+      acc.canal = item.canal ?? 'Outros';
+      acc.totalValor = (acc.totalValor ?? 0) + (item.valor_bruto ?? 0);
+      acc.totalPedidos = (acc.totalPedidos ?? 0) + (item.pedidos ?? 0);
+    }
+  );
+  return Array.from(canaisMap.values()).sort((a, b) => (b.totalValor ?? 0) - (a.totalValor ?? 0));
+};
+
+const computeMapaUF = (orders: CacheOrderFact[]) => {
+  const mapa = aggregateMap(
+    orders,
+    (o) => o.uf ?? 'ND',
+    (acc: any, item) => {
+      acc.uf = item.uf ?? 'ND';
+      acc.totalValor = (acc.totalValor ?? 0) + (item.valor_bruto ?? 0);
+      acc.totalPedidos = (acc.totalPedidos ?? 0) + (item.pedidos ?? 0);
+    }
+  );
+  return Array.from(mapa.values()).filter((m) => m.uf && m.uf !== 'ND');
+};
+
+const computeMapaCidade = (orders: CacheOrderFact[]) => {
+  const mapa = aggregateMap(
+    orders,
+    (o) => `${o.cidade ?? 'nd'}|${o.uf ?? ''}`,
+    (acc: any, item) => {
+      acc.cidade = item.cidade ?? 'ND';
+      acc.uf = item.uf ?? null;
+      acc.totalValor = (acc.totalValor ?? 0) + (item.valor_bruto ?? 0);
+      acc.totalPedidos = (acc.totalPedidos ?? 0) + (item.pedidos ?? 0);
+    }
+  );
+  return Array.from(mapa.values()).filter((m) => m.cidade && m.cidade !== 'ND');
+};
+
+const loadCacheRow = async (dataInicialStr: string, dataFinalStr: string): Promise<DashboardCacheRow | null> => {
+  const { data, error } = await supabaseAdmin
+    .from('dashboard_resumo_cache')
+    .select(
+      'periodo_inicio,periodo_fim,order_facts,produto_facts,last_refreshed_at,total_pedidos,total_valor,total_valor_liquido,total_frete_total,total_produtos_vendidos'
+    )
+    .lte('periodo_inicio', dataInicialStr)
+    .gte('periodo_fim', dataFinalStr)
+    .order('periodo_fim', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('[dashboard] erro ao buscar cache', error);
+    return null;
+  }
+  if (!data?.length) return null;
+  return data[0] as DashboardCacheRow;
+};
 
 export async function GET(req: NextRequest) {
+  const handlerTimer = '[dashboard] handler';
+  const supabaseTimer = '[dashboard] supabase_query';
+  console.time(handlerTimer);
   try {
-    // Token
-    let accessToken = req.cookies.get('tiny_access_token')?.value || null;
-    if (!accessToken) {
-      try { accessToken = await getAccessTokenFromDbOrRefresh(); } catch { accessToken = null; }
-    }
-
     const { searchParams } = new URL(req.url);
     const dataInicialParam = searchParams.get('dataInicial');
     const dataFinalParam = searchParams.get('dataFinal');
     const diasParam = searchParams.get('dias');
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
-    const complementParam = searchParams.get('complement');
-    const doComplement = complementParam === '1' || complementParam === 'true';
     const horaComparacaoParam = searchParams.get('horaComparacaoMinutos');
     const horaComparacaoVal = horaComparacaoParam ? Number(horaComparacaoParam) : null;
     const horaComparacaoMinutos = Number.isFinite(horaComparacaoVal)
@@ -791,865 +1012,136 @@ export async function GET(req: NextRequest) {
 
     const hoje = new Date();
     const dataFinalDate = dataFinalParam ? new Date(`${dataFinalParam}T00:00:00`) : hoje;
-    const dataInicialDate = dataInicialParam ? new Date(`${dataInicialParam}T00:00:00`) : addDias(dataFinalDate, -1 * ((diasParam ? Number(diasParam) : 30) - 1));
+    const dataInicialDate = dataInicialParam
+      ? new Date(`${dataInicialParam}T00:00:00`)
+      : addDias(dataFinalDate, -1 * ((diasParam ? Number(diasParam) : 30) - 1));
 
-    const diasPeriodo = diffDias(dataInicialDate, dataFinalDate) >= 0 ? diffDias(dataInicialDate, dataFinalDate) + 1 : 1;
-    
-    // Período anterior: mês anterior completo
-    // Ex: se período atual é 01/11 a 30/11 (nov), período anterior é 01/10 a 31/10 (out)
-    // Se período atual é 01/12 a 25/12, período anterior é 01/11 a 30/11 (nov inteiro)
-    const dataInicialAnteriorDate = new Date(dataInicialDate);
-    dataInicialAnteriorDate.setMonth(dataInicialAnteriorDate.getMonth() - 1);
-    dataInicialAnteriorDate.setDate(1); // Sempre primeiro dia do mês anterior
-    
-    const dataFinalAnteriorDate = new Date(dataInicialAnteriorDate);
-    dataFinalAnteriorDate.setMonth(dataFinalAnteriorDate.getMonth() + 1); // Vai pro próximo mês
-    dataFinalAnteriorDate.setDate(0); // Volta pro último dia do mês anterior
-
-    // Strings apenas com data (yyyy-mm-dd) para queries
     const dataInicialStr = dataInicialDate.toISOString().slice(0, 10);
     const dataFinalStr = dataFinalDate.toISOString().slice(0, 10);
-    const dataInicialAnteriorStr = dataInicialAnteriorDate.toISOString().slice(0, 10);
-    const dataFinalAnteriorStr = dataFinalAnteriorDate.toISOString().slice(0, 10);
     const hojeTimezoneStr = todayInTimeZone(DEFAULT_REPORT_TIMEZONE);
     const isSingleDayFilter = dataInicialStr === dataFinalStr;
     const aplicarCorteHoraAnteriorCards =
       isSingleDayFilter && dataFinalStr === hojeTimezoneStr && horaComparacaoMinutos !== null;
 
-    // Strings com timestamp para queries rangadas (início e fim do dia)
-    const dataInicialISO = `${dataInicialStr}T00:00:00Z`;
-    const dataFinalISO = `${dataFinalStr}T23:59:59Z`;
-    const dataInicialAnteriorISO = `${dataInicialAnteriorStr}T00:00:00Z`;
-    const dataFinalAnteriorISO = `${dataFinalAnteriorStr}T23:59:59Z`;
-
-    const limiteInferiorStr = dataInicialAnteriorStr; // janela unificada p/ complemento
-
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
-    const situacoesFiltro = situacoesParam ? situacoesParam.split(',').map((s) => Number(s)).filter((n) => Number.isFinite(n)) : null;
-
-    // =========================
-    // 1) Tentar complementar do Tiny e salvar no banco (opcional via query)
-    // =========================
-    // DEPRECATED: Complement logic disabled
-    // Data is now synced continuously via POST /api/tiny/pedidos
-    // and enriched via background jobs
-    // =========================
-
-    if (false && doComplement) {
-      // This block is disabled to avoid unnecessary API calls
-      // All data synchronization now happens through:
-      // 1. POST /api/tiny/pedidos - syncs list data with merge logic
-      // 2. GET /api/tiny/sync/enrich-background - enriches with detailed data
-    }
-
-    // =========================
-    // 2) Carregar do banco e agrupar métricas (DB-first)
-    // =========================
-    // Query período atual e anterior com paginação separada para evitar truncar na fronteira
-    
-    // Função helper para paginar uma query
-    const fetchPageWithRetry = async (
-      dataInicial: string,
-      dataFinal: string,
-      rangeStart: number,
-      rangeEnd: number,
-      attempt = 1
-    ): Promise<OrderSummaryRow[]> => {
-      const { data, error } = await supabaseAdmin
-        .from('tiny_orders')
-        .select('id, tiny_id, data_criacao, valor, valor_frete, situacao, canal, raw, inserted_at, updated_at')
-        .gte('data_criacao', dataInicial)
-        .lte('data_criacao', dataFinal)
-        .order('id', { ascending: true })
-        .range(rangeStart, rangeEnd);
-
-      if (error) {
-        const message = error.message ?? '';
-        const canRetry = attempt < SUPABASE_MAX_RETRIES && NETWORKISH_ERROR.test(message);
-        if (canRetry) {
-          console.warn(
-            `[API] Supabase fetch falhou (tentativa ${attempt}) para range ${rangeStart}-${rangeEnd}: ${message}`
-          );
-          await sleep(250 * attempt);
-          return fetchPageWithRetry(dataInicial, dataFinal, rangeStart, rangeEnd, attempt + 1);
-        }
-        throw error;
-      }
-
-      return (data ?? []) as OrderSummaryRow[];
-    };
-
-    const fetchAllOrdersForPeriod = async (dataInicial: string, dataFinal: string) => {
-      const allOrdersForPeriod: OrderSummaryRow[] = [];
-      let offset = 0;
-      let hasMore = true;
-
-      while (hasMore && offset < SUPABASE_MAX_ROWS) {
-        const rangeStart = offset;
-        const rangeEnd = Math.min(rangeStart + SUPABASE_PAGE_SIZE - 1, SUPABASE_MAX_ROWS - 1);
-        let pageOrders: OrderSummaryRow[] = [];
-
-        try {
-          pageOrders = await fetchPageWithRetry(dataInicial, dataFinal, rangeStart, rangeEnd);
-        } catch (err) {
-          console.error('[API] Supabase page fetch erro', {
-            rangeStart,
-            rangeEnd,
-            message: err instanceof Error ? err.message : 'Erro desconhecido',
-          });
-          const message = err instanceof Error ? err.message : 'Erro desconhecido';
-          throw new Error('Erro ao carregar pedidos do banco: ' + message);
-        }
-
-        if (!pageOrders.length) {
-          hasMore = false;
-        } else {
-          allOrdersForPeriod.push(...pageOrders);
-          offset += SUPABASE_PAGE_SIZE;
-          if (pageOrders.length < SUPABASE_PAGE_SIZE) hasMore = false;
-        }
-      }
-
-      return allOrdersForPeriod;
-    };
-
-    const computeLastUpdatedAt = (orderLists: OrderSummaryRow[][]): string | null => {
-      let maxTs = 0;
-      const pushTs = (value: unknown) => {
-        const ts =
-          typeof value === 'string'
-            ? Date.parse(value)
-            : value instanceof Date
-              ? value.getTime()
-              : null;
-        if (ts && Number.isFinite(ts)) {
-          maxTs = Math.max(maxTs, ts);
-        }
-      };
-
-      for (const list of orderLists) {
-        for (const order of list) {
-          pushTs(order.inserted_at);
-          pushTs(order.updated_at);
-        }
-      }
-
-      return maxTs > 0 ? new Date(maxTs).toISOString() : null;
-    };
-
-    // Busca período anterior e período atual separadamente
-    const ordersAnterior = await fetchAllOrdersForPeriod(dataInicialAnteriorISO, dataFinalAnteriorISO);
-    const ordersAtual = await fetchAllOrdersForPeriod(dataInicialISO, dataFinalISO);
-    const lastUpdatedAt = computeLastUpdatedAt([ordersAnterior, ordersAtual]);
-
-    const idsAnterior = ordersAnterior
-      .map((p) => p.id)
-      .filter((id): id is number => typeof id === 'number');
-    const idsAtual = ordersAtual
-      .map((p) => p.id)
-      .filter((id): id is number => typeof id === 'number');
-    const [itensPorPedidoAnterior, itensPorPedidoAtual] = await Promise.all([
-      carregarItensPorPedido(idsAnterior),
-      carregarItensPorPedido(idsAtual),
-    ]);
-    const parentMappingPromise = loadProdutoParentMapping();
-    
-    console.log(`[DEBUG] Período anterior (${dataInicialAnteriorStr} a ${dataFinalAnteriorStr}): ${ordersAnterior.length} pedidos`);
-    console.log(`[DEBUG] Período atual (${dataInicialStr} a ${dataFinalStr}): ${ordersAtual.length} pedidos`);
-
-    const mapaDiaAtual = new Map<string, { quantidade: number; totalDia: number }>();
-    const mapaDiaAnterior = new Map<
-      string,
-      { quantidade: number; totalDia: number }
-    >();
-
-    const mapaSitAtual = new Map<number, number>();
-    const mapaSitAnterior = new Map<number, number>();
-
-    const mapaCanalAtual = new Map<string, { totalValor: number; totalPedidos: number }>();
-    const mapaProdutoAtual = new Map<string, ProdutoResumoInterno>();
-    const mapaProdutoAnterior = new Map<string, ProdutoResumoInterno>();
-
-    // Mapas geográficos (período atual)
-    const mapaUFAtual = new Map<string, { totalValor: number; totalPedidos: number }>();
-    const mapaCidadeAtual = new Map<string, { uf: string | null; totalValor: number; totalPedidos: number }>();
-
-    const canaisDisponiveisSet = new Set<string>();
-    const situacoesDisponiveisSet = new Set<number>();
-
-    let totalPedidosAtual = 0;
-    let totalValorAtual = 0;      // valor bruto
-    let totalValorLiquidoAtual = 0; // valor líquido (sem frete)
-    let totalFreteAtual = 0;
-    let totalProdutosAtual = 0;
-    let totalPedidosAtualBaseCancel = 0;
-    let canceladosAtualBase = 0;
-
-    let totalPedidosAnterior = 0;
-    let totalValorAnterior = 0;      // valor bruto
-    let totalValorLiquidoAnterior = 0; // valor líquido (sem frete)
-    let totalFreteAnterior = 0;
-    let totalProdutosAnterior = 0;
-    let totalPedidosAnteriorBaseCancel = 0;
-    let canceladosAnteriorBase = 0;
-
-    const hydrateTopProdutoSeries = async () => {
-      if (!mapaProdutoAtual.size) {
-        return;
-      }
-
-      const now = new Date();
-      const endDateStr = now.toISOString().slice(0, 10);
-      const endISO = `${endDateStr}T23:59:59Z`;
-      const thirtyDaysAgo = new Date(now);
-      thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
-      const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
-      const serieStartDate = thirtyDaysAgo < startOfYear ? thirtyDaysAgo : startOfYear;
-      const serieStartStr = serieStartDate.toISOString().slice(0, 10);
-      const startISO = `${serieStartStr}T00:00:00Z`;
-
-      let serieOrders: OrderSummaryRow[] = [];
-      try {
-        serieOrders = await fetchAllOrdersForPeriod(startISO, endISO);
-      } catch (err) {
-        console.warn('[Dashboard resumo] Falha ao carregar janela de série estendida', err);
-        return;
-      }
-
-      if (!serieOrders.length) {
-        mapaProdutoAtual.forEach((produto) => {
-          produto.serieDiariaMap = {};
-        });
-        return;
-      }
-
-      const serieOrderIds = serieOrders
-        .map((p) => p.id)
-        .filter((id): id is number => typeof id === 'number');
-      const itensSerie = await carregarItensPorPedido(serieOrderIds);
-
-      const produtoLookup = new Map<string, ProdutoResumoInterno>();
-      mapaProdutoAtual.forEach((produto) => {
-        const primaryKey = buildProdutoInternalKey(
-          produto.produtoId ?? null,
-          produto.descricao,
-          produto.sku ?? null
-        );
-        produtoLookup.set(primaryKey, produto);
-        if (typeof produto.produtoId === 'number') {
-          produtoLookup.set(`id:${produto.produtoId}`, produto);
-          const fallbackKey = buildProdutoInternalKey(null, produto.descricao, produto.sku ?? null);
-          produtoLookup.set(fallbackKey, produto);
-        }
-        if (produto.sku) {
-          produtoLookup.set(`sku:${produto.sku}`, produto);
-        }
-        produto.serieDiariaMap = {};
-      });
-
-      const resolveProduto = (candidates: Array<string | null | undefined>) => {
-        for (const candidate of candidates) {
-          if (!candidate) continue;
-          const alvo = produtoLookup.get(candidate);
-          if (alvo) return alvo;
-        }
-        return null;
-      };
-
-      const processPersistedItem = (item: TinyPedidoItemWithProduto, data: string) => {
-        const quantidade = toNumber(item?.quantidade);
-        if (quantidade <= 0) return;
-        const valorUnitario = parseValorTiny(
-          toParseableNumber(item.valor_unitario ?? item.valorUnitario ?? item.valor)
-        );
-        const receita =
-          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
-          quantidade * valorUnitario;
-        const descricao =
-          (typeof item.nome_produto === 'string' && item.nome_produto.trim()) ||
-          item.tiny_produtos?.nome ||
-          'Sem descrição';
-        const sku = item.codigo_produto ?? item.tiny_produtos?.codigo ?? null;
-        const produtoId = item.id_produto_tiny;
-        const fallbackKey = buildProdutoInternalKey(null, descricao, sku);
-        const alvo = resolveProduto([
-          typeof produtoId === 'number' ? `id:${produtoId}` : null,
-          sku ? `sku:${sku}` : null,
-          fallbackKey,
-        ]);
-        if (!alvo) return;
-        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
-      };
-
-      const processRawItem = (item: TinyRawItem, data: string) => {
-        const quantidade = toNumber(item?.quantidade);
-        if (quantidade <= 0) return;
-        const valorUnitario = parseValorTiny(
-          toParseableNumber(item.valorUnitario ?? item.valor_unitario ?? item.valor)
-        );
-        const receita =
-          parseValorTiny(toParseableNumber(item.valor_total ?? item.valorTotal)) ||
-          quantidade * valorUnitario;
-
-        const produtoRaw = isRecord(item.produto) ? item.produto : {};
-        const produtoId = typeof produtoRaw.id === 'number' ? produtoRaw.id : null;
-        const descricaoBase =
-          (typeof produtoRaw.descricao === 'string' && produtoRaw.descricao.trim()) ||
-          (typeof produtoRaw.nome === 'string' && produtoRaw.nome.trim()) ||
-          'Produto sem nome';
-        const skuCandidate =
-          (typeof produtoRaw.sku === 'string' && produtoRaw.sku) ||
-          (typeof produtoRaw.codigo === 'string' && produtoRaw.codigo) ||
-          null;
-        const fallbackKey = buildProdutoInternalKey(null, descricaoBase, skuCandidate);
-        const alvo = resolveProduto([
-          typeof produtoId === 'number' ? `id:${produtoId}` : null,
-          skuCandidate ? `sku:${skuCandidate}` : null,
-          fallbackKey,
-        ]);
-        if (!alvo) return;
-        updateSerieDiaria(alvo, data ?? null, quantidade, receita);
-      };
-
-      for (const order of serieOrders) {
-        const data = order.data_criacao;
-        if (!data) continue;
-        const situacao = typeof order.situacao === 'number' ? order.situacao : -1;
-        const canal = normalizarCanalTiny(order.canal);
-        const passaCanal =
-          !canaisFiltro || canaisFiltro.length === 0 ? true : canaisFiltro.includes(canal);
-        const passaSituacao =
-          !situacoesFiltro || situacoesFiltro.length === 0
-            ? true
-            : situacoesFiltro.includes(situacao);
-        if (!passaCanal || !passaSituacao) continue;
-
-        const itensPersistidos = order.id ? itensSerie.get(order.id) ?? [] : [];
-        if (itensPersistidos.length) {
-          for (const item of itensPersistidos) {
-            processPersistedItem(item, data);
-          }
-          continue;
-        }
-
-        const itensRaw = extrairItens(order.raw);
-        if (!itensRaw.length) continue;
-        for (const rawItem of itensRaw) {
-          processRawItem(rawItem, data);
-        }
-      }
-    };
-
-    // Processa período anterior
-    for (const p of ordersAnterior ?? []) {
-      const data = p.data_criacao;
-      if (!data) continue;
-
-      const valorFallback = parseValorTiny(p.valor);
-      const freteFallback = parseValorTiny(p.valor_frete);
-      const { bruto, liquido, frete } = extrairValoresDoTiny(p.raw, {
-        valorBruto: valorFallback,
-        valorFrete: freteFallback,
-      });
-      const valor = bruto > 0 ? bruto : valorFallback;
-      const situacao = typeof p.situacao === 'number' ? p.situacao : -1;
-      const canal = normalizarCanalTiny(p.canal);
-
-      // Registra canais e situações disponíveis
-      canaisDisponiveisSet.add(canal);
-      situacoesDisponiveisSet.add(situacao);
-
-      const passaCanal =
-        !canaisFiltro || canaisFiltro.length === 0
-          ? true
-          : canaisFiltro.includes(canal);
-
-      const passaSituacao =
-        !situacoesFiltro || situacoesFiltro.length === 0
-          ? true
-          : situacoesFiltro.includes(situacao);
-
-      if (passaCanal) {
-        totalPedidosAnteriorBaseCancel += 1;
-        if (CANCELAMENTO_SITUACOES.has(situacao)) {
-          canceladosAnteriorBase += 1;
-        }
-      }
-
-      if (!passaCanal || !passaSituacao) continue;
-
-      totalPedidosAnterior += 1;
-      totalValorAnterior += valor;
-      totalValorLiquidoAnterior += liquido;
-      totalFreteAnterior += frete;
-
-      const diaInfoAnt =
-        mapaDiaAnterior.get(data) ?? { quantidade: 0, totalDia: 0 };
-      diaInfoAnt.quantidade += 1;
-      diaInfoAnt.totalDia += valor;
-      mapaDiaAnterior.set(data, diaInfoAnt);
-
-      const qtdSitAnt = mapaSitAnterior.get(situacao) ?? 0;
-      mapaSitAnterior.set(situacao, qtdSitAnt + 1);
-
-      // demais métricas seguem filtros aplicados
-
-      const itensPersistidos = p.id ? itensPorPedidoAnterior.get(p.id) ?? [] : [];
-      if (itensPersistidos.length) {
-        for (const item of itensPersistidos) {
-          const qtdProduto = toNumber(item?.quantidade);
-          totalProdutosAnterior += qtdProduto;
-          registrarProdutoPersistido(mapaProdutoAnterior, item, data);
-        }
-      } else {
-        const itensAnterior = extrairItens(p.raw);
-        if (itensAnterior.length) {
-          for (const item of itensAnterior) {
-            const qtdProduto = toNumber(item?.quantidade);
-            totalProdutosAnterior += qtdProduto;
-            registrarProduto(mapaProdutoAnterior, item, data);
-          }
-        }
-      }
-    }
-
-    // Processa período atual
-    for (const p of ordersAtual ?? []) {
-      const data = p.data_criacao;
-      if (!data) continue;
-
-      const valorFallback = parseValorTiny(p.valor);
-      const freteFallback = parseValorTiny(p.valor_frete);
-      const { bruto, liquido, frete } = extrairValoresDoTiny(p.raw, {
-        valorBruto: valorFallback,
-        valorFrete: freteFallback,
-      });
-      const valor = bruto > 0 ? bruto : valorFallback;
-      const situacao = typeof p.situacao === 'number' ? p.situacao : -1;
-      const canal = normalizarCanalTiny(p.canal);
-
-      // Registra canais e situações disponíveis
-      canaisDisponiveisSet.add(canal);
-      situacoesDisponiveisSet.add(situacao);
-
-      const passaCanal =
-        !canaisFiltro || canaisFiltro.length === 0
-          ? true
-          : canaisFiltro.includes(canal);
-
-      const passaSituacao =
-        !situacoesFiltro || situacoesFiltro.length === 0
-          ? true
-          : situacoesFiltro.includes(situacao);
-
-      if (passaCanal) {
-        totalPedidosAtualBaseCancel += 1;
-        if (CANCELAMENTO_SITUACOES.has(situacao)) {
-          canceladosAtualBase += 1;
-        }
-      }
-
-      if (!passaCanal || !passaSituacao) continue;
-
-      totalPedidosAtual += 1;
-      totalValorAtual += valor;
-      totalValorLiquidoAtual += liquido;
-      totalFreteAtual += frete;
-
-      const diaInfo =
-        mapaDiaAtual.get(data) ?? { quantidade: 0, totalDia: 0 };
-      diaInfo.quantidade += 1;
-      diaInfo.totalDia += valor;
-      mapaDiaAtual.set(data, diaInfo);
-
-      const qtdSit = mapaSitAtual.get(situacao) ?? 0;
-      mapaSitAtual.set(situacao, qtdSit + 1);
-
-      const canalInfo =
-        mapaCanalAtual.get(canal) ?? { totalValor: 0, totalPedidos: 0 };
-      canalInfo.totalPedidos += 1;
-      canalInfo.totalValor += valor;
-      mapaCanalAtual.set(canal, canalInfo);
-
-      // Agregação geográfica por UF e Cidade (melhor esforço a partir do raw)
-      const rawPayload = asTinyOrderRaw(p.raw);
-      if (rawPayload) {
-        const { cidade, uf } = extractCidadeUfFromRaw(rawPayload);
-
-        if (uf) {
-          const infoUF = mapaUFAtual.get(uf) ?? { totalValor: 0, totalPedidos: 0 };
-          infoUF.totalValor += valor;
-          infoUF.totalPedidos += 1;
-          mapaUFAtual.set(uf, infoUF);
-        }
-
-        if (cidade) {
-          const keyCidade = `${cidade.toLowerCase()}|${uf ?? ''}`;
-          const infoCid =
-            mapaCidadeAtual.get(keyCidade) ?? {
-              uf: uf ?? null,
-              totalValor: 0,
-              totalPedidos: 0,
-            };
-          infoCid.totalValor += valor;
-          infoCid.totalPedidos += 1;
-          mapaCidadeAtual.set(keyCidade, infoCid);
-        }
-      }
-
-      // demais métricas seguem filtros aplicados
-
-      const itensPersistidos = p.id ? itensPorPedidoAtual.get(p.id) ?? [] : [];
-      if (itensPersistidos.length) {
-        for (const item of itensPersistidos) {
-          const qtdProduto = toNumber(item?.quantidade);
-          totalProdutosAtual += qtdProduto;
-          registrarProdutoPersistido(mapaProdutoAtual, item, data);
-        }
-      } else {
-        const itensAtuais = extrairItens(p.raw);
-        if (itensAtuais.length) {
-          for (const item of itensAtuais) {
-            const qtdProduto = toNumber(item?.quantidade);
-            totalProdutosAtual += qtdProduto;
-            registrarProduto(mapaProdutoAtual, item, data);
-          }
-        }
-      }
-    }
-
-    await hydrateTopProdutoSeries();
-
-    const produtoParentMapping = await parentMappingPromise;
-    const mapaProdutoAtualFinal = consolidarProdutosPorPai(
-      mapaProdutoAtual,
-      produtoParentMapping
-    );
-    const mapaProdutoAnteriorFinal = consolidarProdutosPorPai(
-      mapaProdutoAnterior,
-      produtoParentMapping
-    );
-
-    const vendasPorDiaAtual: DiaResumo[] = Array.from(mapaDiaAtual.entries())
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([data, info]) => ({
-        data,
-        quantidade: info.quantidade,
-        totalDia: info.totalDia,
-      }));
-
-    const vendasPorDiaAnterior: DiaResumo[] = Array.from(
-      mapaDiaAnterior.entries()
-    )
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([data, info]) => ({
-        data,
-        quantidade: info.quantidade,
-        totalDia: info.totalDia,
-      }));
-
-    const pedidosPorSituacaoAtual: SituacaoResumo[] = Array.from(
-      mapaSitAtual.entries()
-    ).map(([situacao, quantidade]) => ({
-      situacao,
-      descricao: descricaoSituacao(situacao),
-      quantidade,
-    }));
-
-    const pedidosPorSituacaoAnterior: SituacaoResumo[] = Array.from(
-      mapaSitAnterior.entries()
-    ).map(([situacao, quantidade]) => ({
-      situacao,
-      descricao: descricaoSituacao(situacao),
-      quantidade,
-    }));
-
-    const canais: CanalResumo[] = Array.from(mapaCanalAtual.entries()).map(
-      ([canal, info]) => ({
-        canal,
-        totalValor: info.totalValor,
-        totalPedidos: info.totalPedidos,
-      })
-    );
-
-    // Enriquecer top produtos com estoque da tiny_produtos (quando existir)
-    const produtosParaEnriquecerIds = Array.from(mapaProdutoAtualFinal.values())
-      .map((p) => p.produtoId)
-      .filter((id): id is number => typeof id === 'number');
-    const produtosParaEnriquecerSkus = Array.from(mapaProdutoAtualFinal.values())
-      .map((p) => p.sku)
-      .filter((sku): sku is string => !!sku);
-
-    const estoqueLookup: Record<string, { saldo: number | null; reservado: number | null; disponivel: number | null; imagemUrl: string | null }> = {};
-    try {
-      const query = supabaseAdmin
-        .from('tiny_produtos')
-        .select('id_produto_tiny,codigo,saldo,reservado,disponivel,imagem_url');
-
-      if (produtosParaEnriquecerIds.length) {
-        query.in('id_produto_tiny', produtosParaEnriquecerIds);
-      } else if (produtosParaEnriquecerSkus.length) {
-        query.in('codigo', produtosParaEnriquecerSkus);
-      }
-
-      const { data: produtosEstoque, error: estoqueErr } = await query;
-      if (!estoqueErr && produtosEstoque) {
-        for (const p of produtosEstoque) {
-          const keyId = p.id_produto_tiny ? `id:${p.id_produto_tiny}` : null;
-          const keySku = p.codigo ? `sku:${p.codigo}` : null;
-          const payload = {
-            saldo: p.saldo ?? null,
-            reservado: p.reservado ?? null,
-            disponivel: p.disponivel ?? null,
-            imagemUrl: p.imagem_url ?? null,
-          };
-          if (keyId) estoqueLookup[keyId] = payload;
-          if (keySku) estoqueLookup[keySku] = payload;
-        }
-      }
-    } catch (e) {
-      console.warn('[Dashboard resumo] Falha ao carregar estoque para top produtos', e);
-    }
-
-    const enrichProdutos = (arr: ProdutoResumoInterno[]) =>
-      arr.map((prod) => {
-        const keyId = prod.produtoId ? `id:${prod.produtoId}` : null;
-        const keySku = prod.sku ? `sku:${prod.sku}` : null;
-        const found =
-          (keyId && estoqueLookup[keyId]) ||
-          (keySku && estoqueLookup[keySku]) ||
-          null;
-        if (!found) return prod;
-        return {
-          ...prod,
-          saldo: found.saldo,
-          reservado: found.reservado,
-          disponivel: found.disponivel,
-          imagemUrl: prod.imagemUrl ?? found.imagemUrl ?? undefined,
-        };
-      });
-
-    const serializeProdutos = (arr: ProdutoResumoInterno[]): ProdutoResumo[] =>
-      arr.map((prod) => {
-        const { serieDiariaMap, zoomLevelsMap, ...rest } = prod;
-        const serieDiaria = serializeSerieFromMap(serieDiariaMap);
-        const zoomLevels = zoomLevelsMap
-          ? Array.from(zoomLevelsMap.values())
-              .sort((a, b) => b.ordem - a.ordem)
-              .map((level) => ({
-                key: level.key,
-                produtoId: level.produtoId,
-                sku: level.sku ?? null,
-                descricao: level.descricao,
-                tipo: level.tipo ?? null,
-                nivel: level.nivel,
-                childSource: level.childSource ?? null,
-                quantidade: level.quantidade,
-                receita: level.receita,
-                serieDiaria: serializeSerieFromMap(level.serieDiariaMap),
-              }))
-          : undefined;
-
-        return {
-          ...rest,
-          ...(serieDiaria ? { serieDiaria } : {}),
-          ...(zoomLevels ? { zoomLevels } : {}),
-        };
-      });
-
-    const periodoAtual: PeriodoResumo = {
-      dataInicial: dataInicialStr,
-      dataFinal: dataFinalStr,
-      dias: diasPeriodo,
-      totalPedidos: totalPedidosAtual,
-      totalValor: totalValorAtual,
-      totalValorLiquido: Math.max(0, totalValorAtual - totalFreteAtual),
-      totalFreteTotal: totalFreteAtual,
-      ticketMedio:
-        totalPedidosAtual > 0 ? totalValorAtual / totalPedidosAtual : 0,
-      vendasPorDia: vendasPorDiaAtual,
-      pedidosPorSituacao: pedidosPorSituacaoAtual,
-      totalProdutosVendidos: totalProdutosAtual,
-      percentualCancelados:
-        totalPedidosAtualBaseCancel > 0
-          ? (canceladosAtualBase / totalPedidosAtualBaseCancel) * 100
-          : 0,
-      topProdutos: serializeProdutos(
-        enrichProdutos(
-          Array.from(mapaProdutoAtualFinal.values())
-            .sort((a, b) => b.quantidade - a.quantidade)
-            .slice(0, 12)
-        )
-      ),
-    };
-
-    const periodoAnterior: PeriodoResumo = {
-      dataInicial: dataInicialAnteriorStr,
-      dataFinal: dataFinalAnteriorStr,
-      dias: diasPeriodo,
-      totalPedidos: totalPedidosAnterior,
-      totalValor: totalValorAnterior,
-      totalValorLiquido: Math.max(0, totalValorAnterior - totalFreteAnterior),
-      totalFreteTotal: totalFreteAnterior,
-      ticketMedio:
-        totalPedidosAnterior > 0
-          ? totalValorAnterior / totalPedidosAnterior
-          : 0,
-      vendasPorDia: vendasPorDiaAnterior,
-      pedidosPorSituacao: pedidosPorSituacaoAnterior,
-      totalProdutosVendidos: totalProdutosAnterior,
-      percentualCancelados:
-        totalPedidosAnteriorBaseCancel > 0
-          ? (canceladosAnteriorBase / totalPedidosAnteriorBaseCancel) * 100
-          : 0,
-      topProdutos: serializeProdutos(
-        enrichProdutos(
-          Array.from(mapaProdutoAnteriorFinal.values())
-            .sort((a, b) => b.quantidade - a.quantidade)
-            .slice(0, 12)
-        )
-      ),
-    };
-
-    // Para os cards, calcular período anterior: mesmo dia/mês do mês anterior
-    // Se período atual é 01/11 a 18/11 (18 dias), período anterior é 01/10 a 18/10 (18 dias)
+    const situacoesFiltro = situacoesParam
+      ? situacoesParam
+          .split(',')
+          .map((s) => Number(s))
+          .filter((n) => Number.isFinite(n))
+      : null;
+
+    // Período anterior (mês anterior completo)
+    const dataInicialAnteriorDate = new Date(dataInicialDate);
+    dataInicialAnteriorDate.setMonth(dataInicialAnteriorDate.getMonth() - 1);
+    dataInicialAnteriorDate.setDate(1);
+
+    const dataFinalAnteriorDate = new Date(dataInicialAnteriorDate);
+    dataFinalAnteriorDate.setMonth(dataFinalAnteriorDate.getMonth() + 1);
+    dataFinalAnteriorDate.setDate(0);
+
+    const dataInicialAnteriorStr = dataInicialAnteriorDate.toISOString().slice(0, 10);
+    const dataFinalAnteriorStr = dataFinalAnteriorDate.toISOString().slice(0, 10);
+
+    // Cards com janela móvel (mês anterior até hoje do mês passado ou dia anterior)
     const dataInicialAnteriorCardsDate = new Date(dataInicialDate);
     const dataFinalAnteriorCardsDate = new Date(dataFinalDate);
-
     if (isSingleDayFilter) {
-      // Para comparativos diários, usa o dia imediatamente anterior ao filtro atual
       dataInicialAnteriorCardsDate.setDate(dataInicialAnteriorCardsDate.getDate() - 1);
       dataFinalAnteriorCardsDate.setDate(dataFinalAnteriorCardsDate.getDate() - 1);
     } else {
       dataInicialAnteriorCardsDate.setMonth(dataInicialAnteriorCardsDate.getMonth() - 1);
       dataFinalAnteriorCardsDate.setMonth(dataFinalAnteriorCardsDate.getMonth() - 1);
     }
-
     const dataInicialAnteriorCardsStr = dataInicialAnteriorCardsDate.toISOString().slice(0, 10);
     const dataFinalAnteriorCardsStr = dataFinalAnteriorCardsDate.toISOString().slice(0, 10);
 
-    // Strings com timestamp para cards (início e fim do dia)
-    const dataInicialAnteriorCardsISO = `${dataInicialAnteriorCardsStr}T00:00:00Z`;
-    const dataFinalAnteriorCardsISO = `${dataFinalAnteriorCardsStr}T23:59:59Z`;
+    console.time(supabaseTimer);
+    let cacheRow = await loadCacheRow(dataInicialStr, dataFinalStr);
+    if (!cacheRow) {
+      await supabaseAdmin.rpc('refresh_dashboard_resumo_cache');
+      cacheRow = await loadCacheRow(dataInicialStr, dataFinalStr);
+    }
+    console.timeEnd(supabaseTimer);
 
-    // Carregar dados para cards do período anterior (até hoje do mês passado)
-    const ordersAnteriorCards = await fetchAllOrdersForPeriod(dataInicialAnteriorCardsISO, dataFinalAnteriorCardsISO);
-    let totalPedidosAnteriorCards = 0;
-    let totalValorAnteriorCards = 0;
-    let totalValorLiquidoAnteriorCards = 0;
-    let totalFreteAnteriorCards = 0;
-    let totalPedidosAnteriorCardsBaseCancel = 0;
-    let canceladosAnteriorCardsBase = 0;
-    const vendasPorDiaAnteriorCards: Map<string, DiaResumo> = new Map();
-    const pedidosPorSituacaoAnteriorCards: Map<number, SituacaoResumo> = new Map();
-
-    for (const order of ordersAnteriorCards) {
-      if (aplicarCorteHoraAnteriorCards) {
-        const minutosInsercao = minutesOfDayInTimeZone(order.inserted_at, DEFAULT_REPORT_TIMEZONE);
-        if (
-          minutosInsercao !== null &&
-          horaComparacaoMinutos !== null &&
-          minutosInsercao > horaComparacaoMinutos
-        ) {
-          continue;
-        }
-      }
-      const data = extrairDataISO(order.data_criacao);
-      const valor = parseValorTiny(order.valor);
-      const freteFallback = parseValorTiny(order.valor_frete);
-      const { bruto, liquido, frete } = extrairValoresDoTiny(order.raw, {
-        valorBruto: valor,
-        valorFrete: freteFallback,
-      });
-      const valorFinal = bruto > 0 ? bruto : valor;
-      const situacao = typeof order.situacao === 'number'
-        ? order.situacao
-        : Number(order.situacao) || 0;
-      const canal = normalizarCanalTiny(order.canal);
-
-      const passaCanal =
-        !canaisFiltro || canaisFiltro.length === 0
-          ? true
-          : canaisFiltro.includes(canal);
-
-      const passaSituacao =
-        !situacoesFiltro || situacoesFiltro.length === 0
-          ? true
-          : situacoesFiltro.includes(situacao);
-
-      if (passaCanal) {
-        totalPedidosAnteriorCardsBaseCancel += 1;
-        if (CANCELAMENTO_SITUACOES.has(situacao)) {
-          canceladosAnteriorCardsBase += 1;
-        }
-      }
-
-      if (!passaCanal || !passaSituacao) continue;
-
-      totalPedidosAnteriorCards += 1;
-      totalValorAnteriorCards += valorFinal;
-      totalValorLiquidoAnteriorCards += liquido;
-      totalFreteAnteriorCards += frete;
-
-      if (data) {
-        const diaKey = data;
-        const current = vendasPorDiaAnteriorCards.get(diaKey) || { data: diaKey, quantidade: 0, totalDia: 0 };
-        current.quantidade += 1;
-        current.totalDia += valorFinal;
-        vendasPorDiaAnteriorCards.set(diaKey, current);
-      }
-
-      const sitKey = situacao;
-      const currentSit = pedidosPorSituacaoAnteriorCards.get(sitKey) || {
-        situacao: sitKey,
-        descricao: descricaoSituacao(sitKey),
-        quantidade: 0,
-      };
-      currentSit.quantidade += 1;
-      pedidosPorSituacaoAnteriorCards.set(sitKey, currentSit);
+    if (!cacheRow) {
+      throw new Error('Cache de dashboard indisponível ou vazio');
     }
 
-    const periodoAnteriorCards: PeriodoResumo = {
-      dataInicial: dataInicialAnteriorCardsStr,
-      dataFinal: dataFinalAnteriorCardsStr,
-      dias: diasPeriodo,
-      totalPedidos: totalPedidosAnteriorCards,
-      totalValor: totalValorAnteriorCards,
-      totalValorLiquido: Math.max(0, totalValorAnteriorCards - totalFreteAnteriorCards),
-      totalFreteTotal: totalFreteAnteriorCards,
-      ticketMedio:
-        totalPedidosAnteriorCards > 0
-          ? totalValorAnteriorCards / totalPedidosAnteriorCards
-          : 0,
-      vendasPorDia: Array.from(vendasPorDiaAnteriorCards.values()),
-      pedidosPorSituacao: Array.from(pedidosPorSituacaoAnteriorCards.values()),
-      totalProdutosVendidos: 0,
-      percentualCancelados:
-        totalPedidosAnteriorCardsBaseCancel > 0
-          ? (canceladosAnteriorCardsBase / totalPedidosAnteriorCardsBaseCancel) * 100
-          : 0,
-      topProdutos: [],
-    };
+    const orderFacts = Array.isArray(cacheRow.order_facts) ? cacheRow.order_facts : [];
+    const produtoFacts = Array.isArray(cacheRow.produto_facts) ? cacheRow.produto_facts : [];
+
+    const ordersAtual = filterOrders(orderFacts, dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
+    const produtosAtuais = filterProdutos(produtoFacts, dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
+
+    const periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, dataInicialStr, dataFinalStr);
+
+    const ordersAnterior = filterOrders(orderFacts, dataInicialAnteriorStr, dataFinalAnteriorStr, canaisFiltro, situacoesFiltro);
+    const produtosAnterior = filterProdutos(
+      produtoFacts,
+      dataInicialAnteriorStr,
+      dataFinalAnteriorStr,
+      canaisFiltro,
+      situacoesFiltro
+    );
+    const periodoAnterior = computePeriodoResumo(
+      ordersAnterior,
+      produtosAnterior,
+      dataInicialAnteriorStr,
+      dataFinalAnteriorStr
+    );
+
+    const ordersAnteriorCards = filterOrders(
+      orderFacts,
+      dataInicialAnteriorCardsStr,
+      dataFinalAnteriorCardsStr,
+      canaisFiltro,
+      situacoesFiltro
+    ).filter((order) => {
+      if (!aplicarCorteHoraAnteriorCards || horaComparacaoMinutos === null) return true;
+      // manter a consistência de corte de hora usando inserted_at/updated_at não está disponível no cache;
+      // como fallback, não aplicamos corte adicional para não perder pedidos.
+      return true;
+    });
+
+    const produtosAnteriorCards = filterProdutos(
+      produtoFacts,
+      dataInicialAnteriorCardsStr,
+      dataFinalAnteriorCardsStr,
+      canaisFiltro,
+      situacoesFiltro
+    );
+
+    const periodoAnteriorCards = computePeriodoResumo(
+      ordersAnteriorCards,
+      produtosAnteriorCards,
+      dataInicialAnteriorCardsStr,
+      dataFinalAnteriorCardsStr
+    );
+    // Para os cards, a contagem de produtos vendidos não é relevante; mantemos topProdutos vazio para evitar custo extra.
+    periodoAnteriorCards.topProdutos = [];
+    periodoAnteriorCards.totalProdutosVendidos = 0;
+
+    const canais = computeCanais(ordersAtual);
+    const mapaVendasUF = computeMapaUF(ordersAtual);
+    const mapaVendasCidade = computeMapaCidade(ordersAtual);
+    const canaisDisponiveis = Array.from(new Set(orderFacts.map((o) => o.canal ?? 'Outros')));
 
     const resposta: DashboardResposta = {
       periodoAtual,
       periodoAnterior,
       periodoAnteriorCards,
       canais,
-      canaisDisponiveis: Array.from(canaisDisponiveisSet),
+      canaisDisponiveis,
       situacoesDisponiveis: [...TODAS_SITUACOES],
-      mapaVendasUF: Array.from(mapaUFAtual.entries())
-        .map(([uf, info]) => ({ uf, totalValor: info.totalValor, totalPedidos: info.totalPedidos }))
-        .sort((a, b) => b.totalValor - a.totalValor),
-      mapaVendasCidade: Array.from(mapaCidadeAtual.entries())
-        .map(([key, info]) => ({ cidade: key.split('|')[0], uf: info.uf, totalValor: info.totalValor, totalPedidos: info.totalPedidos }))
-        .sort((a, b) => b.totalValor - a.totalValor),
-      lastUpdatedAt,
+      mapaVendasUF,
+      mapaVendasCidade,
+      lastUpdatedAt: cacheRow.last_refreshed_at ?? null,
     };
 
     return NextResponse.json(resposta);
   } catch (error) {
-    console.error('[API] Erro em /api/tiny/dashboard/resumo', error);
+    console.error('[dashboard] Erro em /api/tiny/dashboard/resumo', error);
     return NextResponse.json(
       {
         message: 'Erro ao montar resumo do dashboard',
@@ -1657,5 +1149,7 @@ export async function GET(req: NextRequest) {
       },
       { status: 500 }
     );
+  } finally {
+    console.timeEnd(handlerTimer);
   }
 }
