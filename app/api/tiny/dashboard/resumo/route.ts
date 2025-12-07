@@ -1020,6 +1020,80 @@ const computeTopProdutos = (
     }));
 };
 
+const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResumo[]> => {
+  if (!produtos.length) return produtos;
+
+  const ids = Array.from(
+    new Set(produtos.map((p) => (typeof p.produtoId === 'number' ? p.produtoId : null)).filter((id): id is number => id !== null))
+  );
+  const skus = Array.from(
+    new Set(produtos.map((p) => (p.sku ? p.sku.trim() : null)).filter((sku): sku is string => !!sku))
+  );
+
+  const lookup: Record<string, { imagemUrl: string | null; saldo: number | null; reservado: number | null; disponivel: number | null }> = {};
+
+  if (ids.length) {
+    const { data, error } = await supabaseAdmin
+      .from('tiny_produtos')
+      .select('id_produto_tiny,codigo,imagem_url,saldo,reservado,disponivel')
+      .in('id_produto_tiny', ids);
+    if (!error && data) {
+      for (const row of data) {
+        const key = row.id_produto_tiny ? `id:${row.id_produto_tiny}` : null;
+        if (key) {
+          lookup[key] = {
+            imagemUrl: row.imagem_url ?? null,
+            saldo: row.saldo ?? null,
+            reservado: row.reservado ?? null,
+            disponivel: row.disponivel ?? null,
+          };
+        }
+        if (row.codigo) {
+          lookup[`sku:${row.codigo}`] = {
+            imagemUrl: row.imagem_url ?? null,
+            saldo: row.saldo ?? null,
+            reservado: row.reservado ?? null,
+            disponivel: row.disponivel ?? null,
+          };
+        }
+      }
+    }
+  }
+
+  if (!ids.length && skus.length) {
+    const { data, error } = await supabaseAdmin
+      .from('tiny_produtos')
+      .select('id_produto_tiny,codigo,imagem_url,saldo,reservado,disponivel')
+      .in('codigo', skus);
+    if (!error && data) {
+      for (const row of data) {
+        if (row.codigo) {
+          lookup[`sku:${row.codigo}`] = {
+            imagemUrl: row.imagem_url ?? null,
+            saldo: row.saldo ?? null,
+            reservado: row.reservado ?? null,
+            disponivel: row.disponivel ?? null,
+          };
+        }
+      }
+    }
+  }
+
+  return produtos.map((p) => {
+    const keyId = typeof p.produtoId === 'number' ? `id:${p.produtoId}` : null;
+    const keySku = p.sku ? `sku:${p.sku}` : null;
+    const found = (keyId && lookup[keyId]) || (keySku && lookup[keySku]) || null;
+    if (!found) return p;
+    return {
+      ...p,
+      imagemUrl: p.imagemUrl ?? found.imagemUrl ?? undefined,
+      saldo: p.saldo ?? found.saldo ?? null,
+      reservado: p.reservado ?? found.reservado ?? null,
+      disponivel: p.disponivel ?? found.disponivel ?? null,
+    };
+  });
+};
+
 const computePeriodoResumo = (
   orders: CacheOrderFact[],
   produtos: CacheProdutoFact[],
@@ -1233,7 +1307,7 @@ export async function GET(req: NextRequest) {
       produtosAtuais = await fetchProdutoFactsRange(dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
     }
 
-    const periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, dataInicialStr, dataFinalStr);
+    let periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, dataInicialStr, dataFinalStr);
 
     const ordersAnterior = filterOrders(orderFacts, dataInicialAnteriorStr, dataFinalAnteriorStr, canaisFiltro, situacoesFiltro);
     let produtosAnterior = filterProdutos(
@@ -1251,7 +1325,7 @@ export async function GET(req: NextRequest) {
         situacoesFiltro
       );
     }
-    const periodoAnterior = computePeriodoResumo(
+    let periodoAnterior = computePeriodoResumo(
       ordersAnterior,
       produtosAnterior,
       dataInicialAnteriorStr,
@@ -1296,6 +1370,14 @@ export async function GET(req: NextRequest) {
     // Para os cards, a contagem de produtos vendidos não é relevante; mantemos topProdutos vazio para evitar custo extra.
     periodoAnteriorCards.topProdutos = [];
     periodoAnteriorCards.totalProdutosVendidos = 0;
+
+    // Enriquecer top produtos com imagem/estoque quando disponível
+    const [topAtualEnriched, topAnteriorEnriched] = await Promise.all([
+      enrichTopProdutos(periodoAtual.topProdutos),
+      enrichTopProdutos(periodoAnterior.topProdutos),
+    ]);
+    periodoAtual = { ...periodoAtual, topProdutos: topAtualEnriched };
+    periodoAnterior = { ...periodoAnterior, topProdutos: topAnteriorEnriched };
 
     const canais = computeCanais(ordersAtual);
     const mapaVendasUF = computeMapaUF(ordersAtual);
