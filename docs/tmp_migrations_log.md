@@ -1,6 +1,6 @@
 # Migração supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql
 
-> push concluído com sucesso. Executar estas consultas manualmente no Supabase Studio para confirmar remoção do job + função em cron/rotina:
+Atualização: `supabase db push --linked --include-all` executado com sucesso (rodada atual). Executar estas consultas manualmente no Supabase Studio para confirmar remoção do job + função em cron/rotina:
 
 ```sql
 -- Verifica se ainda existe job cron chamando a função

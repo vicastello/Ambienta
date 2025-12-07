@@ -18,6 +18,7 @@ type Produto = {
   saldo: number | null;
   reservado: number | null;
   disponivel: number | null;
+  disponivel_total?: number | null;
   situacao: string;
   tipo: string;
   fornecedor_nome: string | null;
@@ -494,15 +495,19 @@ export default function ProdutosClient() {
         bg: "bg-slate-100",
       }
     : null;
-  const estoqueExibido = estoqueLive ?? {
+  const estoqueTotalPaiVariacoes = produtoEmFoco?.disponivel_total ?? produtoEmFoco?.disponivel ?? null;
+  const estoqueSkuSnapshot = {
     saldo: produtoEmFoco?.saldo ?? null,
     reservado: produtoEmFoco?.reservado ?? null,
     disponivel: produtoEmFoco?.disponivel ?? null,
     source: "snapshot",
     updatedAt: 0,
   };
-  const disponivelEmFoco = estoqueExibido.disponivel ?? 0;
-  const estoqueCriticoFoco = disponivelEmFoco > 0 && disponivelEmFoco < 5;
+  const estoqueSkuExibido = estoqueLive ?? estoqueSkuSnapshot;
+  const disponivelSku = estoqueSkuExibido.disponivel ?? 0;
+  const estoqueCriticoSku = disponivelSku > 0 && disponivelSku < 5;
+  const estoqueCriticoTotal =
+    estoqueTotalPaiVariacoes !== null && estoqueTotalPaiVariacoes > 0 && estoqueTotalPaiVariacoes < 5;
 
   const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
@@ -823,6 +828,9 @@ export default function ProdutosClient() {
                   </span>
                 )}
               </div>
+              {produtoEmFoco.disponivel_total != null && produtoEmFoco.disponivel_total !== produtoEmFoco.disponivel && (
+                <p className="text-xs text-slate-400">Estoque total pai + variações (snapshot)</p>
+              )}
               {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
                 <p className="flex items-center gap-2 text-xs text-slate-500 lg:justify-end">
                   <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
@@ -931,52 +939,74 @@ export default function ProdutosClient() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
-                Saldo: <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueExibido.saldo)}</strong>
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
-                Reservado:{" "}
-                <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueExibido.reservado)}</strong>
-              </span>
+          <div className="flex flex-col gap-2 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
-                  disponivelEmFoco <= 0
-                    ? "bg-rose-100 text-rose-700"
-                    : estoqueCriticoFoco
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-emerald-100 text-emerald-700"
+                  estoqueTotalPaiVariacoes === null
+                    ? "bg-white/70 dark:bg-white/5 text-slate-600"
+                    : estoqueTotalPaiVariacoes <= 0
+                      ? "bg-rose-100 text-rose-700"
+                      : estoqueCriticoTotal
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-emerald-100 text-emerald-700"
                 }`}
               >
-                Disponível: <strong>{formatNumber(estoqueExibido.disponivel)}</strong>
+                Estoque total (pai + variações): <strong>{formatNumber(estoqueTotalPaiVariacoes)}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                Fonte: snapshot do Supabase (round-robin)
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              {estoqueLiveLoading ? (
-                <span className="inline-flex items-center gap-1 text-slate-500">
-                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
-                  Atualizando estoque em tempo real...
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                  Saldo (SKU): <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.saldo)}</strong>
                 </span>
-              ) : estoqueLiveError ? (
-                <span className="text-rose-500">Falha ao consultar estoque em tempo real · usando último snapshot</span>
-              ) : estoqueLive ? (
-                <span className="inline-flex items-center gap-1 text-slate-500">
-                  Fonte: {estoqueLive.source || "hybrid"} · atualizado agora
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
+                  Reservado (SKU):{" "}
+                  <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.reservado)}</strong>
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-slate-500">
-                  Fonte: snapshot do Supabase
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
+                    disponivelSku <= 0
+                      ? "bg-rose-100 text-rose-700"
+                      : estoqueCriticoSku
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  Disponível deste SKU ({estoqueSkuExibido.source || "hybrid"}): <strong>{formatNumber(estoqueSkuExibido.disponivel)}</strong>
                 </span>
-              )}
-              <button
-                type="button"
-                onClick={() => carregarEstoqueLive("live")}
-                className="inline-flex items-center gap-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1 font-semibold text-slate-700 dark:text-slate-200 text-xs"
-              >
-                <RefreshCcw className="w-3 h-3" />
-                Atualizar estoque agora
-              </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {estoqueLiveLoading ? (
+                  <span className="inline-flex items-center gap-1 text-slate-500">
+                    <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                    Atualizando estoque em tempo real...
+                  </span>
+                ) : estoqueLiveError ? (
+                  <span className="text-rose-500">Falha ao consultar estoque em tempo real · usando snapshot</span>
+                ) : estoqueLive ? (
+                  <span className="inline-flex items-center gap-1 text-slate-500">
+                    Fonte: Tiny {estoqueLive.source || "hybrid"} · atualizado agora
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-slate-500">
+                    Fonte: snapshot do Supabase
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => carregarEstoqueLive("live")}
+                  className="inline-flex items-center gap-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1 font-semibold text-slate-700 dark:text-slate-200 text-xs"
+                >
+                  <RefreshCcw className="w-3 h-3" />
+                  Atualizar estoque agora
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1023,7 +1053,7 @@ export default function ProdutosClient() {
                     <th className="px-6 py-4 text-right">Preço</th>
                     <th className="px-6 py-4 text-right">Estoque</th>
                     <th className="px-6 py-4 text-right">Reservado</th>
-                    <th className="px-6 py-4 text-right">Disponível</th>
+                    <th className="px-6 py-4 text-right">Disponível total</th>
                     <th className="px-6 py-4 text-center">Status</th>
                   </tr>
                 </thead>
@@ -1090,8 +1120,8 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: P
     color: "text-slate-600",
     bg: "bg-slate-100",
   };
-  const disponivel = produto.disponivel ?? 0;
-  const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
+  const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
+  const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
 
   return (
     <article
@@ -1148,18 +1178,21 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: P
             <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.reservado)}</p>
           </div>
           <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500">Disponível</p>
+            <p className="text-[10px] text-slate-500">Disponível total</p>
             <p
               className={`font-semibold ${
-                disponivel <= 0
+                disponivelSnapshot <= 0
                   ? "text-rose-600"
                   : temEstoqueBaixo
                   ? "text-amber-600"
                   : "text-emerald-600"
               }`}
             >
-              {formatNumber(produto.disponivel)}
+              {formatNumber(disponivelSnapshot)}
             </p>
+            {produto.disponivel_total != null && (
+              <p className="text-[10px] text-slate-400">Pai + variações</p>
+            )}
           </div>
         </div>
       </div>
@@ -1177,8 +1210,8 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
     color: "text-slate-600",
     bg: "bg-slate-100",
   };
-  const disponivel = produto.disponivel ?? 0;
-  const temEstoqueBaixo = disponivel > 0 && disponivel < 5;
+  const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
+  const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
 
   return (
     <tr
@@ -1235,17 +1268,20 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
         <div className="font-semibold text-amber-600">{formatNumber(produto.reservado)}</div>
       </td>
       <td className="px-6 py-4 text-right">
-        <div
-          className={`font-semibold ${
-            disponivel <= 0
-              ? "text-rose-600"
-              : temEstoqueBaixo
-              ? "text-amber-600"
-              : "text-emerald-600"
-          }`}
-        >
-          {formatNumber(produto.disponivel)}
-        </div>
+          <div
+            className={`font-semibold ${
+              disponivelSnapshot <= 0
+                ? "text-rose-600"
+                : temEstoqueBaixo
+                  ? "text-amber-600"
+                  : "text-emerald-600"
+            }`}
+          >
+            {formatNumber(disponivelSnapshot)}
+          </div>
+          {produto.disponivel_total != null && (
+            <div className="text-[10px] text-slate-400">Pai + variações</div>
+          )}
       </td>
       <td className="px-6 py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
