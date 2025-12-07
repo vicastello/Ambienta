@@ -85,6 +85,27 @@ async function fetchOrdersNeedingFrete(options: FreteEnrichmentOptions): Promise
   return (data ?? []).filter((row): row is TinyOrderRow => !!row?.tiny_id);
 }
 
+async function fetchPedidoDetalhadoWithRetry(token: string, tinyId: number, maxAttempts = 6) {
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      return await obterPedidoDetalhado(token, tinyId, 'frete_enricher');
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status ?? null;
+      const is429 = status === 429;
+      const is5xx = status && status >= 500;
+      const isNetwork = !status;
+      if (!(is429 || is5xx || isNetwork) || attempt >= maxAttempts) {
+        throw err;
+      }
+      const backoff = Math.min(4000 * attempt, 30000);
+      await sleep(backoff);
+    }
+  }
+  throw new Error('Excedeu tentativas de retry para pedido detalhado');
+}
+
 function resolveValorFrete(detail: TinyPedidoDetalhado): number {
   const rawValor =
     detail?.valorFrete ??
@@ -149,9 +170,9 @@ export async function runFreteEnrichment(
   for (let i = 0; i < orders.length; i += batchSize) {
     const batch = orders.slice(i, i + batchSize);
 
-    const results = await Promise.allSettled(
-      batch.map(async (order) => {
-        const detail = await obterPedidoDetalhado(token, order.tiny_id, 'frete_enricher');
+    for (const order of batch) {
+      try {
+        const detail = await fetchPedidoDetalhadoWithRetry(token, order.tiny_id);
         const valorFrete = resolveValorFrete(detail);
         const mergedRaw = {
           ...(order.raw ?? {}),
@@ -159,23 +180,12 @@ export async function runFreteEnrichment(
           valorFrete,
         };
 
-        // Buscar canal atual para preservá-lo se já estiver enriquecido
-        const { data: current } = await supabaseAdmin
-          .from('tiny_orders')
-          .select('canal')
-          .eq('tiny_id', order.tiny_id)
-          .single();
-
         const updateData: any = {
           valor_frete: valorFrete,
           raw: mergedRaw,
           is_enriched: true,
           updated_at: new Date().toISOString(),
         };
-
-        // NÃO sobrescrever canal se já existe e não é "Outros"
-        // O freteEnricher só atualiza o frete, não deve mexer no canal
-        // O canal deve ser atualizado apenas pelo channelNormalizer
 
         const { error } = await supabaseAdmin
           .from('tiny_orders')
@@ -185,20 +195,11 @@ export async function runFreteEnrichment(
         if (error) {
           throw new Error(error.message);
         }
-      })
-    );
-
-    results.forEach((result) => {
-      if (result.status === 'fulfilled') {
         updated += 1;
-      } else {
+      } catch (err) {
         failed += 1;
       }
-    });
-
-    processed += batch.length;
-
-    if (i + batchSize < orders.length) {
+      processed += 1;
       await sleep(batchDelayMs);
     }
   }

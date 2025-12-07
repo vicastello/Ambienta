@@ -134,7 +134,8 @@ interface PedidoItemData {
 export async function salvarItensPedido(
   accessToken: string,
   idPedidoTiny: number,
-  idPedidoLocal: number
+  idPedidoLocal: number,
+  options?: { context?: string }
 ): Promise<number | null> {
   const fallbackFromRaw = async (): Promise<number | null> => {
     try {
@@ -215,7 +216,8 @@ export async function salvarItensPedido(
     }
 
     // Buscar detalhes do pedido
-    const pedidoDetalhado = await obterPedidoDetalhado(accessToken, idPedidoTiny, 'pedido_helper');
+    const context = options?.context ?? 'pedido_helper';
+    const pedidoDetalhado = await obterPedidoDetalhado(accessToken, idPedidoTiny, context);
 
     // Extrair itens do formato da API do Tiny (v3 pode devolver em níveis diferentes)
     const itens =
@@ -300,20 +302,20 @@ export async function salvarItensPedido(
 export async function salvarItensLote(
   accessToken: string,
   pedidos: Array<{ idTiny: number; idLocal: number }>,
-  // delay between requests in milliseconds. Default 600ms (~100 req/min)
-  delayMs: number = 600
+  options?: { delayMs?: number; context?: string }
 ): Promise<{ sucesso: number; falhas: number; totalItens: number }> {
   let sucesso = 0;
   let falhas = 0;
   let totalItens = 0;
+  const delayMs = options?.delayMs ?? 600;
 
   for (const pedido of pedidos) {
     const numItens = await salvarItensPedido(
       accessToken,
       pedido.idTiny,
-      pedido.idLocal
+      pedido.idLocal,
+      { context: options?.context }
     );
-
     if (numItens !== null) {
       sucesso++;
       totalItens += numItens;
@@ -335,7 +337,7 @@ export async function salvarItensLote(
 export async function sincronizarItensPorPedidos(
   accessToken: string,
   tinyIds: Array<number | null | undefined>,
-  options?: { delayMs?: number; retries?: number; force?: boolean }
+  options?: { delayMs?: number; retries?: number; force?: boolean; context?: string }
 ): Promise<{ processados: number; sucesso: number; falhas: number; totalItens: number }> {
   const uniqueTinyIds = Array.from(new Set(tinyIds.filter((id): id is number => Boolean(id))));
 
@@ -391,7 +393,7 @@ export async function sincronizarItensPorPedidos(
     const parcial = await salvarItensLote(
       accessToken,
       subset.map((p) => ({ idTiny: p.tiny_id!, idLocal: p.id })),
-      delayMs
+      { delayMs, context: options?.context }
     );
     totalSucesso += parcial.sucesso;
     totalItens += parcial.totalItens;
@@ -445,9 +447,10 @@ export async function sincronizarItensAutomaticamente(
     limit?: number;
     maxRequests?: number;
     dataMinima?: Date;
+    context?: string;
   }
 ): Promise<{ processados: number; sucesso: number; totalItens: number }> {
-  const { limit = 50, maxRequests = 100, dataMinima } = options ?? {};
+  const { limit = 50, maxRequests = 100, dataMinima, context } = options ?? {};
 
   // Buscar pedidos sem itens sincronizados
   let query = supabaseAdmin
@@ -488,7 +491,8 @@ export async function sincronizarItensAutomaticamente(
     pedidosSemItens.slice(0, maxRequests).map(p => ({
       idTiny: p.tiny_id,
       idLocal: p.id,
-    }))
+    })),
+    { delayMs: 600, context }
   );
 
   return {
