@@ -37,6 +37,7 @@ type PeriodoResumo = {
   totalProdutosVendidos: number;
   percentualCancelados: number;
   topProdutos: ProdutoResumo[];
+  vendasPorHora: HoraTrend[];
 };
 
 type CanalResumo = {
@@ -91,6 +92,14 @@ type ProdutoResumo = {
   disponivel?: number | null;
   serieDiaria?: ProdutoSerieDia[];
   zoomLevels?: ProdutoZoomLevel[];
+};
+
+type HoraTrend = {
+  label: string;
+  hoje: number;
+  ontem: number;
+  quantidade?: number;
+  quantidadeOntem?: number;
 };
 
 type ProdutoZoomLevelInternal = {
@@ -209,6 +218,8 @@ type DashboardResposta = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOURLY_TREND_HOURS = 24;
+const HOURLY_TREND_LOOKBACK_MS = DAY_MS * 2;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SUPABASE_PAGE_SIZE = 250;
 const SUPABASE_MAX_ROWS = 10000;
@@ -650,14 +661,30 @@ function addDias(base: Date, dias: number): Date {
   return new Date(base.getTime() + dias * DAY_MS);
 }
 
-function todayInTimeZone(timeZone: string): string {
+function formatDateInTimeZone(date: Date, timeZone: string): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  return formatter.format(new Date());
+  return formatter.format(date);
+}
+
+function shiftIsoDate(dateIso: string, dias: number): string {
+  const parts = dateIso.split('-');
+  if (parts.length !== 3) return dateIso;
+  const [year, month, day] = parts.map((part) => Number(part));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return dateIso;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + dias);
+  return date.toISOString().slice(0, 10);
+}
+
+function todayInTimeZone(timeZone: string): string {
+  return formatDateInTimeZone(new Date(), timeZone);
 }
 
 function minutesOfDayInTimeZone(dateInput: string | null | undefined, timeZone: string): number | null {
@@ -976,6 +1003,68 @@ const buildFactsOnTheFly = async (
   };
 };
 
+const buildHourlyTrendSeries = (
+  todayBuckets: Map<number, { valor: number; quantidade: number }>,
+  yesterdayBuckets: Map<number, { valor: number; quantidade: number }>
+): HoraTrend[] => {
+  const series: HoraTrend[] = [];
+  for (let hour = 0; hour < HOURLY_TREND_HOURS; hour += 1) {
+    const todayBucket = todayBuckets.get(hour);
+    const yesterdayBucket = yesterdayBuckets.get(hour);
+    series.push({
+      label: `${hour.toString().padStart(2, '0')}h`,
+      hoje: todayBucket?.valor ?? 0,
+      ontem: yesterdayBucket?.valor ?? 0,
+      quantidade: todayBucket?.quantidade ?? 0,
+      quantidadeOntem: yesterdayBucket?.quantidade ?? 0,
+    });
+  }
+  return series;
+};
+
+const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
+  const todayLabel = formatDateInTimeZone(new Date(), timeZone);
+  const yesterdayLabel = shiftIsoDate(todayLabel, -1);
+  const rangeStart = new Date(Date.now() - HOURLY_TREND_LOOKBACK_MS);
+  const rangeEnd = new Date();
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('tiny_orders')
+      .select('data_criacao,valor')
+      .gte('data_criacao', rangeStart.toISOString())
+      .lte('data_criacao', rangeEnd.toISOString());
+    if (error) {
+      console.error('[dashboard] falha ao carregar microtrend por hora', error);
+      return buildHourlyTrendSeries(new Map(), new Map());
+    }
+
+    const todayBuckets = new Map<number, { valor: number; quantidade: number }>();
+    const yesterdayBuckets = new Map<number, { valor: number; quantidade: number }>();
+    for (const row of data ?? []) {
+      const timestamp = row?.data_criacao;
+      if (!timestamp) continue;
+      const parsedDate = new Date(timestamp);
+      if (Number.isNaN(parsedDate.getTime())) continue;
+      const dayLabel = formatDateInTimeZone(parsedDate, timeZone);
+      const minutes = minutesOfDayInTimeZone(timestamp, timeZone);
+      if (minutes === null) continue;
+      const hour = Math.min(HOURLY_TREND_HOURS - 1, Math.max(0, Math.floor(minutes / 60)));
+      const targetBuckets =
+        dayLabel === todayLabel ? todayBuckets : dayLabel === yesterdayLabel ? yesterdayBuckets : null;
+      if (!targetBuckets) continue;
+      const bucket = targetBuckets.get(hour) ?? { valor: 0, quantidade: 0 };
+      bucket.valor += toNumberSafe(row.valor ?? 0);
+      bucket.quantidade += 1;
+      targetBuckets.set(hour, bucket);
+    }
+
+    return buildHourlyTrendSeries(todayBuckets, yesterdayBuckets);
+  } catch (error) {
+    console.error('[dashboard] erro ao montar microtrend por hora', error);
+    return buildHourlyTrendSeries(new Map(), new Map());
+  }
+};
+
 const computeTopProdutos = (
   produtoFacts: CacheProdutoFact[],
   limite = 12
@@ -1030,7 +1119,16 @@ const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResu
     new Set(produtos.map((p) => (p.sku ? p.sku.trim() : null)).filter((sku): sku is string => !!sku))
   );
 
-  const lookup: Record<string, { imagemUrl: string | null; saldo: number | null; reservado: number | null; disponivel: number | null }> = {};
+  const lookup: Record<
+    string,
+    {
+      imagemUrl: string | null;
+      saldo: number | null;
+      reservado: number | null;
+      disponivel: number | null;
+      codigo: string | null;
+    }
+  > = {};
 
   if (ids.length) {
     const { data, error } = await supabaseAdmin
@@ -1040,21 +1138,18 @@ const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResu
     if (!error && data) {
       for (const row of data) {
         const key = row.id_produto_tiny ? `id:${row.id_produto_tiny}` : null;
+        const entry = {
+          imagemUrl: row.imagem_url ?? null,
+          saldo: row.saldo ?? null,
+          reservado: row.reservado ?? null,
+          disponivel: row.disponivel ?? null,
+          codigo: row.codigo ?? null,
+        };
         if (key) {
-          lookup[key] = {
-            imagemUrl: row.imagem_url ?? null,
-            saldo: row.saldo ?? null,
-            reservado: row.reservado ?? null,
-            disponivel: row.disponivel ?? null,
-          };
+          lookup[key] = entry;
         }
         if (row.codigo) {
-          lookup[`sku:${row.codigo}`] = {
-            imagemUrl: row.imagem_url ?? null,
-            saldo: row.saldo ?? null,
-            reservado: row.reservado ?? null,
-            disponivel: row.disponivel ?? null,
-          };
+          lookup[`sku:${row.codigo}`] = entry;
         }
       }
     }
@@ -1068,12 +1163,14 @@ const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResu
     if (!error && data) {
       for (const row of data) {
         if (row.codigo) {
-          lookup[`sku:${row.codigo}`] = {
+          const entry = {
             imagemUrl: row.imagem_url ?? null,
             saldo: row.saldo ?? null,
             reservado: row.reservado ?? null,
             disponivel: row.disponivel ?? null,
+            codigo: row.codigo ?? null,
           };
+          lookup[`sku:${row.codigo}`] = entry;
         }
       }
     }
@@ -1086,6 +1183,7 @@ const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResu
     if (!found) return p;
     return {
       ...p,
+      sku: p.sku ?? found.codigo ?? undefined,
       imagemUrl: p.imagemUrl ?? found.imagemUrl ?? undefined,
       saldo: p.saldo ?? found.saldo ?? null,
       reservado: p.reservado ?? found.reservado ?? null,
@@ -1149,6 +1247,7 @@ const computePeriodoResumo = (
     totalProdutosVendidos,
     percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
     topProdutos,
+    vendasPorHora: [],
   };
 };
 
@@ -1308,6 +1407,8 @@ export async function GET(req: NextRequest) {
     }
 
     let periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, dataInicialStr, dataFinalStr);
+    const vendasPorHoraAtuais = await buildHourlyTrend(DEFAULT_REPORT_TIMEZONE);
+    periodoAtual = { ...periodoAtual, vendasPorHora: vendasPorHoraAtuais };
 
     const ordersAnterior = filterOrders(orderFacts, dataInicialAnteriorStr, dataFinalAnteriorStr, canaisFiltro, situacoesFiltro);
     let produtosAnterior = filterProdutos(

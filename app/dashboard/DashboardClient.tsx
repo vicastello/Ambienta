@@ -36,7 +36,6 @@ import { MicroTrendChart } from './components/charts/MicroTrendChart';
 const AMBIENTA_PRIMARY = '#009DA8';
 const COLORS_PALETTE = [AMBIENTA_PRIMARY, '#22c55e', '#f97316', '#0ea5e9', '#a855f7'];
 const GLOBAL_INTERVAL_DAYS = 30;
-const SPARK_WINDOW_DAYS = 7;
 const PRODUTO_CARD_PRESETS = [
   { id: '30d', label: '30 dias' },
   { id: 'month', label: 'Mês atual' },
@@ -73,6 +72,7 @@ type PeriodoResumo = {
   totalProdutosVendidos: number;
   percentualCancelados: number;
   topProdutos: ProdutoResumo[];
+  vendasPorHora: HoraTrend[];
 };
 
 type CanalResumo = {
@@ -85,6 +85,14 @@ type ProdutoSerieDia = {
   data: string;
   quantidade: number;
   receita: number;
+};
+
+type HoraTrend = {
+  label: string;
+  hoje: number;
+  ontem: number;
+  quantidade?: number;
+  quantidadeOntem?: number;
 };
 
 type ProdutoZoomNivel = 'pai' | 'variacao' | 'kit' | 'simples' | 'origem' | 'desconhecido';
@@ -343,6 +351,18 @@ function formatBRL(valor: number | null | undefined) {
     style: 'currency',
     currency: 'BRL',
   });
+}
+
+function normalizeProdutoNome(nome: string): string {
+  const trimmed = nome.trim();
+  if (!trimmed) return 'Produto sem nome';
+  const marker = '– ';
+  const markerIndex = trimmed.indexOf(marker);
+  if (markerIndex >= 0) {
+    const afterMarker = trimmed.slice(markerIndex + marker.length).trim();
+    if (afterMarker) return afterMarker;
+  }
+  return trimmed;
 }
 
 const getErrorMessage = (error: unknown): string => {
@@ -909,7 +929,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const start = startDate.toISOString().slice(0, 10);
       const params = new URLSearchParams({
         page: '1',
-        pageSize: '10',
+        pageSize: '16',
         sortBy: 'numero_pedido',
         sortDir: 'desc',
         dataInicial: start,
@@ -1249,14 +1269,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const resumoGlobalAtual = dashboardGlobalSource?.periodoAtual;
 
   const sparkData = useMemo(() => {
-    if (!resumoGlobalAtual) return [];
-    return resumoGlobalAtual.vendasPorDia
-      .slice(-SPARK_WINDOW_DAYS)
-      .map((dia) => ({
-        label: dia.data.split('-')[2],
-        valor: dia.totalDia,
-        quantidade: dia.quantidade,
-      }));
+    const trend = resumoGlobalAtual?.vendasPorHora ?? [];
+    if (!trend.length) return [];
+    return trend.map((hora) => ({
+      label: hora.label,
+      hoje: hora.hoje,
+      ontem: hora.ontem,
+      quantidade: hora.quantidade,
+      quantidadeOntem: hora.quantidadeOntem,
+    }));
   }, [resumoGlobalAtual]);
 
   const topSituacoes = useMemo(() => {
@@ -1398,7 +1419,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const handleZoomIn = useCallback(() => alterarZoom('in'), [alterarZoom]);
   const handleZoomOut = useCallback(() => alterarZoom('out'), [alterarZoom]);
 
-  const produtoDisplayDescricao = zoomLevelAtual?.descricao ?? produtoEmFoco?.descricao ?? 'Produto sem nome';
+  const produtoDisplayDescricao = normalizeProdutoNome(
+    zoomLevelAtual?.descricao ?? produtoEmFoco?.descricao ?? 'Produto sem nome'
+  );
   const produtoDisplaySku = zoomLevelAtual?.sku ?? produtoEmFoco?.sku ?? null;
   const produtoDisplayQuantidade = zoomLevelAtual?.quantidade ?? produtoEmFoco?.quantidade ?? 0;
   const produtoDisplayReceita = zoomLevelAtual?.receita ?? produtoEmFoco?.receita ?? 0;
@@ -1641,7 +1664,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Microtrend</p>
-                    <p className="text-sm text-slate-500">Últimos {sparkData.length} dias</p>
+                    <p className="text-sm text-slate-500">Últimas 24h (hoje vs ontem)</p>
                   </div>
                   <span className="text-xs text-slate-400">{resumoAtual ? 'Atualizado em tempo real' : 'Aguardando dados'}</span>
                 </div>
@@ -2022,7 +2045,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                     </h3>
                                     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                       <span className="font-semibold tracking-[0.3em] uppercase">
-                                        {produtoDisplaySku ? `SKU ${produtoDisplaySku}` : 'Sem SKU'}
+                                        {produtoDisplaySku ?? 'Sem SKU'}
                                       </span>
                                       <div className="hidden h-4 w-px bg-slate-200/70 dark:bg-white/10 sm:block" />
                                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -2150,6 +2173,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                           {topProdutos.map((produto, idx) => {
                             const key = buildProdutoKey(produto);
                             const ativo = produtoEmFocoKey ? produtoEmFocoKey === key : idx === 0;
+                            const nomeProdutoCard = normalizeProdutoNome(produto.descricao);
                             return (
                               <button
                                 key={key}
@@ -2169,21 +2193,21 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                       {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
                                       <img
                                         src={produto.imagemUrl}
-                                        alt={produto.descricao}
+                                          alt={nomeProdutoCard}
                                         className="absolute inset-0 w-full h-full object-cover"
                                       />
                                     </>
                                   ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                      {getInitials(produto.descricao)}
+                                        {getInitials(nomeProdutoCard)}
                                     </div>
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col gap-3">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                      <p className="text-base font-semibold text-slate-900 dark:text-white leading-tight truncate">{produto.descricao}</p>
-                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                        <p className="text-base font-semibold text-slate-900 dark:text-white leading-tight truncate">{nomeProdutoCard}</p>
+                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ?? 'Sem SKU'}</p>
                                     </div>
                                     <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
                                       {idx + 1}
@@ -2213,6 +2237,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                           {topProdutos.map((produto, idx) => {
                             const key = buildProdutoKey(produto);
                             const ativo = produtoEmFocoKey ? produtoEmFocoKey === key : idx === 0;
+                            const nomeProdutoCard = normalizeProdutoNome(produto.descricao);
                             return (
                               <button
                                 key={key}
@@ -2232,21 +2257,21 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                       {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
                                       <img
                                         src={produto.imagemUrl}
-                                        alt={produto.descricao}
+                                          alt={nomeProdutoCard}
                                         className="absolute inset-0 w-full h-full object-cover"
                                       />
                                     </>
                                   ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                      {getInitials(produto.descricao)}
+                                        {getInitials(nomeProdutoCard)}
                                     </div>
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col gap-3">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.descricao}</p>
-                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ? `SKU ${produto.sku}` : 'Sem SKU'}</p>
+                                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{nomeProdutoCard}</p>
+                                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500 truncate">{produto.sku ?? 'Sem SKU'}</p>
                                     </div>
                                     <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-[#009DA8] text-xs font-extrabold">
                                       {idx + 1}
