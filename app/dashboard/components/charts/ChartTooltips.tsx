@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { isValidElement } from 'react';
 
 export type ChartTooltipValue = number | string;
 export type CustomTooltipFormatter = (
@@ -85,9 +86,14 @@ export function CustomTooltip({ active, payload, label, formatter }: CustomToolt
           color: toReadableColor(entry?.color),
           fontWeight: 600,
         } as const;
+        const isElement = isValidElement(formattedValue);
         return (
           <div key={entry?.name ?? index} style={{ margin: '4px 0' }}>
-            <p style={lineStyle}>{formattedValue}</p>
+            {isElement ? (
+              <div style={lineStyle}>{formattedValue}</div>
+            ) : (
+              <p style={lineStyle}>{formattedValue}</p>
+            )}
             {quantidade != null ? (
               <p style={{ ...lineStyle, marginTop: '2px' }}>
                 {quantidade.toLocaleString('pt-BR')} un

@@ -832,6 +832,90 @@ const aggregateMap = <T, K extends string | number>(items: T[], keyGetter: (item
   return map;
 };
 
+const buildFactsOnTheFly = async (
+  dataInicialStr: string,
+  dataFinalStr: string
+): Promise<DashboardCacheRow | null> => {
+  const { data: orders, error: ordersErr } = await supabaseAdmin
+    .from('tiny_orders')
+    .select('id,data_criacao,canal,situacao,cidade,uf,valor,valor_frete')
+    .gte('data_criacao', dataInicialStr)
+    .lte('data_criacao', dataFinalStr);
+
+  if (ordersErr) {
+    console.error('[dashboard] falha ao carregar pedidos on-the-fly', ordersErr);
+    return null;
+  }
+
+  const orderFactsMap = aggregateMap(
+    orders ?? [],
+    (o) => `${o.data_criacao ?? ''}|${o.canal ?? 'Outros'}|${o.situacao ?? -1}|${o.cidade ?? ''}|${o.uf ?? ''}`,
+    (acc: any, item) => {
+      const valorBruto = toNumberSafe(item.valor ?? 0);
+      const valorFrete = toNumberSafe(item.valor_frete ?? 0);
+      acc.data = item.data_criacao ?? null;
+      acc.canal = item.canal ?? 'Outros';
+      acc.situacao = typeof item.situacao === 'number' ? item.situacao : toNumberSafe(item.situacao ?? -1);
+      acc.cidade = item.cidade ?? null;
+      acc.uf = item.uf ?? null;
+      acc.pedidos = (acc.pedidos ?? 0) + 1;
+      acc.valor_bruto = (acc.valor_bruto ?? 0) + valorBruto;
+      acc.valor_frete = (acc.valor_frete ?? 0) + valorFrete;
+      acc.valor_liquido = (acc.valor_liquido ?? 0) + (valorBruto - valorFrete);
+    }
+  );
+
+  const orderFacts: CacheOrderFact[] = Array.from(orderFactsMap.values()).filter((f) => !!f.data);
+
+  const { data: itens, error: itensErr } = await supabaseAdmin
+    .from('tiny_pedido_itens')
+    .select(
+      'id_pedido,id_produto_tiny,codigo_produto,nome_produto,quantidade,valor_total,valor_unitario,tiny_orders!inner(data_criacao,canal,situacao)'
+    )
+    .gte('tiny_orders.data_criacao', dataInicialStr)
+    .lte('tiny_orders.data_criacao', dataFinalStr);
+
+  if (itensErr) {
+    console.error('[dashboard] falha ao carregar itens on-the-fly', itensErr);
+  }
+
+  const produtoFactsMap = aggregateMap(
+    itens ?? [],
+    (item) => {
+      const pedido = (item as any).tiny_orders ?? {};
+      return `${pedido.data_criacao ?? ''}|${pedido.canal ?? 'Outros'}|${pedido.situacao ?? -1}|${item.id_produto_tiny ?? 0}|${item.codigo_produto ?? ''}`;
+    },
+    (acc: any, item) => {
+      const pedido = (item as any).tiny_orders ?? {};
+      acc.data = pedido.data_criacao ?? null;
+      acc.canal = pedido.canal ?? 'Outros';
+      acc.situacao = typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1);
+      acc.produto_id = typeof item.id_produto_tiny === 'number' ? item.id_produto_tiny : 0;
+      acc.sku = item.codigo_produto ?? null;
+      acc.descricao = item.nome_produto ?? 'Produto sem nome';
+      const quantidade = toNumberSafe(item.quantidade ?? 0);
+      const receita = toNumberSafe(item.valor_total ?? item.valor_unitario ?? 0);
+      acc.quantidade = (acc.quantidade ?? 0) + quantidade;
+      acc.receita = (acc.receita ?? 0) + receita;
+    }
+  );
+
+  const produtoFacts: CacheProdutoFact[] = Array.from(produtoFactsMap.values()).filter((f) => !!f.data);
+
+  return {
+    periodo_inicio: dataInicialStr,
+    periodo_fim: dataFinalStr,
+    order_facts: orderFacts,
+    produto_facts: produtoFacts,
+    last_refreshed_at: new Date().toISOString(),
+    total_pedidos: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.pedidos), 0),
+    total_valor: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_bruto), 0),
+    total_valor_liquido: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_liquido), 0),
+    total_frete_total: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_frete), 0),
+    total_produtos_vendidos: produtoFacts.reduce((acc, f) => acc + toNumberSafe(f.quantidade), 0),
+  };
+};
+
 const computeTopProdutos = (
   produtoFacts: CacheProdutoFact[],
   limite = 12
@@ -1018,6 +1102,7 @@ export async function GET(req: NextRequest) {
 
     const dataInicialStr = dataInicialDate.toISOString().slice(0, 10);
     const dataFinalStr = dataFinalDate.toISOString().slice(0, 10);
+    const diasJanela = Math.max(1, diffDias(dataInicialDate, dataFinalDate) + 1);
     const hojeTimezoneStr = todayInTimeZone(DEFAULT_REPORT_TIMEZONE);
     const isSingleDayFilter = dataInicialStr === dataFinalStr;
     const aplicarCorteHoraAnteriorCards =
@@ -1057,15 +1142,26 @@ export async function GET(req: NextRequest) {
     const dataFinalAnteriorCardsStr = dataFinalAnteriorCardsDate.toISOString().slice(0, 10);
 
     console.time(supabaseTimer);
+    const refreshInterval = Math.max(365, diasJanela);
     let cacheRow = await loadCacheRow(dataInicialStr, dataFinalStr);
     if (!cacheRow) {
-      await supabaseAdmin.rpc('refresh_dashboard_resumo_cache');
+      const { error: refreshError } = await supabaseAdmin.rpc(
+        'refresh_dashboard_resumo_cache',
+        { interval_days: refreshInterval }
+      );
+      if (refreshError) {
+        console.error('[dashboard] erro ao recalcular cache', refreshError);
+      }
       cacheRow = await loadCacheRow(dataInicialStr, dataFinalStr);
     }
     console.timeEnd(supabaseTimer);
 
     if (!cacheRow) {
-      throw new Error('Cache de dashboard indisponível ou vazio');
+      cacheRow = await buildFactsOnTheFly(dataInicialStr, dataFinalStr);
+    }
+
+    if (!cacheRow) {
+      return NextResponse.json({ message: 'Cache de dashboard indisponível ou vazio após recalculo' }, { status: 503 });
     }
 
     const orderFacts = Array.isArray(cacheRow.order_facts) ? cacheRow.order_facts : [];
