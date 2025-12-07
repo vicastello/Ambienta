@@ -1254,7 +1254,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       .slice(-SPARK_WINDOW_DAYS)
       .map((dia) => ({
         label: dia.data.split('-')[2],
-        value: dia.totalDia,
+        valor: dia.totalDia,
         quantidade: dia.quantidade,
       }));
   }, [resumoGlobalAtual]);
@@ -1444,13 +1444,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         .sort(([a], [b]) => (a < b ? -1 : 1))
         .map(([key, info]) => ({
           label: key.split('-').reverse().join('/'),
-          value: info.receita,
+          valor: info.receita,
           quantidade: info.quantidade,
         }));
     }
     return produtoSerieFiltrada.map((dia) => ({
       label: formatSerieLabel(dia.data),
-      value: dia.receita,
+      valor: dia.receita,
       quantidade: dia.quantidade,
     }));
   }, [produtoCardPreset, produtoSerieFiltrada]);
