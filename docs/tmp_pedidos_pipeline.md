@@ -61,4 +61,15 @@
 3. `tinyApi` e `pedidoItensHelper` fazem retries, mas não logam cada pedido falho com contexto estruturado, o que dificulta auditoria.
 4. Ainda falta um job periódico para detectar `tiny_orders` sem itens e reaplicar `sincronizarItensPorPedidos` com logs e retries claros.
 
+## 8. Cron automático de correção de itens via GitHub Actions
+- Workflow em `.github/workflows/cron-fix-pedido-itens.yml` roda a cada 15 minutos (`*/15 * * * *`) e via `workflow_dispatch`.
+- Chama `POST /api/admin/cron/fix-pedido-itens` com `dias=3`, `limit=400`, `force=true`, header `x-cron-secret`.
+- Secrets no repositório GitHub necessários:
+  - `APP_URL_PROD` → URL do app em produção (ex.: `https://gestor-tiny-XXXX.vercel.app`).
+  - `CRON_FIX_PEDIDO_ITENS_SECRET` → mesmo valor de `CRON_SECRET` configurado no app.
+- Rodar manualmente:
+  - Via Actions: acione o workflow `Cron Fix Pedido Itens` (workflow_dispatch).
+  - Via CLI local: `npx tsx scripts/fixMissingPedidoItens.ts --days 3 --limit 400`
+  - Conferir faltantes: `npx tsx scripts/debugPedidosHoje.ts --days 3`
+
 *Próximo passo:* validar colunas e chaves (já descrito acima) e criar `scripts/debugPedidosHoje.ts` + o job de fix para garantir que pedidos de hoje nunca fiquem sem itens.

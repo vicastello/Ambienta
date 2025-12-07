@@ -1,0 +1,39 @@
+name: Cron Fix Pedido Itens
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  fix-pedido-itens:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar cron de correção de itens
+        env:
+          APP_URL_PROD: ${{ secrets.APP_URL_PROD }}
+          CRON_FIX_PEDIDO_ITENS_SECRET: ${{ secrets.CRON_FIX_PEDIDO_ITENS_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL_PROD:-}" ]; then
+            echo "APP_URL_PROD não configurado" >&2
+            exit 1
+          fi
+          if [ -z "${CRON_FIX_PEDIDO_ITENS_SECRET:-}" ]; then
+            echo "CRON_FIX_PEDIDO_ITENS_SECRET não configurado" >&2
+            exit 1
+          fi
+
+          payload='{"dias":3,"limit":400,"force":true}'
+          url="${APP_URL_PROD%/}/api/admin/cron/fix-pedido-itens"
+
+          echo "Disparando correção de itens em $url"
+          http_status=$(curl -sS -o /tmp/cron_response.json -w "%{http_code}" \
+            -X POST "$url" \
+            -H "x-cron-secret: $CRON_FIX_PEDIDO_ITENS_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "$payload" -f)
+
+          echo "Status HTTP: $http_status"
+          echo "Resposta:"
+          cat /tmp/cron_response.json
