@@ -832,6 +832,66 @@ const aggregateMap = <T, K extends string | number>(items: T[], keyGetter: (item
   return map;
 };
 
+const fetchProdutoFactsRange = async (
+  dataInicialStr: string,
+  dataFinalStr: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null
+): Promise<CacheProdutoFact[]> => {
+  const query = supabaseAdmin
+    .from('tiny_pedido_itens')
+    .select(
+      `
+        id_pedido,
+        id_produto_tiny,
+        codigo_produto,
+        nome_produto,
+        quantidade,
+        valor_total,
+        valor_unitario,
+        tiny_orders!inner(data_criacao, canal, situacao)
+      `
+    )
+    .gte('tiny_orders.data_criacao', dataInicialStr)
+    .lte('tiny_orders.data_criacao', dataFinalStr);
+
+  if (canaisFiltro?.length) {
+    query.in('tiny_orders.canal', canaisFiltro);
+  }
+  if (situacoesFiltro?.length) {
+    query.in('tiny_orders.situacao', situacoesFiltro);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[dashboard] falha ao buscar itens para top produtos', error);
+    return [];
+  }
+
+  const produtoFactsMap = aggregateMap(
+    data ?? [],
+    (item) => {
+      const pedido = (item as any).tiny_orders ?? {};
+      return `${pedido.data_criacao ?? ''}|${pedido.canal ?? 'Outros'}|${pedido.situacao ?? -1}|${item.id_produto_tiny ?? 0}|${item.codigo_produto ?? ''}`;
+    },
+    (acc: any, item) => {
+      const pedido = (item as any).tiny_orders ?? {};
+      acc.data = pedido.data_criacao ?? null;
+      acc.canal = pedido.canal ?? 'Outros';
+      acc.situacao = typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1);
+      acc.produto_id = typeof item.id_produto_tiny === 'number' ? item.id_produto_tiny : 0;
+      acc.sku = item.codigo_produto ?? null;
+      acc.descricao = item.nome_produto ?? 'Produto sem nome';
+      const quantidade = toNumberSafe(item.quantidade ?? 0);
+      const receita = toNumberSafe(item.valor_total ?? item.valor_unitario ?? 0);
+      acc.quantidade = (acc.quantidade ?? 0) + quantidade;
+      acc.receita = (acc.receita ?? 0) + receita;
+    }
+  );
+
+  return Array.from(produtoFactsMap.values()).filter((f) => !!f.data);
+};
+
 const buildFactsOnTheFly = async (
   dataInicialStr: string,
   dataFinalStr: string
@@ -1168,18 +1228,29 @@ export async function GET(req: NextRequest) {
     const produtoFacts = Array.isArray(cacheRow.produto_facts) ? cacheRow.produto_facts : [];
 
     const ordersAtual = filterOrders(orderFacts, dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
-    const produtosAtuais = filterProdutos(produtoFacts, dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
+    let produtosAtuais = filterProdutos(produtoFacts, dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
+    if (!produtosAtuais.length && ordersAtual.length) {
+      produtosAtuais = await fetchProdutoFactsRange(dataInicialStr, dataFinalStr, canaisFiltro, situacoesFiltro);
+    }
 
     const periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, dataInicialStr, dataFinalStr);
 
     const ordersAnterior = filterOrders(orderFacts, dataInicialAnteriorStr, dataFinalAnteriorStr, canaisFiltro, situacoesFiltro);
-    const produtosAnterior = filterProdutos(
+    let produtosAnterior = filterProdutos(
       produtoFacts,
       dataInicialAnteriorStr,
       dataFinalAnteriorStr,
       canaisFiltro,
       situacoesFiltro
     );
+    if (!produtosAnterior.length && ordersAnterior.length) {
+      produtosAnterior = await fetchProdutoFactsRange(
+        dataInicialAnteriorStr,
+        dataFinalAnteriorStr,
+        canaisFiltro,
+        situacoesFiltro
+      );
+    }
     const periodoAnterior = computePeriodoResumo(
       ordersAnterior,
       produtosAnterior,
@@ -1200,13 +1271,21 @@ export async function GET(req: NextRequest) {
       return true;
     });
 
-    const produtosAnteriorCards = filterProdutos(
+    let produtosAnteriorCards = filterProdutos(
       produtoFacts,
       dataInicialAnteriorCardsStr,
       dataFinalAnteriorCardsStr,
       canaisFiltro,
       situacoesFiltro
     );
+    if (!produtosAnteriorCards.length && ordersAnteriorCards.length) {
+      produtosAnteriorCards = await fetchProdutoFactsRange(
+        dataInicialAnteriorCardsStr,
+        dataFinalAnteriorCardsStr,
+        canaisFiltro,
+        situacoesFiltro
+      );
+    }
 
     const periodoAnteriorCards = computePeriodoResumo(
       ordersAnteriorCards,
