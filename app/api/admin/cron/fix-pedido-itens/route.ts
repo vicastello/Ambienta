@@ -31,34 +31,53 @@ export async function POST(req: NextRequest) {
   const force = body.force === true;
 
   const since = new Date(Date.now() - dias * DAY_MS);
-  const accessToken = await getAccessTokenFromDbOrRefresh();
 
-  const { orders, result } = await fixMissingPedidoItens(accessToken, {
-    since,
-    limit,
-    force,
-    delayMs: 900,
-    retries: 2,
-    context: 'cron_fix_missing_itens',
-  });
+  try {
+    const accessToken = await getAccessTokenFromDbOrRefresh();
 
-  await logJob({
-    level: 'info',
-    message: 'Cron fixMissingPedidoItens executado',
-    meta: {
-      dias,
+    const { orders, result, remaining } = await fixMissingPedidoItens(accessToken, {
+      since,
       limit,
       force,
-      pedidosEncontrados: orders.length,
-      result,
-    },
-  });
+      delayMs: 900,
+      retries: 2,
+      context: 'cron_fix_missing_itens',
+    });
 
-  return NextResponse.json({
-    success: true,
-    dias,
-    limit,
-    pedidosFixados: orders.length,
-    result,
-  });
+    const correctedCount = result?.sucesso ?? 0;
+    const stillMissingCount = remaining.length;
+
+    await logJob({
+      level: 'info',
+      message: 'Cron fixMissingPedidoItens executado',
+      meta: {
+        dias,
+        limit,
+        force,
+        pedidosEncontrados: orders.length,
+        correctedCount,
+        stillMissingCount,
+        result,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      correctedCount,
+      stillMissingCount,
+      checkedDays: dias,
+      limit,
+    });
+  } catch (error: any) {
+    await logJob({
+      level: 'error',
+      message: 'Cron fixMissingPedidoItens falhou',
+      meta: { dias, limit, force, error: error?.message ?? String(error) },
+    });
+
+    return NextResponse.json({
+      success: false,
+      error: 'Erro ao corrigir pedidos sem itens',
+    }, { status: 500 });
+  }
 }

@@ -44,20 +44,30 @@ export async function listPedidosSemItens(since: Date, limit = 500): Promise<Mis
 export async function fixMissingPedidoItens(
   accessToken: string,
   options: FixMissingPedidoOptions
-): Promise<{ orders: MissingPedidoRow[]; result: Awaited<ReturnType<typeof sincronizarItensPorPedidos>> | null }> {
-  const limit = options.limit ?? 500;
+): Promise<{
+  orders: MissingPedidoRow[];
+  result: Awaited<ReturnType<typeof sincronizarItensPorPedidos>> | null;
+  remaining: MissingPedidoRow[];
+}> {
+  const limit = options.limit ?? 400;
   const orders = await listPedidosSemItens(options.since, limit);
   if (!orders.length) {
-    return { orders: [], result: null };
+    return { orders: [], result: null, remaining: [] };
   }
 
-  const tinyIds = orders.map((order) => order.tiny_id!).filter((id): id is number => Boolean(id));
-  const result = await sincronizarItensPorPedidos(accessToken, tinyIds, {
-    delayMs: options.delayMs,
-    retries: options.retries,
-    force: options.force,
-    context: options.context,
-  });
+  try {
+    const tinyIds = orders.map((order) => order.tiny_id!).filter((id): id is number => Boolean(id));
+    const result = await sincronizarItensPorPedidos(accessToken, tinyIds, {
+      delayMs: options.delayMs,
+      retries: options.retries,
+      force: options.force,
+      context: options.context,
+    });
 
-  return { orders, result };
+    const remaining = await listPedidosSemItens(options.since, limit);
+    return { orders, result, remaining };
+  } catch (error) {
+    console.error('[fixMissingPedidoItens] falha ao sincronizar itens', error);
+    throw error;
+  }
 }

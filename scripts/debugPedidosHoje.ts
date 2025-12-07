@@ -8,17 +8,51 @@ type OrderSummary = {
   itens: number;
 };
 
-function buildDates(dateArg?: string) {
-  const pivot = dateArg ?? new Date().toISOString().slice(0, 10);
+type DebugArgs = {
+  days?: number;
+  date?: string;
+};
+
+function parseArgs(argv: string[]): DebugArgs {
+  const args: DebugArgs = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const current = argv[i];
+    if (current === '--days' || current === '-d' || current.startsWith('--days=')) {
+      const value = current.includes('=') ? current.split('=')[1] : argv[i + 1];
+      args.days = Number(value);
+      if (!current.includes('=') && argv[i + 1]) i += 1;
+      continue;
+    }
+    if (!current.startsWith('-') && !args.date) {
+      args.date = current;
+    }
+  }
+  return args;
+}
+
+function buildWindow(args: DebugArgs) {
+  const days = Number.isFinite(args.days) && (args.days as number) > 0 ? (args.days as number) : 1;
+  if (days > 1) {
+    const end = new Date();
+    end.setUTCHours(0, 0, 0, 0);
+    end.setUTCDate(end.getUTCDate() + 1); // início do dia seguinte
+    const start = new Date(end);
+    start.setUTCDate(end.getUTCDate() - days);
+    const label = `últimos ${days} dias`; // inclusive hoje
+    return { label, start, end };
+  }
+
+  const pivot = args.date ?? new Date().toISOString().slice(0, 10);
   const start = new Date(`${pivot}T00:00:00.000Z`);
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + 1);
-  return { pivot, start, end };
+  return { label: pivot, start, end };
 }
 
 async function main() {
-  const { pivot, start, end } = buildDates(process.argv[2]);
-  console.log(`[debugPedidosHoje] checando pedidos em ${pivot}`);
+  const parsed = parseArgs(process.argv.slice(2));
+  const { label, start, end } = buildWindow(parsed);
+  console.log(`[debugPedidosHoje] checando pedidos em ${label}`);
 
   const { data: orders, error: ordersError } = await supabaseAdmin
     .from('tiny_orders')
@@ -33,7 +67,7 @@ async function main() {
   }
 
   if (!orders || orders.length === 0) {
-    console.log('[debugPedidosHoje] Nenhum pedido encontrado para a data informada.');
+    console.log('[debugPedidosHoje] Nenhum pedido encontrado para a janela informada.');
     return;
   }
 
@@ -63,7 +97,7 @@ async function main() {
 
   const missing = summary.filter((order) => order.itens === 0);
 
-  console.log(`[debugPedidosHoje] ${summary.length} pedidos em ${pivot}, ${missing.length} sem itens.`);
+  console.log(`[debugPedidosHoje] ${summary.length} pedidos em ${label}, ${missing.length} sem itens.`);
   if (missing.length) {
     console.table(
       missing.map((order) => ({

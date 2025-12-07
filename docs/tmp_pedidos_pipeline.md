@@ -40,7 +40,22 @@
 - A trigger `tiny_orders_auto_sync_itens` garante que qualquer inserção nova (sync, manual, import) dispare `/api/tiny/sync/itens`.
 - A rota `app/api/admin/cron/fix-pedido-itens` (protegida por `CRON_SECRET`) lista pedidos dos últimos dias sem itens e reaplica `sincronizarItensPorPedidos` com `context: 'cron_fix_missing_itens'`, registrando o resultado em `sync_logs`. Use também `scripts/fixMissingPedidoItens.ts` para execuções manuais.
 
-## 6. Pontos críticos identificados até aqui
+## 6. Rotina de correção automática de itens faltando
+- Auditoria rápida (hoje ou últimos N dias):
+  - `npx tsx scripts/debugPedidosHoje.ts` (hoje)
+  - `npx tsx scripts/debugPedidosHoje.ts --days 3` (últimos 3 dias)
+- Correção manual via CLI (defaults recomendados: dias=3, limit=400, retries=3, delay=800ms, force=on):
+  - `npx tsx scripts/fixMissingPedidoItens.ts --days 2 --limit 200`
+  - sem flags mantém compatibilidade: `npx tsx scripts/fixMissingPedidoItens.ts`
+- Rota HTTP para cron externo/pg_net (usa o mesmo helper + logging em `sync_logs`):
+  ```bash
+  curl -X POST "https://<host-da-app>/api/admin/cron/fix-pedido-itens" \
+    -H "x-cron-secret: $CRON_SECRET" \
+    -d '{"dias":3,"limit":400,"force":true}'
+  ```
+- A rota responde com `{ success, correctedCount, stillMissingCount, checkedDays, limit }`. Em caso de erro, retorna 500 e loga o detalhe em `sync_logs`.
+
+## 7. Pontos críticos identificados até aqui
 1. Qualquer pedido persistido só terá itens após `sincronizarItensPorPedidos`. Em caso de erro ou 429, o job atual apenas loga e tenta `sincronizarItensAutomaticamente` como fallback.
 2. A trigger `tiny_orders_auto_sync_itens` usa o domínio fixo `gestor-tiny.vercel.app`. Em ambientes diferentes (preview, local) essa chamada pode falhar silenciosamente.
 3. `tinyApi` e `pedidoItensHelper` fazem retries, mas não logam cada pedido falho com contexto estruturado, o que dificulta auditoria.
