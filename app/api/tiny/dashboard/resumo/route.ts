@@ -102,6 +102,23 @@ type HoraTrend = {
   quantidadeOntem?: number;
 };
 
+type MicroTrendWindow = {
+  start: string;
+  end: string;
+  faturamento: number;
+  pedidos: number;
+};
+
+type MicroTrend = {
+  current24h: MicroTrendWindow;
+  previous24h: MicroTrendWindow;
+  diffs: {
+    faturamento: MetricDiff;
+    pedidos: MetricDiff;
+  };
+  series: HoraTrend[];
+};
+
 type ProdutoZoomLevelInternal = {
   key: string;
   produtoId: number | null;
@@ -232,6 +249,7 @@ type DashboardResposta = {
   current: PeriodoResumo;
   previous: PeriodoResumo;
   diffs: DashboardDiffs;
+  microTrend?: MicroTrend;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: Array<{ codigo: number; descricao: string }>;
@@ -247,6 +265,7 @@ type DashboardResposta = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOURLY_TREND_HOURS = 24;
 const HOURLY_TREND_LOOKBACK_MS = DAY_MS * 2;
+const MICRO_TREND_WINDOW_HOURS = 24;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SUPABASE_PAGE_SIZE = 250;
 const SUPABASE_MAX_ROWS = 10000;
@@ -254,6 +273,23 @@ const SUPABASE_MAX_RETRIES = 3;
 const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network request failed)/i;
 const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
+
+const nowInTimeZone = (timeZone: string): Date => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')));
+};
 
 // Usa inserted_at como referência de corte horário na zona America/Sao_Paulo
 const getCutoffMinutesNowSp = (): number => {
@@ -1291,6 +1327,124 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
   }
 };
 
+const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend> => {
+  const nowSp = nowInTimeZone(timeZone);
+  const currentEnd = nowSp;
+  const currentStart = new Date(currentEnd.getTime() - MICRO_TREND_WINDOW_HOURS * 60 * 60 * 1000);
+  const previousEnd = currentStart;
+  const previousStart = new Date(previousEnd.getTime() - MICRO_TREND_WINDOW_HOURS * 60 * 60 * 1000);
+
+  const { data, error } = await supabaseAdmin
+    .from('tiny_orders')
+    .select('valor,inserted_at')
+    .gte('inserted_at', previousStart.toISOString())
+    .lt('inserted_at', currentEnd.toISOString())
+    .limit(SUPABASE_MAX_ROWS);
+
+  if (error) {
+    console.error('[dashboard] erro ao buscar microtrend 24h', error);
+    return {
+      current24h: {
+        start: currentStart.toISOString(),
+        end: currentEnd.toISOString(),
+        faturamento: 0,
+        pedidos: 0,
+      },
+      previous24h: {
+        start: previousStart.toISOString(),
+        end: previousEnd.toISOString(),
+        faturamento: 0,
+        pedidos: 0,
+      },
+      diffs: {
+        faturamento: { current: 0, previous: 0, delta: 0, deltaPercent: null },
+        pedidos: { current: 0, previous: 0, delta: 0, deltaPercent: null },
+      },
+      series: buildHourlyTrendSeries(new Map(), new Map()),
+    };
+  }
+
+  const hoursCount = MICRO_TREND_WINDOW_HOURS;
+  const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
+  const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
+
+  const currentStartMs = currentStart.getTime();
+  const previousStartMs = previousStart.getTime();
+  const hourMs = 60 * 60 * 1000;
+
+  for (const row of data ?? []) {
+    const ts = new Date((row as any).inserted_at ?? (row as any).updated_at ?? null);
+    if (Number.isNaN(ts.getTime())) continue;
+    const tsMs = ts.getTime();
+    if (tsMs >= currentStartMs && tsMs < currentEnd.getTime()) {
+      const idx = Math.floor((tsMs - currentStartMs) / hourMs);
+      if (idx >= 0 && idx < hoursCount) {
+        currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+        currentBuckets[idx].pedidos += 1;
+      }
+    } else if (tsMs >= previousStartMs && tsMs < previousEnd.getTime()) {
+      const idx = Math.floor((tsMs - previousStartMs) / hourMs);
+      if (idx >= 0 && idx < hoursCount) {
+        previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+        previousBuckets[idx].pedidos += 1;
+      }
+    }
+  }
+
+  const currentFaturamento = currentBuckets.reduce((acc, b) => acc + b.valor, 0);
+  const previousFaturamento = previousBuckets.reduce((acc, b) => acc + b.valor, 0);
+  const currentPedidos = currentBuckets.reduce((acc, b) => acc + b.pedidos, 0);
+  const previousPedidos = previousBuckets.reduce((acc, b) => acc + b.pedidos, 0);
+
+  const faturamentoDiff = buildDiff(currentFaturamento, previousFaturamento);
+  const pedidosDiff = buildDiff(currentPedidos, previousPedidos);
+
+  const labelFormatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const series: HoraTrend[] = currentBuckets.map((bucket, idx) => {
+    const pointDate = new Date(currentStartMs + idx * hourMs);
+    const label = labelFormatter.format(pointDate);
+    return {
+      label,
+      hoje: bucket.valor,
+      ontem: previousBuckets[idx]?.valor ?? 0,
+      quantidade: bucket.pedidos,
+      quantidadeOntem: previousBuckets[idx]?.pedidos ?? 0,
+    };
+  });
+
+  console.log('[dashboard] microTrend24h', {
+    nowSp: nowSp.toISOString(),
+    current: { start: currentStart.toISOString(), end: currentEnd.toISOString(), faturamento: currentFaturamento },
+    previous: { start: previousStart.toISOString(), end: previousEnd.toISOString(), faturamento: previousFaturamento },
+  });
+
+  return {
+    current24h: {
+      start: currentStart.toISOString(),
+      end: currentEnd.toISOString(),
+      faturamento: currentFaturamento,
+      pedidos: currentPedidos,
+    },
+    previous24h: {
+      start: previousStart.toISOString(),
+      end: previousEnd.toISOString(),
+      faturamento: previousFaturamento,
+      pedidos: previousPedidos,
+    },
+    diffs: {
+      faturamento: faturamentoDiff,
+      pedidos: pedidosDiff,
+    },
+    series,
+  };
+};
+
 const computeTopProdutos = (
   produtoFacts: CacheProdutoFact[],
   limite = 12
@@ -1870,6 +2024,8 @@ export async function GET(req: NextRequest) {
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
 
+    const microTrend = await buildMicroTrend24h(DEFAULT_REPORT_TIMEZONE);
+
     const lastUpdatedAt = cacheRow?.last_refreshed_at ?? new Date().toISOString();
 
     if (applyHoraCorte && horaCorteMinutos !== null) {
@@ -1907,6 +2063,7 @@ export async function GET(req: NextRequest) {
       periodoAtual,
       periodoAnterior,
       periodoAnteriorCards: periodoAnterior,
+      microTrend,
       canais,
       canaisDisponiveis,
       situacoesDisponiveis: [...TODAS_SITUACOES],
