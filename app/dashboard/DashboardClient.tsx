@@ -384,10 +384,14 @@ function buildChartCacheKey(
   fim: string,
   preset: ChartPreset,
   customStart: string | null,
-  customEnd: string | null
+  customEnd: string | null,
+  canais: string[],
+  situacoes: number[]
 ) {
+  const canaisKey = canais.length ? [...canais].sort().join('|') : 'all';
+  const situacoesKey = situacoes.length ? [...situacoes].sort((a, b) => a - b).join('|') : 'all';
   const customKey = `${customStart ?? 'na'}:${customEnd ?? 'na'}`;
-  return `${CHART_CACHE_PREFIX}:${preset}:${customKey}:${inicio}:${fim}`;
+  return `${CHART_CACHE_PREFIX}:${preset}:${customKey}:${inicio}:${fim}:${canaisKey}:${situacoesKey}`;
 }
 
 function intervaloIncluiHoje(inicio: string, fim: string) {
@@ -946,6 +950,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
+      params.set('noCutoff', '1');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
@@ -969,7 +974,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         if (requestId === resumoRequestId.current && preset === 'month' && !already && atualDias < diasEsperados) {
           setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
           setComplementLoading(true);
-          const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
+          const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1&noCutoff=1`;
           const resC = await fetch(url, { cache: 'no-store' });
           if (resC.ok) {
             setComplementMsg('Dados completados automaticamente');
@@ -1019,6 +1024,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
+      params.set('noCutoff', '1');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
@@ -1247,7 +1253,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     try {
       const { inicio, fim } = resolverIntervaloChart();
       const incluiHoje = intervaloIncluiHoje(inicio, fim);
-      const cacheKey = buildChartCacheKey(inicio, fim, chartPreset, chartCustomStart, chartCustomEnd);
+      const cacheKey = buildChartCacheKey(
+        inicio,
+        fim,
+        chartPreset,
+        chartCustomStart,
+        chartCustomEnd,
+        canaisSelecionados,
+        situacoesSelecionadas
+      );
       const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cachedChart = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, resumoChart) : null;
       const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, CHART_CACHE_FRESH_MS);
@@ -1262,6 +1276,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
+      if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
+      if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo (gráfico)');
@@ -1310,14 +1326,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   useEffect(() => {
     carregarResumoChart();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- evita recriar chart request a cada render
-  }, [chartPreset, chartCustomStart, chartCustomEnd]);
+  }, [chartPreset, chartCustomStart, chartCustomEnd, canaisSelecionados, situacoesSelecionadas]);
 
   async function handleComplementChart() {
     try {
       setComplementLoading(true);
       setComplementMsg(null);
       const { inicio, fim } = resolverIntervaloChart();
-      const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
+      const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1&noCutoff=1`;
       const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1449,19 +1465,58 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const previous = source.previous ?? source.periodoAnterior;
     if (!current || !previous) return [];
 
-    const mapaAtual = new Map<string, number>();
-    const mapaAnterior = new Map<string, number>();
-    current.vendasPorDia.forEach((d) => mapaAtual.set(d.data, d.totalDia));
-    previous.vendasPorDia.forEach((d) => mapaAnterior.set(d.data, d.totalDia));
+    const mapaAtualValor = new Map<string, number>();
+    const mapaAnteriorValor = new Map<string, number>();
+    const mapaAtualPedidos = new Map<string, number>();
+    const mapaAnteriorPedidos = new Map<string, number>();
+    current.vendasPorDia.forEach((d) => {
+      mapaAtualValor.set(d.data, d.totalDia);
+      mapaAtualPedidos.set(d.data, d.quantidade ?? 0);
+    });
+    previous.vendasPorDia.forEach((d) => {
+      mapaAnteriorValor.set(d.data, d.totalDia);
+      mapaAnteriorPedidos.set(d.data, d.quantidade ?? 0);
+    });
 
-    const pontos: Array<{ data: string; atual: number; anterior: number }> = [];
+    // Exibe sempre 31 dias no preset de mês.
+    // - Série atual: dias futuros ficam null para parar a linha.
+    // - Série anterior: usa o mês anterior completo (até o último dia do mês), não corta pela janela atual.
+    if (chartPreset === 'month') {
+      const pontos: Array<{
+        data: string;
+        atual: number | null;
+        anterior: number | null;
+        pedidosAtual: number | null;
+        pedidosAnterior: number | null;
+      }> = [];
+      const totalDias = 31;
+      for (let i = 0; i < totalDias; i += 1) {
+        const label = String(i + 1).padStart(2, '0');
+        const dataAtual = addDays(current.dataInicial, i);
+        const dataAnterior = addDays(previous.dataInicial, i);
+        const dentroJanelaAtual = dataAtual <= current.dataFinal;
+        const dentroJanelaAnterior = dataAnterior <= previous.dataFinal;
+
+        const valorAtual = dentroJanelaAtual ? mapaAtualValor.get(dataAtual) ?? 0 : null;
+        const valorAnterior = dentroJanelaAnterior ? mapaAnteriorValor.get(dataAnterior) ?? 0 : null;
+        const pedidosAtual = dentroJanelaAtual ? mapaAtualPedidos.get(dataAtual) ?? 0 : null;
+        const pedidosAnterior = dentroJanelaAnterior ? mapaAnteriorPedidos.get(dataAnterior) ?? 0 : null;
+
+        pontos.push({ data: label, atual: valorAtual, anterior: valorAnterior, pedidosAtual, pedidosAnterior });
+      }
+      return pontos;
+    }
+
+    const pontos: Array<{ data: string; atual: number; anterior: number; pedidosAtual: number; pedidosAnterior: number }> = [];
     let cursorAtual = current.dataInicial;
     let cursorAnterior = previous.dataInicial;
     while (cursorAtual <= current.dataFinal && cursorAnterior <= previous.dataFinal) {
       pontos.push({
-        data: chartPreset === 'month' ? cursorAtual.split('-')[2] : cursorAtual,
-        atual: mapaAtual.get(cursorAtual) ?? 0,
-        anterior: mapaAnterior.get(cursorAnterior) ?? 0,
+        data: cursorAtual,
+        atual: mapaAtualValor.get(cursorAtual) ?? 0,
+        anterior: mapaAnteriorValor.get(cursorAnterior) ?? 0,
+        pedidosAtual: mapaAtualPedidos.get(cursorAtual) ?? 0,
+        pedidosAnterior: mapaAnteriorPedidos.get(cursorAnterior) ?? 0,
       });
       cursorAtual = addDays(cursorAtual, 1);
       cursorAnterior = addDays(cursorAnterior, 1);
@@ -1471,7 +1526,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   const chartTicks = useMemo(() => {
     if (!chartData.length) return [0, 1000];
-    const valores = chartData.flatMap((d) => [d.atual ?? 0, d.anterior ?? 0]);
+    const valores = chartData
+      .flatMap((d) => [d.atual, d.anterior])
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    if (!valores.length) return [0, 1000];
     const max = Math.max(0, ...valores);
     const top = Math.max(1000, Math.ceil(max / 1000) * 1000);
     const ticks: number[] = [];

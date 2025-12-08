@@ -789,6 +789,33 @@ function shiftIsoDate(dateIso: string, dias: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function isFirstDayOfMonth(dateIso: string | null | undefined): boolean {
+  if (!dateIso) return false;
+  return dateIso.endsWith('-01');
+}
+
+function endOfMonthIso(dateIso: string): string {
+  const parts = dateIso.split('-');
+  if (parts.length !== 3) return dateIso;
+  const [year, month] = parts.map((part) => Number(part));
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return dateIso;
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
+}
+
+function startOfPreviousMonthIso(dateIso: string): string {
+  const parts = dateIso.split('-');
+  if (parts.length !== 3) return dateIso;
+  const [year, month] = parts.map((part) => Number(part));
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return dateIso;
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  d.setUTCDate(1);
+  return d.toISOString().slice(0, 10);
+}
+
 function minutesOfDayInTimeZone(dateInput: string | null | undefined, timeZone: string): number | null {
   if (!dateInput) return null;
   const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateInput);
@@ -1152,7 +1179,8 @@ const fetchProdutoFactsRange = async (
       `
     )
     .gte('tiny_orders.data_criacao', dataInicialStr)
-    .lt('tiny_orders.data_criacao', dataFinalExclusive);
+    .lt('tiny_orders.data_criacao', dataFinalExclusive)
+    .limit(SUPABASE_MAX_ROWS);
 
   if (canaisFiltro?.length) {
     query.in('tiny_orders.canal', canaisFiltro);
@@ -1197,7 +1225,8 @@ const fetchOrderFactsRange = async (
     .from('tiny_orders')
     .select('data_criacao,canal,situacao,cidade,uf,valor,valor_frete,inserted_at')
     .gte('data_criacao', dataInicialStr)
-    .lt('data_criacao', dataFinalExclusive);
+    .lt('data_criacao', dataFinalExclusive)
+    .limit(SUPABASE_MAX_ROWS);
 
   if (canaisFiltro?.length) {
     query.in('canal', canaisFiltro);
@@ -1363,7 +1392,11 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
   }
 };
 
-const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
+const buildMicroTrend24h = async (
+  timeZone: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null
+): Promise<MicroTrend24h> => {
   const agoraSp = nowInTimeZone(timeZone);
   const hojeLabel = formatDateInTimeZone(agoraSp, timeZone);
   const ontemLabel = shiftIsoDate(hojeLabel, -1);
@@ -1374,12 +1407,21 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const ontemStart = startOfDayInTimeZone(new Date(hojeStart.getTime() - DAY_MS), timeZone);
   const ontemEnd = new Date(ontemStart.getTime() + DAY_MS - 1000);
 
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('tiny_orders')
-    .select('valor,inserted_at')
+    .select('valor,inserted_at,canal,situacao')
     .gte('inserted_at', ontemStart.toISOString())
     .lte('inserted_at', hojeEnd.toISOString())
     .limit(SUPABASE_MAX_ROWS);
+
+  if (canaisFiltro?.length) {
+    query = query.in('canal', canaisFiltro);
+  }
+  if (situacoesFiltro?.length) {
+    query = query.in('situacao', situacoesFiltro);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('[dashboard] erro ao buscar microtrend 24h', error);
@@ -1740,29 +1782,70 @@ const buildAlignedRanges = (params: {
   const timeZone = params.timeZone ?? DEFAULT_REPORT_TIMEZONE;
   const now = params.now ?? new Date();
   const hojeLabel = formatDateInTimeZone(now, timeZone);
-  const dataFinalBase = params.dataFinalParam ?? hojeLabel;
-  const incluiHoje = dataFinalBase >= hojeLabel;
-  const dataFinalStr = incluiHoje ? hojeLabel : dataFinalBase;
+  const requestedEnd = params.dataFinalParam ?? hojeLabel;
+  const incluiHoje = requestedEnd >= hojeLabel;
 
   const dataInicialStr = (() => {
     if (params.dataInicialParam) return params.dataInicialParam;
     const dias = params.diasParam ? Number(params.diasParam) : 30;
     const dur = Number.isFinite(dias) && dias > 0 ? Math.floor(dias) : 30;
-    return shiftIsoDate(dataFinalStr, -1 * (dur - 1));
+    const provisionalEnd = incluiHoje ? hojeLabel : requestedEnd;
+    return shiftIsoDate(provisionalEnd, -1 * (dur - 1));
   })();
 
-  const start = dataInicialStr;
-  const endInclusive = dataFinalStr >= start ? dataFinalStr : start;
-  const endExclusive = shiftIsoDate(endInclusive, 1);
-  const days = Math.max(1, diffDias(new Date(`${start}T00:00:00`), new Date(`${endExclusive}T00:00:00`)));
+  const isMonthSpan =
+    params.dataInicialParam &&
+    params.dataFinalParam &&
+    isFirstDayOfMonth(params.dataInicialParam) &&
+    params.dataInicialParam.slice(0, 7) === params.dataFinalParam.slice(0, 7) &&
+    endOfMonthIso(params.dataInicialParam) === params.dataFinalParam;
 
-  const prevEndExclusive = start;
+  if (isMonthSpan) {
+    const start = dataInicialStr;
+    const requestedMonthEnd = params.dataFinalParam!;
+    const displayEnd = incluiHoje ? hojeLabel : requestedMonthEnd;
+    const endExclusive = shiftIsoDate(displayEnd, 1);
+
+    const prevStart = startOfPreviousMonthIso(start);
+    const prevDisplayEnd = endOfMonthIso(prevStart);
+    const prevEndExclusive = shiftIsoDate(prevDisplayEnd, 1);
+
+    const daysCurrent = Math.max(
+      1,
+      diffDias(new Date(`${start}T00:00:00`), new Date(`${endExclusive}T00:00:00`))
+    );
+    const daysPrevious = Math.max(
+      1,
+      diffDias(new Date(`${prevStart}T00:00:00`), new Date(`${prevEndExclusive}T00:00:00`))
+    );
+
+    const current: DateRange = {
+      start,
+      endExclusive,
+      displayEnd,
+      days: daysCurrent,
+    };
+    const previous: DateRange = {
+      start: prevStart,
+      endExclusive: prevEndExclusive,
+      displayEnd: prevDisplayEnd,
+      days: daysPrevious,
+    };
+    const horaCorteMinutos = incluiHoje ? getCutoffMinutesNowSp() : null;
+    return { current, previous, meta: { incluiHoje, horaCorteMinutos } };
+  }
+
+  const endInclusive = requestedEnd >= dataInicialStr ? requestedEnd : dataInicialStr;
+  const endExclusive = shiftIsoDate(endInclusive, 1);
+  const days = Math.max(1, diffDias(new Date(`${dataInicialStr}T00:00:00`), new Date(`${endExclusive}T00:00:00`)));
+
+  const prevEndExclusive = dataInicialStr;
   const prevStart = shiftIsoDate(prevEndExclusive, -1 * days);
 
   const current: DateRange = {
-    start,
+    start: dataInicialStr,
     endExclusive,
-    displayEnd: endInclusive,
+    displayEnd: endInclusive >= hojeLabel ? hojeLabel : endInclusive,
     days,
   };
   const previous: DateRange = {
@@ -1788,6 +1871,7 @@ export async function GET(req: NextRequest) {
     const diasParam = searchParams.get('dias');
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
+    const noCutoff = searchParams.get('noCutoff') === '1';
     const agora = new Date();
     const { current, previous, meta } = buildAlignedRanges({
       dataInicialParam,
@@ -1797,7 +1881,7 @@ export async function GET(req: NextRequest) {
       now: agora,
     });
 
-    const applyHoraCorte = meta.incluiHoje && meta.horaCorteMinutos !== null;
+  const applyHoraCorte = !noCutoff && meta.incluiHoje && meta.horaCorteMinutos !== null;
     const horaCorteMinutos = meta.horaCorteMinutos;
 
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
@@ -1943,61 +2027,35 @@ export async function GET(req: NextRequest) {
         produtosAtuais = aggregateProdutoFactsFromRows(produtosFiltrados);
       }
 
-      let ordersAnteriorBase = filterOrders(
-        orderFacts,
+      const ordersAnteriorRaw = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
+      const ordersAnteriorFiltrados = filterOrderRowsWithCutoff(
+        ordersAnteriorRaw,
         previous.start,
         previous.endExclusive,
         canaisFiltro,
         situacoesFiltro,
         cutoffOptsAnterior
       );
-      if (!ordersAnteriorBase.length) {
-        // Buscar direto do banco para preencher o período anterior
-        const fetchedOrders = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
-        const filtrados = filterOrderRowsWithCutoff(
-          fetchedOrders,
-          previous.start,
-          previous.endExclusive,
-          canaisFiltro,
-          situacoesFiltro,
-          cutoffOptsAnterior
-        );
-        ordersAnteriorBase = aggregateOrdersFromRows(filtrados);
-      }
+      ordersAnterior = aggregateOrdersFromRows(ordersAnteriorFiltrados);
 
-      ordersAnterior = filterOrders(
-        ordersAnteriorBase,
+      const produtosAnteriorRaw = await fetchProdutoFactsRange(
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro
+      );
+      const produtosAnteriorFiltrados = filterProdutoRowsWithCutoff(
+        produtosAnteriorRaw,
         previous.start,
         previous.endExclusive,
         canaisFiltro,
         situacoesFiltro,
         cutoffOptsAnterior
       );
-      produtosAnterior = filterProdutos(
-        produtoFacts,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAnterior
-      );
-      if (!produtosAnterior.length && ordersAnterior.length) {
-        const fetched = await fetchProdutoFactsRange(
-          previous.start,
-          previous.endExclusive,
-          canaisFiltro,
-          situacoesFiltro
-        );
-        const produtosFiltrados = filterProdutoRowsWithCutoff(
-          fetched,
-          previous.start,
-          previous.endExclusive,
-          canaisFiltro,
-          situacoesFiltro,
-          cutoffOptsAnterior
-        );
-        produtosAnterior = aggregateProdutoFactsFromRows(produtosFiltrados);
-      }
+      produtosAnterior = aggregateProdutoFactsFromRows(produtosAnteriorFiltrados);
+
+      orderFacts = [...orderFacts, ...ordersAnterior];
+      produtoFacts = [...produtoFacts, ...produtosAnterior];
     }
 
     let periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, current.start, current.displayEnd);
@@ -2021,9 +2079,31 @@ export async function GET(req: NextRequest) {
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
 
-    const microTrend24h = await buildMicroTrend24h(DEFAULT_REPORT_TIMEZONE);
+    const microTrend24h = await buildMicroTrend24h(DEFAULT_REPORT_TIMEZONE, canaisFiltro, situacoesFiltro);
 
     const lastUpdatedAt = cacheRow?.last_refreshed_at ?? new Date().toISOString();
+
+    const debugDate = '2025-12-07';
+    const sumPedidosDia = (facts: CacheOrderFact[], dia: string) =>
+      facts
+        .filter((f) => f.data === dia)
+        .reduce((acc, f) => acc + toNumberSafe(f.pedidos ?? 0), 0);
+    const detalhePedidosDia = (facts: CacheOrderFact[], dia: string) =>
+      facts
+        .filter((f) => f.data === dia)
+        .map((f) => ({ canal: f.canal, situacao: f.situacao, pedidos: toNumberSafe(f.pedidos ?? 0) }))
+        .slice(0, 50);
+
+    console.log('[dashboard-debug] ultimos_dias_raw', {
+      date: debugDate,
+      applyHoraCorte,
+      horaCorteMinutos,
+      canaisFiltro,
+      situacoesFiltro,
+      pedidosAtual: sumPedidosDia(ordersAtual, debugDate),
+      pedidosAnterior: sumPedidosDia(ordersAnterior, debugDate),
+      detalheAtual: detalhePedidosDia(ordersAtual, debugDate),
+    });
 
     if (applyHoraCorte && horaCorteMinutos !== null) {
       const horaLabel = `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`;
