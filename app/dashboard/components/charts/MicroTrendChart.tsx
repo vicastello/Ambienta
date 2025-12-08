@@ -31,7 +31,7 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
   const hasComparison = useMemo(() => chartData.some((item) => item.ontem !== undefined), [chartData]);
 
   return (
-    <div className="h-32 w-full">
+    <div className="h-32 sm:h-36 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />

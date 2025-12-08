@@ -1966,8 +1966,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 </div>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6">
-                <div className="flex items-center justify-between mb-4">
+              <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5">
+                <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Microtrend</p>
                     <p className="text-sm text-slate-500">Últimas 24h vs 24h anteriores</p>
