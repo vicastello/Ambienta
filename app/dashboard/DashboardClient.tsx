@@ -1498,7 +1498,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const ticketDeltaPercent = ticketDiff.deltaPercent;
 
   const sparkData = useMemo(() => {
-    const trend = resumoGlobalAtual?.vendasPorHora ?? [];
+    const trend = resumoAtual?.vendasPorHora ?? [];
     if (!trend.length) return [];
     return trend.map((hora) => ({
       label: hora.label,
@@ -1507,7 +1507,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       quantidade: hora.quantidade,
       quantidadeOntem: hora.quantidadeOntem,
     }));
-  }, [resumoGlobalAtual]);
+  }, [resumoAtual]);
 
   const topSituacoes = useMemo(() => {
     if (topSituacoesMes.length) return topSituacoesMes;
