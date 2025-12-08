@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -10,10 +10,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CustomTooltip, type CustomTooltipFormatter } from './ChartTooltips';
+import type { ChartTooltipPayload, ChartTooltipValue, CustomTooltipFormatter } from './ChartTooltips';
 
 type SparkDatum = {
   label: string;
+  horaIndex?: number;
   valor?: number;
   hoje?: number;
   ontem?: number;
@@ -26,9 +27,82 @@ type MicroTrendChartProps = {
   formatter: CustomTooltipFormatter;
 };
 
+type MicroTooltipEntry = {
+  value?: ChartTooltipValue;
+  name?: string;
+  color?: string;
+  dataKey?: string | number;
+  payload?: SparkDatum;
+  fill?: string;
+};
+
+type MicroTooltipProps = {
+  active?: boolean;
+  payload?: readonly MicroTooltipEntry[];
+};
+
 const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => {
   const chartData = useMemo(() => data, [data]);
   const hasComparison = useMemo(() => chartData.some((item) => item.ontem !== undefined), [chartData]);
+
+  const renderTooltip = useCallback(
+    ({ active, payload }: MicroTooltipProps) => {
+      if (!active || !payload?.length) return null;
+
+      const firstPayload = (payload[0]?.payload as SparkDatum | undefined) ?? null;
+      const labelResolved = firstPayload?.label ?? (typeof firstPayload?.horaIndex === 'number' ? `${firstPayload.horaIndex}h` : 'Hora');
+
+      return (
+        <div
+          className="glass-tooltip text-[12px] p-3"
+          style={{
+            zIndex: 9999,
+            background: 'rgba(255, 255, 255, 0.92)',
+            color: 'var(--text-main, #0f172a)',
+            backdropFilter: 'blur(35px) saturate(1.4)',
+            WebkitBackdropFilter: 'blur(35px) saturate(1.4)',
+          }}
+        >
+          <p style={{ margin: '0 0 6px 0', fontWeight: 600 }}>{labelResolved}</p>
+          {payload.map((entry, idx) => {
+            const raw = entry?.payload ?? null;
+            const quantidade = entry?.dataKey === 'ontem' ? raw?.quantidadeOntem : raw?.quantidade;
+            const rawValue = entry?.value as ChartTooltipValue | undefined;
+            const payloadForFormatter: ChartTooltipPayload = {
+              value: rawValue,
+              name: entry?.name,
+              color: entry?.color,
+              fill: entry?.fill,
+              dataKey: entry?.dataKey?.toString(),
+              payload: raw,
+            };
+            const valueForFormatter =
+              typeof rawValue === 'number' || typeof rawValue === 'string' ? rawValue : 0;
+            const formattedValue = formatter(valueForFormatter, payloadForFormatter);
+            return (
+              <div key={entry?.dataKey ?? idx} style={{ margin: '4px 0' }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: entry?.color ?? 'var(--text-main, #0f172a)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {entry?.name ?? entry?.dataKey}: {formattedValue}
+                </p>
+                {typeof quantidade === 'number' ? (
+                  <p style={{ margin: '2px 0', color: 'var(--text-muted, #475569)', fontWeight: 600 }}>
+                    {quantidade.toLocaleString('pt-BR')} un
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      );
+    },
+    [formatter]
+  );
 
   return (
     <div className="h-32 sm:h-36 w-full">
@@ -40,34 +114,7 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
           <XAxis dataKey="horaIndex" height={0} tick={false} tickLine={false} axisLine={false} />
           <YAxis hide />
-          <Tooltip
-            content={
-              <CustomTooltip
-                formatter={(value, payloadItem) => {
-                  const raw = (payloadItem?.payload as SparkDatum | undefined) ?? null;
-                  if (!raw) {
-                    return formatter ? formatter(value) : value;
-                  }
-                  const quantidade =
-                    payloadItem?.dataKey === 'ontem'
-                      ? raw.quantidadeOntem ?? null
-                      : raw.quantidade ?? null;
-                  const formatted = formatter ? formatter(value) : value;
-                  if (quantidade != null) {
-                    return (
-                      <div className="space-y-1">
-                        <span>{formatted}</span>
-                        <span className="text-xs text-slate-500">
-                          {quantidade.toLocaleString('pt-BR')} un
-                        </span>
-                      </div>
-                    );
-                  }
-                  return formatted;
-                }}
-              />
-            }
-          />
+          <Tooltip content={renderTooltip} />
           {hasComparison && (
             <Line
               type="monotone"
