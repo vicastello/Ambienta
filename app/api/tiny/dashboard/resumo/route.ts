@@ -1559,6 +1559,94 @@ const fetchVendasPorDiaTinyOrders = async (
   return preencherDiasAggregado(inicio, fim, diasMap);
 };
 
+const buildPeriodoResumoFromTinyOrders = async (
+  range: { start: string; end: string },
+  filtros: { canais?: string[] | null; situacoes?: number[] | null },
+  base?: PeriodoResumo
+): Promise<PeriodoResumo> => {
+  let query = supabaseAdmin
+    .from('tiny_orders')
+    .select('data_criacao, valor_total_pedido, valor, valor_frete, situacao')
+    .gte('data_criacao', range.start)
+    .lte('data_criacao', range.end)
+    .limit(SUPABASE_MAX_ROWS);
+
+  if (filtros.canais?.length) {
+    query = query.in('canal', filtros.canais);
+  }
+  if (filtros.situacoes?.length) {
+    query = query.in('situacao', filtros.situacoes);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[dashboard-debug] tiny_orders_periodo_error', { error, range, filtros });
+  }
+
+  const diasMap = new Map<string, DiaAggregado>();
+  const pedidosPorSituacao = new Map<number, { situacao: number; descricao: string; quantidade: number }>();
+  let totalPedidos = 0;
+  let totalValor = 0;
+  let totalFrete = 0;
+
+  for (const row of data ?? []) {
+    const diaRaw = (row as any).data_criacao;
+    const key = typeof diaRaw === 'string' ? diaRaw.slice(0, 10) : new Date(diaRaw).toISOString().slice(0, 10);
+    const valorPedido = toNumberSafe((row as any).valor_total_pedido ?? (row as any).valor ?? 0);
+    const frete = toNumberSafe((row as any).valor_frete ?? 0);
+    const situacao = toNumberSafe((row as any).situacao ?? -1);
+
+    const agg = diasMap.get(key) ?? { data: key, pedidos: 0, faturamento: 0, frete: 0 };
+    agg.pedidos += 1;
+    agg.faturamento += valorPedido;
+    agg.frete += frete;
+    diasMap.set(key, agg);
+
+    totalPedidos += 1;
+    totalValor += valorPedido;
+    totalFrete += frete;
+
+    const situAgg = pedidosPorSituacao.get(situacao) ?? {
+      situacao,
+      descricao: descricaoSituacao(situacao),
+      quantidade: 0,
+    };
+    situAgg.quantidade += 1;
+    pedidosPorSituacao.set(situacao, situAgg);
+  }
+
+  const vendasPorDia = preencherDiasAggregado(range.start, range.end, diasMap).map((d) => ({
+    data: d.data,
+    quantidade: d.pedidos,
+    totalDia: d.faturamento,
+  }));
+
+  const cancelamentoBase = totalPedidos;
+  const cancelados = Array.from(pedidosPorSituacao.values()).reduce(
+    (acc, item) => (CANCELAMENTO_SITUACOES.has(item.situacao) ? acc + item.quantidade : acc),
+    0
+  );
+
+  const dias = diffDias(new Date(`${range.start}T00:00:00`), new Date(`${range.end}T00:00:00`)) + 1;
+
+  return {
+    dataInicial: range.start,
+    dataFinal: range.end,
+    dias,
+    totalPedidos,
+    totalValor,
+    totalValorLiquido: Math.max(0, totalValor - totalFrete),
+    totalFreteTotal: totalFrete,
+    ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
+    vendasPorDia,
+    pedidosPorSituacao: Array.from(pedidosPorSituacao.values()),
+    totalProdutosVendidos: base?.totalProdutosVendidos ?? 0,
+    percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
+    topProdutos: base?.topProdutos ?? [],
+    vendasPorHora: base?.vendasPorHora ?? [],
+  } satisfies PeriodoResumo;
+};
+
 const computeTopProdutos = (
   produtoFacts: CacheProdutoFact[],
   limite = 12
@@ -2196,33 +2284,26 @@ export async function GET(req: NextRequest) {
     let periodoAnterior = computePeriodoResumo(ordersAnterior, produtosAnterior, previous.start, previous.displayEnd);
 
     if (shouldForceTinyOrdersDaily) {
-      const [vendasAtual, vendasAnterior] = await Promise.all([
-        fetchVendasPorDiaTinyOrders(current.start, current.displayEnd, canaisFiltro, situacoesFiltro),
-        fetchVendasPorDiaTinyOrders(previous.start, previous.displayEnd, canaisFiltro, situacoesFiltro),
+      const filtrosTiny = { canais: canaisFiltro, situacoes: situacoesFiltro };
+      const [periodoAtualTiny, periodoAnteriorTiny] = await Promise.all([
+        buildPeriodoResumoFromTinyOrders({ start: current.start, end: current.displayEnd }, filtrosTiny, periodoAtual),
+        buildPeriodoResumoFromTinyOrders({ start: previous.start, end: previous.displayEnd }, filtrosTiny, periodoAnterior),
       ]);
 
-      const sumarizarPeriodo = (dias: DiaAggregado[], original: PeriodoResumo, label: string): PeriodoResumo => {
-        const totalPedidos = dias.reduce((acc, d) => acc + d.pedidos, 0);
-        const totalValor = dias.reduce((acc, d) => acc + d.faturamento, 0);
-        const totalFrete = dias.reduce((acc, d) => acc + d.frete, 0);
-        return {
-          ...original,
-          totalPedidos,
-          totalValor,
-          totalValorLiquido: Math.max(0, totalValor - totalFrete),
-          totalFreteTotal: totalFrete,
-          ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
-          vendasPorDia: dias.map((d) => ({ data: d.data, quantidade: d.pedidos, totalDia: d.faturamento })),
-        } satisfies PeriodoResumo;
-      };
-
-      periodoAtual = sumarizarPeriodo(vendasAtual, periodoAtual, 'atual');
-      periodoAnterior = sumarizarPeriodo(vendasAnterior, periodoAnterior, 'anterior');
+      periodoAtual = periodoAtualTiny;
+      periodoAnterior = periodoAnteriorTiny;
 
       console.log('[dashboard-debug] ultimos_dias_tiny_orders', {
         periodo: { inicioDias: current.start, fimDias: current.displayEnd },
         totalPedidos: periodoAtual.totalPedidos,
         dias: periodoAtual.vendasPorDia,
+      });
+
+      console.log('[dashboard-debug] periodo_anterior_from_tiny_orders', {
+        range: { inicioDias: previous.start, fimDias: previous.displayEnd },
+        totalPedidos: periodoAnterior.totalPedidos,
+        totalFaturamento: periodoAnterior.totalValor,
+        vendasPorDia: periodoAnterior.vendasPorDia,
       });
     }
 

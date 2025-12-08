@@ -1331,6 +1331,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo (gráfico)');
       const parsedChart = normalizeDashboardResumo(json, resumoChart);
+      console.log('[debug-front] resumoChart', {
+        periodoAtual: parsedChart?.periodoAtual,
+        periodoAnterior: parsedChart?.periodoAnterior,
+      });
       if (requestId === chartRequestId.current) {
         setResumoChart(parsedChart);
       }
