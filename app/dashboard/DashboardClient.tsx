@@ -129,7 +129,34 @@ type SituacaoDisponivel = {
   descricao: string;
 };
 
+type MetricDiff = {
+  current: number;
+  previous: number;
+  delta: number;
+  deltaPercent: number | null;
+};
+
+type DashboardDiffs = {
+  faturamento: MetricDiff;
+  pedidos: MetricDiff;
+  ticketMedio: MetricDiff;
+  // campos legados para compatibilidade com caches antigos
+  faturamentoDelta: number;
+  faturamentoDeltaPercent: number | null;
+  faturamentoHasComparison: boolean;
+  pedidosDelta: number;
+  pedidosDeltaPercent: number | null;
+  pedidosHasComparison: boolean;
+  ticketMedioDelta: number;
+  ticketMedioDeltaPercent: number | null;
+  ticketMedioHasComparison: boolean;
+};
+
 type DashboardResumo = {
+  current: PeriodoResumo;
+  previous: PeriodoResumo;
+  diffs: DashboardDiffs;
+  // aliases legados para compatibilidade com caches pré-existentes
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
@@ -428,8 +455,134 @@ function diffDays(startIso: string, endIso: string): number {
   return Math.floor(diff / (24 * 60 * 60 * 1000));
 }
 
-function formatPercent(value: number) {
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return `${value.toFixed(1)}%`;
+}
+
+function buildDiff(currentValue: number | null | undefined, previousValue: number | null | undefined): MetricDiff {
+  const current = Number.isFinite(currentValue) ? Number(currentValue) : 0;
+  const previous = Number.isFinite(previousValue) ? Number(previousValue) : 0;
+  const delta = current - previous;
+  const deltaPercent = previous > 0 ? (delta / previous) * 100 : null;
+  return { current, previous, delta, deltaPercent };
+}
+
+function computeDashboardDiffs(current: PeriodoResumo, previous: PeriodoResumo): DashboardDiffs {
+  const faturamento = buildDiff(current.totalValor, previous.totalValor);
+  const pedidos = buildDiff(current.totalPedidos, previous.totalPedidos);
+  const ticket = buildDiff(current.ticketMedio, previous.ticketMedio);
+
+  return {
+    faturamento,
+    pedidos,
+    ticketMedio: ticket,
+    // legados
+    faturamentoDelta: faturamento.delta,
+    faturamentoDeltaPercent: faturamento.deltaPercent,
+    faturamentoHasComparison: faturamento.previous > 0,
+    pedidosDelta: pedidos.delta,
+    pedidosDeltaPercent: pedidos.deltaPercent,
+    pedidosHasComparison: pedidos.previous > 0,
+    ticketMedioDelta: ticket.delta,
+    ticketMedioDeltaPercent: ticket.deltaPercent,
+    ticketMedioHasComparison: ticket.previous > 0,
+  };
+}
+
+const isMetricDiff = (value: unknown): value is MetricDiff => {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as MetricDiff;
+  return (
+    typeof v.current === 'number' &&
+    typeof v.previous === 'number' &&
+    typeof v.delta === 'number' &&
+    ('deltaPercent' in v)
+  );
+};
+
+function normalizeDashboardResumo(raw: unknown): DashboardResumo {
+  if (!raw || typeof raw !== 'object') throw new Error('Resumo do dashboard indisponível');
+  const data = raw as Partial<DashboardResumo> & Record<string, unknown>;
+  const current = (
+    data.current ?? data.periodoAtual ?? data.periodo ?? data.periodoAnterior ?? data.periodoAnteriorCards
+  ) as PeriodoResumo | undefined;
+  const previous = (data.previous ?? data.periodoAnterior ?? data.periodoAnteriorCards ?? current) as
+    | PeriodoResumo
+    | undefined;
+  if (!current || !previous) throw new Error('Resumo do dashboard incompleto');
+  const fallbackDiffs = computeDashboardDiffs(current, previous);
+  const incomingDiffs = (data.diffs ?? {}) as Partial<DashboardDiffs>;
+  const faturamentoMetric = isMetricDiff(incomingDiffs.faturamento)
+    ? incomingDiffs.faturamento
+    : fallbackDiffs.faturamento;
+  const pedidosMetric = isMetricDiff(incomingDiffs.pedidos)
+    ? incomingDiffs.pedidos
+    : fallbackDiffs.pedidos;
+  const ticketMetric = isMetricDiff(incomingDiffs.ticketMedio)
+    ? incomingDiffs.ticketMedio
+    : fallbackDiffs.ticketMedio;
+
+  const diffs: DashboardDiffs = {
+    faturamento: faturamentoMetric,
+    pedidos: pedidosMetric,
+    ticketMedio: ticketMetric,
+    faturamentoDelta: Number.isFinite(incomingDiffs.faturamentoDelta as number)
+      ? Number(incomingDiffs.faturamentoDelta)
+      : faturamentoMetric.delta,
+    faturamentoDeltaPercent:
+      typeof incomingDiffs.faturamentoDeltaPercent === 'number' && Number.isFinite(incomingDiffs.faturamentoDeltaPercent)
+        ? incomingDiffs.faturamentoDeltaPercent
+        : faturamentoMetric.deltaPercent,
+    faturamentoHasComparison:
+      typeof incomingDiffs.faturamentoHasComparison === 'boolean'
+        ? incomingDiffs.faturamentoHasComparison
+        : faturamentoMetric.previous > 0,
+    pedidosDelta: Number.isFinite(incomingDiffs.pedidosDelta as number)
+      ? Number(incomingDiffs.pedidosDelta)
+      : pedidosMetric.delta,
+    pedidosDeltaPercent:
+      typeof incomingDiffs.pedidosDeltaPercent === 'number' && Number.isFinite(incomingDiffs.pedidosDeltaPercent)
+        ? incomingDiffs.pedidosDeltaPercent
+        : pedidosMetric.deltaPercent,
+    pedidosHasComparison:
+      typeof incomingDiffs.pedidosHasComparison === 'boolean'
+        ? incomingDiffs.pedidosHasComparison
+        : pedidosMetric.previous > 0,
+    ticketMedioDelta: Number.isFinite(incomingDiffs.ticketMedioDelta as number)
+      ? Number(incomingDiffs.ticketMedioDelta)
+      : ticketMetric.delta,
+    ticketMedioDeltaPercent:
+      typeof incomingDiffs.ticketMedioDeltaPercent === 'number' && Number.isFinite(incomingDiffs.ticketMedioDeltaPercent)
+        ? incomingDiffs.ticketMedioDeltaPercent
+        : ticketMetric.deltaPercent,
+    ticketMedioHasComparison:
+      typeof incomingDiffs.ticketMedioHasComparison === 'boolean'
+        ? incomingDiffs.ticketMedioHasComparison
+        : ticketMetric.previous > 0,
+  };
+  const canais = data.canais ?? [];
+  const canaisDisponiveis = data.canaisDisponiveis ?? [];
+  const situacoesDisponiveis = data.situacoesDisponiveis ?? [];
+  const mapaVendasUF = data.mapaVendasUF ?? [];
+  const mapaVendasCidade = data.mapaVendasCidade ?? [];
+  const lastUpdatedAt = data.lastUpdatedAt ?? null;
+
+  return {
+    ...data,
+    current,
+    previous,
+    diffs,
+    canais,
+    canaisDisponiveis,
+    situacoesDisponiveis,
+    mapaVendasUF,
+    mapaVendasCidade,
+    lastUpdatedAt,
+    periodoAtual: current,
+    periodoAnterior: previous,
+    periodoAnteriorCards: previous,
+  };
 }
 
 function getInitials(text?: string | null) {
@@ -659,7 +812,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
-      const cachedResumo = cacheEntry?.data ?? null;
+      const cachedResumo = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data) : null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
       const shouldFetch = force || !cacheFresh;
       if (cachedResumo && requestId === resumoRequestId.current) {
@@ -687,18 +840,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
-      const hojeIso = isoToday();
-      if (fim === hojeIso) {
-        const now = new Date();
-        const minutos = now.getHours() * 60 + now.getMinutes();
-        params.set('horaComparacaoMinutos', String(minutos));
-      }
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
-      const parsedResumo = json as DashboardResumo;
+      const parsedResumo = normalizeDashboardResumo(json);
       if (requestId === resumoRequestId.current) {
         setResumo(parsedResumo);
         setLastUpdatedAt(parsedResumo.lastUpdatedAt ?? null);
@@ -750,7 +897,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const { inicio, fim } = resolverIntervaloGlobal();
       const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
-      const cachedGlobal = cacheEntry?.data ?? null;
+      const cachedGlobal = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data) : null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
       if (cachedGlobal && requestId === globalRequestId.current) setResumoGlobal(cachedGlobal);
       if (requestId === globalRequestId.current) {
@@ -768,7 +915,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
-      const parsedGlobal = json as DashboardResumo;
+      const parsedGlobal = normalizeDashboardResumo(json);
       if (requestId === globalRequestId.current) {
         setResumoGlobal(parsedGlobal);
         lastGlobalFetchRef.current = Date.now();
@@ -793,7 +940,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const { inicio, fim } = resolverIntervaloMesAtual();
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
-      const cachedResumo = cacheEntry?.data ?? null;
+      const cachedResumo = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data) : null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, SITUACOES_CACHE_FRESH_MS);
       if (cachedResumo && requestId === situacoesRequestId.current) {
         aplicarSituacoesResumo(cachedResumo);
@@ -812,7 +959,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar situações do mês');
-      const parsed = json as DashboardResumo;
+      const parsed = normalizeDashboardResumo(json);
       if (requestId === situacoesRequestId.current) {
         aplicarSituacoesResumo(parsed);
         lastSituacoesFetchRef.current = Date.now();
@@ -838,7 +985,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const { inicio, fim } = resolverIntervaloGlobal();
       const cacheKey = buildGlobalCacheKey(inicio, fim, [], []);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
-      const cached = cacheEntry?.data ?? null;
+      const cached = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data) : null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
       if (cached) setInsightsBaseline(cached);
       if (cacheFresh) {
@@ -850,7 +997,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar base de insights');
-      const parsed = json as DashboardResumo;
+      const parsed = normalizeDashboardResumo(json);
       setInsightsBaseline(parsed);
       safeWriteCache(cacheKey, parsed);
     } catch (e) {
@@ -984,7 +1131,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const { inicio, fim } = resolverIntervaloChart();
       const cacheKey = buildChartCacheKey(inicio, fim, chartPreset, chartCustomStart, chartCustomEnd);
       const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
-      const cachedChart = cacheEntry?.data ?? null;
+      const cachedChart = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data) : null;
       const cacheFresh = isCacheEntryFresh(cacheEntry, CHART_CACHE_FRESH_MS);
       if (cachedChart && requestId === chartRequestId.current) setResumoChart(cachedChart);
       if (requestId === chartRequestId.current) {
@@ -1000,7 +1147,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo (gráfico)');
-      const parsedChart = json as DashboardResumo;
+      const parsedChart = normalizeDashboardResumo(json);
       if (requestId === chartRequestId.current) {
         setResumoChart(parsedChart);
       }
@@ -1178,50 +1325,28 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const chartData = useMemo(() => {
     if (!dashboardChartSource) return [];
     const source = dashboardChartSource;
+    const current = source.current ?? source.periodoAtual;
+    const previous = source.previous ?? source.periodoAnterior;
+    if (!current || !previous) return [];
+
     const mapaAtual = new Map<string, number>();
     const mapaAnterior = new Map<string, number>();
-    source.periodoAtual.vendasPorDia.forEach((d) => mapaAtual.set(d.data, d.totalDia));
-    source.periodoAnterior.vendasPorDia.forEach((d) => mapaAnterior.set(d.data, d.totalDia));
-    let dates: string[] = [];
-    if (chartPreset === 'month') {
-      let cursor = source.periodoAnterior.dataInicial;
-      const diasSet = new Set<string>();
-      while (cursor <= source.periodoAnterior.dataFinal) {
-        const dia = cursor.split('-')[2];
-        diasSet.add(dia);
-        cursor = addDays(cursor, 1);
-      }
-      cursor = source.periodoAtual.dataInicial;
-      while (cursor <= source.periodoAtual.dataFinal) {
-        const dia = cursor.split('-')[2];
-        diasSet.add(dia);
-        cursor = addDays(cursor, 1);
-      }
-      dates = Array.from(diasSet).sort((a, b) => Number(a) - Number(b));
-    } else {
-      let cursor = source.periodoAtual.dataInicial;
-      while (cursor <= source.periodoAtual.dataFinal) {
-        dates.push(cursor);
-        cursor = addDays(cursor, 1);
-      }
+    current.vendasPorDia.forEach((d) => mapaAtual.set(d.data, d.totalDia));
+    previous.vendasPorDia.forEach((d) => mapaAnterior.set(d.data, d.totalDia));
+
+    const pontos: Array<{ data: string; atual: number; anterior: number }> = [];
+    let cursorAtual = current.dataInicial;
+    let cursorAnterior = previous.dataInicial;
+    while (cursorAtual <= current.dataFinal && cursorAnterior <= previous.dataFinal) {
+      pontos.push({
+        data: chartPreset === 'month' ? cursorAtual.split('-')[2] : cursorAtual,
+        atual: mapaAtual.get(cursorAtual) ?? 0,
+        anterior: mapaAnterior.get(cursorAnterior) ?? 0,
+      });
+      cursorAtual = addDays(cursorAtual, 1);
+      cursorAnterior = addDays(cursorAnterior, 1);
     }
-    return dates.map((dateOrDay) => {
-      let diaDoMes: string;
-      let dataAtual: string;
-      if (chartPreset === 'month') {
-        diaDoMes = dateOrDay.padStart(2, '0');
-        dataAtual = source.periodoAtual.dataInicial.slice(0, 8) + diaDoMes;
-      } else {
-        dataAtual = dateOrDay;
-        diaDoMes = dateOrDay.split('-')[2];
-      }
-      const dataAnteriorCorrespondente = source.periodoAnterior.dataInicial.slice(0, 8) + diaDoMes;
-      return {
-        data: diaDoMes,
-        atual: mapaAtual.get(dataAtual) ?? 0,
-        anterior: mapaAnterior.get(dataAnteriorCorrespondente) ?? 0,
-      };
-    });
+    return pontos;
   }, [dashboardChartSource, chartPreset]);
 
   const chartTicks = useMemo(() => {
@@ -1257,16 +1382,39 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   }, [canaisData]);
 
   const variacaoValorCards = useMemo(() => {
-    if (!dashboardSource) return { abs: 0, perc: 0 };
-    const atual = dashboardSource.periodoAtual.totalValor;
-    const ant = dashboardSource.periodoAnteriorCards.totalValor;
-    const abs = atual - ant;
-    const perc = ant > 0 ? (atual / ant - 1) * 100 : 0;
-    return { abs, perc };
+    if (!dashboardSource?.diffs)
+      return { abs: 0, perc: null as number | null, hasComparison: false };
+    const fat = dashboardSource.diffs.faturamento ?? buildDiff(0, 0);
+    return {
+      abs: fat.delta,
+      perc: fat.deltaPercent,
+      hasComparison: fat.previous > 0,
+    };
   }, [dashboardSource]);
+
+  const hasComparacaoValor = !!variacaoValorCards.hasComparison;
+  const variacaoValorPercNumber =
+    typeof variacaoValorCards.perc === 'number' && Number.isFinite(variacaoValorCards.perc)
+      ? variacaoValorCards.perc
+      : null;
+  const variacaoValorPercStr = hasComparacaoValor
+    ? variacaoValorPercNumber !== null
+      ? `${variacaoValorPercNumber >= 0 ? '+' : ''}${variacaoValorPercNumber.toFixed(1)}%`
+      : 'Sem base de comparação'
+    : 'Sem base de comparação';
 
   const resumoAtual = dashboardSource?.periodoAtual;
   const resumoGlobalAtual = dashboardGlobalSource?.periodoAtual;
+  const diffs = dashboardSource?.diffs;
+  const faturamentoDiff = diffs?.faturamento ?? buildDiff(0, 0);
+  const faturamentoDelta = faturamentoDiff.delta;
+  const faturamentoDeltaPercent = faturamentoDiff.deltaPercent;
+  const pedidosDiff = diffs?.pedidos ?? buildDiff(0, 0);
+  const pedidosDelta = pedidosDiff.delta;
+  const pedidosDeltaPercent = pedidosDiff.deltaPercent;
+  const ticketDiff = diffs?.ticketMedio ?? buildDiff(0, 0);
+  const ticketDelta = ticketDiff.delta;
+  const ticketDeltaPercent = ticketDiff.deltaPercent;
 
   const sparkData = useMemo(() => {
     const trend = resumoGlobalAtual?.vendasPorHora ?? [];
@@ -1606,21 +1754,31 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     </p>
                     <p className="text-2xl sm:text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
                     <div className="mt-3 min-h-[32px] flex flex-wrap items-center gap-2 text-xs sm:text-sm min-w-0">
-                      {variacaoValorCards.abs >= 0 ? (
-                        <>
-                          <div className="flex items-center gap-1 rounded-full bg-emerald-100/80 px-2 py-1 text-emerald-600 shrink-0">
-                            <ArrowUpRight className="w-4 h-4" />
-                            <span>+{variacaoValorCards.perc.toFixed(1)}%</span>
-                          </div>
-                          <span className="text-slate-500 truncate min-w-0">vs período anterior</span>
-                        </>
+                      {hasComparacaoValor ? (
+                        variacaoValorCards.abs >= 0 ? (
+                          <>
+                            <div className="flex items-center gap-1 rounded-full bg-emerald-100/80 px-2 py-1 text-emerald-600 shrink-0">
+                              <ArrowUpRight className="w-4 h-4" />
+                              <span>{variacaoValorPercStr}</span>
+                            </div>
+                            <span className="text-slate-500 truncate min-w-0">vs período anterior</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1 rounded-full bg-rose-100/80 dark:bg-[rgba(255,107,125,0.12)] px-2 py-1 text-rose-500 dark:text-[#ff7b8a] shrink-0">
+                              <ArrowDownRight className="w-4 h-4" />
+                              <span>{variacaoValorPercStr}</span>
+                            </div>
+                            <span className="text-slate-500 truncate min-w-0">Precisa de atenção</span>
+                          </>
+                        )
                       ) : (
                         <>
-                          <div className="flex items-center gap-1 rounded-full bg-rose-100/80 dark:bg-[rgba(255,107,125,0.12)] px-2 py-1 text-rose-500 dark:text-[#ff7b8a] shrink-0">
-                            <ArrowDownRight className="w-4 h-4" />
-                            <span>{variacaoValorCards.perc.toFixed(1)}%</span>
+                          <div className="flex items-center gap-1 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-2 py-1 text-slate-600 dark:text-slate-300 shrink-0">
+                            <Info className="w-4 h-4" />
+                            <span>{variacaoValorPercStr}</span>
                           </div>
-                          <span className="text-slate-500 truncate min-w-0">Precisa de atenção</span>
+                          <span className="text-slate-500 truncate min-w-0">Sem base de comparação</span>
                         </>
                       )}
                     </div>
@@ -1849,6 +2007,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 </div>
                 <p className="text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] truncate">{formatBRL(resumoAtual.totalValorLiquido)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
+                <p
+                  className={`text-xs mt-1 truncate ${faturamentoDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}
+                >
+                  vs período anterior: {formatPercent(faturamentoDeltaPercent)} ({`${faturamentoDelta >= 0 ? '+' : '-'}`}{formatBRL(Math.abs(faturamentoDelta))})
+                </p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1858,6 +2021,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 </div>
                 <p className="text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] truncate">{formatBRL(resumoAtual.totalValor)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
+                <p
+                  className={`text-xs mt-1 truncate ${faturamentoDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}
+                >
+                  vs período anterior: {formatPercent(faturamentoDeltaPercent)} ({`${faturamentoDelta >= 0 ? '+' : '-'}`}{formatBRL(Math.abs(faturamentoDelta))})
+                </p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1868,7 +2036,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
                   {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
                 </p>
-                  <p className="text-xs text-slate-500 mt-2 truncate">Diferença: {resumoAtual.totalPedidos - dashboardSource.periodoAnteriorCards.totalPedidos}</p>
+                <p
+                  className={`text-xs mt-1 truncate ${pedidosDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}
+                >
+                  vs período anterior: {pedidosDelta >= 0 ? '+' : ''}{pedidosDelta.toLocaleString('pt-BR')} ({formatPercent(pedidosDeltaPercent)})
+                </p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -1888,16 +2060,40 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
-                <p className="text-xs text-slate-500 mt-2 truncate">Variação {formatBRL(resumoAtual.ticketMedio - dashboardSource.periodoAnteriorCards.ticketMedio)}</p>
+                <p
+                  className={`text-xs mt-1 truncate ${ticketDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}
+                >
+                  vs período anterior: {ticketDelta >= 0 ? '+' : '-'}{formatBRL(Math.abs(ticketDelta))} ({formatPercent(ticketDeltaPercent)})
+                </p>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Variação</p>
-                  {variacaoValorCards.abs >= 0 ? <ArrowUpRight className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" /> : <ArrowDownRight className="w-5 h-5 text-rose-500 dark:text-[#ff6b7d] shrink-0" />}
+                  {hasComparacaoValor ? (
+                    variacaoValorCards.abs >= 0 ? (
+                      <ArrowUpRight className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
+                    ) : (
+                      <ArrowDownRight className="w-5 h-5 text-rose-500 dark:text-[#ff6b7d] shrink-0" />
+                    )
+                  ) : (
+                    <Info className="w-5 h-5 text-slate-500 dark:text-slate-300 shrink-0" />
+                  )}
                 </div>
-                <p className={`text-3xl font-semibold truncate ${variacaoValorCards.abs >= 0 ? 'text-emerald-500 dark:text-[#33e2a7]' : 'text-rose-500 dark:text-[#ff6b7d]'}`}>{variacaoValorCards.perc.toFixed(1)}%</p>
-                <p className="text-xs text-slate-500 mt-2 truncate">Impacto {formatBRL(Math.abs(variacaoValorCards.abs))}</p>
+                <p
+                  className={`text-3xl font-semibold truncate ${
+                    !hasComparacaoValor
+                      ? 'text-slate-500 dark:text-slate-300'
+                      : variacaoValorCards.abs >= 0
+                        ? 'text-emerald-500 dark:text-[#33e2a7]'
+                        : 'text-rose-500 dark:text-[#ff6b7d]'
+                  }`}
+                >
+                  {hasComparacaoValor ? variacaoValorPercStr : 'Sem base de comparação'}
+                </p>
+                <p className="text-xs text-slate-500 mt-2 truncate">
+                  Impacto {formatBRL(Math.abs(variacaoValorCards.abs))}
+                </p>
               </div>
             </div>
 
