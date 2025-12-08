@@ -712,6 +712,8 @@ function shiftIsoDate(dateIso: string, dias: number): string {
 
 function minutesOfDayInTimeZone(dateInput: string | null | undefined, timeZone: string): number | null {
   if (!dateInput) return null;
+  const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateInput);
+  if (isDateOnly) return 0;
   const date = new Date(dateInput);
   if (Number.isNaN(date.getTime())) return null;
   const formatter = new Intl.DateTimeFormat('en-GB', {
@@ -1491,6 +1493,17 @@ export async function GET(req: NextRequest) {
     });
 
     const agora = new Date();
+
+    const rebuildPreviousFromCurrent = () => {
+      const prevEndExclusive = current.start;
+      const prevStart = shiftIsoDate(prevEndExclusive, -1 * current.days);
+      previous = {
+        start: prevStart,
+        endExclusive: prevEndExclusive,
+        displayEnd: shiftIsoDate(prevEndExclusive, -1),
+        days: current.days,
+      };
+    };
     const hojeLabel = formatDateInTimeZone(agora, DEFAULT_REPORT_TIMEZONE);
     const filtroIncluiHojeOuFuturo = !dataFinalParam || dataFinalParam >= hojeLabel;
 
@@ -1516,7 +1529,26 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const applyHoraCorte = filtroIncluiHojeOuFuturo;
+    let applyHoraCorte = filtroIncluiHojeOuFuturo;
+    if (current.displayEnd < current.start) {
+      const fallbackDisplayEnd = shiftIsoDate(current.start, Math.max(0, current.days - 1));
+      const fallbackEndExclusive = shiftIsoDate(fallbackDisplayEnd, 1);
+      const fallbackDays = Math.max(
+        1,
+        diffDias(new Date(`${current.start}T00:00:00`), new Date(`${fallbackEndExclusive}T00:00:00`))
+      );
+      current = {
+        ...current,
+        displayEnd: fallbackDisplayEnd,
+        endExclusive: fallbackEndExclusive,
+        days: fallbackDays,
+      };
+      applyHoraCorte = false;
+      rebuildPreviousFromCurrent();
+    } else if (previous.displayEnd < previous.start) {
+      rebuildPreviousFromCurrent();
+    }
+
     const horaCorteMinutos = applyHoraCorte
       ? minutesOfDayInTimeZone(agora.toISOString(), DEFAULT_REPORT_TIMEZONE)
       : null;
@@ -1682,6 +1714,11 @@ export async function GET(req: NextRequest) {
     const canaisDisponiveis = Array.from(new Set(orderFacts.map((o) => o.canal ?? 'Outros')));
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
+
+    console.log('[dashboard] janelas finais', {
+      current: periodoAtual,
+      previous: periodoAnterior,
+    });
 
     if (applyHoraCorte && horaCorteMinutos !== null) {
       const horaLabel = `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`;
