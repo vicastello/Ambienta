@@ -33,9 +33,12 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
   return (
     <div className="h-32 sm:h-36 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData}>
+        <LineChart
+          data={chartData}
+          margin={{ top: 6, right: 6, bottom: 0, left: 6 }}
+        >
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
-          <XAxis dataKey="horaIndex" tick={false} tickLine={false} axisLine={false} />
+          <XAxis dataKey="horaIndex" height={0} tick={false} tickLine={false} axisLine={false} />
           <YAxis hide />
           <Tooltip
             content={
