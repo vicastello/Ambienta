@@ -35,7 +35,7 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={chartData}
-          margin={{ top: 6, right: 6, bottom: 0, left: 6 }}
+          margin={{ top: 1, right: 6, bottom: 0, left: 6 }}
         >
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
           <XAxis dataKey="horaIndex" height={0} tick={false} tickLine={false} axisLine={false} />
