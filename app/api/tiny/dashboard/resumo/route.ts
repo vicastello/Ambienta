@@ -1892,7 +1892,7 @@ export async function GET(req: NextRequest) {
           .filter((n) => Number.isFinite(n))
       : null;
 
-    const shouldUseCache = !applyHoraCorte;
+    const shouldUseCache = !applyHoraCorte && !noCutoff;
     let cacheRow: DashboardCacheRow | null = null;
     let orderFacts: CacheOrderFact[] = [];
     let produtoFacts: CacheProdutoFact[] = [];
@@ -2103,6 +2103,17 @@ export async function GET(req: NextRequest) {
       pedidosAtual: sumPedidosDia(ordersAtual, debugDate),
       pedidosAnterior: sumPedidosDia(ordersAnterior, debugDate),
       detalheAtual: detalhePedidosDia(ordersAtual, debugDate),
+    });
+
+    console.log('[dashboard-debug] ultimos_dias_vs_sql', {
+      filtros: {
+        canais: canaisFiltro,
+        situacoes: situacoesFiltro,
+        periodo: { inicio: current.start, fim: current.displayEnd },
+        noCutoff,
+      },
+      apiUltimosDias: periodoAtual.vendasPorDia,
+      dia_critico: debugDate,
     });
 
     if (applyHoraCorte && horaCorteMinutos !== null) {
