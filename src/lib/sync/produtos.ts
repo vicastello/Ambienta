@@ -321,7 +321,8 @@ export async function syncProdutosFromTiny(
 
   let offsetStart = Math.max(0, options.offset ?? 0);
   const maxPages = mode === 'backfill' ? Math.max(1, options.maxPages ?? 5) : 1;
-  const situacaoFiltro = estoqueOnly
+  const isCronLike = mode !== 'manual' || estoqueOnly || (modeLabel && /cron/i.test(modeLabel));
+  const situacaoFiltro = isCronLike
     ? 'all'
     : options.situacao && options.situacao !== 'all'
       ? options.situacao
@@ -577,7 +578,7 @@ export async function syncProdutosFromTiny(
     }
     await Promise.all(results);
   }
-  const situacaoParam = options.situacao === 'all' ? undefined : (situacaoFiltro as 'A' | 'I' | 'E' | undefined);
+  const situacaoParam = situacaoFiltro === 'all' ? undefined : (situacaoFiltro as 'A' | 'I' | 'E' | undefined);
   const maxPageAttempts = mode === 'backfill' ? maxPages : 1;
 
   const buildMeta = (extra?: Record<string, unknown>) => ({

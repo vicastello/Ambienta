@@ -430,17 +430,50 @@ export async function listarProdutos(
     offset,
   };
 
+  const isCronLike = Boolean(context && (/cron/i.test(context) || /estoque/i.test(context)));
   if (nome) params.nome = nome;
   if (codigo) params.codigo = codigo;
   if (gtin) params.gtin = gtin;
-  if (situacao) params.situacao = situacao;
+  const allowedSituacao = new Set(['A', 'I', 'E']);
+  // Em crons/backfill (context cron/estoque) nunca enviamos situacao
+  if (!isCronLike && situacao && allowedSituacao.has(situacao)) {
+    params.situacao = situacao;
+  }
   if (dataCriacao) params.dataCriacao = dataCriacao;
   if (dataAlteracao) params.dataAlteracao = dataAlteracao;
 
-  return tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, params, {
-    context,
-    endpointLabel: '/produtos',
-  });
+  const isSituacaoRetryableError = (body: string) => {
+    try {
+      const parsed = JSON.parse(body);
+      const detalhes = parsed?.detalhes ?? parsed?.erros ?? parsed?.errors ?? [];
+      return Array.isArray(detalhes) && detalhes.some((item) => item?.campo === 'situacao');
+    } catch {
+      return body.includes('situacao');
+    }
+  };
+
+  try {
+    return await tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, params, {
+      context,
+      endpointLabel: '/produtos',
+    });
+  } catch (err) {
+    const hasSituacaoParam = params.situacao !== undefined;
+    if (err instanceof TinyApiError && err.status === 400 && hasSituacaoParam && isSituacaoRetryableError(err.body)) {
+      console.warn('[TinyApi] 400 em /produtos com situacao, retry sem situacao', {
+        context,
+        status: err.status,
+        body: err.body,
+      });
+      const retryParams = { ...params };
+      delete retryParams.situacao;
+      return tinyGet<TinyListarProdutosResponse>("/produtos", accessToken, retryParams, {
+        context,
+        endpointLabel: '/produtos',
+      });
+    }
+    throw err;
+  }
 }
 
 /**
