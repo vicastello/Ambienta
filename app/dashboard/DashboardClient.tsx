@@ -97,8 +97,8 @@ type HoraTrend = {
 
 type MicroTrendHora = {
   horaIndex: number;
-  faturamento: number;
-  pedidos: number;
+  faturamento: number | null;
+  pedidos: number | null;
 };
 
 type MicroTrendWindow24h = {
@@ -1553,9 +1553,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       return {
         label: `${horaIndex}h`,
         horaIndex,
-        hoje: currentPoint?.faturamento ?? 0,
+        hoje: currentPoint?.faturamento ?? undefined,
         ontem: previousPoint?.faturamento ?? 0,
-        quantidade: currentPoint?.pedidos ?? 0,
+        quantidade: currentPoint?.pedidos ?? undefined,
         quantidadeOntem: previousPoint?.pedidos ?? 0,
       };
     });

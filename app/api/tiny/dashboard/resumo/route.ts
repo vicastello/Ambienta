@@ -104,8 +104,8 @@ type HoraTrend = {
 
 type MicroTrendHora = {
   horaIndex: number; // 0-23
-  faturamento: number;
-  pedidos: number;
+  faturamento: number | null;
+  pedidos: number | null;
 };
 
 type MicroTrendWindow24h = {
@@ -1367,6 +1367,8 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const agoraSp = nowInTimeZone(timeZone);
   const hojeLabel = formatDateInTimeZone(agoraSp, timeZone);
   const ontemLabel = shiftIsoDate(hojeLabel, -1);
+  const minutesNow = minutesOfDayInTimeZone(agoraSp.toISOString(), timeZone);
+  const cutoffHour = minutesNow === null ? 23 : Math.min(23, Math.max(0, Math.floor(minutesNow / 60)));
   const hojeStart = startOfDayInTimeZone(agoraSp, timeZone);
   const hojeEnd = new Date(hojeStart.getTime() + DAY_MS - 1000);
   const ontemStart = startOfDayInTimeZone(new Date(hojeStart.getTime() - DAY_MS), timeZone);
@@ -1406,15 +1408,18 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
     }
   }
 
-  const buildSeries = (buckets: Array<{ valor: number; pedidos: number }>): MicroTrendHora[] =>
+  const buildSeries = (
+    buckets: Array<{ valor: number; pedidos: number }>,
+    isCurrent: boolean
+  ): MicroTrendHora[] =>
     buckets.map((bucket, idx) => ({
       horaIndex: idx,
-      faturamento: bucket.valor,
-      pedidos: bucket.pedidos,
+      faturamento: isCurrent && idx > cutoffHour ? null : bucket.valor,
+      pedidos: isCurrent && idx > cutoffHour ? null : bucket.pedidos,
     }));
 
-  const currentSeries = buildSeries(currentBuckets);
-  const previousSeries = buildSeries(previousBuckets);
+  const currentSeries = buildSeries(currentBuckets, true);
+  const previousSeries = buildSeries(previousBuckets, false);
 
   const microTrend24h: MicroTrend24h = {
     currentWindow: {

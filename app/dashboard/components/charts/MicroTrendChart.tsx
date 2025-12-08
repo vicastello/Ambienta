@@ -16,10 +16,10 @@ type SparkDatum = {
   label: string;
   horaIndex?: number;
   valor?: number;
-  hoje?: number;
-  ontem?: number;
-  quantidade?: number;
-  quantidadeOntem?: number;
+  hoje?: number | null;
+  ontem?: number | null;
+  quantidade?: number | null;
+  quantidadeOntem?: number | null;
 };
 
 type MicroTrendChartProps = {
