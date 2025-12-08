@@ -95,21 +95,21 @@ type HoraTrend = {
   quantidadeOntem?: number;
 };
 
-type MicroTrendWindow = {
-  start: string;
-  end: string;
+type MicroTrendHora = {
+  horaLabel: string;
   faturamento: number;
   pedidos: number;
 };
 
-type MicroTrend = {
-  current24h: MicroTrendWindow;
-  previous24h: MicroTrendWindow;
-  diffs: {
-    faturamento: MetricDiff;
-    pedidos: MetricDiff;
-  };
-  series: HoraTrend[];
+type MicroTrendWindow24h = {
+  start: string;
+  end: string;
+  seriesPorHora: MicroTrendHora[];
+};
+
+type MicroTrend24h = {
+  currentWindow: MicroTrendWindow24h;
+  previousWindow: MicroTrendWindow24h;
 };
 
 type ProdutoZoomNivel = 'pai' | 'variacao' | 'kit' | 'simples' | 'origem' | 'desconhecido';
@@ -177,7 +177,7 @@ type DashboardResumo = {
   periodoAtual: PeriodoResumo;
   periodoAnterior: PeriodoResumo;
   periodoAnteriorCards: PeriodoResumo;
-  microTrend?: MicroTrend;
+  microTrend24h?: MicroTrend24h;
   canais: CanalResumo[];
   canaisDisponiveis: string[];
   situacoesDisponiveis: SituacaoDisponivel[];
@@ -528,6 +528,24 @@ const isMetricDiff = (value: unknown): value is MetricDiff => {
 function normalizeDashboardResumo(raw: unknown, previousState?: DashboardResumo | null): DashboardResumo {
   if (!raw || typeof raw !== 'object') throw new Error('Resumo do dashboard indisponível');
   const data = raw as Partial<DashboardResumo> & Record<string, unknown>;
+  const hydrateMicroTrend24h = (value?: MicroTrend24h | null, fallback?: MicroTrend24h | null): MicroTrend24h | null => {
+    const base = value ?? fallback;
+    if (!base) return null;
+    const current = base.currentWindow ?? { start: '', end: '', seriesPorHora: [] };
+    const previous = base.previousWindow ?? { start: '', end: '', seriesPorHora: [] };
+    return {
+      currentWindow: {
+        start: current.start ?? '',
+        end: current.end ?? '',
+        seriesPorHora: Array.isArray(current.seriesPorHora) ? current.seriesPorHora : [],
+      },
+      previousWindow: {
+        start: previous.start ?? '',
+        end: previous.end ?? '',
+        seriesPorHora: Array.isArray(previous.seriesPorHora) ? previous.seriesPorHora : [],
+      },
+    };
+  };
   const hydratePeriodo = (value?: PeriodoResumo | null, fallback?: PeriodoResumo | null): PeriodoResumo | null => {
     const base = value ?? fallback;
     if (!base) return null;
@@ -647,7 +665,11 @@ function normalizeDashboardResumo(raw: unknown, previousState?: DashboardResumo 
   const mapaVendasUF = data.mapaVendasUF ?? previousState?.mapaVendasUF ?? [];
   const mapaVendasCidade = data.mapaVendasCidade ?? previousState?.mapaVendasCidade ?? [];
   const lastUpdatedAt = data.lastUpdatedAt ?? previousState?.lastUpdatedAt ?? null;
-  const microTrend = (data.microTrend as MicroTrend | undefined) ?? previousState?.microTrend;
+  const resolvedMicroTrend24h =
+    hydrateMicroTrend24h((data.microTrend24h as MicroTrend24h | undefined) ?? null, previousState?.microTrend24h) ?? {
+      currentWindow: { start: '', end: '', seriesPorHora: [] },
+      previousWindow: { start: '', end: '', seriesPorHora: [] },
+    };
 
   return {
     ...data,
@@ -660,7 +682,7 @@ function normalizeDashboardResumo(raw: unknown, previousState?: DashboardResumo 
     mapaVendasUF,
     mapaVendasCidade,
     lastUpdatedAt,
-    microTrend,
+    microTrend24h: resolvedMicroTrend24h,
     diffsFromPayload,
     periodoAtual: resolvedCurrent,
     periodoAnterior: resolvedPrevious,
@@ -1517,64 +1539,37 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const ticketDelta = ticketDiff.delta;
   const ticketDeltaPercent = ticketDiff.deltaPercent;
 
-  const microTrend = dashboardSource?.microTrend;
+  const microTrend24h = dashboardSource?.microTrend24h;
 
-  const microTrendResumo = useMemo(() => {
-    if (!microTrend) return null;
-    const fatDiff = microTrend.diffs?.faturamento ?? buildDiff(microTrend.current24h?.faturamento, microTrend.previous24h?.faturamento);
-    const pedDiff = microTrend.diffs?.pedidos ?? buildDiff(microTrend.current24h?.pedidos, microTrend.previous24h?.pedidos);
-    return {
-      fatDiff,
-      pedDiff,
-      current: microTrend.current24h,
-      previous: microTrend.previous24h,
-    };
-  }, [microTrend]);
+  const microTrendChartData = useMemo(() => {
+    const currentSeries = microTrend24h?.currentWindow?.seriesPorHora ?? [];
+    const previousSeries = microTrend24h?.previousWindow?.seriesPorHora ?? [];
+    const length = Math.max(currentSeries.length, previousSeries.length);
+    if (!length) return [];
+    return Array.from({ length }, (_, idx) => {
+      const currentPoint = currentSeries[idx];
+      const previousPoint = previousSeries[idx];
+      const label = currentPoint?.horaLabel ?? previousPoint?.horaLabel ?? `${idx.toString().padStart(2, '0')}h`;
+      return {
+        label,
+        hoje: currentPoint?.faturamento ?? 0,
+        ontem: previousPoint?.faturamento ?? 0,
+        quantidade: currentPoint?.pedidos ?? 0,
+        quantidadeOntem: previousPoint?.pedidos ?? 0,
+      };
+    });
+  }, [microTrend24h?.currentWindow?.seriesPorHora, microTrend24h?.previousWindow?.seriesPorHora]);
 
-  const microTrendRangeLabel = useMemo(() => {
-    if (!microTrendResumo) return null;
-    const formatHour = (iso: string) => new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    return `${formatHour(microTrendResumo.current.start)} → ${formatHour(microTrendResumo.current.end)}`;
-  }, [microTrendResumo]);
-
-  const microTrendData = useMemo(() => {
-    if (microTrend?.series?.length) return microTrend.series;
-    const trend = resumoAtual?.vendasPorHora ?? [];
-    if (!trend.length) return [];
-    return trend.map((hora) => ({
-      label: hora.label,
-      hoje: hora.hoje,
-      ontem: hora.ontem,
-      quantidade: hora.quantidade,
-      quantidadeOntem: hora.quantidadeOntem,
-    }));
-  }, [microTrend?.series, resumoAtual]);
-
-  const microFatDiff = microTrendResumo?.fatDiff ?? null;
-  const microPedDiff = microTrendResumo?.pedDiff ?? null;
-  const microFatAtual = microTrendResumo?.current?.faturamento ?? null;
-  const microFatAnterior = microTrendResumo?.previous?.faturamento ?? null;
-  const microPedAtual = microTrendResumo?.current?.pedidos ?? null;
-  const microPedAnterior = microTrendResumo?.previous?.pedidos ?? null;
-
-  const renderMicroTrendBadge = useCallback(
-    (diff?: MetricDiff | null) => {
-      if (!diff) return <span className="text-xs text-slate-400">Sem base</span>;
-      if (diff.previous <= 0 || diff.deltaPercent === null)
-        return <span className="text-xs text-slate-400">Sem base de comparação</span>;
-      const isPositive = diff.delta >= 0;
-      const Icon = isPositive ? ArrowUpRight : ArrowDownRight;
-      const color = isPositive
-        ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
-        : 'bg-rose-100/80 text-rose-600 dark:bg-rose-900/40 dark:text-rose-200';
-      return (
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-[6px] text-xs ${color}`}>
-          <Icon className="w-4 h-4" />
-          {`${isPositive ? '+' : ''}${(diff.deltaPercent ?? 0).toFixed(1)}%`}
-        </span>
-      );
-    },
-    []
+  const microTrendHasData = useMemo(
+    () =>
+      microTrendChartData.some(
+        (point) =>
+          (point.hoje ?? 0) > 0 ||
+          (point.ontem ?? 0) > 0 ||
+          (point.quantidade ?? 0) > 0 ||
+          (point.quantidadeOntem ?? 0) > 0
+      ),
+    [microTrendChartData]
   );
 
   const topSituacoes = useMemo(() => {
@@ -1765,12 +1760,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         .map(([key, info]) => ({
           label: key.split('-').reverse().join('/'),
           valor: info.receita,
+          hoje: info.receita,
           quantidade: info.quantidade,
         }));
     }
     return produtoSerieFiltrada.map((dia) => ({
       label: formatSerieLabel(dia.data),
       valor: dia.receita,
+      hoje: dia.receita,
       quantidade: dia.quantidade,
     }));
   }, [produtoCardPreset, produtoSerieFiltrada]);
@@ -1974,38 +1971,16 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                     <p className="text-sm text-slate-500">Últimas 24h vs 24h anteriores</p>
                   </div>
                   <span className="text-xs text-slate-400">
-                    {microTrendRangeLabel ?? 'Atualizado em tempo real'}
+                    {microTrendHasData ? 'Atualizado em tempo real' : 'Sem dados nas últimas 48h'}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
-                  <div className="space-y-1 min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Faturamento 24h</p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-xl font-semibold text-slate-900 dark:text-white">{formatBRL(microFatAtual ?? 0)}</p>
-                      {renderMicroTrendBadge(microFatDiff)}
-                    </div>
-                    <p className="text-xs text-slate-500 truncate">
-                      {microFatDiff && microFatDiff.previous > 0
-                        ? `vs ${formatBRL(microFatAnterior ?? 0)}`
-                        : 'Sem base de comparação'}
-                    </p>
+                {microTrendHasData ? (
+                  <MicroTrendChart data={microTrendChartData} formatter={formatTooltipCurrency} />
+                ) : (
+                  <div className="h-32 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm text-slate-400">
+                    Sem dados nas últimas 48h
                   </div>
-                  <div className="space-y-1 min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Pedidos 24h</p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-xl font-semibold text-slate-900 dark:text-white">
-                        {microPedAtual?.toLocaleString('pt-BR') ?? '0'}
-                      </p>
-                      {renderMicroTrendBadge(microPedDiff)}
-                    </div>
-                    <p className="text-xs text-slate-500 truncate">
-                      {microPedDiff && microPedDiff.previous > 0
-                        ? `vs ${microPedAnterior?.toLocaleString('pt-BR') ?? 0}`
-                        : 'Sem base de comparação'}
-                    </p>
-                  </div>
-                </div>
-                <MicroTrendChart data={microTrendData} formatter={formatTooltipCurrency} />
+                )}
               </div>
             </div>
 

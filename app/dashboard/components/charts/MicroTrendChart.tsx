@@ -2,9 +2,9 @@
 
 import { memo, useMemo } from 'react';
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -28,27 +28,14 @@ type MicroTrendChartProps = {
 
 const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => {
   const chartData = useMemo(() => data, [data]);
-  const hasComparison = useMemo(
-    () => chartData.some((item) => item.ontem !== undefined && item.ontem !== null),
-    [chartData]
-  );
+  const hasComparison = useMemo(() => chartData.some((item) => item.ontem !== undefined), [chartData]);
 
   return (
     <div className="h-32 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData}>
-          <defs>
-            <linearGradient id="microTrendPrimary" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="rgb(168, 85, 247)" stopOpacity={0.6} />
-              <stop offset="100%" stopColor="rgb(168, 85, 247)" stopOpacity={0.05} />
-            </linearGradient>
-            <linearGradient id="microTrendSecondary" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#E4E4E9" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="#E4E4E9" stopOpacity={0.05} />
-            </linearGradient>
-          </defs>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
-          <XAxis dataKey="label" hide />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'rgba(100,116,139,0.9)' }} tickLine={false} axisLine={false} />
           <YAxis hide />
           <Tooltip
             content={
@@ -78,49 +65,29 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
               />
             }
           />
-          {hasComparison ? (
-            <>
-              <Area
-                type="monotone"
-                dataKey="ontem"
-                name="Ontem"
-                stroke="#E4E4E9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="url(#microTrendSecondary)"
-                strokeWidth={1.35}
-                strokeDasharray="6 4"
-                dot={false}
-                isAnimationActive={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="hoje"
-                name="Hoje"
-                stroke="rgb(168, 85, 247)"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="url(#microTrendPrimary)"
-                strokeWidth={1.35}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </>
-          ) : (
-            <Area
+          {hasComparison && (
+            <Line
               type="monotone"
-              dataKey="valor"
-              name="Período"
-              stroke="rgb(168, 85, 247)"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="url(#microTrendPrimary)"
+              dataKey="ontem"
+              name="24h anteriores"
+              stroke="#CBD5E1"
               strokeWidth={1.35}
+              strokeDasharray="6 4"
               dot={false}
               isAnimationActive={false}
             />
           )}
-        </AreaChart>
+          <Line
+            type="monotone"
+            dataKey="hoje"
+            name="Últimas 24h"
+            stroke="rgb(168, 85, 247)"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+            activeDot={{ r: 3, strokeWidth: 0 }}
+          />
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
