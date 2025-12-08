@@ -255,6 +255,13 @@ const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETI
 const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
 
+// Usa inserted_at como referência de corte horário na zona America/Sao_Paulo
+const getCutoffMinutesNowSp = (): number => {
+  const now = new Date();
+  const minutes = minutesOfDayInTimeZone(now.toISOString(), DEFAULT_REPORT_TIMEZONE);
+  return minutes !== null ? minutes : 0;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -806,6 +813,17 @@ type CacheOrderFact = {
   valor_liquido: number;
 };
 
+type OrderRowForRange = {
+  data_criacao: string | null;
+  canal: string | null;
+  situacao: number | null;
+  cidade: string | null;
+  uf: string | null;
+  valor: number | null;
+  valor_frete: number | null;
+  inserted_at: string | null;
+};
+
 type CacheProdutoFact = {
   data: string;
   canal: string | null;
@@ -815,6 +833,22 @@ type CacheProdutoFact = {
   descricao: string;
   quantidade: number;
   receita: number;
+};
+
+type ProdutoItemRowForRange = {
+  id_pedido: number;
+  id_produto_tiny: number | null;
+  codigo_produto: string | null;
+  nome_produto: string | null;
+  quantidade: number | null;
+  valor_total: number | null;
+  valor_unitario: number | null;
+  tiny_orders: {
+    data_criacao: string | null;
+    canal: string | null;
+    situacao: number | null;
+    inserted_at: string | null;
+  } | null;
 };
 
 type DashboardCacheRow = {
@@ -841,13 +875,19 @@ const withinRange = (dateStr: string | null | undefined, inicio: string, fimExcl
   return dateStr >= inicio && dateStr < fimExclusive;
 };
 
+type CutoffOptions = {
+  cutoffDate?: string | null;
+  cutoffMinutes?: number | null;
+  timeZone?: string;
+};
+
 const filterOrders = (
   facts: CacheOrderFact[],
   inicio: string,
   fimExclusive: string,
   canaisFiltro: string[] | null,
   situacoesFiltro: number[] | null,
-  opts?: { cutoffDate?: string | null; cutoffMinutes?: number | null; timeZone?: string }
+  opts?: CutoffOptions
 ) =>
   facts.filter((f) => {
     if (!withinRange(f.data, inicio, fimExclusive)) return false;
@@ -871,7 +911,7 @@ const filterProdutos = (
   fimExclusive: string,
   canaisFiltro: string[] | null,
   situacoesFiltro: number[] | null,
-  opts?: { cutoffDate?: string | null; cutoffMinutes?: number | null; timeZone?: string }
+  opts?: CutoffOptions
 ) =>
   facts.filter((f) => {
     if (!withinRange(f.data, inicio, fimExclusive)) return false;
@@ -889,6 +929,125 @@ const filterProdutos = (
     return true;
   });
 
+const filterOrderRowsWithCutoff = (
+  rows: OrderRowForRange[],
+  inicio: string,
+  fimExclusive: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null,
+  opts?: CutoffOptions
+) =>
+  rows.filter((row) => {
+    const dataStr = row.data_criacao ?? '';
+    if (!withinRange(dataStr, inicio, fimExclusive)) return false;
+
+    if (canaisFiltro?.length && (row.canal ? !canaisFiltro.includes(row.canal) : true)) return false;
+
+    const situacao = typeof row.situacao === 'number' ? row.situacao : toNumberSafe(row.situacao ?? -1);
+    if (situacoesFiltro?.length && !situacoesFiltro.includes(situacao)) return false;
+
+    if (opts?.cutoffDate && opts.cutoffMinutes !== null && opts.cutoffMinutes !== undefined) {
+      if (dataStr.slice(0, 10) === opts.cutoffDate) {
+        const minutes = minutesOfDayInTimeZone(
+          row.inserted_at ?? dataStr,
+          opts.timeZone ?? DEFAULT_REPORT_TIMEZONE
+        );
+        if (minutes !== null && minutes > opts.cutoffMinutes) return false;
+      }
+    }
+
+    return true;
+  });
+
+const aggregateOrdersFromRows = (rows: OrderRowForRange[]): CacheOrderFact[] => {
+  const orderFactsMap = aggregateMap(
+    rows,
+    (item) => `${item.data_criacao ?? ''}|${item.canal ?? 'Outros'}|${item.situacao ?? -1}|${item.cidade ?? ''}|${item.uf ?? ''}`,
+    (acc: any, item) => {
+      const valorBruto = toNumberSafe(item.valor ?? 0);
+      const valorFrete = toNumberSafe(item.valor_frete ?? 0);
+      acc.data = item.data_criacao ?? null;
+      acc.canal = item.canal ?? 'Outros';
+      acc.situacao = typeof item.situacao === 'number' ? item.situacao : toNumberSafe(item.situacao ?? -1);
+      acc.cidade = item.cidade ?? null;
+      acc.uf = item.uf ?? null;
+      acc.pedidos = (acc.pedidos ?? 0) + 1;
+      acc.valor_bruto = (acc.valor_bruto ?? 0) + valorBruto;
+      acc.valor_frete = (acc.valor_frete ?? 0) + valorFrete;
+      acc.valor_liquido = (acc.valor_liquido ?? 0) + (valorBruto - valorFrete);
+    }
+  );
+
+  return Array.from(orderFactsMap.values()).filter((f) => !!f.data);
+};
+
+const filterProdutoRowsWithCutoff = (
+  rows: ProdutoItemRowForRange[],
+  inicio: string,
+  fimExclusive: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null,
+  opts?: CutoffOptions
+) =>
+  rows.filter((row) => {
+    const pedido = row.tiny_orders ?? null;
+    const dataStr = pedido?.data_criacao ?? '';
+    if (!withinRange(dataStr, inicio, fimExclusive)) return false;
+
+    const canalPedido = pedido?.canal ?? 'Outros';
+    if (canaisFiltro?.length && (canalPedido ? !canaisFiltro.includes(canalPedido) : true)) return false;
+
+    const situacaoPedido = typeof pedido?.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido?.situacao ?? -1);
+    if (situacoesFiltro?.length && !situacoesFiltro.includes(situacaoPedido)) return false;
+
+    if (opts?.cutoffDate && opts.cutoffMinutes !== null && opts.cutoffMinutes !== undefined) {
+      if (dataStr.slice(0, 10) === opts.cutoffDate) {
+        const minutes = minutesOfDayInTimeZone(
+          pedido?.inserted_at ?? dataStr,
+          opts.timeZone ?? DEFAULT_REPORT_TIMEZONE
+        );
+        if (minutes !== null && minutes > opts.cutoffMinutes) return false;
+      }
+    }
+
+    return true;
+  });
+
+const aggregateProdutoFactsFromRows = (rows: ProdutoItemRowForRange[]): CacheProdutoFact[] => {
+  const produtoFactsMap = aggregateMap(
+    rows,
+    (item) => {
+      const pedido = item.tiny_orders ?? {
+        data_criacao: null,
+        canal: null,
+        situacao: null,
+        inserted_at: null,
+      };
+      return `${pedido.data_criacao ?? ''}|${pedido.canal ?? 'Outros'}|${pedido.situacao ?? -1}|${item.id_produto_tiny ?? 0}|${item.codigo_produto ?? ''}`;
+    },
+    (acc: any, item) => {
+      const pedido = item.tiny_orders ?? {
+        data_criacao: null,
+        canal: null,
+        situacao: null,
+        inserted_at: null,
+      };
+      acc.data = pedido.data_criacao ?? null;
+      acc.canal = pedido.canal ?? 'Outros';
+      acc.situacao = typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1);
+      acc.produto_id = typeof item.id_produto_tiny === 'number' ? item.id_produto_tiny : 0;
+      acc.sku = item.codigo_produto ?? null;
+      acc.descricao = item.nome_produto ?? 'Produto sem nome';
+      const quantidade = toNumberSafe(item.quantidade ?? 0);
+      const receita = toNumberSafe(item.valor_total ?? item.valor_unitario ?? 0);
+      acc.quantidade = (acc.quantidade ?? 0) + quantidade;
+      acc.receita = (acc.receita ?? 0) + receita;
+    }
+  );
+
+  return Array.from(produtoFactsMap.values()).filter((f) => !!f.data);
+};
+
 const aggregateMap = <T, K extends string | number>(items: T[], keyGetter: (item: T) => K, updater: (acc: any, item: T) => void) => {
   const map = new Map<K, any>();
   items.forEach((item) => {
@@ -905,7 +1064,7 @@ const fetchProdutoFactsRange = async (
   dataFinalExclusive: string,
   canaisFiltro: string[] | null,
   situacoesFiltro: number[] | null
-): Promise<CacheProdutoFact[]> => {
+): Promise<ProdutoItemRowForRange[]> => {
   const query = supabaseAdmin
     .from('tiny_pedido_itens')
     .select(
@@ -917,7 +1076,7 @@ const fetchProdutoFactsRange = async (
         quantidade,
         valor_total,
         valor_unitario,
-        tiny_orders!inner(data_criacao, canal, situacao)
+        tiny_orders!inner(data_criacao, canal, situacao, inserted_at)
       `
     )
     .gte('tiny_orders.data_criacao', dataInicialStr)
@@ -936,28 +1095,24 @@ const fetchProdutoFactsRange = async (
     return [];
   }
 
-  const produtoFactsMap = aggregateMap(
-    data ?? [],
-    (item) => {
-      const pedido = (item as any).tiny_orders ?? {};
-      return `${pedido.data_criacao ?? ''}|${pedido.canal ?? 'Outros'}|${pedido.situacao ?? -1}|${item.id_produto_tiny ?? 0}|${item.codigo_produto ?? ''}`;
-    },
-    (acc: any, item) => {
-      const pedido = (item as any).tiny_orders ?? {};
-      acc.data = pedido.data_criacao ?? null;
-      acc.canal = pedido.canal ?? 'Outros';
-      acc.situacao = typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1);
-      acc.produto_id = typeof item.id_produto_tiny === 'number' ? item.id_produto_tiny : 0;
-      acc.sku = item.codigo_produto ?? null;
-      acc.descricao = item.nome_produto ?? 'Produto sem nome';
-      const quantidade = toNumberSafe(item.quantidade ?? 0);
-      const receita = toNumberSafe(item.valor_total ?? item.valor_unitario ?? 0);
-      acc.quantidade = (acc.quantidade ?? 0) + quantidade;
-      acc.receita = (acc.receita ?? 0) + receita;
-    }
-  );
-
-  return Array.from(produtoFactsMap.values()).filter((f) => !!f.data);
+  return (data ?? []).map((item) => {
+    const pedido = (item as any).tiny_orders ?? {};
+    return {
+      id_pedido: item.id_pedido as number,
+      id_produto_tiny: (item as any).id_produto_tiny ?? null,
+      codigo_produto: (item as any).codigo_produto ?? null,
+      nome_produto: (item as any).nome_produto ?? null,
+      quantidade: (item as any).quantidade ?? null,
+      valor_total: (item as any).valor_total ?? null,
+      valor_unitario: (item as any).valor_unitario ?? null,
+      tiny_orders: {
+        data_criacao: pedido.data_criacao ?? null,
+        canal: pedido.canal ?? null,
+        situacao: typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1),
+        inserted_at: pedido.inserted_at ?? null,
+      },
+    } satisfies ProdutoItemRowForRange;
+  });
 };
 
 const fetchOrderFactsRange = async (
@@ -965,10 +1120,10 @@ const fetchOrderFactsRange = async (
   dataFinalExclusive: string,
   canaisFiltro: string[] | null,
   situacoesFiltro: number[] | null
-): Promise<CacheOrderFact[]> => {
+): Promise<OrderRowForRange[]> => {
   const query = supabaseAdmin
     .from('tiny_orders')
-    .select('data_criacao,canal,situacao,cidade,uf,valor,valor_frete')
+    .select('data_criacao,canal,situacao,cidade,uf,valor,valor_frete,inserted_at')
     .gte('data_criacao', dataInicialStr)
     .lt('data_criacao', dataFinalExclusive);
 
@@ -985,25 +1140,7 @@ const fetchOrderFactsRange = async (
     return [];
   }
 
-  const orderFactsMap = aggregateMap(
-    data ?? [],
-    (item) => `${item.data_criacao ?? ''}|${item.canal ?? 'Outros'}|${item.situacao ?? -1}|${item.cidade ?? ''}|${item.uf ?? ''}`,
-    (acc: any, item) => {
-      const valorBruto = toNumberSafe(item.valor ?? 0);
-      const valorFrete = toNumberSafe(item.valor_frete ?? 0);
-      acc.data = item.data_criacao ?? null;
-      acc.canal = item.canal ?? 'Outros';
-      acc.situacao = typeof item.situacao === 'number' ? item.situacao : toNumberSafe(item.situacao ?? -1);
-      acc.cidade = item.cidade ?? null;
-      acc.uf = item.uf ?? null;
-      acc.pedidos = (acc.pedidos ?? 0) + 1;
-      acc.valor_bruto = (acc.valor_bruto ?? 0) + valorBruto;
-      acc.valor_frete = (acc.valor_frete ?? 0) + valorFrete;
-      acc.valor_liquido = (acc.valor_liquido ?? 0) + (valorBruto - valorFrete);
-    }
-  );
-
-  return Array.from(orderFactsMap.values()).filter((f) => !!f.data);
+  return (data ?? []) as OrderRowForRange[];
 };
 
 const buildFactsOnTheFly = async (
@@ -1482,7 +1619,7 @@ const buildAlignedRanges = (params: {
     days,
   };
 
-  const horaCorteMinutos = incluiHoje ? minutesOfDayInTimeZone(now.toISOString(), timeZone) : null;
+  const horaCorteMinutos = incluiHoje ? getCutoffMinutesNowSp() : null;
 
   return { current, previous, meta: { incluiHoje, horaCorteMinutos } };
 };
@@ -1522,6 +1659,25 @@ export async function GET(req: NextRequest) {
     let cacheRow: DashboardCacheRow | null = null;
     let orderFacts: CacheOrderFact[] = [];
     let produtoFacts: CacheProdutoFact[] = [];
+    let ordersAtual: CacheOrderFact[] = [];
+    let produtosAtuais: CacheProdutoFact[] = [];
+    let ordersAnterior: CacheOrderFact[] = [];
+    let produtosAnterior: CacheProdutoFact[] = [];
+
+    const cutoffOptsAtual: CutoffOptions | undefined = applyHoraCorte && horaCorteMinutos !== null
+      ? {
+          cutoffDate: current.displayEnd,
+          cutoffMinutes: horaCorteMinutos,
+          timeZone: DEFAULT_REPORT_TIMEZONE,
+        }
+      : undefined;
+    const cutoffOptsAnterior: CutoffOptions | undefined = applyHoraCorte && horaCorteMinutos !== null
+      ? {
+          cutoffDate: previous.displayEnd,
+          cutoffMinutes: horaCorteMinutos,
+          timeZone: DEFAULT_REPORT_TIMEZONE,
+        }
+      : undefined;
 
     if (shouldUseCache) {
       console.time(supabaseTimer);
@@ -1560,99 +1716,141 @@ export async function GET(req: NextRequest) {
         fetchProdutoFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
       ]);
 
-      orderFacts = [...ordersAtualBaseRaw, ...ordersAnteriorBaseRaw];
-      produtoFacts = [...produtosAtualBaseRaw, ...produtosAnteriorBaseRaw];
+      const ordersAtualFiltrados = filterOrderRowsWithCutoff(
+        ordersAtualBaseRaw,
+        current.start,
+        current.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAtual
+      );
+      const ordersAnteriorFiltrados = filterOrderRowsWithCutoff(
+        ordersAnteriorBaseRaw,
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAnterior
+      );
+
+      ordersAtual = aggregateOrdersFromRows(ordersAtualFiltrados);
+      ordersAnterior = aggregateOrdersFromRows(ordersAnteriorFiltrados);
+
+      const produtosAtuaisFiltrados = filterProdutoRowsWithCutoff(
+        produtosAtualBaseRaw,
+        current.start,
+        current.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAtual
+      );
+      const produtosAnteriorFiltrados = filterProdutoRowsWithCutoff(
+        produtosAnteriorBaseRaw,
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAnterior
+      );
+
+      produtosAtuais = aggregateProdutoFactsFromRows(produtosAtuaisFiltrados);
+      produtosAnterior = aggregateProdutoFactsFromRows(produtosAnteriorFiltrados);
+
+      orderFacts = [...ordersAtual, ...ordersAnterior];
+      produtoFacts = [...produtosAtuais, ...produtosAnterior];
     }
 
-    const cutoffOptsAtual = applyHoraCorte && horaCorteMinutos !== null
-      ? {
-          cutoffDate: current.displayEnd,
-          cutoffMinutes: horaCorteMinutos,
-          timeZone: DEFAULT_REPORT_TIMEZONE,
-        }
-      : undefined;
+    if (shouldUseCache) {
+      ordersAtual = filterOrders(
+        orderFacts,
+        current.start,
+        current.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAtual
+      );
+      produtosAtuais = filterProdutos(
+        produtoFacts,
+        current.start,
+        current.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAtual
+      );
+      if (!produtosAtuais.length && ordersAtual.length) {
+        const fetched = await fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro);
+        const produtosFiltrados = filterProdutoRowsWithCutoff(
+          fetched,
+          current.start,
+          current.endExclusive,
+          canaisFiltro,
+          situacoesFiltro,
+          cutoffOptsAtual
+        );
+        produtosAtuais = aggregateProdutoFactsFromRows(produtosFiltrados);
+      }
 
-    const ordersAtual = filterOrders(
-      orderFacts,
-      current.start,
-      current.endExclusive,
-      canaisFiltro,
-      situacoesFiltro,
-      cutoffOptsAtual
-    );
-    let produtosAtuais = filterProdutos(
-      produtoFacts,
-      current.start,
-      current.endExclusive,
-      canaisFiltro,
-      situacoesFiltro,
-      cutoffOptsAtual
-    );
-    if (!produtosAtuais.length && ordersAtual.length) {
-      const fetched = await fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro);
-      produtosAtuais = cutoffOptsAtual
-        ? filterProdutos(fetched, current.start, current.endExclusive, canaisFiltro, situacoesFiltro, cutoffOptsAtual)
-        : fetched;
+      let ordersAnteriorBase = filterOrders(
+        orderFacts,
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAnterior
+      );
+      if (!ordersAnteriorBase.length) {
+        // Buscar direto do banco para preencher o período anterior
+        const fetchedOrders = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
+        const filtrados = filterOrderRowsWithCutoff(
+          fetchedOrders,
+          previous.start,
+          previous.endExclusive,
+          canaisFiltro,
+          situacoesFiltro,
+          cutoffOptsAnterior
+        );
+        ordersAnteriorBase = aggregateOrdersFromRows(filtrados);
+      }
+
+      ordersAnterior = filterOrders(
+        ordersAnteriorBase,
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAnterior
+      );
+      produtosAnterior = filterProdutos(
+        produtoFacts,
+        previous.start,
+        previous.endExclusive,
+        canaisFiltro,
+        situacoesFiltro,
+        cutoffOptsAnterior
+      );
+      if (!produtosAnterior.length && ordersAnterior.length) {
+        const fetched = await fetchProdutoFactsRange(
+          previous.start,
+          previous.endExclusive,
+          canaisFiltro,
+          situacoesFiltro
+        );
+        const produtosFiltrados = filterProdutoRowsWithCutoff(
+          fetched,
+          previous.start,
+          previous.endExclusive,
+          canaisFiltro,
+          situacoesFiltro,
+          cutoffOptsAnterior
+        );
+        produtosAnterior = aggregateProdutoFactsFromRows(produtosFiltrados);
+      }
     }
 
     let periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, current.start, current.displayEnd);
     const vendasPorHoraAtuais = await buildHourlyTrend(DEFAULT_REPORT_TIMEZONE);
     periodoAtual = { ...periodoAtual, vendasPorHora: vendasPorHoraAtuais };
 
-    let ordersAnteriorBase = filterOrders(
-      orderFacts,
-      previous.start,
-      previous.endExclusive,
-      canaisFiltro,
-      situacoesFiltro,
-      applyHoraCorte && horaCorteMinutos !== null
-        ? {
-            cutoffDate: previous.displayEnd,
-            cutoffMinutes: horaCorteMinutos,
-            timeZone: DEFAULT_REPORT_TIMEZONE,
-          }
-        : undefined
-    );
-    if (!ordersAnteriorBase.length) {
-      // Buscar direto do banco para preencher o período anterior
-      ordersAnteriorBase = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
-    }
-
-    const cutoffOptsAnterior = applyHoraCorte && horaCorteMinutos !== null
-      ? {
-          cutoffDate: previous.displayEnd,
-          cutoffMinutes: horaCorteMinutos,
-          timeZone: DEFAULT_REPORT_TIMEZONE,
-        }
-      : undefined;
-
-    const ordersAnterior = filterOrders(
-      ordersAnteriorBase,
-      previous.start,
-      previous.endExclusive,
-      canaisFiltro,
-      situacoesFiltro,
-      cutoffOptsAnterior
-    );
-    let produtosAnterior = filterProdutos(
-      produtoFacts,
-      previous.start,
-      previous.endExclusive,
-      canaisFiltro,
-      situacoesFiltro,
-      cutoffOptsAnterior
-    );
-    if (!produtosAnterior.length && ordersAnterior.length) {
-      const fetched = await fetchProdutoFactsRange(
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro
-      );
-      produtosAnterior = cutoffOptsAnterior
-        ? filterProdutos(fetched, previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro, cutoffOptsAnterior)
-        : fetched;
-    }
     let periodoAnterior = computePeriodoResumo(ordersAnterior, produtosAnterior, previous.start, previous.displayEnd);
 
     // Enriquecer top produtos com imagem/estoque quando disponível
