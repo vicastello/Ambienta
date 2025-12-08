@@ -297,10 +297,34 @@ const startOfDayInTimeZone = (base: Date, timeZone: string): Date => {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   });
   const parts = formatter.formatToParts(base);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
-  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0, 0));
+
+  // Offset (em minutos) entre UTC e o horário local na data base
+  const utcFromParts = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second')
+  );
+  const baseUtc = Date.UTC(
+    base.getUTCFullYear(),
+    base.getUTCMonth(),
+    base.getUTCDate(),
+    base.getUTCHours(),
+    base.getUTCMinutes(),
+    base.getUTCSeconds()
+  );
+  const offsetMinutes = (baseUtc - utcFromParts) / 60000;
+
+  // Meia-noite local convertida para instante UTC correto
+  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0, 0) - offsetMinutes * 60 * 1000);
 };
 
 // Usa inserted_at como referência de corte horário na zona America/Sao_Paulo
@@ -1341,11 +1365,12 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
 
 const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const agoraSp = nowInTimeZone(timeZone);
+  const hojeLabel = formatDateInTimeZone(agoraSp, timeZone);
+  const ontemLabel = shiftIsoDate(hojeLabel, -1);
   const hojeStart = startOfDayInTimeZone(agoraSp, timeZone);
   const hojeEnd = new Date(hojeStart.getTime() + DAY_MS - 1000);
-  const ontemStart = new Date(hojeStart.getTime() - DAY_MS);
+  const ontemStart = startOfDayInTimeZone(new Date(hojeStart.getTime() - DAY_MS), timeZone);
   const ontemEnd = new Date(ontemStart.getTime() + DAY_MS - 1000);
-  const hourMs = 60 * 60 * 1000;
 
   const { data, error } = await supabaseAdmin
     .from('tiny_orders')
@@ -1362,25 +1387,22 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
   const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
 
-  const currentStartMs = hojeStart.getTime();
-  const previousStartMs = ontemStart.getTime();
-
   for (const row of data ?? []) {
     const ts = new Date((row as any).inserted_at ?? null);
     if (Number.isNaN(ts.getTime())) continue;
-    const tsMs = ts.getTime();
-    if (tsMs >= currentStartMs && tsMs <= hojeEnd.getTime()) {
-      const idx = Math.floor((tsMs - currentStartMs) / hourMs);
-      if (idx >= 0 && idx < hoursCount) {
-        currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-        currentBuckets[idx].pedidos += 1;
-      }
-    } else if (tsMs >= previousStartMs && tsMs <= ontemEnd.getTime()) {
-      const idx = Math.floor((tsMs - previousStartMs) / hourMs);
-      if (idx >= 0 && idx < hoursCount) {
-        previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-        previousBuckets[idx].pedidos += 1;
-      }
+    const dayLabel = formatDateInTimeZone(ts, timeZone);
+    const minutes = minutesOfDayInTimeZone(ts.toISOString(), timeZone);
+    if (minutes === null) continue;
+
+    const idx = Math.floor(minutes / 60);
+    if (idx < 0 || idx >= hoursCount) continue;
+
+    if (dayLabel === hojeLabel) {
+      currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+      currentBuckets[idx].pedidos += 1;
+    } else if (dayLabel === ontemLabel) {
+      previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+      previousBuckets[idx].pedidos += 1;
     }
   }
 
