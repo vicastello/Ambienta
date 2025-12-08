@@ -271,8 +271,9 @@ const SUPABASE_PAGE_SIZE = 250;
 const SUPABASE_MAX_ROWS = 10000;
 const SUPABASE_MAX_RETRIES = 3;
 const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network request failed)/i;
-const CANCELAMENTO_SITUACOES = new Set([8, 9]);
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
+const VALID_SITUACOES_PADRAO = [0, 1, 3, 4, 5, 6, 7];
+const SITUACAO_CANCELADA = 2;
 
 const nowInTimeZone = (timeZone: string): Date => {
   const now = new Date();
@@ -1347,18 +1348,32 @@ const buildHourlyTrendSeries = (
   return series;
 };
 
-const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
+const buildHourlyTrend = async (
+  timeZone: string,
+  canaisFiltro: string[] | null,
+  situacoesAplicadas: number[]
+): Promise<HoraTrend[]> => {
   const todayLabel = formatDateInTimeZone(new Date(), timeZone);
   const yesterdayLabel = shiftIsoDate(todayLabel, -1);
   const rangeStart = new Date(Date.now() - HOURLY_TREND_LOOKBACK_MS);
   const rangeEnd = new Date();
   const cutoffMinutes = getCutoffMinutesNowSp();
   try {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('tiny_orders')
-      .select('valor,inserted_at,updated_at')
+      .select('valor,inserted_at,updated_at,situacao,canal')
       .gte('inserted_at', rangeStart.toISOString())
       .lte('inserted_at', rangeEnd.toISOString());
+
+    if (situacoesAplicadas.length) {
+      query = query.in('situacao', situacoesAplicadas);
+    }
+
+    if (canaisFiltro?.length) {
+      query = query.in('canal', canaisFiltro);
+    }
+
+    const { data, error } = await query;
     if (error) {
       console.error('[dashboard] falha ao carregar microtrend por hora', error);
       return buildHourlyTrendSeries(new Map(), new Map());
@@ -1561,12 +1576,17 @@ const fetchVendasPorDiaTinyOrders = async (
 
 const buildPeriodoResumoFromTinyOrders = async (
   range: { start: string; end: string },
-  filtros: { canais?: string[] | null; situacoes?: number[] | null },
+  filtros: {
+    canais?: string[] | null;
+    situacoesAplicadas: Set<number>;
+    situacoesBusca: number[];
+    situacoesCancelamento: Set<number>;
+  },
   base?: PeriodoResumo
 ): Promise<PeriodoResumo> => {
   let query = supabaseAdmin
     .from('tiny_orders')
-    .select('data_criacao, valor_total_pedido, valor, valor_frete, situacao')
+    .select('data_criacao, valor_total_pedido, valor, valor_frete, situacao, canal, uf, cidade')
     .gte('data_criacao', range.start)
     .lte('data_criacao', range.end)
     .limit(SUPABASE_MAX_ROWS);
@@ -1574,8 +1594,8 @@ const buildPeriodoResumoFromTinyOrders = async (
   if (filtros.canais?.length) {
     query = query.in('canal', filtros.canais);
   }
-  if (filtros.situacoes?.length) {
-    query = query.in('situacao', filtros.situacoes);
+  if (filtros.situacoesBusca.length) {
+    query = query.in('situacao', filtros.situacoesBusca);
   }
 
   const { data, error } = await query;
@@ -1585,9 +1605,10 @@ const buildPeriodoResumoFromTinyOrders = async (
 
   const diasMap = new Map<string, DiaAggregado>();
   const pedidosPorSituacao = new Map<number, { situacao: number; descricao: string; quantidade: number }>();
-  let totalPedidos = 0;
-  let totalValor = 0;
-  let totalFrete = 0;
+  let totalPedidosValidos = 0;
+  let totalValorValidos = 0;
+  let totalFreteValidos = 0;
+  let cancelados = 0;
 
   for (const row of data ?? []) {
     const diaRaw = (row as any).data_criacao;
@@ -1596,15 +1617,23 @@ const buildPeriodoResumoFromTinyOrders = async (
     const frete = toNumberSafe((row as any).valor_frete ?? 0);
     const situacao = toNumberSafe((row as any).situacao ?? -1);
 
+    if (filtros.situacoesCancelamento.has(situacao)) {
+      cancelados += 1;
+    }
+
+    if (!filtros.situacoesAplicadas.has(situacao)) {
+      continue;
+    }
+
     const agg = diasMap.get(key) ?? { data: key, pedidos: 0, faturamento: 0, frete: 0 };
     agg.pedidos += 1;
     agg.faturamento += valorPedido;
     agg.frete += frete;
     diasMap.set(key, agg);
 
-    totalPedidos += 1;
-    totalValor += valorPedido;
-    totalFrete += frete;
+    totalPedidosValidos += 1;
+    totalValorValidos += valorPedido;
+    totalFreteValidos += frete;
 
     const situAgg = pedidosPorSituacao.get(situacao) ?? {
       situacao,
@@ -1621,23 +1650,18 @@ const buildPeriodoResumoFromTinyOrders = async (
     totalDia: d.faturamento,
   }));
 
-  const cancelamentoBase = totalPedidos;
-  const cancelados = Array.from(pedidosPorSituacao.values()).reduce(
-    (acc, item) => (CANCELAMENTO_SITUACOES.has(item.situacao) ? acc + item.quantidade : acc),
-    0
-  );
-
+  const cancelamentoBase = totalPedidosValidos + cancelados;
   const dias = diffDias(new Date(`${range.start}T00:00:00`), new Date(`${range.end}T00:00:00`)) + 1;
 
   return {
     dataInicial: range.start,
     dataFinal: range.end,
     dias,
-    totalPedidos,
-    totalValor,
-    totalValorLiquido: Math.max(0, totalValor - totalFrete),
-    totalFreteTotal: totalFrete,
-    ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
+    totalPedidos: totalPedidosValidos,
+    totalValor: totalValorValidos,
+    totalValorLiquido: Math.max(0, totalValorValidos - totalFreteValidos),
+    totalFreteTotal: totalFreteValidos,
+    ticketMedio: totalPedidosValidos > 0 ? totalValorValidos / totalPedidosValidos : 0,
     vendasPorDia,
     pedidosPorSituacao: Array.from(pedidosPorSituacao.values()),
     totalProdutosVendidos: base?.totalProdutosVendidos ?? 0,
@@ -1778,8 +1802,15 @@ const computePeriodoResumo = (
   orders: CacheOrderFact[],
   produtos: CacheProdutoFact[],
   dataInicialStr: string,
-  dataFinalStr: string
+  dataFinalStr: string,
+  opts: { situacoesAplicadas: Set<number>; situacoesCancelamento: Set<number> }
 ): PeriodoResumo => {
+  const situacoesAplicadas = opts.situacoesAplicadas;
+  const situacoesCancelamento = opts.situacoesCancelamento;
+
+  const pedidosValidos = orders.filter((o) => situacoesAplicadas.has(toNumberSafe(o.situacao ?? -1)));
+  const produtosValidos = produtos.filter((p) => situacoesAplicadas.has(toNumberSafe(p.situacao ?? -1)));
+
   const preencherDias = (
     vendas: Array<{ data: string; quantidade?: number; totalDia?: number }>,
     inicio: string,
@@ -1806,7 +1837,7 @@ const computePeriodoResumo = (
   };
 
   const vendasPorDiaMap = aggregateMap(
-    orders,
+    pedidosValidos,
     (o) => o.data,
     (acc: any, item) => {
       acc.data = item.data;
@@ -1816,7 +1847,7 @@ const computePeriodoResumo = (
   );
 
   const pedidosPorSituacaoMap = aggregateMap(
-    orders,
+    pedidosValidos,
     (o) => toNumberSafe(o.situacao ?? -1),
     (acc: any, item) => {
       acc.situacao = toNumberSafe(item.situacao ?? -1);
@@ -1825,20 +1856,19 @@ const computePeriodoResumo = (
     }
   );
 
-  const totalPedidos = orders.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
-  const totalValor = orders.reduce((acc, o) => acc + toNumberSafe(o.valor_bruto ?? 0), 0);
-  const totalFrete = orders.reduce((acc, o) => acc + toNumberSafe(o.valor_frete ?? 0), 0);
-  const totalProdutosVendidos = produtos.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0);
-  const cancelamentoBase = orders.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
-  const cancelados = orders.reduce(
-    (acc, o) =>
-      CANCELAMENTO_SITUACOES.has(toNumberSafe(o.situacao ?? -1))
-        ? acc + toNumberSafe(o.pedidos ?? 0)
-        : acc,
-    0
-  );
+  const totalPedidos = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
+  const totalValor = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.valor_bruto ?? 0), 0);
+  const totalFrete = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.valor_frete ?? 0), 0);
+  const totalProdutosVendidos = produtosValidos.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0);
 
-  const topProdutos = computeTopProdutos(produtos);
+  const cancelados = orders.reduce((acc, o) => {
+    const situacao = toNumberSafe(o.situacao ?? -1);
+    return situacoesCancelamento.has(situacao) ? acc + toNumberSafe(o.pedidos ?? 0) : acc;
+  }, 0);
+
+  const cancelamentoBase = totalPedidos + cancelados;
+
+  const topProdutos = computeTopProdutos(produtosValidos);
   const vendasPorDia = preencherDias(Array.from(vendasPorDiaMap.values()), dataInicialStr, dataFinalStr);
 
   return {
@@ -2102,13 +2132,24 @@ export async function GET(req: NextRequest) {
     const horaCorteMinutos = applyHoraCorte ? meta.horaCorteMinutos : null;
 
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
-    const situacoesFiltro = situacoesParam
+    const situacoesParsed = situacoesParam
       ? situacoesParam
           .split(',')
           .map((s) => Number(s))
           .filter((n) => Number.isFinite(n))
-      : null;
+      : [];
 
+    const hasCustomSituacoes = situacoesParsed.length > 0;
+    const situacoesAplicadas = hasCustomSituacoes ? situacoesParsed : VALID_SITUACOES_PADRAO;
+    const situacoesAplicadasSet = new Set(situacoesAplicadas);
+    const situacoesCancelamentoSet = new Set(
+      hasCustomSituacoes
+        ? situacoesAplicadas.filter((s) => s === SITUACAO_CANCELADA)
+        : [SITUACAO_CANCELADA]
+    );
+    const situacoesFiltro = hasCustomSituacoes ? situacoesAplicadas : [...VALID_SITUACOES_PADRAO, SITUACAO_CANCELADA];
+
+    const situacoesAplicadasArray = Array.from(situacoesAplicadasSet);
     const shouldUseCache = !applyHoraCorte && !noCutoff;
     let cacheRow: DashboardCacheRow | null = null;
     let orderFacts: CacheOrderFact[] = [];
@@ -2277,17 +2318,51 @@ export async function GET(req: NextRequest) {
       produtoFacts = [...produtoFacts, ...produtosAnterior];
     }
 
-    let periodoAtual = computePeriodoResumo(ordersAtual, produtosAtuais, current.start, current.displayEnd);
-    const vendasPorHoraAtuais = await buildHourlyTrend(DEFAULT_REPORT_TIMEZONE);
+    const ordersAtualAplicados = ordersAtual.filter((o) => situacoesAplicadasSet.has(toNumberSafe(o.situacao ?? -1)));
+    const ordersAnteriorAplicados = ordersAnterior.filter((o) => situacoesAplicadasSet.has(toNumberSafe(o.situacao ?? -1)));
+    const produtosAtuaisAplicados = produtosAtuais.filter((p) => situacoesAplicadasSet.has(toNumberSafe(p.situacao ?? -1)));
+    const produtosAnteriorAplicados = produtosAnterior.filter((p) => situacoesAplicadasSet.has(toNumberSafe(p.situacao ?? -1)));
+
+    let periodoAtual = computePeriodoResumo(
+      ordersAtual,
+      produtosAtuaisAplicados,
+      current.start,
+      current.displayEnd,
+      { situacoesAplicadas: situacoesAplicadasSet, situacoesCancelamento: situacoesCancelamentoSet }
+    );
+    const vendasPorHoraAtuais = await buildHourlyTrend(DEFAULT_REPORT_TIMEZONE, canaisFiltro, situacoesAplicadasArray);
     periodoAtual = { ...periodoAtual, vendasPorHora: vendasPorHoraAtuais };
 
-    let periodoAnterior = computePeriodoResumo(ordersAnterior, produtosAnterior, previous.start, previous.displayEnd);
+    let periodoAnterior = computePeriodoResumo(
+      ordersAnterior,
+      produtosAnteriorAplicados,
+      previous.start,
+      previous.displayEnd,
+      { situacoesAplicadas: situacoesAplicadasSet, situacoesCancelamento: situacoesCancelamentoSet }
+    );
 
     if (shouldForceTinyOrdersDaily) {
-      const filtrosTiny = { canais: canaisFiltro, situacoes: situacoesFiltro };
       const [periodoAtualTiny, periodoAnteriorTiny] = await Promise.all([
-        buildPeriodoResumoFromTinyOrders({ start: current.start, end: current.displayEnd }, filtrosTiny, periodoAtual),
-        buildPeriodoResumoFromTinyOrders({ start: previous.start, end: previous.displayEnd }, filtrosTiny, periodoAnterior),
+        buildPeriodoResumoFromTinyOrders(
+          { start: current.start, end: current.displayEnd },
+          {
+            canais: canaisFiltro,
+            situacoesAplicadas: situacoesAplicadasSet,
+            situacoesBusca: situacoesFiltro,
+            situacoesCancelamento: situacoesCancelamentoSet,
+          },
+          periodoAtual
+        ),
+        buildPeriodoResumoFromTinyOrders(
+          { start: previous.start, end: previous.displayEnd },
+          {
+            canais: canaisFiltro,
+            situacoesAplicadas: situacoesAplicadasSet,
+            situacoesBusca: situacoesFiltro,
+            situacoesCancelamento: situacoesCancelamentoSet,
+          },
+          periodoAnterior
+        ),
       ]);
 
       periodoAtual = periodoAtualTiny;
@@ -2315,9 +2390,9 @@ export async function GET(req: NextRequest) {
     periodoAtual = { ...periodoAtual, topProdutos: topAtualEnriched };
     periodoAnterior = { ...periodoAnterior, topProdutos: topAnteriorEnriched };
 
-    const canais = computeCanais(ordersAtual);
-    const mapaVendasUF = computeMapaUF(ordersAtual);
-    const mapaVendasCidade = computeMapaCidade(ordersAtual);
+    const canais = computeCanais(ordersAtualAplicados);
+    const mapaVendasUF = computeMapaUF(ordersAtualAplicados);
+    const mapaVendasCidade = computeMapaCidade(ordersAtualAplicados);
     const canaisDisponiveis = Array.from(new Set(orderFacts.map((o) => o.canal ?? 'Outros')));
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
@@ -2325,7 +2400,7 @@ export async function GET(req: NextRequest) {
     const microTrend24h = await buildMicroTrend24h(
       DEFAULT_REPORT_TIMEZONE,
       canaisFiltro,
-      situacoesFiltro,
+      situacoesAplicadasArray,
       microtrendOverrides
     );
 
