@@ -1367,7 +1367,7 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const agoraSp = nowInTimeZone(timeZone);
   const hojeLabel = formatDateInTimeZone(agoraSp, timeZone);
   const ontemLabel = shiftIsoDate(hojeLabel, -1);
-  const minutesNow = minutesOfDayInTimeZone(agoraSp.toISOString(), timeZone);
+  const minutesNow = minutesOfDayInTimeZone(new Date().toISOString(), timeZone);
   const cutoffHour = minutesNow === null ? 23 : Math.min(23, Math.max(0, Math.floor(minutesNow / 60)));
   const hojeStart = startOfDayInTimeZone(agoraSp, timeZone);
   const hojeEnd = new Date(hojeStart.getTime() + DAY_MS - 1000);
