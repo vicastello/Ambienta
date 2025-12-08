@@ -1392,26 +1392,41 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
   }
 };
 
+type MicroTrendWindowOverride = {
+  currentStart?: Date | null;
+  currentEnd?: Date | null;
+  previousStart?: Date | null;
+  previousEnd?: Date | null;
+};
+
 const buildMicroTrend24h = async (
   timeZone: string,
   canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null
+  situacoesFiltro: number[] | null,
+  overrides?: MicroTrendWindowOverride
 ): Promise<MicroTrend24h> => {
-  const agoraSp = nowInTimeZone(timeZone);
-  const hojeLabel = formatDateInTimeZone(agoraSp, timeZone);
-  const ontemLabel = shiftIsoDate(hojeLabel, -1);
-  const minutesNow = minutesOfDayInTimeZone(new Date().toISOString(), timeZone);
-  const cutoffHour = minutesNow === null ? 23 : Math.min(23, Math.max(0, Math.floor(minutesNow / 60)));
-  const hojeStart = startOfDayInTimeZone(agoraSp, timeZone);
-  const hojeEnd = new Date(hojeStart.getTime() + DAY_MS - 1000);
-  const ontemStart = startOfDayInTimeZone(new Date(hojeStart.getTime() - DAY_MS), timeZone);
-  const ontemEnd = new Date(ontemStart.getTime() + DAY_MS - 1000);
+  const hoursCount = 24;
+  const hourMs = 60 * 60 * 1000;
+
+  const nowTz = nowInTimeZone(timeZone);
+  const currentEnd = overrides?.currentEnd && !Number.isNaN(overrides.currentEnd.getTime())
+    ? overrides.currentEnd
+    : nowTz;
+  const currentStart = overrides?.currentStart && !Number.isNaN(overrides.currentStart.getTime())
+    ? overrides.currentStart
+    : new Date(currentEnd.getTime() - hoursCount * hourMs);
+  const previousEnd = overrides?.previousEnd && !Number.isNaN(overrides.previousEnd.getTime())
+    ? overrides.previousEnd
+    : currentStart;
+  const previousStart = overrides?.previousStart && !Number.isNaN(overrides.previousStart.getTime())
+    ? overrides.previousStart
+    : new Date(previousEnd.getTime() - hoursCount * hourMs);
 
   let query = supabaseAdmin
     .from('tiny_orders')
     .select('valor,inserted_at,canal,situacao')
-    .gte('inserted_at', ontemStart.toISOString())
-    .lte('inserted_at', hojeEnd.toISOString())
+    .gte('inserted_at', previousStart.toISOString())
+    .lte('inserted_at', currentEnd.toISOString())
     .limit(SUPABASE_MAX_ROWS);
 
   if (canaisFiltro?.length) {
@@ -1427,61 +1442,121 @@ const buildMicroTrend24h = async (
     console.error('[dashboard] erro ao buscar microtrend 24h', error);
   }
 
-  const hoursCount = 24;
   const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
   const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
 
   for (const row of data ?? []) {
     const ts = new Date((row as any).inserted_at ?? null);
     if (Number.isNaN(ts.getTime())) continue;
-    const dayLabel = formatDateInTimeZone(ts, timeZone);
-    const minutes = minutesOfDayInTimeZone(ts.toISOString(), timeZone);
-    if (minutes === null) continue;
 
-    const idx = Math.floor(minutes / 60);
-    if (idx < 0 || idx >= hoursCount) continue;
+    if (ts >= currentStart && ts < currentEnd) {
+      const idx = Math.floor((ts.getTime() - currentStart.getTime()) / hourMs);
+      if (idx >= 0 && idx < hoursCount) {
+        currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+        currentBuckets[idx].pedidos += 1;
+      }
+      continue;
+    }
 
-    if (dayLabel === hojeLabel) {
-      currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-      currentBuckets[idx].pedidos += 1;
-    } else if (dayLabel === ontemLabel) {
-      previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-      previousBuckets[idx].pedidos += 1;
+    if (ts >= previousStart && ts < previousEnd) {
+      const idx = Math.floor((ts.getTime() - previousStart.getTime()) / hourMs);
+      if (idx >= 0 && idx < hoursCount) {
+        previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
+        previousBuckets[idx].pedidos += 1;
+      }
     }
   }
 
-  const buildSeries = (
-    buckets: Array<{ valor: number; pedidos: number }>,
-    isCurrent: boolean
-  ): MicroTrendHora[] =>
+  const buildSeries = (buckets: Array<{ valor: number; pedidos: number }>): MicroTrendHora[] =>
     buckets.map((bucket, idx) => ({
       horaIndex: idx,
-      faturamento: isCurrent && idx > cutoffHour ? null : bucket.valor,
-      pedidos: isCurrent && idx > cutoffHour ? null : bucket.pedidos,
+      faturamento: bucket.valor,
+      pedidos: bucket.pedidos,
     }));
-
-  const currentSeries = buildSeries(currentBuckets, true);
-  const previousSeries = buildSeries(previousBuckets, false);
 
   const microTrend24h: MicroTrend24h = {
     currentWindow: {
-      start: hojeStart.toISOString(),
-      end: hojeEnd.toISOString(),
-      seriesPorHora: currentSeries,
+      start: currentStart.toISOString(),
+      end: currentEnd.toISOString(),
+      seriesPorHora: buildSeries(currentBuckets),
     },
     previousWindow: {
-      start: ontemStart.toISOString(),
-      end: ontemEnd.toISOString(),
-      seriesPorHora: previousSeries,
+      start: previousStart.toISOString(),
+      end: previousEnd.toISOString(),
+      seriesPorHora: buildSeries(previousBuckets),
     },
   };
 
-  console.log('[dashboard] microTrend24h-dia', {
-    current: microTrend24h.currentWindow,
-    previous: microTrend24h.previousWindow,
+  console.log('[dashboard-debug] microtrend_24h', {
+    currentWindow: microTrend24h.currentWindow,
+    previousWindow: microTrend24h.previousWindow,
+    baseTimestamp: 'inserted_at',
   });
 
   return microTrend24h;
+};
+
+const preencherDiasAggregado = (
+  inicio: string,
+  fimInclusivo: string,
+  diasMap: Map<string, DiaAggregado>
+): DiaAggregado[] => {
+  const mapa = new Map(diasMap);
+
+  let cursor = inicio;
+  while (cursor <= fimInclusivo) {
+    if (!mapa.has(cursor)) {
+      mapa.set(cursor, { data: cursor, pedidos: 0, faturamento: 0, frete: 0 });
+    }
+    cursor = shiftIsoDate(cursor, 1);
+  }
+
+  return Array.from(mapa.values()).sort((a, b) => (a.data < b.data ? -1 : 1));
+};
+
+const fetchVendasPorDiaTinyOrders = async (
+  inicio: string,
+  fim: string,
+  canaisFiltro: string[] | null,
+  situacoesFiltro: number[] | null
+): Promise<DiaAggregado[]> => {
+  let query = supabaseAdmin
+    .from('tiny_orders')
+    .select('data_criacao, valor_total_pedido, valor, valor_frete')
+    .gte('data_criacao', inicio)
+    .lte('data_criacao', fim)
+    .limit(SUPABASE_MAX_ROWS);
+
+  if (canaisFiltro?.length) {
+    query = query.in('canal', canaisFiltro);
+  }
+  if (situacoesFiltro?.length) {
+    query = query.in('situacao', situacoesFiltro);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('[dashboard-debug] tiny_orders_error', { error, inicio, fim });
+    return [];
+  }
+
+  const diasMap = new Map<string, DiaAggregado>();
+
+  for (const row of data ?? []) {
+    const diaRaw = (row as any).data_criacao;
+    const key = typeof diaRaw === 'string' ? diaRaw.slice(0, 10) : new Date(diaRaw).toISOString().slice(0, 10);
+    const valorPedido = toNumberSafe((row as any).valor_total_pedido ?? (row as any).valor ?? 0);
+    const frete = toNumberSafe((row as any).valor_frete ?? 0);
+
+    const agg = diasMap.get(key) ?? { data: key, pedidos: 0, faturamento: 0, frete: 0 };
+    agg.pedidos += 1;
+    agg.faturamento += valorPedido;
+    agg.frete += frete;
+    diasMap.set(key, agg);
+  }
+
+  return preencherDiasAggregado(inicio, fim, diasMap);
 };
 
 const computeTopProdutos = (
@@ -1617,6 +1692,31 @@ const computePeriodoResumo = (
   dataInicialStr: string,
   dataFinalStr: string
 ): PeriodoResumo => {
+  const preencherDias = (
+    vendas: Array<{ data: string; quantidade?: number; totalDia?: number }>,
+    inicio: string,
+    fimInclusivo: string
+  ) => {
+    const mapa = new Map<string, { data: string; quantidade: number; totalDia: number }>();
+    for (const v of vendas) {
+      const dataKey = v.data;
+      if (!dataKey) continue;
+      const quantidade = Number.isFinite(v.quantidade) ? Number(v.quantidade) : 0;
+      const totalDia = Number.isFinite(v.totalDia) ? Number(v.totalDia) : 0;
+      mapa.set(dataKey, { data: dataKey, quantidade, totalDia });
+    }
+
+    let cursor = inicio;
+    while (cursor <= fimInclusivo) {
+      if (!mapa.has(cursor)) {
+        mapa.set(cursor, { data: cursor, quantidade: 0, totalDia: 0 });
+      }
+      cursor = shiftIsoDate(cursor, 1);
+    }
+
+    return Array.from(mapa.values()).sort((a, b) => (a.data < b.data ? -1 : 1));
+  };
+
   const vendasPorDiaMap = aggregateMap(
     orders,
     (o) => o.data,
@@ -1651,6 +1751,7 @@ const computePeriodoResumo = (
   );
 
   const topProdutos = computeTopProdutos(produtos);
+  const vendasPorDia = preencherDias(Array.from(vendasPorDiaMap.values()), dataInicialStr, dataFinalStr);
 
   return {
     dataInicial: dataInicialStr,
@@ -1661,7 +1762,7 @@ const computePeriodoResumo = (
     totalValorLiquido: Math.max(0, totalValor - totalFrete),
     totalFreteTotal: totalFrete,
     ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
-    vendasPorDia: Array.from(vendasPorDiaMap.values()).sort((a, b) => (a.data < b.data ? -1 : 1)),
+    vendasPorDia,
     pedidosPorSituacao: Array.from(pedidosPorSituacaoMap.values()),
     totalProdutosVendidos,
     percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
@@ -1772,15 +1873,24 @@ type BuildRangesResult = {
   meta: { incluiHoje: boolean; horaCorteMinutos: number | null };
 };
 
+type DiaAggregado = {
+  data: string;
+  pedidos: number;
+  faturamento: number;
+  frete: number;
+};
+
 const buildAlignedRanges = (params: {
   dataInicialParam: string | null;
   dataFinalParam: string | null;
   diasParam: string | null;
   timeZone?: string;
   now?: Date;
+  aplicarCutoff?: boolean;
 }): BuildRangesResult => {
   const timeZone = params.timeZone ?? DEFAULT_REPORT_TIMEZONE;
   const now = params.now ?? new Date();
+  const aplicarCutoff = params.aplicarCutoff ?? true;
   const hojeLabel = formatDateInTimeZone(now, timeZone);
   const requestedEnd = params.dataFinalParam ?? hojeLabel;
   const incluiHoje = requestedEnd >= hojeLabel;
@@ -1831,7 +1941,7 @@ const buildAlignedRanges = (params: {
       displayEnd: prevDisplayEnd,
       days: daysPrevious,
     };
-    const horaCorteMinutos = incluiHoje ? getCutoffMinutesNowSp() : null;
+    const horaCorteMinutos = aplicarCutoff && incluiHoje ? getCutoffMinutesNowSp() : null;
     return { current, previous, meta: { incluiHoje, horaCorteMinutos } };
   }
 
@@ -1855,7 +1965,7 @@ const buildAlignedRanges = (params: {
     days,
   };
 
-  const horaCorteMinutos = incluiHoje ? getCutoffMinutesNowSp() : null;
+  const horaCorteMinutos = aplicarCutoff && incluiHoje ? getCutoffMinutesNowSp() : null;
 
   return { current, previous, meta: { incluiHoje, horaCorteMinutos } };
 };
@@ -1872,17 +1982,36 @@ export async function GET(req: NextRequest) {
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
     const noCutoff = searchParams.get('noCutoff') === '1';
+    const microCurrentStartParam = searchParams.get('microCurrentStart');
+    const microCurrentEndParam = searchParams.get('microCurrentEnd');
+    const microPrevStartParam = searchParams.get('microPrevStart');
+    const microPrevEndParam = searchParams.get('microPrevEnd');
+    const contextParam = searchParams.get('context') ?? 'dashboard';
     const agora = new Date();
+    const aplicarCutoff = !noCutoff;
+    const parseDateParam = (value: string | null): Date | null => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    const microtrendOverrides = {
+      currentStart: parseDateParam(microCurrentStartParam),
+      currentEnd: parseDateParam(microCurrentEndParam),
+      previousStart: parseDateParam(microPrevStartParam),
+      previousEnd: parseDateParam(microPrevEndParam),
+    } satisfies MicroTrendWindowOverride;
     const { current, previous, meta } = buildAlignedRanges({
       dataInicialParam,
       dataFinalParam,
       diasParam,
       timeZone: DEFAULT_REPORT_TIMEZONE,
       now: agora,
+      aplicarCutoff,
     });
 
-  const applyHoraCorte = !noCutoff && meta.incluiHoje && meta.horaCorteMinutos !== null;
-    const horaCorteMinutos = meta.horaCorteMinutos;
+    const applyHoraCorte = aplicarCutoff && meta.incluiHoje && meta.horaCorteMinutos !== null;
+    const horaCorteMinutos = applyHoraCorte ? meta.horaCorteMinutos : null;
 
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
     const situacoesFiltro = situacoesParam
@@ -1915,6 +2044,8 @@ export async function GET(req: NextRequest) {
           timeZone: DEFAULT_REPORT_TIMEZONE,
         }
       : undefined;
+
+    const shouldForceTinyOrdersDaily = noCutoff;
 
     if (shouldUseCache) {
       console.time(supabaseTimer);
@@ -2064,6 +2195,37 @@ export async function GET(req: NextRequest) {
 
     let periodoAnterior = computePeriodoResumo(ordersAnterior, produtosAnterior, previous.start, previous.displayEnd);
 
+    if (shouldForceTinyOrdersDaily) {
+      const [vendasAtual, vendasAnterior] = await Promise.all([
+        fetchVendasPorDiaTinyOrders(current.start, current.displayEnd, canaisFiltro, situacoesFiltro),
+        fetchVendasPorDiaTinyOrders(previous.start, previous.displayEnd, canaisFiltro, situacoesFiltro),
+      ]);
+
+      const sumarizarPeriodo = (dias: DiaAggregado[], original: PeriodoResumo, label: string): PeriodoResumo => {
+        const totalPedidos = dias.reduce((acc, d) => acc + d.pedidos, 0);
+        const totalValor = dias.reduce((acc, d) => acc + d.faturamento, 0);
+        const totalFrete = dias.reduce((acc, d) => acc + d.frete, 0);
+        return {
+          ...original,
+          totalPedidos,
+          totalValor,
+          totalValorLiquido: Math.max(0, totalValor - totalFrete),
+          totalFreteTotal: totalFrete,
+          ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
+          vendasPorDia: dias.map((d) => ({ data: d.data, quantidade: d.pedidos, totalDia: d.faturamento })),
+        } satisfies PeriodoResumo;
+      };
+
+      periodoAtual = sumarizarPeriodo(vendasAtual, periodoAtual, 'atual');
+      periodoAnterior = sumarizarPeriodo(vendasAnterior, periodoAnterior, 'anterior');
+
+      console.log('[dashboard-debug] ultimos_dias_tiny_orders', {
+        periodo: { inicioDias: current.start, fimDias: current.displayEnd },
+        totalPedidos: periodoAtual.totalPedidos,
+        dias: periodoAtual.vendasPorDia,
+      });
+    }
+
     // Enriquecer top produtos com imagem/estoque quando disponível
     const [topAtualEnriched, topAnteriorEnriched] = await Promise.all([
       enrichTopProdutos(periodoAtual.topProdutos),
@@ -2079,9 +2241,50 @@ export async function GET(req: NextRequest) {
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
 
-    const microTrend24h = await buildMicroTrend24h(DEFAULT_REPORT_TIMEZONE, canaisFiltro, situacoesFiltro);
+    const microTrend24h = await buildMicroTrend24h(
+      DEFAULT_REPORT_TIMEZONE,
+      canaisFiltro,
+      situacoesFiltro,
+      microtrendOverrides
+    );
 
     const lastUpdatedAt = cacheRow?.last_refreshed_at ?? new Date().toISOString();
+
+    const horaLabel = horaCorteMinutos !== null
+      ? `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`
+      : null;
+
+    console.log('[dashboard-debug] cards_hoje', {
+      aplicarCutoff: applyHoraCorte,
+      horaCorteMinutos,
+      context: contextParam,
+      current: {
+        start: current.start,
+        end: applyHoraCorte && horaLabel ? `${current.displayEnd}T${horaLabel}` : current.displayEnd,
+      },
+      previous: {
+        start: previous.start,
+        end: applyHoraCorte && horaLabel ? `${previous.displayEnd}T${horaLabel}` : previous.displayEnd,
+      },
+    });
+
+    if (noCutoff) {
+      console.log('[dashboard-debug] ultimos_dias', {
+        noCutoff,
+        horaCorteMinutos,
+        context: contextParam,
+        periodo: { start: current.start, end: current.displayEnd },
+        vendasPorDia: periodoAtual.vendasPorDia,
+      });
+
+      console.log('[dashboard-debug] grafico_diario', {
+        noCutoff,
+        horaCorteMinutos,
+        context: contextParam,
+        periodo: { start: current.start, end: current.displayEnd },
+        vendasPorDia: periodoAtual.vendasPorDia,
+      });
+    }
 
     const debugDate = '2025-12-07';
     const sumPedidosDia = (facts: CacheOrderFact[], dia: string) =>

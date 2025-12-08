@@ -892,6 +892,21 @@ export default function DashboardClient() {
     return { inicio, fim };
   }
 
+  const MICROTREND_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+  function appendMicrotrendWindows(params: URLSearchParams) {
+    const nowMs = Date.now();
+    const currentEnd = new Date(nowMs);
+    const currentStart = new Date(nowMs - MICROTREND_WINDOW_MS);
+    const previousStart = new Date(nowMs - 2 * MICROTREND_WINDOW_MS);
+    const previousEnd = new Date(nowMs - MICROTREND_WINDOW_MS);
+
+    params.set('microCurrentStart', currentStart.toISOString());
+    params.set('microCurrentEnd', currentEnd.toISOString());
+    params.set('microPrevStart', previousStart.toISOString());
+    params.set('microPrevEnd', previousEnd.toISOString());
+  }
+
 function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const fim = isoToday();
   const inicio = addDays(fim, -(GLOBAL_INTERVAL_DAYS - 1));
@@ -919,6 +934,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
     const incluiHoje = intervaloIncluiHoje(inicio, fim);
+    const isHojeCard = preset === 'today';
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
       const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
@@ -950,10 +966,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
-      params.set('noCutoff', '1');
+      params.set('context', isHojeCard ? 'cards-hoje' : 'ultimos-dias');
+      if (!isHojeCard) params.set('noCutoff', '1');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log(isHojeCard ? '[debug-front] resumo-hoje-url' : '[debug-front] url-ultimos-dias', url);
+      console.log('[debug-front] microtrend-url', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo do dashboard');
       const parsedResumo = normalizeDashboardResumo(json, resumo);
@@ -974,8 +995,17 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         if (requestId === resumoRequestId.current && preset === 'month' && !already && atualDias < diasEsperados) {
           setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
           setComplementLoading(true);
-          const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1&noCutoff=1`;
-          const resC = await fetch(url, { cache: 'no-store' });
+          const urlComplement = new URLSearchParams();
+          urlComplement.set('dataInicial', inicio);
+          urlComplement.set('dataFinal', fim);
+          urlComplement.set('complement', '1');
+          urlComplement.set('noCutoff', '1');
+          urlComplement.set('context', isHojeCard ? 'cards-hoje' : 'ultimos-dias');
+          appendMicrotrendWindows(urlComplement);
+          const complementUrl = `/api/tiny/dashboard/resumo?${urlComplement.toString()}`;
+          console.log('[debug-front] url-ultimos-dias', complementUrl);
+          console.log('[debug-front] microtrend-url', complementUrl);
+          const resC = await fetch(complementUrl, { cache: 'no-store' });
           if (resC.ok) {
             setComplementMsg('Dados completados automaticamente');
             setTimeout(() => setComplementMsg(null), 5000);
@@ -1025,9 +1055,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
       params.set('noCutoff', '1');
+      params.set('context', 'grafico-diario');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log('[debug-front] resumo-grafico-diario-url', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar visão consolidada');
       const parsedGlobal = normalizeDashboardResumo(json, resumoGlobal);
@@ -1072,9 +1106,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
+      params.set('noCutoff', '1');
+      params.set('context', 'top-situacoes');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log('[debug-front] resumo-ultimos-dias-url', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar situações do mês');
       const parsed = normalizeDashboardResumo(json, resumo);
@@ -1115,7 +1154,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      params.set('noCutoff', '1');
+      params.set('context', 'insights-base');
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log('[debug-front] resumo-grafico-diario-url', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar base de insights');
       const parsed = normalizeDashboardResumo(json, insightsBaseline);
@@ -1276,9 +1320,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       const params = new URLSearchParams();
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
+      params.set('noCutoff', '1');
+      params.set('context', 'grafico-diario');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
-      const res = await fetch(`/api/tiny/dashboard/resumo?${params.toString()}`, { cache: 'no-store' });
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log('[debug-front] resumo-grafico-diario-url', url);
+      const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar resumo (gráfico)');
       const parsedChart = normalizeDashboardResumo(json, resumoChart);
@@ -1297,8 +1346,16 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         if (requestId === chartRequestId.current && chartPreset === 'month' && !already && atualDias < diasEsperados) {
           setAutoComplementedRanges((prev) => ({ ...prev, [key]: true }));
           setComplementLoading(true);
-          const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1`;
-          const resC = await fetch(url, { cache: 'no-store' });
+          const urlParams = new URLSearchParams();
+          urlParams.set('dataInicial', inicio);
+          urlParams.set('dataFinal', fim);
+          urlParams.set('complement', '1');
+          urlParams.set('noCutoff', '1');
+          urlParams.set('context', 'grafico-diario');
+          appendMicrotrendWindows(urlParams);
+          const complementUrl = `/api/tiny/dashboard/resumo?${urlParams.toString()}`;
+          console.log('[debug-front] resumo-grafico-diario-url', complementUrl);
+          const resC = await fetch(complementUrl, { cache: 'no-store' });
           if (resC.ok) {
             setComplementMsg('Dados completados automaticamente');
             setTimeout(() => setComplementMsg(null), 5000);
@@ -1333,7 +1390,15 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       setComplementLoading(true);
       setComplementMsg(null);
       const { inicio, fim } = resolverIntervaloChart();
-      const url = `/api/tiny/dashboard/resumo?dataInicial=${inicio}&dataFinal=${fim}&complement=1&noCutoff=1`;
+      const params = new URLSearchParams();
+      params.set('dataInicial', inicio);
+      params.set('dataFinal', fim);
+      params.set('complement', '1');
+      params.set('noCutoff', '1');
+      params.set('context', 'grafico-diario');
+      appendMicrotrendWindows(params);
+      const url = `/api/tiny/dashboard/resumo?${params.toString()}`;
+      console.log('[debug-front] resumo-grafico-diario-url', url);
       const res = await fetch(url, { cache: 'no-store' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
