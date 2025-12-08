@@ -34,8 +34,8 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
     <div className="h-32 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.3)" />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'rgba(100,116,139,0.9)' }} tickLine={false} axisLine={false} />
+          <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
+          <XAxis dataKey="horaIndex" tick={false} tickLine={false} axisLine={false} />
           <YAxis hide />
           <Tooltip
             content={

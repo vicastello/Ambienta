@@ -440,11 +440,12 @@ export default function ProdutosClient() {
 
   const produtoSparkData = useMemo(() => {
     if (!produtoDesempenho?.serie?.length) return [];
-    return produtoDesempenho.serie.map((ponto) => {
+    return produtoDesempenho.serie.map((ponto, idx) => {
       const parsed = new Date(`${ponto.data}T00:00:00`);
       const label = Number.isNaN(parsed.getTime()) ? ponto.data : formatSerieDayLabel(parsed);
       return {
         label,
+        horaIndex: idx,
         hoje: ponto.receita,
         ontem: 0,
       };

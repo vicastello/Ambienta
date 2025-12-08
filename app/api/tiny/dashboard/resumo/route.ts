@@ -103,7 +103,7 @@ type HoraTrend = {
 };
 
 type MicroTrendHora = {
-  horaLabel: string;
+  horaIndex: number; // 0-23
   faturamento: number;
   pedidos: number;
 };
@@ -289,6 +289,18 @@ const nowInTimeZone = (timeZone: string): Date => {
   const parts = formatter.formatToParts(now);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
   return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')));
+};
+
+const startOfDayInTimeZone = (base: Date, timeZone: string): Date => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(base);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0, 0));
 };
 
 // Usa inserted_at como referência de corte horário na zona America/Sao_Paulo
@@ -1329,41 +1341,41 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
 
 const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
   const agoraSp = nowInTimeZone(timeZone);
-  const currentEnd = agoraSp;
-  const currentStart = new Date(currentEnd.getTime() - MICRO_TREND_WINDOW_HOURS * 60 * 60 * 1000);
-  const previousEnd = currentStart;
-  const previousStart = new Date(previousEnd.getTime() - MICRO_TREND_WINDOW_HOURS * 60 * 60 * 1000);
+  const hojeStart = startOfDayInTimeZone(agoraSp, timeZone);
+  const hojeEnd = new Date(hojeStart.getTime() + DAY_MS - 1000);
+  const ontemStart = new Date(hojeStart.getTime() - DAY_MS);
+  const ontemEnd = new Date(ontemStart.getTime() + DAY_MS - 1000);
   const hourMs = 60 * 60 * 1000;
 
   const { data, error } = await supabaseAdmin
     .from('tiny_orders')
     .select('valor,inserted_at')
-    .gte('inserted_at', previousStart.toISOString())
-    .lt('inserted_at', currentEnd.toISOString())
+    .gte('inserted_at', ontemStart.toISOString())
+    .lte('inserted_at', hojeEnd.toISOString())
     .limit(SUPABASE_MAX_ROWS);
 
   if (error) {
     console.error('[dashboard] erro ao buscar microtrend 24h', error);
   }
 
-  const hoursCount = MICRO_TREND_WINDOW_HOURS;
+  const hoursCount = 24;
   const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
   const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
 
-  const currentStartMs = currentStart.getTime();
-  const previousStartMs = previousStart.getTime();
+  const currentStartMs = hojeStart.getTime();
+  const previousStartMs = ontemStart.getTime();
 
   for (const row of data ?? []) {
     const ts = new Date((row as any).inserted_at ?? null);
     if (Number.isNaN(ts.getTime())) continue;
     const tsMs = ts.getTime();
-    if (tsMs >= currentStartMs && tsMs < currentEnd.getTime()) {
+    if (tsMs >= currentStartMs && tsMs <= hojeEnd.getTime()) {
       const idx = Math.floor((tsMs - currentStartMs) / hourMs);
       if (idx >= 0 && idx < hoursCount) {
         currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
         currentBuckets[idx].pedidos += 1;
       }
-    } else if (tsMs >= previousStartMs && tsMs < previousEnd.getTime()) {
+    } else if (tsMs >= previousStartMs && tsMs <= ontemEnd.getTime()) {
       const idx = Math.floor((tsMs - previousStartMs) / hourMs);
       if (idx >= 0 && idx < hoursCount) {
         previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
@@ -1372,44 +1384,35 @@ const buildMicroTrend24h = async (timeZone: string): Promise<MicroTrend24h> => {
     }
   }
 
-  const labelFormatter = new Intl.DateTimeFormat('pt-BR', {
-    timeZone,
-    hour: '2-digit',
-    hour12: false,
-  });
+  const buildSeries = (buckets: Array<{ valor: number; pedidos: number }>): MicroTrendHora[] =>
+    buckets.map((bucket, idx) => ({
+      horaIndex: idx,
+      faturamento: bucket.valor,
+      pedidos: bucket.pedidos,
+    }));
 
-  const buildSeries = (buckets: Array<{ valor: number; pedidos: number }>, startMs: number): MicroTrendHora[] =>
-    buckets.map((bucket, idx) => {
-      const pointDate = new Date(startMs + idx * hourMs);
-      const label = `${labelFormatter.format(pointDate)}h`;
-      return {
-        horaLabel: label,
-        faturamento: bucket.valor,
-        pedidos: bucket.pedidos,
-      };
-    });
+  const currentSeries = buildSeries(currentBuckets);
+  const previousSeries = buildSeries(previousBuckets);
 
-  const currentSeries = buildSeries(currentBuckets, currentStartMs);
-  const previousSeries = buildSeries(previousBuckets, previousStartMs);
-
-  console.log('[dashboard] microTrend24h', {
-    agoraSp: agoraSp.toISOString(),
-    current: { start: currentStart.toISOString(), end: currentEnd.toISOString() },
-    previous: { start: previousStart.toISOString(), end: previousEnd.toISOString() },
-  });
-
-  return {
+  const microTrend24h: MicroTrend24h = {
     currentWindow: {
-      start: currentStart.toISOString(),
-      end: currentEnd.toISOString(),
+      start: hojeStart.toISOString(),
+      end: hojeEnd.toISOString(),
       seriesPorHora: currentSeries,
     },
     previousWindow: {
-      start: previousStart.toISOString(),
-      end: previousEnd.toISOString(),
+      start: ontemStart.toISOString(),
+      end: ontemEnd.toISOString(),
       seriesPorHora: previousSeries,
     },
   };
+
+  console.log('[dashboard] microTrend24h-dia', {
+    current: microTrend24h.currentWindow,
+    previous: microTrend24h.previousWindow,
+  });
+
+  return microTrend24h;
 };
 
 const computeTopProdutos = (

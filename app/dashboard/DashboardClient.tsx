@@ -96,7 +96,7 @@ type HoraTrend = {
 };
 
 type MicroTrendHora = {
-  horaLabel: string;
+  horaIndex: number;
   faturamento: number;
   pedidos: number;
 };
@@ -1549,9 +1549,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     return Array.from({ length }, (_, idx) => {
       const currentPoint = currentSeries[idx];
       const previousPoint = previousSeries[idx];
-      const label = currentPoint?.horaLabel ?? previousPoint?.horaLabel ?? `${idx.toString().padStart(2, '0')}h`;
+      const horaIndex = currentPoint?.horaIndex ?? previousPoint?.horaIndex ?? idx;
       return {
-        label,
+        label: `${horaIndex}h`,
+        horaIndex,
         hoje: currentPoint?.faturamento ?? 0,
         ontem: previousPoint?.faturamento ?? 0,
         quantidade: currentPoint?.pedidos ?? 0,
@@ -1764,8 +1765,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
           quantidade: info.quantidade,
         }));
     }
-    return produtoSerieFiltrada.map((dia) => ({
+    return produtoSerieFiltrada.map((dia, idx) => ({
       label: formatSerieLabel(dia.data),
+      horaIndex: idx,
       valor: dia.receita,
       hoje: dia.receita,
       quantidade: dia.quantidade,
@@ -1978,7 +1980,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   <MicroTrendChart data={microTrendChartData} formatter={formatTooltipCurrency} />
                 ) : (
                   <div className="h-32 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm text-slate-400">
-                    Sem dados nas últimas 48h
+                    Sem dados para hoje e ontem
                   </div>
                 )}
               </div>
