@@ -1251,6 +1251,7 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
   const yesterdayLabel = shiftIsoDate(todayLabel, -1);
   const rangeStart = new Date(Date.now() - HOURLY_TREND_LOOKBACK_MS);
   const rangeEnd = new Date();
+  const cutoffMinutes = getCutoffMinutesNowSp();
   try {
     const { data, error } = await supabaseAdmin
       .from('tiny_orders')
@@ -1272,6 +1273,7 @@ const buildHourlyTrend = async (timeZone: string): Promise<HoraTrend[]> => {
       const dayLabel = formatDateInTimeZone(parsedDate, timeZone);
       const minutes = minutesOfDayInTimeZone(timestamp, timeZone);
       if (minutes === null) continue;
+      if ((dayLabel === todayLabel || dayLabel === yesterdayLabel) && minutes > cutoffMinutes) continue;
       const hour = Math.min(HOURLY_TREND_HOURS - 1, Math.max(0, Math.floor(minutes / 60)));
       const targetBuckets =
         dayLabel === todayLabel ? todayBuckets : dayLabel === yesterdayLabel ? yesterdayBuckets : null;
