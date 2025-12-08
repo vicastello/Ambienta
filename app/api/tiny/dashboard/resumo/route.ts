@@ -1434,15 +1434,25 @@ type DateRange = {
   days: number;
 };
 
-const buildRanges = (params: {
+type BuildRangesResult = {
+  current: DateRange;
+  previous: DateRange;
+  meta: { incluiHoje: boolean; horaCorteMinutos: number | null };
+};
+
+const buildAlignedRanges = (params: {
   dataInicialParam: string | null;
   dataFinalParam: string | null;
   diasParam: string | null;
   timeZone?: string;
-}): { current: DateRange; previous: DateRange } => {
+  now?: Date;
+}): BuildRangesResult => {
   const timeZone = params.timeZone ?? DEFAULT_REPORT_TIMEZONE;
-  const hojeLabel = formatDateInTimeZone(new Date(), timeZone);
-  const dataFinalStr = params.dataFinalParam ?? hojeLabel;
+  const now = params.now ?? new Date();
+  const hojeLabel = formatDateInTimeZone(now, timeZone);
+  const dataFinalBase = params.dataFinalParam ?? hojeLabel;
+  const incluiHoje = dataFinalBase >= hojeLabel;
+  const dataFinalStr = incluiHoje ? hojeLabel : dataFinalBase;
 
   const dataInicialStr = (() => {
     if (params.dataInicialParam) return params.dataInicialParam;
@@ -1452,7 +1462,8 @@ const buildRanges = (params: {
   })();
 
   const start = dataInicialStr;
-  const endExclusive = shiftIsoDate(dataFinalStr, 1);
+  const endInclusive = dataFinalStr >= start ? dataFinalStr : start;
+  const endExclusive = shiftIsoDate(endInclusive, 1);
   const days = Math.max(1, diffDias(new Date(`${start}T00:00:00`), new Date(`${endExclusive}T00:00:00`)));
 
   const prevEndExclusive = start;
@@ -1461,7 +1472,7 @@ const buildRanges = (params: {
   const current: DateRange = {
     start,
     endExclusive,
-    displayEnd: shiftIsoDate(endExclusive, -1),
+    displayEnd: endInclusive,
     days,
   };
   const previous: DateRange = {
@@ -1471,7 +1482,9 @@ const buildRanges = (params: {
     days,
   };
 
-  return { current, previous };
+  const horaCorteMinutos = incluiHoje ? minutesOfDayInTimeZone(now.toISOString(), timeZone) : null;
+
+  return { current, previous, meta: { incluiHoje, horaCorteMinutos } };
 };
 
 export async function GET(req: NextRequest) {
@@ -1485,73 +1498,17 @@ export async function GET(req: NextRequest) {
     const diasParam = searchParams.get('dias');
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
-    let { current, previous } = buildRanges({
+    const agora = new Date();
+    const { current, previous, meta } = buildAlignedRanges({
       dataInicialParam,
       dataFinalParam,
       diasParam,
       timeZone: DEFAULT_REPORT_TIMEZONE,
+      now: agora,
     });
 
-    const agora = new Date();
-
-    const rebuildPreviousFromCurrent = () => {
-      const prevEndExclusive = current.start;
-      const prevStart = shiftIsoDate(prevEndExclusive, -1 * current.days);
-      previous = {
-        start: prevStart,
-        endExclusive: prevEndExclusive,
-        displayEnd: shiftIsoDate(prevEndExclusive, -1),
-        days: current.days,
-      };
-    };
-    const hojeLabel = formatDateInTimeZone(agora, DEFAULT_REPORT_TIMEZONE);
-    const filtroIncluiHojeOuFuturo = !dataFinalParam || dataFinalParam >= hojeLabel;
-
-    if (filtroIncluiHojeOuFuturo && current.displayEnd > hojeLabel) {
-      // Trunca o fim do período atual para hoje e rederiva o período anterior com a mesma duração
-      const endExclusive = shiftIsoDate(hojeLabel, 1);
-      const days = Math.max(
-        1,
-        diffDias(new Date(`${current.start}T00:00:00`), new Date(`${endExclusive}T00:00:00`))
-      );
-      current = {
-        ...current,
-        displayEnd: hojeLabel,
-        endExclusive,
-        days,
-      };
-      const prevEndExclusive = current.start;
-      previous = {
-        start: shiftIsoDate(prevEndExclusive, -1 * days),
-        endExclusive: prevEndExclusive,
-        displayEnd: shiftIsoDate(prevEndExclusive, -1),
-        days,
-      };
-    }
-
-    let applyHoraCorte = filtroIncluiHojeOuFuturo;
-    if (current.displayEnd < current.start) {
-      const fallbackDisplayEnd = shiftIsoDate(current.start, Math.max(0, current.days - 1));
-      const fallbackEndExclusive = shiftIsoDate(fallbackDisplayEnd, 1);
-      const fallbackDays = Math.max(
-        1,
-        diffDias(new Date(`${current.start}T00:00:00`), new Date(`${fallbackEndExclusive}T00:00:00`))
-      );
-      current = {
-        ...current,
-        displayEnd: fallbackDisplayEnd,
-        endExclusive: fallbackEndExclusive,
-        days: fallbackDays,
-      };
-      applyHoraCorte = false;
-      rebuildPreviousFromCurrent();
-    } else if (previous.displayEnd < previous.start) {
-      rebuildPreviousFromCurrent();
-    }
-
-    const horaCorteMinutos = applyHoraCorte
-      ? minutesOfDayInTimeZone(agora.toISOString(), DEFAULT_REPORT_TIMEZONE)
-      : null;
+    const applyHoraCorte = meta.incluiHoje && meta.horaCorteMinutos !== null;
+    const horaCorteMinutos = meta.horaCorteMinutos;
 
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
     const situacoesFiltro = situacoesParam
@@ -1561,31 +1518,51 @@ export async function GET(req: NextRequest) {
           .filter((n) => Number.isFinite(n))
       : null;
 
-    console.time(supabaseTimer);
-    const refreshInterval = Math.max(365, current.days);
-    let cacheRow = await loadCacheRow(current.start, current.displayEnd);
-    if (!cacheRow) {
-      const { error: refreshError } = await supabaseAdmin.rpc(
-        'refresh_dashboard_resumo_cache',
-        { interval_days: refreshInterval }
-      );
-      if (refreshError) {
-        console.error('[dashboard] erro ao recalcular cache', refreshError);
-      }
+    const shouldUseCache = !applyHoraCorte;
+    let cacheRow: DashboardCacheRow | null = null;
+    let orderFacts: CacheOrderFact[] = [];
+    let produtoFacts: CacheProdutoFact[] = [];
+
+    if (shouldUseCache) {
+      console.time(supabaseTimer);
+      const refreshInterval = Math.max(365, current.days);
       cacheRow = await loadCacheRow(current.start, current.displayEnd);
-    }
-    console.timeEnd(supabaseTimer);
+      if (!cacheRow) {
+        const { error: refreshError } = await supabaseAdmin.rpc(
+          'refresh_dashboard_resumo_cache',
+          { interval_days: refreshInterval }
+        );
+        if (refreshError) {
+          console.error('[dashboard] erro ao recalcular cache', refreshError);
+        }
+        cacheRow = await loadCacheRow(current.start, current.displayEnd);
+      }
+      console.timeEnd(supabaseTimer);
 
-    if (!cacheRow) {
-      cacheRow = await buildFactsOnTheFly(current.start, current.endExclusive);
-    }
+      if (!cacheRow) {
+        cacheRow = await buildFactsOnTheFly(current.start, current.endExclusive);
+      }
 
-    if (!cacheRow) {
-      return NextResponse.json({ message: 'Cache de dashboard indisponível ou vazio após recalculo' }, { status: 503 });
-    }
+      if (!cacheRow) {
+        return NextResponse.json({ message: 'Cache de dashboard indisponível ou vazio após recalculo' }, { status: 503 });
+      }
 
-    const orderFacts = Array.isArray(cacheRow.order_facts) ? cacheRow.order_facts : [];
-    const produtoFacts = Array.isArray(cacheRow.produto_facts) ? cacheRow.produto_facts : [];
+      orderFacts = Array.isArray(cacheRow.order_facts) ? cacheRow.order_facts : [];
+      produtoFacts = Array.isArray(cacheRow.produto_facts) ? cacheRow.produto_facts : [];
+    } else {
+      const [ordersAtualBaseRaw, ordersAnteriorBaseRaw] = await Promise.all([
+        fetchOrderFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro),
+        fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
+      ]);
+
+      const [produtosAtualBaseRaw, produtosAnteriorBaseRaw] = await Promise.all([
+        fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro),
+        fetchProdutoFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
+      ]);
+
+      orderFacts = [...ordersAtualBaseRaw, ...ordersAnteriorBaseRaw];
+      produtoFacts = [...produtosAtualBaseRaw, ...produtosAnteriorBaseRaw];
+    }
 
     const cutoffOptsAtual = applyHoraCorte && horaCorteMinutos !== null
       ? {
@@ -1612,7 +1589,7 @@ export async function GET(req: NextRequest) {
       cutoffOptsAtual
     );
     if (!produtosAtuais.length && ordersAtual.length) {
-      const fetched = await fetchProdutoFactsRange(current.start, current.displayEnd, canaisFiltro, situacoesFiltro);
+      const fetched = await fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro);
       produtosAtuais = cutoffOptsAtual
         ? filterProdutos(fetched, current.start, current.endExclusive, canaisFiltro, situacoesFiltro, cutoffOptsAtual)
         : fetched;
@@ -1668,7 +1645,7 @@ export async function GET(req: NextRequest) {
     if (!produtosAnterior.length && ordersAnterior.length) {
       const fetched = await fetchProdutoFactsRange(
         previous.start,
-        previous.displayEnd,
+        previous.endExclusive,
         canaisFiltro,
         situacoesFiltro
       );
@@ -1692,6 +1669,8 @@ export async function GET(req: NextRequest) {
     const canaisDisponiveis = Array.from(new Set(orderFacts.map((o) => o.canal ?? 'Outros')));
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
+
+    const lastUpdatedAt = cacheRow?.last_refreshed_at ?? new Date().toISOString();
 
     if (applyHoraCorte && horaCorteMinutos !== null) {
       const horaLabel = `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`;
@@ -1733,7 +1712,7 @@ export async function GET(req: NextRequest) {
       situacoesDisponiveis: [...TODAS_SITUACOES],
       mapaVendasUF,
       mapaVendasCidade,
-      lastUpdatedAt: cacheRow.last_refreshed_at ?? null,
+      lastUpdatedAt,
     };
 
     return NextResponse.json(resposta);

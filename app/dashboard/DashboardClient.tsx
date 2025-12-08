@@ -372,6 +372,11 @@ function buildChartCacheKey(
   return `${CHART_CACHE_PREFIX}:${preset}:${customKey}:${inicio}:${fim}`;
 }
 
+function intervaloIncluiHoje(inicio: string, fim: string) {
+  const hoje = isoToday();
+  return inicio <= hoje && fim >= hoje;
+}
+
 function formatBRL(valor: number | null | undefined) {
   const n =
     typeof valor === 'number' && Number.isFinite(valor) ? valor : 0;
@@ -867,11 +872,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const background = options?.background ?? false;
     const requestId = ++resumoRequestId.current;
     const { inicio, fim } = resolverIntervalo();
+    const incluiHoje = intervaloIncluiHoje(inicio, fim);
     try {
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
-      const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
+      const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, resumo) : null;
-      const cacheFresh = isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
+      const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, DASHBOARD_CACHE_FRESH_MS);
       const shouldFetch = force || !cacheFresh;
       if (cachedResumo && requestId === resumoRequestId.current) {
         setResumo(cachedResumo);
@@ -909,7 +915,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         setLastUpdatedAt(parsedResumo.lastUpdatedAt ?? null);
         lastResumoFetchRef.current = Date.now();
       }
-      safeWriteCache(cacheKey, parsedResumo);
+      if (!incluiHoje) {
+        safeWriteCache(cacheKey, parsedResumo);
+      }
       try {
         const { inicio, fim } = resolverIntervalo();
         const diasEsperados = 1 + diffDays(inicio, fim);
@@ -953,10 +961,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
     try {
       const { inicio, fim } = resolverIntervaloGlobal();
+      const incluiHoje = intervaloIncluiHoje(inicio, fim);
       const cacheKey = buildGlobalCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
-      const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
+      const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cachedGlobal = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, resumoGlobal) : null;
-      const cacheFresh = isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
+      const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
       if (cachedGlobal && requestId === globalRequestId.current) setResumoGlobal(cachedGlobal);
       if (requestId === globalRequestId.current) {
         setLoadingGlobal(!cachedGlobal);
@@ -978,7 +987,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         setResumoGlobal(parsedGlobal);
         lastGlobalFetchRef.current = Date.now();
       }
-      safeWriteCache(cacheKey, parsedGlobal);
+      if (!incluiHoje) {
+        safeWriteCache(cacheKey, parsedGlobal);
+      }
     } catch (error) {
       if (requestId === globalRequestId.current) {
         setErroGlobal(getErrorMessage(error) || 'Erro inesperado ao carregar visão consolidada');
@@ -996,10 +1007,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const requestId = ++situacoesRequestId.current;
     try {
       const { inicio, fim } = resolverIntervaloMesAtual();
+      const incluiHoje = intervaloIncluiHoje(inicio, fim);
       const cacheKey = buildResumoCacheKey(inicio, fim, canaisSelecionados, situacoesSelecionadas);
-      const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
+      const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cachedResumo = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, resumo) : null;
-      const cacheFresh = isCacheEntryFresh(cacheEntry, SITUACOES_CACHE_FRESH_MS);
+      const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, SITUACOES_CACHE_FRESH_MS);
       if (cachedResumo && requestId === situacoesRequestId.current) {
         aplicarSituacoesResumo(cachedResumo);
       }
@@ -1022,7 +1034,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         aplicarSituacoesResumo(parsed);
         lastSituacoesFetchRef.current = Date.now();
       }
-      safeWriteCache(cacheKey, parsed);
+      if (!incluiHoje) {
+        safeWriteCache(cacheKey, parsed);
+      }
     } catch {
       if (requestId === situacoesRequestId.current) {
         setTopSituacoesMes([]);
@@ -1041,10 +1055,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
     try {
       const { inicio, fim } = resolverIntervaloGlobal();
+      const incluiHoje = intervaloIncluiHoje(inicio, fim);
       const cacheKey = buildGlobalCacheKey(inicio, fim, [], []);
-      const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
+      const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cached = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, insightsBaseline) : null;
-      const cacheFresh = isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
+      const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, GLOBAL_CACHE_FRESH_MS);
       if (cached) setInsightsBaseline(cached);
       if (cacheFresh) {
         return;
@@ -1057,7 +1072,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       if (!res.ok) throw new Error(json?.details || json?.message || 'Erro ao carregar base de insights');
       const parsed = normalizeDashboardResumo(json, insightsBaseline);
       setInsightsBaseline(parsed);
-      safeWriteCache(cacheKey, parsed);
+      if (!incluiHoje) {
+        safeWriteCache(cacheKey, parsed);
+      }
     } catch (e) {
       console.error('Erro ao carregar base de insights', e);
     } finally {
@@ -1187,10 +1204,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
     try {
       const { inicio, fim } = resolverIntervaloChart();
+      const incluiHoje = intervaloIncluiHoje(inicio, fim);
       const cacheKey = buildChartCacheKey(inicio, fim, chartPreset, chartCustomStart, chartCustomEnd);
-      const cacheEntry = readCacheEntry<DashboardResumo>(cacheKey);
+      const cacheEntry = incluiHoje ? null : readCacheEntry<DashboardResumo>(cacheKey);
       const cachedChart = cacheEntry?.data ? normalizeDashboardResumo(cacheEntry.data, resumoChart) : null;
-      const cacheFresh = isCacheEntryFresh(cacheEntry, CHART_CACHE_FRESH_MS);
+      const cacheFresh = incluiHoje ? false : isCacheEntryFresh(cacheEntry, CHART_CACHE_FRESH_MS);
       if (cachedChart && requestId === chartRequestId.current) setResumoChart(cachedChart);
       if (requestId === chartRequestId.current) {
         setLoadingChart(!cachedChart);
@@ -1209,7 +1227,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       if (requestId === chartRequestId.current) {
         setResumoChart(parsedChart);
       }
-      safeWriteCache(cacheKey, parsedChart);
+      if (!incluiHoje) {
+        safeWriteCache(cacheKey, parsedChart);
+      }
       try {
         const { inicio, fim } = resolverIntervaloChart();
         const diasEsperados = 1 + diffDays(inicio, fim);
