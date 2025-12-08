@@ -1641,62 +1641,40 @@ export async function GET(req: NextRequest) {
       ordersAnteriorBase = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
     }
 
-    let ordersAnterior = ordersAnteriorBase;
-    if (applyHoraCorte && horaCorteMinutos !== null && ordersAnteriorBase.length) {
-      const cortado = filterOrders(
-        ordersAnteriorBase,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        {
+    const cutoffOptsAnterior = applyHoraCorte && horaCorteMinutos !== null
+      ? {
           cutoffDate: previous.displayEnd,
           cutoffMinutes: horaCorteMinutos,
           timeZone: DEFAULT_REPORT_TIMEZONE,
         }
-      );
-      // Se o corte zerar a base anterior, mantém os dados completos para evitar falso "base zerada"
-      ordersAnterior = cortado.length ? cortado : ordersAnteriorBase;
-    }
-    let produtosAnteriorBase = filterProdutos(
+      : undefined;
+
+    const ordersAnterior = filterOrders(
+      ordersAnteriorBase,
+      previous.start,
+      previous.endExclusive,
+      canaisFiltro,
+      situacoesFiltro,
+      cutoffOptsAnterior
+    );
+    let produtosAnterior = filterProdutos(
       produtoFacts,
       previous.start,
       previous.endExclusive,
       canaisFiltro,
       situacoesFiltro,
-      applyHoraCorte && horaCorteMinutos !== null
-        ? {
-            cutoffDate: previous.displayEnd,
-            cutoffMinutes: horaCorteMinutos,
-            timeZone: DEFAULT_REPORT_TIMEZONE,
-          }
-        : undefined
+      cutoffOptsAnterior
     );
-    if (!produtosAnteriorBase.length && ordersAnterior.length) {
-      produtosAnteriorBase = await fetchProdutoFactsRange(
+    if (!produtosAnterior.length && ordersAnterior.length) {
+      const fetched = await fetchProdutoFactsRange(
         previous.start,
         previous.displayEnd,
         canaisFiltro,
         situacoesFiltro
       );
-    }
-
-    let produtosAnterior = produtosAnteriorBase;
-    if (applyHoraCorte && horaCorteMinutos !== null && produtosAnteriorBase.length) {
-      const cortado = filterProdutos(
-        produtosAnteriorBase,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        {
-          cutoffDate: previous.displayEnd,
-          cutoffMinutes: horaCorteMinutos,
-          timeZone: DEFAULT_REPORT_TIMEZONE,
-        }
-      );
-      // Se o corte eliminar todos os itens, preserva a base completa para manter comparação
-      produtosAnterior = cortado.length ? cortado : produtosAnteriorBase;
+      produtosAnterior = cutoffOptsAnterior
+        ? filterProdutos(fetched, previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro, cutoffOptsAnterior)
+        : fetched;
     }
     let periodoAnterior = computePeriodoResumo(ordersAnterior, produtosAnterior, previous.start, previous.displayEnd);
 
@@ -1715,18 +1693,30 @@ export async function GET(req: NextRequest) {
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
 
-    console.log('[dashboard] janelas finais', {
-      current: periodoAtual,
-      previous: periodoAnterior,
-    });
-
     if (applyHoraCorte && horaCorteMinutos !== null) {
       const horaLabel = `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`;
-      console.log('[dashboard] janelas alinhadas ao horário atual', {
+      console.log('[dashboard] janelas finais', {
         currentStart: current.start,
         currentEnd: `${current.displayEnd}T${horaLabel}`,
+        currentPedidos: periodoAtual.totalPedidos,
+        currentFaturamento: periodoAtual.totalValor,
         previousStart: previous.start,
         previousEnd: `${previous.displayEnd}T${horaLabel}`,
+        previousPedidos: periodoAnterior.totalPedidos,
+        previousFaturamento: periodoAnterior.totalValor,
+        faturamentoDelta: diffs.faturamento.delta,
+        faturamentoDeltaPercent: diffs.faturamento.deltaPercent,
+      });
+    } else {
+      console.log('[dashboard] janelas finais (sem corte de horário)', {
+        currentStart: current.start,
+        currentEnd: current.displayEnd,
+        currentPedidos: periodoAtual.totalPedidos,
+        currentFaturamento: periodoAtual.totalValor,
+        previousStart: previous.start,
+        previousEnd: previous.displayEnd,
+        previousPedidos: periodoAnterior.totalPedidos,
+        previousFaturamento: periodoAnterior.totalValor,
       });
     }
 
