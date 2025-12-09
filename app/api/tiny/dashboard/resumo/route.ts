@@ -169,6 +169,16 @@ type TinyPedidoItemWithProduto = Pick<
 
 type PedidoItensMap = Map<number, TinyPedidoItemWithProduto[]>;
 
+type DebugOrderEntry = {
+  id: number | null;
+  tiny_id: number | null;
+  situacao: number;
+  canal: string | null;
+  data_criacao: string | null;
+  dataRefResumo: string;
+  motivoExclusao?: string;
+};
+
 type OrderSummaryRow = Pick<
   TinyOrdersRow,
   | 'id'
@@ -343,6 +353,41 @@ const asTinyOrderRaw = (value: Json | null): TinyOrderRawPayload | null =>
 
 const asTinyItem = (value: unknown): TinyRawItem | null =>
   isRecord(value) ? (value as TinyRawItem) : null;
+
+function getOrderDateForResumo(order: OrderSummaryRow): string {
+  const raw = asTinyOrderRaw(order.raw ?? null);
+  const pedido = raw?.pedido as Record<string, unknown> | undefined;
+
+  const candidates: Array<string | undefined> = [
+    pedido?.dataPedido as string | undefined,
+    pedido?.data as string | undefined,
+    (raw as any)?.dataPedido as string | undefined,
+    (raw as any)?.data as string | undefined,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    let value = candidate.trim();
+
+    const brMatch = value.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (brMatch) {
+      const [, dd, mm, yyyy] = brMatch;
+      value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+      return value.slice(0, 10);
+    }
+  }
+
+  if (typeof order.data_criacao === 'string' && order.data_criacao.length >= 10) {
+    return order.data_criacao.slice(0, 10);
+  }
+
+  const today = new Date();
+  const local = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
 
 function toNumber(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -1582,11 +1627,12 @@ const buildPeriodoResumoFromTinyOrders = async (
     situacoesBusca: number[];
     situacoesCancelamento: Set<number>;
   },
+  debugCollector?: { included: DebugOrderEntry[]; excluded: DebugOrderEntry[] },
   base?: PeriodoResumo
 ): Promise<PeriodoResumo> => {
   let query = supabaseAdmin
     .from('tiny_orders')
-    .select('data_criacao, valor_total_pedido, valor, valor_frete, situacao, canal, uf, cidade')
+    .select('id,tiny_id,data_criacao,valor_total_pedido,valor,valor_frete,situacao,canal,uf,cidade,raw,inserted_at,updated_at')
     .gte('data_criacao', range.start)
     .lte('data_criacao', range.end)
     .limit(SUPABASE_MAX_ROWS);
@@ -1594,8 +1640,9 @@ const buildPeriodoResumoFromTinyOrders = async (
   if (filtros.canais?.length) {
     query = query.in('canal', filtros.canais);
   }
-  if (filtros.situacoesBusca.length) {
-    query = query.in('situacao', filtros.situacoesBusca);
+  const situacoesBusca = filtros.situacoesBusca.filter((s) => s !== SITUACAO_CANCELADA);
+  if (situacoesBusca.length) {
+    query = query.in('situacao', situacoesBusca);
   }
 
   const { data, error } = await query;
@@ -1603,37 +1650,76 @@ const buildPeriodoResumoFromTinyOrders = async (
     console.error('[dashboard-debug] tiny_orders_periodo_error', { error, range, filtros });
   }
 
+  const ordersRaw = (data ?? []) as OrderSummaryRow[];
+
+  const included: DebugOrderEntry[] = debugCollector?.included ?? [];
+  const excluded: DebugOrderEntry[] = debugCollector?.excluded ?? [];
+  const includedOrders: OrderSummaryRow[] = [];
+
+  for (const order of ordersRaw) {
+    const situacao = typeof order.situacao === 'number' ? order.situacao : toNumberSafe(order.situacao ?? -1);
+    const dataRef = getOrderDateForResumo(order);
+    const dataRefIso = dataRef.slice(0, 10);
+    const baseEntry: DebugOrderEntry = {
+      id: typeof order.id === 'number' ? order.id : null,
+      tiny_id: typeof (order as any).tiny_id === 'number' ? (order as any).tiny_id : null,
+      situacao,
+      canal: order.canal ?? null,
+      data_criacao: order.data_criacao ?? null,
+      dataRefResumo: dataRefIso,
+    };
+
+    if (!filtros.situacoesAplicadas.has(situacao)) {
+      excluded.push({ ...baseEntry, motivoExclusao: situacao === SITUACAO_CANCELADA ? 'situacaoCancelada(2)' : 'situacaoNaoSelecionada' });
+      continue;
+    }
+
+    if (dataRefIso < range.start || dataRefIso > range.end) {
+      excluded.push({ ...baseEntry, motivoExclusao: 'foraDoIntervaloDataRefResumo' });
+      continue;
+    }
+
+    included.push({ ...baseEntry, dataRefResumo: dataRefIso });
+    includedOrders.push(order);
+  }
+
   const diasMap = new Map<string, DiaAggregado>();
   const pedidosPorSituacao = new Map<number, { situacao: number; descricao: string; quantidade: number }>();
   let totalPedidosValidos = 0;
   let totalValorValidos = 0;
+  let totalValorLiquido = 0;
   let totalFreteValidos = 0;
-  let cancelados = 0;
+  let canceladosIncluidos = 0;
 
-  for (const row of data ?? []) {
-    const diaRaw = (row as any).data_criacao;
-    const key = typeof diaRaw === 'string' ? diaRaw.slice(0, 10) : new Date(diaRaw).toISOString().slice(0, 10);
-    const valorPedido = toNumberSafe((row as any).valor_total_pedido ?? (row as any).valor ?? 0);
-    const frete = toNumberSafe((row as any).valor_frete ?? 0);
-    const situacao = toNumberSafe((row as any).situacao ?? -1);
+  for (const order of includedOrders) {
+    const situacao = typeof order.situacao === 'number' ? order.situacao : toNumberSafe(order.situacao ?? -1);
+    const dataRef = getOrderDateForResumo(order);
+    const dataRefIso = dataRef.slice(0, 10);
+    const valorFallback = toNumberSafe((order as any).valor_total_pedido ?? (order as any).valor ?? 0);
+    const freteFallback = toNumberSafe((order as any).valor_frete ?? 0);
+    const valores = extrairValoresDoTiny(order.raw ?? null, {
+      valorBruto: valorFallback,
+      valorFrete: freteFallback,
+    });
 
-    if (filtros.situacoesCancelamento.has(situacao)) {
-      cancelados += 1;
-    }
+    const valorBruto = valores.bruto;
+    const valorFrete = valores.frete;
+    const valorLiquido = valores.liquido > 0 ? valores.liquido : Math.max(0, valorBruto - valorFrete);
 
-    if (!filtros.situacoesAplicadas.has(situacao)) {
-      continue;
-    }
-
-    const agg = diasMap.get(key) ?? { data: key, pedidos: 0, faturamento: 0, frete: 0 };
+    const agg = diasMap.get(dataRefIso) ?? { data: dataRefIso, pedidos: 0, faturamento: 0, frete: 0 };
     agg.pedidos += 1;
-    agg.faturamento += valorPedido;
-    agg.frete += frete;
-    diasMap.set(key, agg);
+    agg.faturamento += valorBruto;
+    agg.frete += valorFrete;
+    diasMap.set(dataRefIso, agg);
 
     totalPedidosValidos += 1;
-    totalValorValidos += valorPedido;
-    totalFreteValidos += frete;
+    totalValorValidos += valorBruto;
+    totalValorLiquido += valorLiquido;
+    totalFreteValidos += valorFrete;
+
+    if (filtros.situacoesCancelamento.has(situacao)) {
+      canceladosIncluidos += 1;
+    }
 
     const situAgg = pedidosPorSituacao.get(situacao) ?? {
       situacao,
@@ -1650,7 +1736,6 @@ const buildPeriodoResumoFromTinyOrders = async (
     totalDia: d.faturamento,
   }));
 
-  const cancelamentoBase = totalPedidosValidos + cancelados;
   const dias = diffDias(new Date(`${range.start}T00:00:00`), new Date(`${range.end}T00:00:00`)) + 1;
 
   return {
@@ -1659,13 +1744,13 @@ const buildPeriodoResumoFromTinyOrders = async (
     dias,
     totalPedidos: totalPedidosValidos,
     totalValor: totalValorValidos,
-    totalValorLiquido: Math.max(0, totalValorValidos - totalFreteValidos),
+    totalValorLiquido: totalValorLiquido,
     totalFreteTotal: totalFreteValidos,
     ticketMedio: totalPedidosValidos > 0 ? totalValorValidos / totalPedidosValidos : 0,
     vendasPorDia,
     pedidosPorSituacao: Array.from(pedidosPorSituacao.values()),
     totalProdutosVendidos: base?.totalProdutosVendidos ?? 0,
-    percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
+    percentualCancelados: totalPedidosValidos > 0 ? (canceladosIncluidos / totalPedidosValidos) * 100 : 0,
     topProdutos: base?.topProdutos ?? [],
     vendasPorHora: base?.vendasPorHora ?? [],
   } satisfies PeriodoResumo;
@@ -1861,12 +1946,10 @@ const computePeriodoResumo = (
   const totalFrete = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.valor_frete ?? 0), 0);
   const totalProdutosVendidos = produtosValidos.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0);
 
-  const cancelados = orders.reduce((acc, o) => {
+  const cancelados = pedidosValidos.reduce((acc, o) => {
     const situacao = toNumberSafe(o.situacao ?? -1);
     return situacoesCancelamento.has(situacao) ? acc + toNumberSafe(o.pedidos ?? 0) : acc;
   }, 0);
-
-  const cancelamentoBase = totalPedidos + cancelados;
 
   const topProdutos = computeTopProdutos(produtosValidos);
   const vendasPorDia = preencherDias(Array.from(vendasPorDiaMap.values()), dataInicialStr, dataFinalStr);
@@ -1883,7 +1966,7 @@ const computePeriodoResumo = (
     vendasPorDia,
     pedidosPorSituacao: Array.from(pedidosPorSituacaoMap.values()),
     totalProdutosVendidos,
-    percentualCancelados: cancelamentoBase > 0 ? (cancelados / cancelamentoBase) * 100 : 0,
+    percentualCancelados: totalPedidos > 0 ? (cancelados / totalPedidos) * 100 : 0,
     topProdutos,
     vendasPorHora: [],
   };
@@ -2105,6 +2188,7 @@ export async function GET(req: NextRequest) {
     const microPrevStartParam = searchParams.get('microPrevStart');
     const microPrevEndParam = searchParams.get('microPrevEnd');
     const contextParam = searchParams.get('context') ?? 'dashboard';
+    const debugPedidos = searchParams.get('debugPedidos') === '1';
     const agora = new Date();
     const aplicarCutoff = !noCutoff;
     const parseDateParam = (value: string | null): Date | null => {
@@ -2132,6 +2216,7 @@ export async function GET(req: NextRequest) {
     const horaCorteMinutos = applyHoraCorte ? meta.horaCorteMinutos : null;
 
     const canaisFiltro = canaisParam ? canaisParam.split(',').filter(Boolean) : null;
+    const todasSituacoesCodigos: number[] = TODAS_SITUACOES.map((s) => s.codigo);
     const situacoesParsed = situacoesParam
       ? situacoesParam
           .split(',')
@@ -2139,15 +2224,13 @@ export async function GET(req: NextRequest) {
           .filter((n) => Number.isFinite(n))
       : [];
 
-    const hasCustomSituacoes = situacoesParsed.length > 0;
-    const situacoesAplicadas = hasCustomSituacoes ? situacoesParsed : VALID_SITUACOES_PADRAO;
-    const situacoesAplicadasSet = new Set(situacoesAplicadas);
-    const situacoesCancelamentoSet = new Set(
-      hasCustomSituacoes
-        ? situacoesAplicadas.filter((s) => s === SITUACAO_CANCELADA)
-        : [SITUACAO_CANCELADA]
-    );
-    const situacoesFiltro = hasCustomSituacoes ? situacoesAplicadas : [...VALID_SITUACOES_PADRAO, SITUACAO_CANCELADA];
+    const situacoesSelecionadas = situacoesParsed.length > 0
+      ? situacoesParsed.filter((s) => todasSituacoesCodigos.includes(s))
+      : [...todasSituacoesCodigos];
+
+    const situacoesAplicadasSet = new Set(situacoesSelecionadas);
+    const situacoesCancelamentoSet = new Set([SITUACAO_CANCELADA]);
+    const situacoesFiltro = situacoesSelecionadas;
 
     const situacoesAplicadasArray = Array.from(situacoesAplicadasSet);
     const shouldUseCache = !applyHoraCorte && !noCutoff;
@@ -2175,6 +2258,59 @@ export async function GET(req: NextRequest) {
       : undefined;
 
     const shouldForceTinyOrdersDaily = noCutoff;
+
+    if (debugPedidos) {
+      const debugCollector = { included: [] as DebugOrderEntry[], excluded: [] as DebugOrderEntry[] };
+
+      await buildPeriodoResumoFromTinyOrders(
+        { start: current.start, end: current.displayEnd },
+        {
+          canais: canaisFiltro,
+          situacoesAplicadas: situacoesAplicadasSet,
+          situacoesBusca: situacoesFiltro,
+          situacoesCancelamento: situacoesCancelamentoSet,
+        },
+        debugCollector
+      );
+
+      const totalPorSituacao = Array.from(
+        debugCollector.included.reduce((map, entry) => {
+          const key = entry.situacao;
+          const currentAgg = map.get(key) ?? { situacao: key, quantidade: 0 };
+          currentAgg.quantidade += 1;
+          map.set(key, currentAgg);
+          return map;
+        }, new Map<number, { situacao: number; quantidade: number }>())
+          .values()
+      );
+
+      const totalPorCanal = Array.from(
+        debugCollector.included.reduce((map, entry) => {
+          const key = entry.canal ?? 'Outros';
+          const currentAgg = map.get(key) ?? { canal: key, quantidade: 0 };
+          currentAgg.quantidade += 1;
+          map.set(key, currentAgg);
+          return map;
+        }, new Map<string, { canal: string; quantidade: number }>())
+          .values()
+      );
+
+      return NextResponse.json({
+        debug: true,
+        dataInicial: current.start,
+        dataFinal: current.displayEnd,
+        filtros: {
+          situacoes: situacoesFiltro,
+          canais: canaisFiltro,
+        },
+        included: debugCollector.included,
+        excluded: debugCollector.excluded,
+        totalPorSituacao,
+        totalPorCanal,
+        totalPedidosIncluidos: debugCollector.included.length,
+        totalPedidosExcluidos: debugCollector.excluded.length,
+      });
+    }
 
     if (shouldUseCache) {
       console.time(supabaseTimer);
@@ -2351,6 +2487,7 @@ export async function GET(req: NextRequest) {
             situacoesBusca: situacoesFiltro,
             situacoesCancelamento: situacoesCancelamentoSet,
           },
+          undefined,
           periodoAtual
         ),
         buildPeriodoResumoFromTinyOrders(
@@ -2361,6 +2498,7 @@ export async function GET(req: NextRequest) {
             situacoesBusca: situacoesFiltro,
             situacoesCancelamento: situacoesCancelamentoSet,
           },
+          undefined,
           periodoAnterior
         ),
       ]);

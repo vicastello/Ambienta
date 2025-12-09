@@ -9,7 +9,7 @@ import type { Database, Json } from '@/src/types/db-public';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type SyncMode = 'full' | 'range' | 'recent' | 'repair' | 'incremental';
+type SyncMode = 'full' | 'range' | 'recent' | 'repair' | 'incremental' | 'orders';
 
 type SyncRequestBody = {
   mode?: string;
@@ -17,6 +17,8 @@ type SyncRequestBody = {
   dataInicial?: string;
   dataFinal?: string;
   background?: boolean | string;
+  daysBack?: number | string;
+  force?: boolean | string;
 };
 
 type SyncJobsInsert = Database['public']['Tables']['sync_jobs']['Insert'];
@@ -43,7 +45,8 @@ const isSyncMode = (mode: string | undefined): mode is SyncMode =>
   mode === 'range' ||
   mode === 'recent' ||
   mode === 'repair' ||
-  mode === 'incremental';
+  mode === 'incremental' ||
+  mode === 'orders';
 
 async function logJob(
   jobId: string,
@@ -73,6 +76,7 @@ export async function POST(req: NextRequest) {
   let jobId: string | null = null;
 
   try {
+    const { searchParams } = new URL(req.url);
     const cookieStore = await cookies();
     let accessToken = cookieStore.get('tiny_access_token')?.value ?? null;
 
@@ -90,7 +94,8 @@ export async function POST(req: NextRequest) {
 
     const rawBody = await req.json().catch(() => null);
     const body: SyncRequestBody = isRecord(rawBody) ? (rawBody as SyncRequestBody) : {};
-    const rawMode = typeof body.mode === 'string' ? body.mode : undefined;
+    const rawModeFromQuery = searchParams.get('mode') ?? undefined;
+    const rawMode = typeof rawModeFromQuery === 'string' ? rawModeFromQuery : typeof body.mode === 'string' ? body.mode : undefined;
     const mode: SyncMode = isSyncMode(rawMode) ? rawMode : 'range';
     if (mode === 'incremental') {
       const result = await runTinyOrdersIncrementalSync();
@@ -98,8 +103,15 @@ export async function POST(req: NextRequest) {
     }
 
     const diasRecentesBody = parseNumber(body.diasRecentes);
-    const dataInicialParam = typeof body.dataInicial === 'string' ? body.dataInicial : undefined;
-    const dataFinalParam = typeof body.dataFinal === 'string' ? body.dataFinal : undefined;
+    const daysBackParam = searchParams.get('daysBack') ?? body.daysBack ?? body.diasRecentes;
+    const daysBack = Math.min(Math.max(parseNumber(daysBackParam, 90), 1), 90);
+    const dataInicialParam = typeof (searchParams.get('dataInicial') ?? body.dataInicial) === 'string'
+      ? (searchParams.get('dataInicial') ?? body.dataInicial)!
+      : undefined;
+    const dataFinalParam = typeof (searchParams.get('dataFinal') ?? body.dataFinal) === 'string'
+      ? (searchParams.get('dataFinal') ?? body.dataFinal)!
+      : undefined;
+    const force = parseBooleanish(searchParams.get('force') ?? body.force);
 
     const hoje = new Date();
 
@@ -124,6 +136,11 @@ export async function POST(req: NextRequest) {
       );
       dataInicialISO = dataInicialDate.toISOString().slice(0, 10);
       dataFinalISO = dataFinalDate.toISOString().slice(0, 10);
+    } else if (mode === 'orders') {
+      const dataFinalDate = hoje;
+      const dataInicialDate = new Date(dataFinalDate.getTime() - (daysBack - 1) * DAY_MS);
+      dataInicialISO = dataInicialDate.toISOString().slice(0, 10);
+      dataFinalISO = dataFinalDate.toISOString().slice(0, 10);
     } else {
       // range: usa as datas passadas ou últimos 30 dias
       const dataFinalDate = dataFinalParam
@@ -139,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
 
     // cria job (se background=true, só enfileira como 'queued')
-    const background = parseBooleanish(body.background);
+    const background = parseBooleanish(searchParams.get('background') ?? body.background);
 
     const jobPayload: SyncJobsInsert = {
       id: crypto.randomUUID(),
@@ -153,6 +170,8 @@ export async function POST(req: NextRequest) {
         mode,
         dataInicial: dataInicialISO,
         dataFinal: dataFinalISO,
+        daysBack,
+        force,
       } as Json,
     };
 
@@ -173,6 +192,8 @@ export async function POST(req: NextRequest) {
       dataInicial: dataInicialISO,
       dataFinal: dataFinalISO,
       background,
+      daysBack,
+      force,
     });
 
     const processInApp = process.env.PROCESS_IN_APP === 'true';
