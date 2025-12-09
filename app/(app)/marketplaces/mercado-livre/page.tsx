@@ -21,7 +21,6 @@ import {
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { MeliOrder } from "@/src/types/mercadoLivre";
-import { GlassCard } from "@/components/ui/GlassCard";
 import { chartColors, chartDefaults } from "@/components/charts/chartTheme";
 
 type MeliOrderDb = MeliOrder & {
@@ -644,7 +643,7 @@ function MeliSummaryPanel({ summaries, loading }: SummaryPanelProps) {
 function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: boolean }) {
   return (
     <section className="grid gap-4 lg:grid-cols-2">
-      <GlassCard className="p-5 sm:p-6 space-y-4">
+      <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Tendência de vendas e pedidos</h3>
@@ -679,9 +678,9 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
             </ResponsiveContainer>
           )}
         </div>
-      </GlassCard>
+      </div>
 
-      <GlassCard className="p-5 sm:p-6 space-y-4">
+      <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Status ao longo do tempo</h3>
@@ -722,7 +721,7 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
             </ResponsiveContainer>
           )}
         </div>
-      </GlassCard>
+      </div>
     </section>
   );
 }
@@ -779,7 +778,7 @@ function RankingCard({
   rows: Array<(string | number)[]>;
 }) {
   return (
-    <GlassCard className="p-5 sm:p-6 space-y-4">
+    <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
@@ -817,7 +816,7 @@ function RankingCard({
           </div>
         </div>
       )}
-    </GlassCard>
+    </div>
   );
 }
 
@@ -1233,14 +1232,14 @@ type SummaryCardProps = {
 
 function SummaryCard({ title, value, icon: Icon, colorClass = "text-[var(--accent)]", helper }: SummaryCardProps) {
   return (
-    <GlassCard className="p-5 min-w-0">
+    <div className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 min-w-0">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{title}</p>
         <Icon className={`w-5 h-5 ${colorClass} shrink-0`} />
       </div>
       <p className={`text-3xl font-semibold ${colorClass} truncate`}>{value}</p>
       {helper && <p className="text-xs text-slate-500 mt-2 truncate">{helper}</p>}
-    </GlassCard>
+    </div>
   );
 }
 
