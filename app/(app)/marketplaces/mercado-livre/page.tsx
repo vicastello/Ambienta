@@ -996,6 +996,7 @@ function MeliOrdersTable({
     <table className="min-w-full text-sm text-left">
       <thead>
         <tr className="text-slate-500 dark:text-slate-400">
+          <th className="py-3 pr-4">Imagem</th>
           <th className="py-3 pr-4">ID</th>
           <th className="py-3 pr-4">Status</th>
           <th className="py-3 pr-4">Data</th>
