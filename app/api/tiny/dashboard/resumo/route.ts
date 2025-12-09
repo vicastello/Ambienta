@@ -279,6 +279,8 @@ const MICRO_TREND_WINDOW_HOURS = 24;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SUPABASE_PAGE_SIZE = 250;
 const SUPABASE_MAX_ROWS = 10000;
+const DASHBOARD_FETCH_PAGE_SIZE = 500; // batches for long-range queries
+const DASHBOARD_FETCH_MAX_PAGES = 400; // safeguards ~200k rows per fetch
 const SUPABASE_MAX_RETRIES = 3;
 const NETWORKISH_ERROR = /(fetch failed|Failed to fetch|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|network request failed)/i;
 const DEFAULT_REPORT_TIMEZONE = 'America/Sao_Paulo';
@@ -308,34 +310,21 @@ const startOfDayInTimeZone = (base: Date, timeZone: string): Date => {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
   });
   const parts = formatter.formatToParts(base);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
 
-  // Offset (em minutos) entre UTC e o horário local na data base
-  const utcFromParts = Date.UTC(
-    get('year'),
-    get('month') - 1,
-    get('day'),
-    get('hour'),
-    get('minute'),
-    get('second')
-  );
-  const baseUtc = Date.UTC(
-    base.getUTCFullYear(),
-    base.getUTCMonth(),
-    base.getUTCDate(),
-    base.getUTCHours(),
-    base.getUTCMinutes(),
-    base.getUTCSeconds()
-  );
-  const offsetMinutes = (baseUtc - utcFromParts) / 60000;
+  // Para America/Sao_Paulo (sem DST atual), meia-noite local = 03:00Z.
+  // Ajuste direto evita drift observado (começando 21:00Z).
+  if (timeZone === 'America/Sao_Paulo') {
+    return new Date(`${year}-${month}-${day}T03:00:00.000Z`);
+  }
 
-  // Meia-noite local convertida para instante UTC correto
-  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), 0, 0, 0) - offsetMinutes * 60 * 1000);
+  // Fallback genérico: usa rótulo de data em UTC (pode ter pequeno drift em outros timezones).
+  return new Date(`${year}-${month}-${day}T00:00:00.000Z`);
 };
 
 // Usa inserted_at como referência de corte horário na zona America/Sao_Paulo
@@ -958,17 +947,6 @@ type CacheOrderFact = {
   valor_liquido: number;
 };
 
-type OrderRowForRange = {
-  data_criacao: string | null;
-  canal: string | null;
-  situacao: number | null;
-  cidade: string | null;
-  uf: string | null;
-  valor: number | null;
-  valor_frete: number | null;
-  inserted_at: string | null;
-};
-
 type CacheProdutoFact = {
   data: string;
   canal: string | null;
@@ -995,19 +973,17 @@ type ProdutoItemRowForRange = {
     inserted_at: string | null;
   } | null;
 };
-
-type DashboardCacheRow = {
-  periodo_inicio: string;
-  periodo_fim: string;
-  order_facts: CacheOrderFact[] | null;
-  produto_facts: CacheProdutoFact[] | null;
-  last_refreshed_at: string | null;
-  total_pedidos: number | null;
-  total_valor: number | null;
-  total_valor_liquido: number | null;
-  total_frete_total: number | null;
-  total_produtos_vendidos: number | null;
-};
+ 
+ type OrderRowForRange = {
+   data_criacao: string | null;
+   canal: string | null;
+   situacao: number | null;
+   cidade: string | null;
+   uf: string | null;
+   valor: number | null;
+   valor_frete: number | null;
+   inserted_at?: string | null;
+ };
 
 const toNumberSafe = (value: unknown): number => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -1024,106 +1000,6 @@ type CutoffOptions = {
   cutoffDate?: string | null;
   cutoffMinutes?: number | null;
   timeZone?: string;
-};
-
-const filterOrders = (
-  facts: CacheOrderFact[],
-  inicio: string,
-  fimExclusive: string,
-  canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null,
-  opts?: CutoffOptions
-) =>
-  facts.filter((f) => {
-    if (!withinRange(f.data, inicio, fimExclusive)) return false;
-    if (canaisFiltro?.length && (f.canal ? !canaisFiltro.includes(f.canal) : true)) return false;
-    if (situacoesFiltro?.length && !situacoesFiltro.includes(toNumberSafe(f.situacao ?? -1))) return false;
-
-    if (opts?.cutoffDate && opts.cutoffMinutes !== null && opts.cutoffMinutes !== undefined) {
-      const dataStr = f.data ?? '';
-      if (dataStr.slice(0, 10) === opts.cutoffDate) {
-        const minutes = minutesOfDayInTimeZone(dataStr, opts.timeZone ?? DEFAULT_REPORT_TIMEZONE);
-        if (minutes !== null && minutes > opts.cutoffMinutes) return false;
-      }
-    }
-
-    return true;
-  });
-
-const filterProdutos = (
-  facts: CacheProdutoFact[],
-  inicio: string,
-  fimExclusive: string,
-  canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null,
-  opts?: CutoffOptions
-) =>
-  facts.filter((f) => {
-    if (!withinRange(f.data, inicio, fimExclusive)) return false;
-    if (canaisFiltro?.length && (f.canal ? !canaisFiltro.includes(f.canal) : true)) return false;
-    if (situacoesFiltro?.length && !situacoesFiltro.includes(Number(f.situacao ?? -1))) return false;
-
-    if (opts?.cutoffDate && opts.cutoffMinutes !== null && opts.cutoffMinutes !== undefined) {
-      const dataStr = f.data ?? '';
-      if (dataStr.slice(0, 10) === opts.cutoffDate) {
-        const minutes = minutesOfDayInTimeZone(dataStr, opts.timeZone ?? DEFAULT_REPORT_TIMEZONE);
-        if (minutes !== null && minutes > opts.cutoffMinutes) return false;
-      }
-    }
-
-    return true;
-  });
-
-const filterOrderRowsWithCutoff = (
-  rows: OrderRowForRange[],
-  inicio: string,
-  fimExclusive: string,
-  canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null,
-  opts?: CutoffOptions
-) =>
-  rows.filter((row) => {
-    const dataStr = row.data_criacao ?? '';
-    if (!withinRange(dataStr, inicio, fimExclusive)) return false;
-
-    if (canaisFiltro?.length && (row.canal ? !canaisFiltro.includes(row.canal) : true)) return false;
-
-    const situacao = typeof row.situacao === 'number' ? row.situacao : toNumberSafe(row.situacao ?? -1);
-    if (situacoesFiltro?.length && !situacoesFiltro.includes(situacao)) return false;
-
-    if (opts?.cutoffDate && opts.cutoffMinutes !== null && opts.cutoffMinutes !== undefined) {
-      if (dataStr.slice(0, 10) === opts.cutoffDate) {
-        const minutes = minutesOfDayInTimeZone(
-          row.inserted_at ?? dataStr,
-          opts.timeZone ?? DEFAULT_REPORT_TIMEZONE
-        );
-        if (minutes !== null && minutes > opts.cutoffMinutes) return false;
-      }
-    }
-
-    return true;
-  });
-
-const aggregateOrdersFromRows = (rows: OrderRowForRange[]): CacheOrderFact[] => {
-  const orderFactsMap = aggregateMap(
-    rows,
-    (item) => `${item.data_criacao ?? ''}|${item.canal ?? 'Outros'}|${item.situacao ?? -1}|${item.cidade ?? ''}|${item.uf ?? ''}`,
-    (acc: any, item) => {
-      const valorBruto = toNumberSafe(item.valor ?? 0);
-      const valorFrete = toNumberSafe(item.valor_frete ?? 0);
-      acc.data = item.data_criacao ?? null;
-      acc.canal = item.canal ?? 'Outros';
-      acc.situacao = typeof item.situacao === 'number' ? item.situacao : toNumberSafe(item.situacao ?? -1);
-      acc.cidade = item.cidade ?? null;
-      acc.uf = item.uf ?? null;
-      acc.pedidos = (acc.pedidos ?? 0) + 1;
-      acc.valor_bruto = (acc.valor_bruto ?? 0) + valorBruto;
-      acc.valor_frete = (acc.valor_frete ?? 0) + valorFrete;
-      acc.valor_liquido = (acc.valor_liquido ?? 0) + (valorBruto - valorFrete);
-    }
-  );
-
-  return Array.from(orderFactsMap.values()).filter((f) => !!f.data);
 };
 
 const filterProdutoRowsWithCutoff = (
@@ -1210,168 +1086,84 @@ const fetchProdutoFactsRange = async (
   canaisFiltro: string[] | null,
   situacoesFiltro: number[] | null
 ): Promise<ProdutoItemRowForRange[]> => {
-  const query = supabaseAdmin
-    .from('tiny_pedido_itens')
-    .select(
-      `
-        id_pedido,
-        id_produto_tiny,
-        codigo_produto,
-        nome_produto,
-        quantidade,
-        valor_total,
-        valor_unitario,
-        tiny_orders!inner(data_criacao, canal, situacao, inserted_at)
-      `
-    )
-    .gte('tiny_orders.data_criacao', dataInicialStr)
-    .lt('tiny_orders.data_criacao', dataFinalExclusive)
-    .limit(SUPABASE_MAX_ROWS);
-
-  if (canaisFiltro?.length) {
-    query.in('tiny_orders.canal', canaisFiltro);
-  }
-  if (situacoesFiltro?.length) {
-    query.in('tiny_orders.situacao', situacoesFiltro);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error('[dashboard] falha ao buscar itens para top produtos', error);
-    return [];
-  }
-
-  return (data ?? []).map((item) => {
-    const pedido = (item as any).tiny_orders ?? {};
+  const rows: ProdutoItemRowForRange[] = [];
+  const mapRow = (item: any): ProdutoItemRowForRange => {
+    const pedido = item?.tiny_orders ?? {};
     return {
       id_pedido: item.id_pedido as number,
-      id_produto_tiny: (item as any).id_produto_tiny ?? null,
-      codigo_produto: (item as any).codigo_produto ?? null,
-      nome_produto: (item as any).nome_produto ?? null,
-      quantidade: (item as any).quantidade ?? null,
-      valor_total: (item as any).valor_total ?? null,
-      valor_unitario: (item as any).valor_unitario ?? null,
+      id_produto_tiny: item.id_produto_tiny ?? null,
+      codigo_produto: item.codigo_produto ?? null,
+      nome_produto: item.nome_produto ?? null,
+      quantidade: item.quantidade ?? null,
+      valor_total: item.valor_total ?? null,
+      valor_unitario: item.valor_unitario ?? null,
       tiny_orders: {
         data_criacao: pedido.data_criacao ?? null,
         canal: pedido.canal ?? null,
         situacao: typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1),
         inserted_at: pedido.inserted_at ?? null,
       },
-    } satisfies ProdutoItemRowForRange;
-  });
-};
-
-const fetchOrderFactsRange = async (
-  dataInicialStr: string,
-  dataFinalExclusive: string,
-  canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null
-): Promise<OrderRowForRange[]> => {
-  const query = supabaseAdmin
-    .from('tiny_orders')
-    .select('data_criacao,canal,situacao,cidade,uf,valor,valor_frete,inserted_at')
-    .gte('data_criacao', dataInicialStr)
-    .lt('data_criacao', dataFinalExclusive)
-    .limit(SUPABASE_MAX_ROWS);
-
-  if (canaisFiltro?.length) {
-    query.in('canal', canaisFiltro);
-  }
-  if (situacoesFiltro?.length) {
-    query.in('situacao', situacoesFiltro);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error('[dashboard] falha ao carregar pedidos para comparação', error);
-    return [];
-  }
-
-  return (data ?? []) as OrderRowForRange[];
-};
-
-const buildFactsOnTheFly = async (
-  dataInicialStr: string,
-  dataFinalExclusive: string
-): Promise<DashboardCacheRow | null> => {
-  const { data: orders, error: ordersErr } = await supabaseAdmin
-    .from('tiny_orders')
-    .select('id,data_criacao,canal,situacao,cidade,uf,valor,valor_frete')
-    .gte('data_criacao', dataInicialStr)
-    .lt('data_criacao', dataFinalExclusive);
-
-  if (ordersErr) {
-    console.error('[dashboard] falha ao carregar pedidos on-the-fly', ordersErr);
-    return null;
-  }
-
-  const orderFactsMap = aggregateMap(
-    orders ?? [],
-    (o) => `${o.data_criacao ?? ''}|${o.canal ?? 'Outros'}|${o.situacao ?? -1}|${o.cidade ?? ''}|${o.uf ?? ''}`,
-    (acc: any, item) => {
-      const valorBruto = toNumberSafe(item.valor ?? 0);
-      const valorFrete = toNumberSafe(item.valor_frete ?? 0);
-      acc.data = item.data_criacao ?? null;
-      acc.canal = item.canal ?? 'Outros';
-      acc.situacao = typeof item.situacao === 'number' ? item.situacao : toNumberSafe(item.situacao ?? -1);
-      acc.cidade = item.cidade ?? null;
-      acc.uf = item.uf ?? null;
-      acc.pedidos = (acc.pedidos ?? 0) + 1;
-      acc.valor_bruto = (acc.valor_bruto ?? 0) + valorBruto;
-      acc.valor_frete = (acc.valor_frete ?? 0) + valorFrete;
-      acc.valor_liquido = (acc.valor_liquido ?? 0) + (valorBruto - valorFrete);
-    }
-  );
-
-  const orderFacts: CacheOrderFact[] = Array.from(orderFactsMap.values()).filter((f) => !!f.data);
-
-  const { data: itens, error: itensErr } = await supabaseAdmin
-    .from('tiny_pedido_itens')
-    .select(
-      'id_pedido,id_produto_tiny,codigo_produto,nome_produto,quantidade,valor_total,valor_unitario,tiny_orders!inner(data_criacao,canal,situacao)'
-    )
-    .gte('tiny_orders.data_criacao', dataInicialStr)
-    .lt('tiny_orders.data_criacao', dataFinalExclusive);
-
-  if (itensErr) {
-    console.error('[dashboard] falha ao carregar itens on-the-fly', itensErr);
-  }
-
-  const produtoFactsMap = aggregateMap(
-    itens ?? [],
-    (item) => {
-      const pedido = (item as any).tiny_orders ?? {};
-      return `${pedido.data_criacao ?? ''}|${pedido.canal ?? 'Outros'}|${pedido.situacao ?? -1}|${item.id_produto_tiny ?? 0}|${item.codigo_produto ?? ''}`;
-    },
-    (acc: any, item) => {
-      const pedido = (item as any).tiny_orders ?? {};
-      acc.data = pedido.data_criacao ?? null;
-      acc.canal = pedido.canal ?? 'Outros';
-      acc.situacao = typeof pedido.situacao === 'number' ? pedido.situacao : toNumberSafe(pedido.situacao ?? -1);
-      acc.produto_id = typeof item.id_produto_tiny === 'number' ? item.id_produto_tiny : 0;
-      acc.sku = item.codigo_produto ?? null;
-      acc.descricao = item.nome_produto ?? 'Produto sem nome';
-      const quantidade = toNumberSafe(item.quantidade ?? 0);
-      const receita = toNumberSafe(item.valor_total ?? item.valor_unitario ?? 0);
-      acc.quantidade = (acc.quantidade ?? 0) + quantidade;
-      acc.receita = (acc.receita ?? 0) + receita;
-    }
-  );
-
-    const produtoFacts: CacheProdutoFact[] = Array.from(produtoFactsMap.values()).filter((f) => !!f.data);
-
-  return {
-    periodo_inicio: dataInicialStr,
-    periodo_fim: shiftIsoDate(dataFinalExclusive, -1),
-    order_facts: orderFacts,
-    produto_facts: produtoFacts,
-    last_refreshed_at: new Date().toISOString(),
-    total_pedidos: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.pedidos), 0),
-    total_valor: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_bruto), 0),
-    total_valor_liquido: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_liquido), 0),
-    total_frete_total: orderFacts.reduce((acc, f) => acc + toNumberSafe(f.valor_frete), 0),
-    total_produtos_vendidos: produtoFacts.reduce((acc, f) => acc + toNumberSafe(f.quantidade), 0),
+    };
   };
+
+  let truncated = false;
+  for (let page = 0; page < DASHBOARD_FETCH_MAX_PAGES; page += 1) {
+    const from = page * DASHBOARD_FETCH_PAGE_SIZE;
+    const to = from + DASHBOARD_FETCH_PAGE_SIZE - 1;
+
+    let query = supabaseAdmin
+      .from('tiny_pedido_itens')
+      .select(
+        `
+          id_pedido,
+          id_produto_tiny,
+          codigo_produto,
+          nome_produto,
+          quantidade,
+          valor_total,
+          valor_unitario,
+          tiny_orders!inner(data_criacao, canal, situacao, inserted_at)
+        `
+      )
+      .gte('tiny_orders.data_criacao', dataInicialStr)
+      .lt('tiny_orders.data_criacao', dataFinalExclusive)
+      .order('data_criacao', { referencedTable: 'tiny_orders', ascending: true, nullsFirst: false })
+      .order('id_pedido', { ascending: true })
+      .range(from, to);
+
+    if (canaisFiltro?.length) {
+      query = query.in('tiny_orders.canal', canaisFiltro);
+    }
+    if (situacoesFiltro?.length) {
+      query = query.in('tiny_orders.situacao', situacoesFiltro);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[dashboard] falha ao buscar itens para top produtos', { error, page });
+      break;
+    }
+
+    const chunk = (data ?? []).map(mapRow);
+    rows.push(...chunk);
+
+    if (chunk.length < DASHBOARD_FETCH_PAGE_SIZE) {
+      break;
+    }
+    if (page === DASHBOARD_FETCH_MAX_PAGES - 1) {
+      truncated = true;
+    }
+  }
+
+  if (truncated) {
+    console.warn('[dashboard] itens de produtos truncados pelo limite de paginação', {
+      dataInicialStr,
+      dataFinalExclusive,
+      total: rows.length,
+    });
+  }
+
+  return rows;
 };
 
 const buildHourlyTrendSeries = (
@@ -1469,24 +1261,34 @@ const buildMicroTrend24h = async (
   const hourMs = 60 * 60 * 1000;
 
   const nowTz = nowInTimeZone(timeZone);
-  const currentEnd = overrides?.currentEnd && !Number.isNaN(overrides.currentEnd.getTime())
-    ? overrides.currentEnd
-    : nowTz;
+  const currentDayStart = startOfDayInTimeZone(nowTz, timeZone);
+
+  const defaultCurrentStart = currentDayStart;
+  const defaultCurrentEnd = addDias(currentDayStart, 1); // janela cheia do dia atual
+  const defaultPreviousStart = addDias(currentDayStart, -1);
+  const defaultPreviousEnd = currentDayStart;
+
   const currentStart = overrides?.currentStart && !Number.isNaN(overrides.currentStart.getTime())
     ? overrides.currentStart
-    : new Date(currentEnd.getTime() - hoursCount * hourMs);
-  const previousEnd = overrides?.previousEnd && !Number.isNaN(overrides.previousEnd.getTime())
-    ? overrides.previousEnd
-    : currentStart;
+    : defaultCurrentStart;
+  const currentEnd = overrides?.currentEnd && !Number.isNaN(overrides.currentEnd.getTime())
+    ? overrides.currentEnd
+    : defaultCurrentEnd;
   const previousStart = overrides?.previousStart && !Number.isNaN(overrides.previousStart.getTime())
     ? overrides.previousStart
-    : new Date(previousEnd.getTime() - hoursCount * hourMs);
+    : defaultPreviousStart;
+  const previousEnd = overrides?.previousEnd && !Number.isNaN(overrides.previousEnd.getTime())
+    ? overrides.previousEnd
+    : defaultPreviousEnd;
+
+  const startIso = previousStart.toISOString();
+  const endIso = currentEnd.toISOString();
 
   let query = supabaseAdmin
     .from('tiny_orders')
-    .select('valor,inserted_at,canal,situacao')
-    .gte('inserted_at', previousStart.toISOString())
-    .lte('inserted_at', currentEnd.toISOString())
+    .select('valor,data_criacao,raw,inserted_at,updated_at,canal,situacao')
+    .gte('inserted_at', startIso)
+    .lt('inserted_at', endIso)
     .limit(SUPABASE_MAX_ROWS);
 
   if (canaisFiltro?.length) {
@@ -1502,11 +1304,33 @@ const buildMicroTrend24h = async (
     console.error('[dashboard] erro ao buscar microtrend 24h', error);
   }
 
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[dashboard-debug] microtrend_raw_rows', {
+      total: data?.length ?? 0,
+      sample: (data ?? []).slice(0, 5).map((row) => ({
+        id: (row as any).id,
+        inserted_at: (row as any).inserted_at,
+        updated_at: (row as any).updated_at,
+        data_criacao: (row as any).data_criacao,
+        valor: (row as any).valor,
+        canal: (row as any).canal,
+        situacao: (row as any).situacao,
+      })),
+      window: { startIso, endIso },
+    });
+  }
+
   const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
   const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
 
   for (const row of data ?? []) {
-    const ts = new Date((row as any).inserted_at ?? null);
+    // Microtrend acompanha inserções recentes no Supabase, então usamos inserted_at como fonte de verdade
+    // (fallback para updated_at apenas quando não houver timestamp de inserção).
+    const inserted = (row as any).inserted_at ?? null;
+    const updated = inserted ? null : (row as any).updated_at ?? null;
+    const sourceTimestamp = inserted ?? updated ?? null;
+    if (!sourceTimestamp) continue;
+    const ts = new Date(sourceTimestamp);
     if (Number.isNaN(ts.getTime())) continue;
 
     if (ts >= currentStart && ts < currentEnd) {
@@ -1547,6 +1371,25 @@ const buildMicroTrend24h = async (
     },
   };
 
+  const sumBuckets = (buckets: Array<{ valor: number; pedidos: number }>) =>
+    buckets.reduce(
+      (acc, bucket) => ({ valor: acc.valor + bucket.valor, pedidos: acc.pedidos + bucket.pedidos }),
+      { valor: 0, pedidos: 0 }
+    );
+
+  console.log('[dashboard-debug] microtrend_24h_totals', {
+    currentWindow: {
+      start: microTrend24h.currentWindow.start,
+      end: microTrend24h.currentWindow.end,
+      totals: sumBuckets(currentBuckets),
+    },
+    previousWindow: {
+      start: microTrend24h.previousWindow.start,
+      end: microTrend24h.previousWindow.end,
+      totals: sumBuckets(previousBuckets),
+    },
+  });
+
   console.log('[dashboard-debug] microtrend_24h', {
     currentWindow: microTrend24h.currentWindow,
     previousWindow: microTrend24h.previousWindow,
@@ -1574,49 +1417,112 @@ const preencherDiasAggregado = (
   return Array.from(mapa.values()).sort((a, b) => (a.data < b.data ? -1 : 1));
 };
 
-const fetchVendasPorDiaTinyOrders = async (
-  inicio: string,
-  fim: string,
-  canaisFiltro: string[] | null,
-  situacoesFiltro: number[] | null
-): Promise<DiaAggregado[]> => {
-  let query = supabaseAdmin
-    .from('tiny_orders')
-    .select('data_criacao, valor_total_pedido, valor, valor_frete')
-    .gte('data_criacao', inicio)
-    .lte('data_criacao', fim)
-    .limit(SUPABASE_MAX_ROWS);
 
-  if (canaisFiltro?.length) {
-    query = query.in('canal', canaisFiltro);
+type PeriodoComPedidos = {
+  periodo: PeriodoResumo;
+  pedidos: OrderSummaryRow[];
+  orderFacts: CacheOrderFact[];
+  debugIncluded: DebugOrderEntry[];
+  debugExcluded: DebugOrderEntry[];
+};
+
+const buildPeriodoResumoFromOrders = (
+  orders: OrderSummaryRow[],
+  range: { start: string; end: string; dias: number },
+  filtros: { situacoesCancelamento: Set<number> },
+  extras?: Partial<Pick<PeriodoResumo, 'topProdutos' | 'vendasPorHora' | 'totalProdutosVendidos'>>
+): { periodo: PeriodoResumo; orderFacts: CacheOrderFact[] } => {
+  const vendasPorDiaMap = new Map<string, { quantidade: number; totalDia: number }>();
+  const pedidosPorSituacaoMap = new Map<number, number>();
+  let totalPedidos = 0;
+  let totalValor = 0;
+  let totalValorLiquido = 0;
+  let totalFreteTotal = 0;
+  const orderFacts: CacheOrderFact[] = [];
+
+  for (const order of orders) {
+    const dataRef = getOrderDateForResumo(order);
+    if (!dataRef) continue;
+    const dia = dataRef.slice(0, 10);
+
+    const valorFallback = toNumberSafe((order as any).valor_total_pedido ?? (order as any).valor ?? 0);
+    const freteFallback = toNumberSafe((order as any).valor_frete ?? 0);
+    const valores = extrairValoresDoTiny(order.raw ?? null, {
+      valorBruto: valorFallback,
+      valorFrete: freteFallback,
+    });
+
+    const bruto = valores.bruto;
+    const frete = valores.frete;
+    const liquido = valores.liquido > 0 ? valores.liquido : Math.max(0, bruto - frete);
+
+    totalPedidos += 1;
+    totalValor += bruto;
+    totalValorLiquido += liquido;
+    totalFreteTotal += frete;
+
+    const atual = vendasPorDiaMap.get(dia) ?? { quantidade: 0, totalDia: 0 };
+    atual.quantidade += 1;
+    atual.totalDia += bruto;
+    vendasPorDiaMap.set(dia, atual);
+
+    const situacao = typeof order.situacao === 'number' ? order.situacao : -1;
+    pedidosPorSituacaoMap.set(situacao, (pedidosPorSituacaoMap.get(situacao) ?? 0) + 1);
+
+    orderFacts.push({
+      data: dia,
+      pedidos: 1,
+      valor_bruto: bruto,
+      valor_frete: frete,
+      valor_liquido: liquido,
+      situacao,
+      canal: order.canal ?? null,
+      uf: (order as any).uf ?? null,
+      cidade: (order as any).cidade ?? null,
+    } as CacheOrderFact);
   }
-  if (situacoesFiltro?.length) {
-    query = query.in('situacao', situacoesFiltro);
-  }
 
-  const { data, error } = await query;
+  const vendasPorDia: DiaResumo[] = (() => {
+    const dias: DiaResumo[] = [];
+    let cursor = range.start;
+    while (cursor <= range.end) {
+      const info = vendasPorDiaMap.get(cursor);
+      dias.push({
+        data: cursor,
+        quantidade: info?.quantidade ?? 0,
+        totalDia: info?.totalDia ?? 0,
+      });
+      cursor = shiftIsoDate(cursor, 1);
+    }
+    return dias;
+  })();
 
-  if (error) {
-    console.error('[dashboard-debug] tiny_orders_error', { error, inicio, fim });
-    return [];
-  }
+  const pedidosPorSituacao: SituacaoResumo[] = Array.from(pedidosPorSituacaoMap.entries())
+    .map(([situacao, quantidade]) => ({ situacao, descricao: descricaoSituacao(situacao), quantidade }))
+    .sort((a, b) => a.situacao - b.situacao);
 
-  const diasMap = new Map<string, DiaAggregado>();
+  const cancelados = pedidosPorSituacaoMap.get(SITUACAO_CANCELADA) ?? 0;
+  const ticketMedio = totalPedidos > 0 ? totalValor / totalPedidos : 0;
+  const percentualCancelados = totalPedidos > 0 ? (cancelados / totalPedidos) * 100 : 0;
 
-  for (const row of data ?? []) {
-    const diaRaw = (row as any).data_criacao;
-    const key = typeof diaRaw === 'string' ? diaRaw.slice(0, 10) : new Date(diaRaw).toISOString().slice(0, 10);
-    const valorPedido = toNumberSafe((row as any).valor_total_pedido ?? (row as any).valor ?? 0);
-    const frete = toNumberSafe((row as any).valor_frete ?? 0);
+  const periodo: PeriodoResumo = {
+    dataInicial: range.start,
+    dataFinal: range.end,
+    dias: range.dias,
+    totalPedidos,
+    totalValor,
+    totalValorLiquido,
+    totalFreteTotal,
+    ticketMedio,
+    vendasPorDia,
+    pedidosPorSituacao,
+    totalProdutosVendidos: extras?.totalProdutosVendidos ?? 0,
+    percentualCancelados,
+    topProdutos: extras?.topProdutos ?? [],
+    vendasPorHora: extras?.vendasPorHora ?? [],
+  };
 
-    const agg = diasMap.get(key) ?? { data: key, pedidos: 0, faturamento: 0, frete: 0 };
-    agg.pedidos += 1;
-    agg.faturamento += valorPedido;
-    agg.frete += frete;
-    diasMap.set(key, agg);
-  }
-
-  return preencherDiasAggregado(inicio, fim, diasMap);
+  return { periodo, orderFacts };
 };
 
 const buildPeriodoResumoFromTinyOrders = async (
@@ -1628,29 +1534,60 @@ const buildPeriodoResumoFromTinyOrders = async (
     situacoesCancelamento: Set<number>;
   },
   debugCollector?: { included: DebugOrderEntry[]; excluded: DebugOrderEntry[] },
-  base?: PeriodoResumo
-): Promise<PeriodoResumo> => {
-  let query = supabaseAdmin
-    .from('tiny_orders')
-    .select('id,tiny_id,data_criacao,valor_total_pedido,valor,valor_frete,situacao,canal,uf,cidade,raw,inserted_at,updated_at')
-    .gte('data_criacao', range.start)
-    .lte('data_criacao', range.end)
-    .limit(SUPABASE_MAX_ROWS);
+  extras?: Partial<Pick<PeriodoResumo, 'topProdutos' | 'vendasPorHora' | 'totalProdutosVendidos'>>
+): Promise<PeriodoComPedidos> => {
+  const situacoesBusca = filtros.situacoesBusca;
+  const ordersRaw: OrderSummaryRow[] = [];
+  let truncated = false;
 
-  if (filtros.canais?.length) {
-    query = query.in('canal', filtros.canais);
-  }
-  const situacoesBusca = filtros.situacoesBusca.filter((s) => s !== SITUACAO_CANCELADA);
-  if (situacoesBusca.length) {
-    query = query.in('situacao', situacoesBusca);
+  for (let page = 0; page < DASHBOARD_FETCH_MAX_PAGES; page += 1) {
+    const from = page * DASHBOARD_FETCH_PAGE_SIZE;
+    const to = from + DASHBOARD_FETCH_PAGE_SIZE - 1;
+
+    let query = supabaseAdmin
+      .from('tiny_orders')
+      .select('id,tiny_id,data_criacao,valor_total_pedido,valor,valor_frete,situacao,canal,uf,cidade,raw,inserted_at,updated_at')
+      .gte('data_criacao', range.start)
+      .lte('data_criacao', range.end)
+      .order('data_criacao', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+
+    if (filtros.canais?.length) {
+      query = query.in('canal', filtros.canais);
+    }
+    if (situacoesBusca.length) {
+      query = query.in('situacao', situacoesBusca);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[dashboard-debug] tiny_orders_periodo_error', {
+        error,
+        range,
+        filtros,
+        page,
+      });
+      break;
+    }
+
+    const chunk = (data ?? []) as OrderSummaryRow[];
+    ordersRaw.push(...chunk);
+
+    if (chunk.length < DASHBOARD_FETCH_PAGE_SIZE) {
+      break;
+    }
+    if (page === DASHBOARD_FETCH_MAX_PAGES - 1) {
+      truncated = true;
+    }
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('[dashboard-debug] tiny_orders_periodo_error', { error, range, filtros });
+  if (truncated) {
+    console.warn('[dashboard] tiny_orders truncados pelo limite de paginação', {
+      range,
+      total: ordersRaw.length,
+    });
   }
-
-  const ordersRaw = (data ?? []) as OrderSummaryRow[];
 
   const included: DebugOrderEntry[] = debugCollector?.included ?? [];
   const excluded: DebugOrderEntry[] = debugCollector?.excluded ?? [];
@@ -1658,8 +1595,7 @@ const buildPeriodoResumoFromTinyOrders = async (
 
   for (const order of ordersRaw) {
     const situacao = typeof order.situacao === 'number' ? order.situacao : toNumberSafe(order.situacao ?? -1);
-    const dataRef = getOrderDateForResumo(order);
-    const dataRefIso = dataRef.slice(0, 10);
+    const dataRefIso = getOrderDateForResumo(order).slice(0, 10);
     const baseEntry: DebugOrderEntry = {
       id: typeof order.id === 'number' ? order.id : null,
       tiny_id: typeof (order as any).tiny_id === 'number' ? (order as any).tiny_id : null,
@@ -1683,77 +1619,17 @@ const buildPeriodoResumoFromTinyOrders = async (
     includedOrders.push(order);
   }
 
-  const diasMap = new Map<string, DiaAggregado>();
-  const pedidosPorSituacao = new Map<number, { situacao: number; descricao: string; quantidade: number }>();
-  let totalPedidosValidos = 0;
-  let totalValorValidos = 0;
-  let totalValorLiquido = 0;
-  let totalFreteValidos = 0;
-  let canceladosIncluidos = 0;
-
-  for (const order of includedOrders) {
-    const situacao = typeof order.situacao === 'number' ? order.situacao : toNumberSafe(order.situacao ?? -1);
-    const dataRef = getOrderDateForResumo(order);
-    const dataRefIso = dataRef.slice(0, 10);
-    const valorFallback = toNumberSafe((order as any).valor_total_pedido ?? (order as any).valor ?? 0);
-    const freteFallback = toNumberSafe((order as any).valor_frete ?? 0);
-    const valores = extrairValoresDoTiny(order.raw ?? null, {
-      valorBruto: valorFallback,
-      valorFrete: freteFallback,
-    });
-
-    const valorBruto = valores.bruto;
-    const valorFrete = valores.frete;
-    const valorLiquido = valores.liquido > 0 ? valores.liquido : Math.max(0, valorBruto - valorFrete);
-
-    const agg = diasMap.get(dataRefIso) ?? { data: dataRefIso, pedidos: 0, faturamento: 0, frete: 0 };
-    agg.pedidos += 1;
-    agg.faturamento += valorBruto;
-    agg.frete += valorFrete;
-    diasMap.set(dataRefIso, agg);
-
-    totalPedidosValidos += 1;
-    totalValorValidos += valorBruto;
-    totalValorLiquido += valorLiquido;
-    totalFreteValidos += valorFrete;
-
-    if (filtros.situacoesCancelamento.has(situacao)) {
-      canceladosIncluidos += 1;
-    }
-
-    const situAgg = pedidosPorSituacao.get(situacao) ?? {
-      situacao,
-      descricao: descricaoSituacao(situacao),
-      quantidade: 0,
-    };
-    situAgg.quantidade += 1;
-    pedidosPorSituacao.set(situacao, situAgg);
-  }
-
-  const vendasPorDia = preencherDiasAggregado(range.start, range.end, diasMap).map((d) => ({
-    data: d.data,
-    quantidade: d.pedidos,
-    totalDia: d.faturamento,
-  }));
-
   const dias = diffDias(new Date(`${range.start}T00:00:00`), new Date(`${range.end}T00:00:00`)) + 1;
+  const { periodo, orderFacts } = buildPeriodoResumoFromOrders(
+    includedOrders,
+    { start: range.start, end: range.end, dias },
+    {
+      situacoesCancelamento: filtros.situacoesCancelamento,
+    },
+    extras
+  );
 
-  return {
-    dataInicial: range.start,
-    dataFinal: range.end,
-    dias,
-    totalPedidos: totalPedidosValidos,
-    totalValor: totalValorValidos,
-    totalValorLiquido: totalValorLiquido,
-    totalFreteTotal: totalFreteValidos,
-    ticketMedio: totalPedidosValidos > 0 ? totalValorValidos / totalPedidosValidos : 0,
-    vendasPorDia,
-    pedidosPorSituacao: Array.from(pedidosPorSituacao.values()),
-    totalProdutosVendidos: base?.totalProdutosVendidos ?? 0,
-    percentualCancelados: totalPedidosValidos > 0 ? (canceladosIncluidos / totalPedidosValidos) * 100 : 0,
-    topProdutos: base?.topProdutos ?? [],
-    vendasPorHora: base?.vendasPorHora ?? [],
-  } satisfies PeriodoResumo;
+  return { periodo, pedidos: includedOrders, orderFacts, debugIncluded: included, debugExcluded: excluded };
 };
 
 const computeTopProdutos = (
@@ -1883,95 +1759,6 @@ const enrichTopProdutos = async (produtos: ProdutoResumo[]): Promise<ProdutoResu
   });
 };
 
-const computePeriodoResumo = (
-  orders: CacheOrderFact[],
-  produtos: CacheProdutoFact[],
-  dataInicialStr: string,
-  dataFinalStr: string,
-  opts: { situacoesAplicadas: Set<number>; situacoesCancelamento: Set<number> }
-): PeriodoResumo => {
-  const situacoesAplicadas = opts.situacoesAplicadas;
-  const situacoesCancelamento = opts.situacoesCancelamento;
-
-  const pedidosValidos = orders.filter((o) => situacoesAplicadas.has(toNumberSafe(o.situacao ?? -1)));
-  const produtosValidos = produtos.filter((p) => situacoesAplicadas.has(toNumberSafe(p.situacao ?? -1)));
-
-  const preencherDias = (
-    vendas: Array<{ data: string; quantidade?: number; totalDia?: number }>,
-    inicio: string,
-    fimInclusivo: string
-  ) => {
-    const mapa = new Map<string, { data: string; quantidade: number; totalDia: number }>();
-    for (const v of vendas) {
-      const dataKey = v.data;
-      if (!dataKey) continue;
-      const quantidade = Number.isFinite(v.quantidade) ? Number(v.quantidade) : 0;
-      const totalDia = Number.isFinite(v.totalDia) ? Number(v.totalDia) : 0;
-      mapa.set(dataKey, { data: dataKey, quantidade, totalDia });
-    }
-
-    let cursor = inicio;
-    while (cursor <= fimInclusivo) {
-      if (!mapa.has(cursor)) {
-        mapa.set(cursor, { data: cursor, quantidade: 0, totalDia: 0 });
-      }
-      cursor = shiftIsoDate(cursor, 1);
-    }
-
-    return Array.from(mapa.values()).sort((a, b) => (a.data < b.data ? -1 : 1));
-  };
-
-  const vendasPorDiaMap = aggregateMap(
-    pedidosValidos,
-    (o) => o.data,
-    (acc: any, item) => {
-      acc.data = item.data;
-      acc.quantidade = (acc.quantidade ?? 0) + toNumberSafe(item.pedidos ?? 0);
-      acc.totalDia = (acc.totalDia ?? 0) + toNumberSafe(item.valor_bruto ?? 0);
-    }
-  );
-
-  const pedidosPorSituacaoMap = aggregateMap(
-    pedidosValidos,
-    (o) => toNumberSafe(o.situacao ?? -1),
-    (acc: any, item) => {
-      acc.situacao = toNumberSafe(item.situacao ?? -1);
-      acc.descricao = descricaoSituacao(acc.situacao);
-      acc.quantidade = (acc.quantidade ?? 0) + toNumberSafe(item.pedidos ?? 0);
-    }
-  );
-
-  const totalPedidos = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.pedidos ?? 0), 0);
-  const totalValor = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.valor_bruto ?? 0), 0);
-  const totalFrete = pedidosValidos.reduce((acc, o) => acc + toNumberSafe(o.valor_frete ?? 0), 0);
-  const totalProdutosVendidos = produtosValidos.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0);
-
-  const cancelados = pedidosValidos.reduce((acc, o) => {
-    const situacao = toNumberSafe(o.situacao ?? -1);
-    return situacoesCancelamento.has(situacao) ? acc + toNumberSafe(o.pedidos ?? 0) : acc;
-  }, 0);
-
-  const topProdutos = computeTopProdutos(produtosValidos);
-  const vendasPorDia = preencherDias(Array.from(vendasPorDiaMap.values()), dataInicialStr, dataFinalStr);
-
-  return {
-    dataInicial: dataInicialStr,
-    dataFinal: dataFinalStr,
-    dias: diffDias(new Date(`${dataInicialStr}T00:00:00`), new Date(`${dataFinalStr}T00:00:00`)) + 1,
-    totalPedidos,
-    totalValor,
-    totalValorLiquido: Math.max(0, totalValor - totalFrete),
-    totalFreteTotal: totalFrete,
-    ticketMedio: totalPedidos > 0 ? totalValor / totalPedidos : 0,
-    vendasPorDia,
-    pedidosPorSituacao: Array.from(pedidosPorSituacaoMap.values()),
-    totalProdutosVendidos,
-    percentualCancelados: totalPedidos > 0 ? (cancelados / totalPedidos) * 100 : 0,
-    topProdutos,
-    vendasPorHora: [],
-  };
-};
-
 const computeCanais = (orders: CacheOrderFact[]): CanalResumo[] => {
   const canaisMap = aggregateMap(
     orders,
@@ -2040,25 +1827,6 @@ const computeDiffs = (current: PeriodoResumo, previous: PeriodoResumo): Dashboar
     ticketMedioDeltaPercent: ticket.deltaPercent,
     ticketMedioHasComparison: ticket.previous > 0,
   };
-};
-
-const loadCacheRow = async (dataInicialStr: string, dataFinalStr: string): Promise<DashboardCacheRow | null> => {
-  const { data, error } = await supabaseAdmin
-    .from('dashboard_resumo_cache')
-    .select(
-      'periodo_inicio,periodo_fim,order_facts,produto_facts,last_refreshed_at,total_pedidos,total_valor,total_valor_liquido,total_frete_total,total_produtos_vendidos'
-    )
-    .lte('periodo_inicio', dataInicialStr)
-    .gte('periodo_fim', dataFinalStr)
-    .order('periodo_fim', { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error('[dashboard] erro ao buscar cache', error);
-    return null;
-  }
-  if (!data?.length) return null;
-  return data[0] as DashboardCacheRow;
 };
 
 type DateRange = {
@@ -2150,8 +1918,31 @@ const buildAlignedRanges = (params: {
   const endExclusive = shiftIsoDate(endInclusive, 1);
   const days = Math.max(1, diffDias(new Date(`${dataInicialStr}T00:00:00`), new Date(`${endExclusive}T00:00:00`)));
 
+  const monthPartialFromStart =
+    params.dataInicialParam !== null &&
+    isFirstDayOfMonth(params.dataInicialParam) &&
+    params.dataInicialParam.slice(0, 7) === (params.dataFinalParam ?? hojeLabel).slice(0, 7) &&
+    !isMonthSpan;
+
   const prevEndExclusive = dataInicialStr;
-  const prevStart = shiftIsoDate(prevEndExclusive, -1 * days);
+  const prevStart = monthPartialFromStart ? startOfPreviousMonthIso(dataInicialStr) : shiftIsoDate(prevEndExclusive, -1 * days);
+
+  let prevDisplayEnd: string;
+  let prevEndExclusiveAdjusted: string;
+  let prevDays: number;
+
+  if (monthPartialFromStart) {
+    const prevMonthEnd = endOfMonthIso(prevStart);
+    const targetPrevDisplayEnd = shiftIsoDate(prevStart, days - 1);
+    const prevDisplayEndClamped = targetPrevDisplayEnd > prevMonthEnd ? prevMonthEnd : targetPrevDisplayEnd;
+    prevDisplayEnd = prevDisplayEndClamped;
+    prevEndExclusiveAdjusted = shiftIsoDate(prevDisplayEndClamped, 1);
+    prevDays = Math.max(1, diffDias(new Date(`${prevStart}T00:00:00`), new Date(`${prevEndExclusiveAdjusted}T00:00:00`)));
+  } else {
+    prevDisplayEnd = shiftIsoDate(prevEndExclusive, -1);
+    prevEndExclusiveAdjusted = prevEndExclusive;
+    prevDays = days;
+  }
 
   const current: DateRange = {
     start: dataInicialStr,
@@ -2161,9 +1952,9 @@ const buildAlignedRanges = (params: {
   };
   const previous: DateRange = {
     start: prevStart,
-    endExclusive: prevEndExclusive,
-    displayEnd: shiftIsoDate(prevEndExclusive, -1),
-    days,
+    endExclusive: prevEndExclusiveAdjusted,
+    displayEnd: prevDisplayEnd,
+    days: prevDays,
   };
 
   const horaCorteMinutos = aplicarCutoff && incluiHoje ? getCutoffMinutesNowSp() : null;
@@ -2173,7 +1964,6 @@ const buildAlignedRanges = (params: {
 
 export async function GET(req: NextRequest) {
   const handlerTimer = '[dashboard] handler';
-  const supabaseTimer = '[dashboard] supabase_query';
   console.time(handlerTimer);
   try {
     const { searchParams } = new URL(req.url);
@@ -2187,6 +1977,8 @@ export async function GET(req: NextRequest) {
     const microCurrentEndParam = searchParams.get('microCurrentEnd');
     const microPrevStartParam = searchParams.get('microPrevStart');
     const microPrevEndParam = searchParams.get('microPrevEnd');
+    const previousStartParam = searchParams.get('previousStart');
+    const previousEndParam = searchParams.get('previousEnd');
     const contextParam = searchParams.get('context') ?? 'dashboard';
     const debugPedidos = searchParams.get('debugPedidos') === '1';
     const agora = new Date();
@@ -2203,7 +1995,7 @@ export async function GET(req: NextRequest) {
       previousStart: parseDateParam(microPrevStartParam),
       previousEnd: parseDateParam(microPrevEndParam),
     } satisfies MicroTrendWindowOverride;
-    const { current, previous, meta } = buildAlignedRanges({
+    const { current, previous: previousBase, meta } = buildAlignedRanges({
       dataInicialParam,
       dataFinalParam,
       diasParam,
@@ -2211,6 +2003,27 @@ export async function GET(req: NextRequest) {
       now: agora,
       aplicarCutoff,
     });
+
+    const parseIsoDate = (value: string | null): string | null => {
+      if (!value) return null;
+      const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+      return match ? match[0] : null;
+    };
+
+    const previousStartOverride = parseIsoDate(previousStartParam);
+    const previousEndOverride = parseIsoDate(previousEndParam);
+
+    const previous: DateRange = (() => {
+      if (!previousStartOverride && !previousEndOverride) return previousBase;
+      const start = previousStartOverride ?? previousBase.start;
+      const displayEnd = previousEndOverride ?? previousBase.displayEnd;
+      const endExclusive = shiftIsoDate(displayEnd, 1);
+      const days = Math.max(
+        1,
+        diffDias(new Date(`${start}T00:00:00`), new Date(`${endExclusive}T00:00:00`))
+      );
+      return { start, endExclusive, displayEnd, days };
+    })();
 
     const applyHoraCorte = aplicarCutoff && meta.incluiHoje && meta.horaCorteMinutos !== null;
     const horaCorteMinutos = applyHoraCorte ? meta.horaCorteMinutos : null;
@@ -2233,15 +2046,6 @@ export async function GET(req: NextRequest) {
     const situacoesFiltro = situacoesSelecionadas;
 
     const situacoesAplicadasArray = Array.from(situacoesAplicadasSet);
-    const shouldUseCache = !applyHoraCorte && !noCutoff;
-    let cacheRow: DashboardCacheRow | null = null;
-    let orderFacts: CacheOrderFact[] = [];
-    let produtoFacts: CacheProdutoFact[] = [];
-    let ordersAtual: CacheOrderFact[] = [];
-    let produtosAtuais: CacheProdutoFact[] = [];
-    let ordersAnterior: CacheOrderFact[] = [];
-    let produtosAnterior: CacheProdutoFact[] = [];
-
     const cutoffOptsAtual: CutoffOptions | undefined = applyHoraCorte && horaCorteMinutos !== null
       ? {
           cutoffDate: current.displayEnd,
@@ -2257,22 +2061,23 @@ export async function GET(req: NextRequest) {
         }
       : undefined;
 
-    const shouldForceTinyOrdersDaily = noCutoff;
+    const debugResumo = searchParams.get('debugResumo') === '1';
 
-    if (debugPedidos) {
-      const debugCollector = { included: [] as DebugOrderEntry[], excluded: [] as DebugOrderEntry[] };
+    const filtrosBase = {
+      canais: canaisFiltro,
+      situacoesAplicadas: situacoesAplicadasSet,
+      situacoesBusca: situacoesFiltro,
+      situacoesCancelamento: situacoesCancelamentoSet,
+    };
 
-      await buildPeriodoResumoFromTinyOrders(
-        { start: current.start, end: current.displayEnd },
-        {
-          canais: canaisFiltro,
-          situacoesAplicadas: situacoesAplicadasSet,
-          situacoesBusca: situacoesFiltro,
-          situacoesCancelamento: situacoesCancelamentoSet,
-        },
-        debugCollector
-      );
+    const debugCollector = debugPedidos ? { included: [] as DebugOrderEntry[], excluded: [] as DebugOrderEntry[] } : undefined;
 
+    const [periodoAtualResult, periodoAnteriorResult] = await Promise.all([
+      buildPeriodoResumoFromTinyOrders({ start: current.start, end: current.displayEnd }, filtrosBase, debugCollector),
+      buildPeriodoResumoFromTinyOrders({ start: previous.start, end: previous.displayEnd }, filtrosBase),
+    ]);
+
+    if (debugPedidos && debugCollector) {
       const totalPorSituacao = Array.from(
         debugCollector.included.reduce((map, entry) => {
           const key = entry.situacao;
@@ -2312,215 +2117,54 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (shouldUseCache) {
-      console.time(supabaseTimer);
-      const refreshInterval = Math.max(365, current.days);
-      cacheRow = await loadCacheRow(current.start, current.displayEnd);
-      if (!cacheRow) {
-        const { error: refreshError } = await supabaseAdmin.rpc(
-          'refresh_dashboard_resumo_cache',
-          { interval_days: refreshInterval }
-        );
-        if (refreshError) {
-          console.error('[dashboard] erro ao recalcular cache', refreshError);
-        }
-        cacheRow = await loadCacheRow(current.start, current.displayEnd);
-      }
-      console.timeEnd(supabaseTimer);
+    const ordersAtualFacts = periodoAtualResult.orderFacts;
+    const ordersAnteriorFacts = periodoAnteriorResult.orderFacts;
 
-      if (!cacheRow) {
-        cacheRow = await buildFactsOnTheFly(current.start, current.endExclusive);
-      }
+    const [produtosAtualBaseRaw, produtosAnteriorBaseRaw] = await Promise.all([
+      fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro),
+      fetchProdutoFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
+    ]);
 
-      if (!cacheRow) {
-        return NextResponse.json({ message: 'Cache de dashboard indisponível ou vazio após recalculo' }, { status: 503 });
-      }
+    const produtosAtuaisFiltrados = filterProdutoRowsWithCutoff(
+      produtosAtualBaseRaw,
+      current.start,
+      current.endExclusive,
+      canaisFiltro,
+      situacoesFiltro,
+      cutoffOptsAtual
+    );
+    const produtosAnteriorFiltrados = filterProdutoRowsWithCutoff(
+      produtosAnteriorBaseRaw,
+      previous.start,
+      previous.endExclusive,
+      canaisFiltro,
+      situacoesFiltro,
+      cutoffOptsAnterior
+    );
 
-      orderFacts = Array.isArray(cacheRow.order_facts) ? cacheRow.order_facts : [];
-      produtoFacts = Array.isArray(cacheRow.produto_facts) ? cacheRow.produto_facts : [];
-    } else {
-      const [ordersAtualBaseRaw, ordersAnteriorBaseRaw] = await Promise.all([
-        fetchOrderFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro),
-        fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
-      ]);
+    const produtosAtuais = aggregateProdutoFactsFromRows(produtosAtuaisFiltrados);
+    const produtosAnterior = aggregateProdutoFactsFromRows(produtosAnteriorFiltrados);
 
-      const [produtosAtualBaseRaw, produtosAnteriorBaseRaw] = await Promise.all([
-        fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro),
-        fetchProdutoFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro),
-      ]);
-
-      const ordersAtualFiltrados = filterOrderRowsWithCutoff(
-        ordersAtualBaseRaw,
-        current.start,
-        current.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAtual
-      );
-      const ordersAnteriorFiltrados = filterOrderRowsWithCutoff(
-        ordersAnteriorBaseRaw,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAnterior
-      );
-
-      ordersAtual = aggregateOrdersFromRows(ordersAtualFiltrados);
-      ordersAnterior = aggregateOrdersFromRows(ordersAnteriorFiltrados);
-
-      const produtosAtuaisFiltrados = filterProdutoRowsWithCutoff(
-        produtosAtualBaseRaw,
-        current.start,
-        current.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAtual
-      );
-      const produtosAnteriorFiltrados = filterProdutoRowsWithCutoff(
-        produtosAnteriorBaseRaw,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAnterior
-      );
-
-      produtosAtuais = aggregateProdutoFactsFromRows(produtosAtuaisFiltrados);
-      produtosAnterior = aggregateProdutoFactsFromRows(produtosAnteriorFiltrados);
-
-      orderFacts = [...ordersAtual, ...ordersAnterior];
-      produtoFacts = [...produtosAtuais, ...produtosAnterior];
-    }
-
-    if (shouldUseCache) {
-      ordersAtual = filterOrders(
-        orderFacts,
-        current.start,
-        current.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAtual
-      );
-      produtosAtuais = filterProdutos(
-        produtoFacts,
-        current.start,
-        current.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAtual
-      );
-      if (!produtosAtuais.length && ordersAtual.length) {
-        const fetched = await fetchProdutoFactsRange(current.start, current.endExclusive, canaisFiltro, situacoesFiltro);
-        const produtosFiltrados = filterProdutoRowsWithCutoff(
-          fetched,
-          current.start,
-          current.endExclusive,
-          canaisFiltro,
-          situacoesFiltro,
-          cutoffOptsAtual
-        );
-        produtosAtuais = aggregateProdutoFactsFromRows(produtosFiltrados);
-      }
-
-      const ordersAnteriorRaw = await fetchOrderFactsRange(previous.start, previous.endExclusive, canaisFiltro, situacoesFiltro);
-      const ordersAnteriorFiltrados = filterOrderRowsWithCutoff(
-        ordersAnteriorRaw,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAnterior
-      );
-      ordersAnterior = aggregateOrdersFromRows(ordersAnteriorFiltrados);
-
-      const produtosAnteriorRaw = await fetchProdutoFactsRange(
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro
-      );
-      const produtosAnteriorFiltrados = filterProdutoRowsWithCutoff(
-        produtosAnteriorRaw,
-        previous.start,
-        previous.endExclusive,
-        canaisFiltro,
-        situacoesFiltro,
-        cutoffOptsAnterior
-      );
-      produtosAnterior = aggregateProdutoFactsFromRows(produtosAnteriorFiltrados);
-
-      orderFacts = [...orderFacts, ...ordersAnterior];
-      produtoFacts = [...produtoFacts, ...produtosAnterior];
-    }
-
-    const ordersAtualAplicados = ordersAtual.filter((o) => situacoesAplicadasSet.has(toNumberSafe(o.situacao ?? -1)));
-    const ordersAnteriorAplicados = ordersAnterior.filter((o) => situacoesAplicadasSet.has(toNumberSafe(o.situacao ?? -1)));
     const produtosAtuaisAplicados = produtosAtuais.filter((p) => situacoesAplicadasSet.has(toNumberSafe(p.situacao ?? -1)));
     const produtosAnteriorAplicados = produtosAnterior.filter((p) => situacoesAplicadasSet.has(toNumberSafe(p.situacao ?? -1)));
 
-    let periodoAtual = computePeriodoResumo(
-      ordersAtual,
-      produtosAtuaisAplicados,
-      current.start,
-      current.displayEnd,
-      { situacoesAplicadas: situacoesAplicadasSet, situacoesCancelamento: situacoesCancelamentoSet }
-    );
+    const topAtual = computeTopProdutos(produtosAtuaisAplicados);
+    const topAnterior = computeTopProdutos(produtosAnteriorAplicados);
+
+    let periodoAtual = {
+      ...periodoAtualResult.periodo,
+      totalProdutosVendidos: produtosAtuaisAplicados.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0),
+      topProdutos: topAtual,
+    };
+    let periodoAnterior = {
+      ...periodoAnteriorResult.periodo,
+      totalProdutosVendidos: produtosAnteriorAplicados.reduce((acc, p) => acc + toNumberSafe(p.quantidade ?? 0), 0),
+      topProdutos: topAnterior,
+    };
+
     const vendasPorHoraAtuais = await buildHourlyTrend(DEFAULT_REPORT_TIMEZONE, canaisFiltro, situacoesAplicadasArray);
     periodoAtual = { ...periodoAtual, vendasPorHora: vendasPorHoraAtuais };
 
-    let periodoAnterior = computePeriodoResumo(
-      ordersAnterior,
-      produtosAnteriorAplicados,
-      previous.start,
-      previous.displayEnd,
-      { situacoesAplicadas: situacoesAplicadasSet, situacoesCancelamento: situacoesCancelamentoSet }
-    );
-
-    if (shouldForceTinyOrdersDaily) {
-      const [periodoAtualTiny, periodoAnteriorTiny] = await Promise.all([
-        buildPeriodoResumoFromTinyOrders(
-          { start: current.start, end: current.displayEnd },
-          {
-            canais: canaisFiltro,
-            situacoesAplicadas: situacoesAplicadasSet,
-            situacoesBusca: situacoesFiltro,
-            situacoesCancelamento: situacoesCancelamentoSet,
-          },
-          undefined,
-          periodoAtual
-        ),
-        buildPeriodoResumoFromTinyOrders(
-          { start: previous.start, end: previous.displayEnd },
-          {
-            canais: canaisFiltro,
-            situacoesAplicadas: situacoesAplicadasSet,
-            situacoesBusca: situacoesFiltro,
-            situacoesCancelamento: situacoesCancelamentoSet,
-          },
-          undefined,
-          periodoAnterior
-        ),
-      ]);
-
-      periodoAtual = periodoAtualTiny;
-      periodoAnterior = periodoAnteriorTiny;
-
-      console.log('[dashboard-debug] ultimos_dias_tiny_orders', {
-        periodo: { inicioDias: current.start, fimDias: current.displayEnd },
-        totalPedidos: periodoAtual.totalPedidos,
-        dias: periodoAtual.vendasPorDia,
-      });
-
-      console.log('[dashboard-debug] periodo_anterior_from_tiny_orders', {
-        range: { inicioDias: previous.start, fimDias: previous.displayEnd },
-        totalPedidos: periodoAnterior.totalPedidos,
-        totalFaturamento: periodoAnterior.totalValor,
-        vendasPorDia: periodoAnterior.vendasPorDia,
-      });
-    }
-
-    // Enriquecer top produtos com imagem/estoque quando disponível
     const [topAtualEnriched, topAnteriorEnriched] = await Promise.all([
       enrichTopProdutos(periodoAtual.topProdutos),
       enrichTopProdutos(periodoAnterior.topProdutos),
@@ -2528,12 +2172,30 @@ export async function GET(req: NextRequest) {
     periodoAtual = { ...periodoAtual, topProdutos: topAtualEnriched };
     periodoAnterior = { ...periodoAnterior, topProdutos: topAnteriorEnriched };
 
-    const canais = computeCanais(ordersAtualAplicados);
-    const mapaVendasUF = computeMapaUF(ordersAtualAplicados);
-    const mapaVendasCidade = computeMapaCidade(ordersAtualAplicados);
-    const canaisDisponiveis = Array.from(new Set(orderFacts.map((o) => o.canal ?? 'Outros')));
+    const canais = computeCanais(ordersAtualFacts);
+    const mapaVendasUF = computeMapaUF(ordersAtualFacts);
+    const mapaVendasCidade = computeMapaCidade(ordersAtualFacts);
+    const canaisDisponiveis = Array.from(new Set([...ordersAtualFacts, ...ordersAnteriorFacts].map((o) => o.canal ?? 'Outros')));
 
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
+
+    if (debugResumo) {
+      return NextResponse.json({
+        debugResumo: true,
+        dataInicial: current.start,
+        dataFinal: current.displayEnd,
+        totalPedidos: periodoAtual.totalPedidos,
+        totalValor: periodoAtual.totalValor,
+        totalValorLiquido: periodoAtual.totalValorLiquido,
+        totalFreteTotal: periodoAtual.totalFreteTotal,
+        ticketMedio: periodoAtual.ticketMedio,
+        vendasPorDia: periodoAtual.vendasPorDia,
+        pedidosPorSituacao: periodoAtual.pedidosPorSituacao,
+        meta: {
+          ordersLength: periodoAtualResult.pedidos.length,
+        },
+      });
+    }
 
     const microTrend24h = await buildMicroTrend24h(
       DEFAULT_REPORT_TIMEZONE,
@@ -2542,7 +2204,7 @@ export async function GET(req: NextRequest) {
       microtrendOverrides
     );
 
-    const lastUpdatedAt = cacheRow?.last_refreshed_at ?? new Date().toISOString();
+    const lastUpdatedAt = new Date().toISOString();
 
     const horaLabel = horaCorteMinutos !== null
       ? `${String(Math.floor(horaCorteMinutos / 60)).padStart(2, '0')}:${String(horaCorteMinutos % 60).padStart(2, '0')}`
@@ -2597,9 +2259,9 @@ export async function GET(req: NextRequest) {
       horaCorteMinutos,
       canaisFiltro,
       situacoesFiltro,
-      pedidosAtual: sumPedidosDia(ordersAtual, debugDate),
-      pedidosAnterior: sumPedidosDia(ordersAnterior, debugDate),
-      detalheAtual: detalhePedidosDia(ordersAtual, debugDate),
+      pedidosAtual: sumPedidosDia(ordersAtualFacts, debugDate),
+      pedidosAnterior: sumPedidosDia(ordersAnteriorFacts, debugDate),
+      detalheAtual: detalhePedidosDia(ordersAtualFacts, debugDate),
     });
 
     console.log('[dashboard-debug] ultimos_dias_vs_sql', {
