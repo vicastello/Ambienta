@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getShopeeOrders } from '@/lib/shopeeClient';
+import { getShopeeOrders, getAllShopeeOrdersForPeriod } from '@/lib/shopeeClient';
 import type { ShopeeOrder, ShopeeOrderListResponse, ShopeeOrderStatus } from '@/src/types/shopee';
 
-const DEFAULT_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+// Período padrão: 90 dias (conforme instrução)
+const DEFAULT_WINDOW_SECONDS = 90 * 24 * 60 * 60;
 const DEFAULT_PAGE_SIZE = 50;
 const SHOPEE_MOCK_MODE = process.env.SHOPEE_MOCK_MODE === 'true';
+// Limite de 15 dias da Shopee - se período > 15 dias, usa getAllShopeeOrdersForPeriod
+const MAX_SINGLE_REQUEST_DAYS = 15;
 
 class BadRequestError extends Error {
   code?: string;
@@ -53,40 +56,57 @@ function getMockShopeeOrders(params: {
   pageSize?: number;
 }): ShopeeOrderListResponse {
   const { timeFrom, timeTo, status, cursor, pageSize = DEFAULT_PAGE_SIZE } = params;
+  
+  // Gerar mais pedidos para simular 90 dias (cerca de 3 pedidos por dia)
+  const totalDays = Math.ceil((timeTo - timeFrom) / (24 * 60 * 60));
+  const orderCount = Math.min(totalDays * 3, 150); // Máx 150 para não sobrecarregar
 
-  const baseOrders: ShopeeOrder[] = Array.from({ length: 15 }).map((_, idx) => {
+  const baseOrders: ShopeeOrder[] = Array.from({ length: orderCount }).map((_, idx) => {
     const orderIndex = idx + 1;
-    const createdAt = timeFrom + ((timeTo - timeFrom) / 15) * orderIndex;
+    const createdAt = timeFrom + ((timeTo - timeFrom) / orderCount) * orderIndex;
     const updatedAt = createdAt + 3600;
-    const statuses: ShopeeOrderStatus[] = ['UNPAID', 'READY_TO_SHIP', 'COMPLETED', 'CANCELLED'];
+    const statuses: ShopeeOrderStatus[] = ['UNPAID', 'READY_TO_SHIP', 'COMPLETED', 'CANCELLED', 'PROCESSED'];
     const statusValue = statuses[idx % statuses.length];
+    const carriers = ['Shopee Xpress', 'Correios', 'Jadlog', 'Total Express', 'Loggi'];
+    const cities = ['São Paulo - SP', 'Rio de Janeiro - RJ', 'Belo Horizonte - MG', 'Curitiba - PR', 'Porto Alegre - RS', 'Salvador - BA', 'Brasília - DF'];
 
     return {
-      order_sn: `TEST123456789-${orderIndex}`,
+      order_sn: `SHOP${Date.now().toString(36).toUpperCase()}${orderIndex.toString().padStart(4, '0')}`,
       order_status: statusValue,
       create_time: Math.floor(createdAt),
       update_time: Math.floor(updatedAt),
-      total_amount: (Math.round((Math.random() * 200 + 20) * 100) / 100).toString(),
+      total_amount: (Math.round((Math.random() * 350 + 25) * 100) / 100).toString(),
       currency: 'BRL',
       cod: false,
       order_items: [
         {
           item_id: 1000 + orderIndex,
-          item_name: `Produto Mock ${orderIndex}`,
+          item_name: `Produto Shopee ${orderIndex}`,
           model_id: 2000 + orderIndex,
-          model_name: 'Padrão',
-          item_sku: `SKU-MOCK-${orderIndex}`,
+          model_name: idx % 3 === 0 ? 'Variação A' : idx % 3 === 1 ? 'Variação B' : 'Padrão',
+          item_sku: `SKU-SHP-${orderIndex}`,
           model_sku: `SKU-MODEL-${orderIndex}`,
-          variation_original_price: '99.90',
-          variation_discounted_price: '79.90',
+          variation_original_price: (Math.round((Math.random() * 150 + 30) * 100) / 100).toString(),
+          variation_discounted_price: (Math.round((Math.random() * 120 + 20) * 100) / 100).toString(),
           is_wholesale: false,
         },
+        ...(idx % 4 === 0 ? [{
+          item_id: 3000 + orderIndex,
+          item_name: `Produto Extra ${orderIndex}`,
+          model_id: 4000 + orderIndex,
+          model_name: 'Único',
+          item_sku: `SKU-EXT-${orderIndex}`,
+          model_sku: `SKU-EXT-MODEL-${orderIndex}`,
+          variation_original_price: '49.90',
+          variation_discounted_price: '39.90',
+          is_wholesale: false,
+        }] : []),
       ],
-      shipping_carrier: orderIndex % 2 === 0 ? 'Shopee Xpress' : 'Correios',
+      shipping_carrier: carriers[idx % carriers.length],
       recipient_address: {
-        name: `Cliente Mock ${orderIndex}`,
-        phone: `11999${orderIndex.toString().padStart(4, '0')}`,
-        full_address: `Rua Exemplo ${orderIndex}, 123, São Paulo - SP`,
+        name: `Cliente ${orderIndex}`,
+        phone: `11999${orderIndex.toString().padStart(6, '0').slice(0, 6)}`,
+        full_address: `Rua das Flores ${orderIndex}, ${100 + idx}, ${cities[idx % cities.length]}`,
       },
     };
   });
@@ -105,6 +125,18 @@ function getMockShopeeOrders(params: {
   };
 }
 
+/**
+ * Gera todos os pedidos mock para o período completo (sem paginação)
+ */
+function getAllMockShopeeOrders(params: {
+  timeFrom: number;
+  timeTo: number;
+  status?: ShopeeOrderStatus;
+}): ShopeeOrder[] {
+  const result = getMockShopeeOrders({ ...params, pageSize: 1000 });
+  return result.orders;
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const fromParam = url.searchParams.get('from');
@@ -113,6 +145,8 @@ export async function GET(req: Request) {
   const cursor = url.searchParams.get('cursor') ?? undefined;
   const pageSizeParam = url.searchParams.get('pageSize');
   const pageSize = pageSizeParam ? Number(pageSizeParam) || DEFAULT_PAGE_SIZE : DEFAULT_PAGE_SIZE;
+  // Se fetchAll=true, busca todos os pedidos do período de uma vez (sem paginação no frontend)
+  const fetchAll = url.searchParams.get('fetchAll') === 'true';
 
   try {
     const nowSeconds = Math.floor(Date.now() / 1000);
@@ -129,21 +163,99 @@ export async function GET(req: Request) {
     }
     const orderStatus = normalizedStatus ? (normalizedStatus as ShopeeOrderStatus) : undefined;
 
-    const shopeeResponse = SHOPEE_MOCK_MODE
-      ? getMockShopeeOrders({
-          timeFrom,
-          timeTo,
-          status: orderStatus,
-          cursor,
-          pageSize,
-        })
-      : await getShopeeOrders({
-          timeFrom,
-          timeTo,
-          status: orderStatus,
-          cursor,
-          pageSize,
+    const periodDays = (timeTo - timeFrom) / (24 * 60 * 60);
+
+    // Modo mock
+    if (SHOPEE_MOCK_MODE) {
+      if (fetchAll) {
+        // Buscar todos os pedidos mock de uma vez
+        const allOrders = getAllMockShopeeOrders({ timeFrom, timeTo, status: orderStatus });
+        return NextResponse.json({
+          ok: true,
+          data: {
+            orders: allOrders,
+            hasMore: false,
+            nextCursor: undefined,
+            totalLoaded: allOrders.length,
+          },
+          meta: {
+            timeFrom,
+            timeTo,
+            periodDays: Math.round(periodDays),
+            status: orderStatus ?? null,
+            mock: true,
+            fetchMode: 'all',
+          },
         });
+      }
+      
+      // Modo paginado mock
+      const mockResponse = getMockShopeeOrders({
+        timeFrom,
+        timeTo,
+        status: orderStatus,
+        cursor,
+        pageSize,
+      });
+      return NextResponse.json({
+        ok: true,
+        data: {
+          orders: mockResponse.orders,
+          hasMore: mockResponse.has_more,
+          nextCursor: mockResponse.next_cursor,
+        },
+        meta: {
+          timeFrom,
+          timeTo,
+          periodDays: Math.round(periodDays),
+          status: orderStatus ?? null,
+          mock: true,
+          fetchMode: 'paginated',
+        },
+      });
+    }
+
+    // Modo real - Shopee API
+    // Se período > 15 dias ou fetchAll=true, usa função que divide em chunks
+    const needsChunkedFetch = periodDays > MAX_SINGLE_REQUEST_DAYS || fetchAll;
+
+    if (needsChunkedFetch && !cursor) {
+      // Buscar todos os pedidos do período usando chunks de 15 dias
+      const allOrders = await getAllShopeeOrdersForPeriod({
+        timeFrom,
+        timeTo,
+        status: orderStatus,
+        pageSize,
+        fetchDetails: true, // Buscar detalhes completos (itens, endereço)
+      });
+
+      return NextResponse.json({
+        ok: true,
+        data: {
+          orders: allOrders,
+          hasMore: false,
+          nextCursor: undefined,
+          totalLoaded: allOrders.length,
+        },
+        meta: {
+          timeFrom,
+          timeTo,
+          periodDays: Math.round(periodDays),
+          status: orderStatus ?? null,
+          fetchMode: 'all',
+          chunksUsed: Math.ceil(periodDays / MAX_SINGLE_REQUEST_DAYS),
+        },
+      });
+    }
+
+    // Requisição simples (período <= 15 dias ou paginação manual com cursor)
+    const shopeeResponse = await getShopeeOrders({
+      timeFrom,
+      timeTo,
+      status: orderStatus,
+      cursor,
+      pageSize,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -155,8 +267,9 @@ export async function GET(req: Request) {
       meta: {
         timeFrom,
         timeTo,
+        periodDays: Math.round(periodDays),
         status: orderStatus ?? null,
-        ...(SHOPEE_MOCK_MODE ? { mock: true } : {}),
+        fetchMode: 'paginated',
       },
     });
   } catch (err) {

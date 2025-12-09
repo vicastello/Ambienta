@@ -299,6 +299,113 @@ export type MeliOrderItemsInsert = {
 export type MeliOrderItemsUpdate = Partial<MeliOrderItemsInsert>;
 
 /* ============================================================================
+ * SHOPEE TYPES
+ * ========================================================================== */
+
+export interface ShopeeOrdersRow {
+  order_sn: string;
+  shop_id: number;
+  order_status: string;
+  create_time: string;
+  update_time: string;
+  currency: string;
+  total_amount: number;
+  shipping_carrier: string | null;
+  cod: boolean;
+  buyer_user_id: number | null;
+  buyer_username: string | null;
+  recipient_name: string | null;
+  recipient_phone: string | null;
+  recipient_full_address: string | null;
+  recipient_city: string | null;
+  recipient_state: string | null;
+  tags: string[] | null;
+  raw_payload: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ShopeeOrdersInsert = {
+  order_sn: string;
+  shop_id: number;
+  order_status: string;
+  create_time: string;
+  update_time: string;
+  currency?: string;
+  total_amount: number;
+  shipping_carrier?: string | null;
+  cod?: boolean;
+  buyer_user_id?: number | null;
+  buyer_username?: string | null;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
+  recipient_full_address?: string | null;
+  recipient_city?: string | null;
+  recipient_state?: string | null;
+  tags?: string[] | null;
+  raw_payload: Json;
+};
+
+export type ShopeeOrdersUpdate = Partial<ShopeeOrdersInsert>;
+
+export interface ShopeeOrderItemsRow {
+  id: number;
+  order_sn: string;
+  item_id: number;
+  model_id: number | null;
+  item_name: string;
+  model_name: string | null;
+  item_sku: string | null;
+  model_sku: string | null;
+  quantity: number;
+  original_price: number | null;
+  discounted_price: number | null;
+  is_wholesale: boolean;
+  raw_payload: Json;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ShopeeOrderItemsInsert = {
+  order_sn: string;
+  item_id: number;
+  model_id?: number | null;
+  item_name: string;
+  model_name?: string | null;
+  item_sku?: string | null;
+  model_sku?: string | null;
+  quantity?: number;
+  original_price?: number | null;
+  discounted_price?: number | null;
+  is_wholesale?: boolean;
+  raw_payload: Json;
+};
+
+export type ShopeeOrderItemsUpdate = Partial<ShopeeOrderItemsInsert>;
+
+export interface ShopeeSyncCursorRow {
+  id: number;
+  last_sync_at: string | null;
+  last_order_update_time: string | null;
+  total_orders_synced: number;
+  sync_status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ShopeeSyncCursorInsert = {
+  id?: number;
+  last_sync_at?: string | null;
+  last_order_update_time?: string | null;
+  total_orders_synced?: number;
+  sync_status?: string;
+  error_message?: string | null;
+};
+
+export type ShopeeSyncCursorUpdate = Partial<ShopeeSyncCursorInsert>;
+
+/* ============================================================================
  * INSERT / UPDATE TYPES
  * ========================================================================== */
 
@@ -641,6 +748,31 @@ export type DatabasePublicSchema = GenericSupabaseSchema & {
           referencedColumns: ["meli_order_id"];
         }
       ];
+    };
+    shopee_orders: {
+      Row: ShopeeOrdersRow;
+      Insert: ShopeeOrdersInsert;
+      Update: ShopeeOrdersUpdate;
+      Relationships: [];
+    };
+    shopee_order_items: {
+      Row: ShopeeOrderItemsRow;
+      Insert: ShopeeOrderItemsInsert;
+      Update: ShopeeOrderItemsUpdate;
+      Relationships: [
+        {
+          foreignKeyName: "shopee_order_items_order_sn_fkey";
+          columns: ["order_sn"];
+          referencedRelation: "shopee_orders";
+          referencedColumns: ["order_sn"];
+        }
+      ];
+    };
+    shopee_sync_cursor: {
+      Row: ShopeeSyncCursorRow;
+      Insert: ShopeeSyncCursorInsert;
+      Update: ShopeeSyncCursorUpdate;
+      Relationships: [];
     };
   };
   Views: Record<string, never>;

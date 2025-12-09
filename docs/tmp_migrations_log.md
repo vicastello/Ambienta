@@ -1,5 +1,51 @@
 # Migração supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql
 
+---
+
+## Migrations Shopee (2025-12-09)
+
+Registro 2025-12-09 ~20:00 -03: Aplicadas 2 migrations para integração Shopee:
+
+### 1. `20251209200000_shopee_orders.sql`
+- Criou tabela `shopee_orders` (pedidos da Shopee)
+- Criou tabela `shopee_order_items` (itens dos pedidos)
+- Criou tabela `shopee_sync_cursor` (controle de sincronização)
+- RLS policies habilitadas
+- Índices para performance
+
+### 2. `20251209210000_shopee_cron_sync.sql`
+- Criou função `shopee_sync_http()` para chamada HTTP via pg_net
+- Agendou cron job `shopee_orders_sync_5min` a cada 5 minutos
+
+### Queries para verificar no Supabase Studio:
+
+```sql
+-- Verificar tabelas criadas
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public' AND table_name LIKE 'shopee%';
+
+-- Verificar cron job ativo
+SELECT jobid, jobname, schedule, command, active
+FROM cron.job
+WHERE jobname = 'shopee_orders_sync_5min';
+
+-- Verificar cursor de sync inicial
+SELECT * FROM shopee_sync_cursor;
+```
+
+### Endpoints criados:
+- `POST /api/marketplaces/shopee/sync` - Sincroniza pedidos da API → Supabase
+- `GET /api/marketplaces/shopee/orders/db` - Lê pedidos do banco para o frontend
+
+### Para fazer sync inicial (90 dias):
+```bash
+curl -X POST https://seu-dominio.vercel.app/api/marketplaces/shopee/sync \
+  -H "Content-Type: application/json" \
+  -d '{"initial": true}'
+```
+
+---
+
 Registro 2025-12-09 16:57:31 -03: `supabase db push --linked --include-all` executado sem erro. Executar manualmente no Supabase Studio para confirmar remoção do job e da função legacy:
 
 ```sql
