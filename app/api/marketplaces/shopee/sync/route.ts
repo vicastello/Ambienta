@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { getAllShopeeOrdersForPeriod } from '@/lib/shopeeClient';
+import { getAllShopeeOrdersForPeriod, getShopeeOrderDetails } from '@/lib/shopeeClient';
 import type { ShopeeOrder } from '@/src/types/shopee';
 
 const DEFAULT_PERIOD_DAYS = 90; // Sync inicial: 90 dias
 const INCREMENTAL_PERIOD_DAYS = 3; // Sync incremental: 3 dias
+const STATUS_RESYNC_BATCH_SIZE = 50; // Máximo de pedidos por batch no get_order_detail
 
 // Extrai cidade e UF do endereço completo
 function extractCityState(fullAddress: string | undefined): { city: string | null; state: string | null } {
@@ -89,6 +90,7 @@ export async function POST(req: Request) {
 
     // Parâmetros do request
     let periodDays = INCREMENTAL_PERIOD_DAYS;
+    let statusResyncOnly = false;
     try {
       const body = await req.json();
       if (body.periodDays && typeof body.periodDays === 'number') {
@@ -97,8 +99,20 @@ export async function POST(req: Request) {
       if (body.initial === true) {
         periodDays = DEFAULT_PERIOD_DAYS; // Sync inicial completo
       }
+      if (body.statusResyncOnly === true) {
+        statusResyncOnly = true;
+        // No modo statusResyncOnly, usar período maior por padrão
+        if (!body.periodDays) {
+          periodDays = DEFAULT_PERIOD_DAYS;
+        }
+      }
     } catch {
       // Body vazio ou inválido, usar padrão
+    }
+
+    // ============ MODO STATUS RESYNC ONLY ============
+    if (statusResyncOnly) {
+      return await handleStatusResyncOnly(periodDays, shopId, startTime);
     }
 
     // Atualizar status do cursor para "running"
@@ -267,6 +281,141 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Modo de ressincronização apenas de status.
+ * Busca todos os pedidos do período no banco e atualiza apenas o status via API Shopee.
+ * Útil para manter status atualizados sem refazer sync completo.
+ */
+async function handleStatusResyncOnly(periodDays: number, shopId: string, startTime: number) {
+  console.log(`[Shopee StatusResync] Iniciando resync de status dos últimos ${periodDays} dias`);
+
+  // Calcular período
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - periodDays);
+  const cutoffISO = cutoffDate.toISOString();
+
+  // Buscar todos os order_sn do período no banco
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existingOrders, error: fetchError } = await (supabaseAdmin as any)
+    .from('shopee_orders')
+    .select('order_sn, order_status')
+    .gte('create_time', cutoffISO)
+    .eq('shop_id', parseInt(shopId, 10));
+
+  if (fetchError) {
+    console.error('[Shopee StatusResync] Erro ao buscar pedidos:', fetchError);
+    throw new Error(`Erro ao buscar pedidos existentes: ${fetchError.message}`);
+  }
+
+  const orderSnList = existingOrders?.map((o: { order_sn: string }) => o.order_sn) || [];
+  console.log(`[Shopee StatusResync] Encontrados ${orderSnList.length} pedidos para verificar status`);
+
+  if (orderSnList.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      data: {
+        mode: 'statusResyncOnly',
+        ordersChecked: 0,
+        statusUpdated: 0,
+        periodDays,
+        durationMs: Date.now() - startTime,
+      },
+    });
+  }
+
+  // Processar em batches de 50 (limite da API get_order_detail)
+  let statusUpdated = 0;
+  const statusChanges: Array<{ order_sn: string; from: string; to: string }> = [];
+
+  for (let i = 0; i < orderSnList.length; i += STATUS_RESYNC_BATCH_SIZE) {
+    const batch = orderSnList.slice(i, i + STATUS_RESYNC_BATCH_SIZE);
+    const batchNum = Math.floor(i / STATUS_RESYNC_BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(orderSnList.length / STATUS_RESYNC_BATCH_SIZE);
+    
+    console.log(`[Shopee StatusResync] Processando batch ${batchNum}/${totalBatches} (${batch.length} pedidos)`);
+
+    try {
+      // Buscar detalhes atuais da API
+      const orderDetails = await getShopeeOrderDetails(batch);
+
+      // Criar mapa de status atual no banco
+      const existingStatusMap = new Map<string, string>(
+        existingOrders
+          .filter((o: { order_sn: string }) => batch.includes(o.order_sn))
+          .map((o: { order_sn: string; order_status: string }) => [o.order_sn, o.order_status] as [string, string])
+      );
+
+      // Identificar pedidos com status diferente
+      const updates: Array<{ order_sn: string; order_status: string; update_time: string }> = [];
+      
+      for (const order of orderDetails) {
+        const currentStatus = existingStatusMap.get(order.order_sn);
+        if (currentStatus !== order.order_status) {
+          updates.push({
+            order_sn: order.order_sn,
+            order_status: order.order_status,
+            update_time: new Date(order.update_time * 1000).toISOString(),
+          });
+          statusChanges.push({
+            order_sn: order.order_sn,
+            from: currentStatus || 'UNKNOWN',
+            to: order.order_status,
+          });
+        }
+      }
+
+      // Atualizar status no banco
+      if (updates.length > 0) {
+        for (const update of updates) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: updateError } = await (supabaseAdmin as any)
+            .from('shopee_orders')
+            .update({
+              order_status: update.order_status,
+              update_time: update.update_time,
+            })
+            .eq('order_sn', update.order_sn);
+
+          if (updateError) {
+            console.error(`[Shopee StatusResync] Erro ao atualizar ${update.order_sn}:`, updateError);
+          } else {
+            statusUpdated++;
+          }
+        }
+      }
+
+      // Rate limiting: pequeno delay entre batches
+      if (i + STATUS_RESYNC_BATCH_SIZE < orderSnList.length) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    } catch (batchError) {
+      console.error(`[Shopee StatusResync] Erro no batch ${batchNum}:`, batchError);
+      // Continuar com próximo batch em vez de falhar completamente
+    }
+  }
+
+  console.log(`[Shopee StatusResync] Concluído: ${orderSnList.length} verificados, ${statusUpdated} atualizados`);
+  
+  if (statusChanges.length > 0) {
+    console.log('[Shopee StatusResync] Mudanças de status:', JSON.stringify(statusChanges.slice(0, 20)));
+    if (statusChanges.length > 20) {
+      console.log(`[Shopee StatusResync] ... e mais ${statusChanges.length - 20} mudanças`);
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    data: {
+      mode: 'statusResyncOnly',
+      ordersChecked: orderSnList.length,
+      statusUpdated,
+      statusChanges: statusChanges.slice(0, 100), // Limitar resposta
+      periodDays,
+      durationMs: Date.now() - startTime,
+    },
+  });
 }
 
 // GET para verificar status do sync
