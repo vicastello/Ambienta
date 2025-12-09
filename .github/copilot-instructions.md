@@ -1,38 +1,32 @@
 # Guia rápido para IAs
-## Linguagem & estilo
-- Responda em português (Brasil), direto ao ponto, cite caminhos relativos (`app/...`, `lib/...`, `supabase/...`).
-- Dê exemplos executáveis e explique o “porquê” no elo Tiny → Supabase; evite boilerplate genérico.
+- Responda em português (Brasil), direto ao ponto, citando caminhos relativos (`app/...`, `lib/...`, `supabase/...`). Evite boilerplate; explique sempre o elo Tiny → Supabase.
 
-## Stack e forma de trabalhar
-- Next.js 16 (App Router) + React 19 + Tailwind 4; layout em `components/layout/AppLayout*`, páginas em `app/**`, integrações em `lib/**`.
-- Supabase Postgres é a fonte de verdade; Tiny ERP é o upstream. Tabelas-chave: `tiny_orders`, `tiny_pedido_itens`, `tiny_produtos`, `tiny_tokens`, `sync_settings/jobs/logs`.
-- Rotas `app/api/**` usam repositórios em `src/repositories/**`; não consultar Supabase direto no client.
+## Stack e arquitetura
+- Next.js 16 (App Router) + React 19 + Tailwind 4; layout em `components/layout/AppLayout*`, páginas em `app/**`, integrações/helpers em `lib/**`.
+- Supabase Postgres é a fonte de verdade; Tiny ERP é o upstream. Tabelas centrais: `tiny_orders`, `tiny_pedido_itens`, `tiny_produtos`, `tiny_tokens` (id=1), `sync_settings/jobs/logs`.
+- Rotas `app/api/**` devem usar repositórios em `src/repositories/**`; evite `supabase.from(...)` direto no client.
+- Clientes Supabase: `lib/supabaseClient.ts` (browser) e `lib/supabaseAdmin.ts` (server/scripts) tipados com `src/types/db-public.ts`; nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
 
-## Tiny → Supabase (pedidos)
-- `POST /api/tiny/sync` → `lib/syncProcessor.ts`: fatia datas, chama Tiny (`listarPedidosTinyPorPeriodo`), aplica backoff 429 e persiste via `upsertOrdersPreservingEnriched`.
-- Pós-passos obrigatórios em qualquer write em `tiny_orders`: `runFreteEnrichment` → `normalizeMissingOrderChannels` → `sincronizarItensAutomaticamente`.
-- Dashboard `/api/tiny/dashboard/resumo` usa cache local; novos cards devem reutilizar `DashboardClient` + `readCacheEntry/isCacheEntryFresh`.
+## Fluxo Tiny → Supabase (pedidos)
+- `POST /api/tiny/sync` chama `lib/syncProcessor.ts`: fatia datas, usa `tinyApi.listarPedidosTinyPorPeriodo` com backoff 429, e grava via `upsertOrdersPreservingEnriched`.
+- Pós-passos obrigatórios após qualquer write em `tiny_orders`: `runFreteEnrichment` → `normalizeMissingOrderChannels` → `sincronizarItensAutomaticamente` (garante itens e canais). Mantenha delays/rate limit (~100 req/min).
+- Itens passam por `lib/pedidoItensHelper.ts` para upsert de produtos antes de gravar `tiny_pedido_itens`.
 
-## Produtos, estoque e itens
-- Fluxo oficial de produtos via HTTP: crons chamam `/api/admin/cron/sync-produtos` → `lib/tinyApi.ts`; a função SQL `sync_produtos_from_tiny()` foi aposentada (drop em `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`). Cursores em `produtos_sync_cursor`.
-- Itens: use `lib/pedidoItensHelper.ts` para garantir upsert de produtos antes de gravar `tiny_pedido_itens`.
-- Normalização de canais: `lib/channelNormalizer.ts`. Respeite rate limit Tiny (~100 req/min) mantendo delays/batches existentes.
+## Produtos & estoque
+- Fluxo oficial via HTTP/cron: `/api/admin/cron/sync-produtos` → `lib/tinyApi.ts`; cursores `catalog`/`catalog_backfill` em `produtos_sync_cursor`.
+- Função SQL `sync_produtos_from_tiny()` está aposentada (drop em `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`); não reativar nem usar SQL direto.
+- Scripts úteis: `scripts/syncProdutosInitial.ts`, `scripts/jobSyncProdutos.ts`, `scripts/runProdutosBackfill.ts`, `scripts/showProdutosCursor.ts`, `scripts/resetProdutosCursor.ts`.
 
-## Supabase e migrations
-- Clientes: `lib/supabaseClient.ts` (browser) e `lib/supabaseAdmin.ts` (server/scripts) tipados com `src/types/db-public.ts`; nunca exponha `SUPABASE_SERVICE_ROLE_KEY`.
-- Baseline imutável: `supabase/migrations/20251126000000_v2_public_baseline.sql`. Novo schema: `supabase migration new ...` → editar → `supabase db reset` (local) → `supabase db push --linked`.
-- pg_cron/pg_net versionados em `supabase/migrations/**/*cron*.sql`; cron principal `/api/admin/cron/run-sync` (15 min) e `/api/admin/cron/sync-produtos` (2 min) usam tinyApi.
+## Cron, migrations e dados
+- Cron e pg_net versionados em `supabase/migrations/**/*cron*.sql` (ex.: `cron_run_tiny_sync` a cada 15 min, `cron_run_produtos_backfill`). Dev mock em `npm run dev:cron` ou `./start-dev-cron.sh`.
+- Baseline imutável: `supabase/migrations/20251126000000_v2_public_baseline.sql`. Novo schema: `supabase migration new ...` → editar → `supabase db reset` (local) → `supabase db push --linked --include-all`.
 
-## Scripts úteis (dev/ops)
-- Pedidos: `scripts/syncMonth.ts` (backfill), `scripts/enrichAll.ts` (frete/canal legado).
-- Produtos: `scripts/syncProdutosInitial.ts`, `scripts/jobSyncProdutos.ts` (ou via API `/api/admin/cron/sync-produtos`).
-- Cursores utilitários: `scripts/showProdutosCursor.ts`, `scripts/resetProdutosCursor.ts`.
+## Caches e frontend
+- Dashboard `/api/tiny/dashboard/resumo` usa `DashboardClient` com cache `localStorage` (`tiny_dash_state_v1:*`). Novos cards devem reutilizar `readCacheEntry/isCacheEntryFresh`.
+- Listagens (pedidos/produtos/compras) usam `lib/staleCache.ts` (`staleWhileRevalidate`) e debounces existentes (ex.: 350 ms em `app/compras`).
+- Estilo “liquid glass”: cards translúcidos com blur suave e destaque #009DA8; mantenha espaçamentos mobile-first (`flex-col gap-4 px-4`, só `md:` quando necessário). Confira `app/globals.css`, `components/ui/**`, `components/layout/AppLayout*` antes de criar UI nova.
 
-## Execução e build
+## Execução e ops
 - Dev: `npm run dev` (app), `npm run dev:cron` (cron mock), `npm run dev:full` (ambos).
-- Checks: `npm run lint`, `npm run build`.
-- Autenticação Tiny: `/api/tiny/auth/login → callback` grava `tiny_tokens` (id=1); use `getAccessTokenFromDbOrRefresh` e logue falhas em `sync_logs`.
-
-## Frontend/UX
-- Estilo “liquid glass”: cards translúcidos, blur suave, destaque #009DA8; confira `app/globals.css` e `components/ui/**` antes de criar novos componentes.
-- Mobile-first com `flex-col gap-4 px-4`; só adicione `md:` quando necessário. Listas/dashboards: `lib/staleCache.ts` + debounces existentes (ex.: 350 ms em `app/compras`).
+- Checks obrigatórios: `npm run lint`, `npm run build` após alterações.
+- Scripts de pedidos: `scripts/syncMonth.ts` (backfill por data), `scripts/enrichAll.ts` (frete/canal legado). Autenticação Tiny: `/api/tiny/auth/login → callback` grava `tiny_tokens`; tokens sempre via `getAccessTokenFromDbOrRefresh` e erros em `sync_logs`.
