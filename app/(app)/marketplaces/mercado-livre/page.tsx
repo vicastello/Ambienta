@@ -659,21 +659,39 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
               <AreaChart data={metrics.dailySeries}>
                 <defs>
                   <linearGradient id="meliValor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#009DA8" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#009DA8" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="#009DA8" stopOpacity={0.6} />
+                    <stop offset="100%" stopColor="#009DA8" stopOpacity={0.05} />
                   </linearGradient>
                   <linearGradient id="meliPedidos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis hide />
                 <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="valor" stroke="#009DA8" fill="url(#meliValor)" strokeWidth={2.2} name="Vendas (R$)" />
-                <Area type="monotone" dataKey="pedidos" stroke="#f59e0b" fill="url(#meliPedidos)" strokeWidth={2.2} name="Pedidos" />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+                <Area
+                  type="monotone"
+                  dataKey="valor"
+                  stroke="#009DA8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="url(#meliValor)"
+                  strokeWidth={1.75}
+                  name="Vendas (R$)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="pedidos"
+                  stroke="#f59e0b"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="url(#meliPedidos)"
+                  strokeWidth={1.75}
+                  name="Pedidos"
+                />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -696,16 +714,16 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
                 <defs>
                   {metrics.topStatuses.map((status) => (
                     <linearGradient key={status} id={`meli-${status}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={statusColor(status)} stopOpacity={0.35} />
-                      <stop offset="95%" stopColor={statusColor(status)} stopOpacity={0.05} />
+                      <stop offset="0%" stopColor={statusColor(status)} stopOpacity={0.5} />
+                      <stop offset="100%" stopColor={statusColor(status)} stopOpacity={0.05} />
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} horizontal={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis hide allowDecimals={false} />
                 <Tooltip />
-                <Legend />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
                 {metrics.topStatuses.map((status) => (
                   <Area
                     key={status}
@@ -713,7 +731,10 @@ function MeliChartsSection({ metrics, loading }: { metrics: Metrics; loading: bo
                     dataKey={status}
                     stackId="1"
                     stroke={statusColor(status)}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                     fill={`url(#meli-${status})`}
+                    strokeWidth={1.75}
                     name={status}
                   />
                 ))}
