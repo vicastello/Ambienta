@@ -395,40 +395,50 @@ export async function getAllMagaluOrdersForPeriod(params: {
 /**
  * Converte pedido da API para formato do banco
  */
-export function mapMagaluOrderToDb(order: MagaluOrder, tenantId?: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapMagaluOrderToDb(order: any, tenantId?: string) {
   const firstDelivery = order.deliveries?.[0];
-  const address = firstDelivery?.address;
+  const shipping = firstDelivery?.shipping;
+  const recipient = shipping?.recipient;
+  const address = recipient?.address;
+
+  // Valores vêm em centavos (normalizer: 100)
+  const normalizer = order.amounts?.normalizer || 100;
+  const totalAmount = (order.amounts?.total || 0) / normalizer;
+  const totalFreight = (order.amounts?.freight?.total || 0) / normalizer;
+  const totalDiscount = (order.amounts?.discount?.total || 0) / normalizer;
 
   return {
     id_order: order.code,
     id_order_marketplace: order.code,
     order_status: order.status,
     marketplace_name: 'Magalu',
-    store_name: order.channel?.name || 'Magazine Luiza',
+    store_name: order.channel?.extras?.alias || 'Magazine Luiza',
     tenant_id: tenantId,
 
     // Datas
     inserted_date: new Date().toISOString(),
-    purchased_date: order.placed_at,
+    purchased_date: order.purchased_at || order.created_at,
     approved_date: order.approved_at,
     updated_date: order.updated_at,
-    estimated_delivery_date: firstDelivery?.estimate_delivery_date,
-    handling_time_limit: order.handling_time?.limit_date,
+    estimated_delivery_date: shipping?.deadline?.limit_date,
+    handling_time_limit: shipping?.deadline?.limit_date,
 
-    // Valores
-    total_amount: order.total?.order || 0,
-    total_freight: order.total?.freight || 0,
-    total_discount: order.total?.discount || 0,
+    // Valores (convertidos de centavos para reais)
+    total_amount: totalAmount,
+    total_freight: totalFreight,
+    total_discount: totalDiscount,
 
     // Cliente/Destinatário
-    receiver_name: order.customer?.name || firstDelivery?.recipient?.name,
+    receiver_name: recipient?.name || order.customer?.name,
+    customer_name: order.customer?.name,
     customer_mail: order.customer?.email,
     delivery_address_city: address?.city,
     delivery_address_state: address?.state,
     delivery_address_full: address
-      ? `${address.street || ''} ${address.number || ''}, ${address.neighborhood || ''}, ${address.city || ''} - ${address.state || ''}, ${address.zip_code || ''}`
+      ? `${address.street || ''} ${address.number || ''}, ${address.district || ''}, ${address.city || ''} - ${address.state || ''}, ${address.zipcode || ''}`
       : null,
-    delivery_mode: firstDelivery?.type,
+    delivery_mode: shipping?.provider?.description || shipping?.provider?.name,
 
     // Metadata
     raw_payload: order,
@@ -440,7 +450,8 @@ export function mapMagaluOrderToDb(order: MagaluOrder, tenantId?: string) {
 /**
  * Converte itens do pedido para formato do banco
  */
-export function mapMagaluOrderItemsToDb(order: MagaluOrder) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapMagaluOrderItemsToDb(order: any) {
   const items: Array<{
     id_order: string;
     id_sku: string;
@@ -454,16 +465,24 @@ export function mapMagaluOrderItemsToDb(order: MagaluOrder) {
   }> = [];
 
   for (const delivery of order.deliveries || []) {
+    // Normalizer para converter de centavos para reais
+    const normalizer = delivery.amounts?.normalizer || 100;
+    
     for (const item of delivery.items || []) {
+      const itemNormalizer = item.amounts?.normalizer || item.unit_price?.normalizer || 100;
+      const unitPrice = (item.unit_price?.value || 0) / itemNormalizer;
+      const itemFreight = (item.amounts?.freight?.total || 0) / itemNormalizer;
+      const itemDiscount = (item.amounts?.discount?.total || 0) / itemNormalizer;
+      
       items.push({
         id_order: order.code,
-        id_sku: item.sku?.code || item.code,
-        id_order_package: null, // Não temos essa info na nova API
-        product_name: item.sku?.name || '',
-        quantity: item.quantity,
-        price: item.unit_price?.total || 0,
-        freight: item.unit_price?.freight || 0,
-        discount: item.unit_price?.discount || 0,
+        id_sku: item.info?.sku || item.sku?.code || item.code || '',
+        id_order_package: null,
+        product_name: item.info?.name || item.sku?.name || '',
+        quantity: item.quantity || 1,
+        price: unitPrice,
+        freight: itemFreight,
+        discount: itemDiscount,
         raw_payload: item,
       });
     }
