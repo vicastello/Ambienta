@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { saveTokensToDb } from '@/lib/magaluClientV2';
 
 /**
  * Callback OAuth do Magalu
  * Recebe o authorization code e troca por access_token e refresh_token
+ * Salva os tokens no Supabase para uso posterior
  */
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest) {
 
   try {
     console.log('[Magalu OAuth] Trocando code por tokens...');
+    console.log('[Magalu OAuth] State recebido:', state);
 
     // Trocar authorization code por tokens
     const tokenResponse = await fetch('https://id.magalu.com/oauth/token', {
@@ -63,19 +66,37 @@ export async function GET(req: NextRequest) {
     const tokenData = await tokenResponse.json();
 
     console.log('[Magalu OAuth] Tokens obtidos com sucesso!');
-    console.log('Access Token:', tokenData.access_token?.substring(0, 20) + '...');
-    console.log('Refresh Token:', tokenData.refresh_token?.substring(0, 20) + '...');
-    console.log('Expires in:', tokenData.expires_in, 'seconds');
-    console.log('Scopes:', tokenData.scope);
+    console.log('[Magalu OAuth] Access Token:', tokenData.access_token?.substring(0, 30) + '...');
+    console.log('[Magalu OAuth] Refresh Token:', tokenData.refresh_token?.substring(0, 30) + '...');
+    console.log('[Magalu OAuth] Expires in:', tokenData.expires_in, 'seconds');
+    console.log('[Magalu OAuth] Scopes:', tokenData.scope);
 
-    // Aqui você deve salvar os tokens em um banco de dados seguro
-    // Por enquanto, vamos apenas mostrar na URL (APENAS PARA DESENVOLVIMENTO)
+    // Extrair tenant_id do state se disponível
+    let tenantId: string | undefined;
+    if (state) {
+      try {
+        const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+        tenantId = stateData.tenant_id;
+      } catch {
+        // State inválido, ignorar
+      }
+    }
 
+    // Salvar tokens no Supabase
+    await saveTokensToDb({
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      token_type: tokenData.token_type || 'Bearer',
+      expires_in: tokenData.expires_in,
+      scope: tokenData.scope,
+      tenant_id: tenantId,
+    });
+
+    console.log('[Magalu OAuth] Tokens salvos no Supabase com sucesso!');
+
+    // Redirecionar para página de sucesso (sem tokens na URL por segurança)
     const successUrl = new URL('/marketplaces/magalu', req.url);
     successUrl.searchParams.set('auth_success', 'true');
-    successUrl.searchParams.set('access_token', tokenData.access_token);
-    successUrl.searchParams.set('refresh_token', tokenData.refresh_token);
-    successUrl.searchParams.set('expires_in', tokenData.expires_in);
 
     return NextResponse.redirect(successUrl);
 
