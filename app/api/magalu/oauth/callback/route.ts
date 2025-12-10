@@ -41,18 +41,19 @@ export async function GET(req: NextRequest) {
     console.log('[Magalu OAuth] State recebido:', state);
 
     // Trocar authorization code por tokens
+    // Usando application/x-www-form-urlencoded (padrão OAuth 2.0)
     const tokenResponse = await fetch('https://id.magalu.com/oauth/token', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
+      body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         redirect_uri: redirectUri,
         code: code,
         grant_type: 'authorization_code',
-      }),
+      }).toString(),
     });
 
     if (!tokenResponse.ok) {
