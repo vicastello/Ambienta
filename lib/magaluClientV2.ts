@@ -254,19 +254,32 @@ async function magaluRequest<T>(
   path: string,
   options: MagaluRequestOptions = {}
 ): Promise<T> {
+  const tokens = await getTokensFromDb();
+  if (!tokens) {
+    throw new Error('Tokens Magalu não encontrados. Faça login primeiro.');
+  }
+
   const accessToken = await getValidAccessToken();
   const { method = 'GET', body, headers = {} } = options;
 
   const url = `${MAGALU_API_BASE}${path}`;
 
+  // Headers obrigatórios para API do Magalu
+  const requestHeaders: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    ...headers,
+  };
+
+  // X-Tenant-Id é obrigatório para endpoints de seller
+  if (tokens.tenant_id) {
+    requestHeaders['X-Tenant-Id'] = tokens.tenant_id;
+  }
+
   const response = await fetch(url, {
     method,
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      ...headers,
-    },
+    headers: requestHeaders,
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
   });
@@ -277,7 +290,6 @@ async function magaluRequest<T>(
     // Se token inválido, tentar renovar e refazer requisição
     if (response.status === 401) {
       console.log('[Magalu] Token inválido, tentando renovar...');
-      const tokens = await getTokensFromDb();
       if (tokens) {
         await refreshAccessToken(tokens.refresh_token);
         // Refazer requisição com novo token
