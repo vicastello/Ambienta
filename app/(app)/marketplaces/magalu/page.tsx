@@ -1,35 +1,141 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import {
   AlertCircle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Award,
   BarChart2,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  HelpCircle,
   Info,
+  Lightbulb,
+  MapPin,
+  Package,
   PackageCheck,
   Percent,
   RefreshCcw,
   Search,
   ShoppingBag,
+  Sparkles,
+  Star,
+  Store,
+  Target,
+  Trophy,
   Truck,
   TruckIcon,
+  TrendingUp,
   Wallet,
-  XCircle,
   Zap,
 } from "lucide-react";
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
   CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
+  AreaChart,
+  Area,
 } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { MagaluOrder } from "@/src/types/magalu";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILIDADES DE ANIMAÇÃO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Hook para animação de entrada staggered (escalonada)
+function useStaggeredAnimation(itemCount: number, baseDelay = 50) {
+  return (index: number): CSSProperties => ({
+    animationDelay: `${index * baseDelay}ms`,
+    animationFillMode: "backwards",
+  });
+}
+
+// Componente wrapper para animações de fade-in
+function FadeInUp({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
+  return (
+    <div
+      className={`animate-fade-in-up ${className}`}
+      style={{ animationDelay: `${delay}ms`, animationFillMode: "backwards" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Componente de pulse suave para elementos que precisam de atenção
+function PulseHighlight({ children, active = false, className = "" }: { children: React.ReactNode; active?: boolean; className?: string }) {
+  return (
+    <div className={`${active ? "animate-pulse-soft" : ""} ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPONENTE DE TOOLTIP REUTILIZÁVEL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Contador estável para gerar IDs únicos sem Math.random durante render
+let tooltipIdCounter = 0;
+
+function InfoTooltip({ content, position = "top", id }: { content: string; position?: "top" | "bottom" | "left" | "right"; id?: string }) {
+  const [show, setShow] = useState(false);
+  const tooltipIdRef = useRef<string>(id || `tooltip-${++tooltipIdCounter}`);
+  const tooltipId = tooltipIdRef.current;
+
+  const positionClasses = {
+    top: "bottom-full left-1/2 -translate-x-1/2 mb-2",
+    bottom: "top-full left-1/2 -translate-x-1/2 mt-2",
+    left: "right-full top-1/2 -translate-y-1/2 mr-2",
+    right: "left-full top-1/2 -translate-y-1/2 ml-2",
+  };
+
+  const arrowClasses = {
+    top: "top-full left-1/2 -translate-x-1/2 border-t-slate-800 border-x-transparent border-b-transparent",
+    bottom: "bottom-full left-1/2 -translate-x-1/2 border-b-slate-800 border-x-transparent border-t-transparent",
+    left: "left-full top-1/2 -translate-y-1/2 border-l-slate-800 border-y-transparent border-r-transparent",
+    right: "right-full top-1/2 -translate-y-1/2 border-r-slate-800 border-y-transparent border-l-transparent",
+  };
+
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 hover:scale-110 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-400"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
+        aria-label="Mais informações"
+        aria-describedby={show ? tooltipId : undefined}
+        aria-expanded={show}
+      >
+        <HelpCircle className="w-4 h-4 transition-transform duration-200" aria-hidden="true" />
+      </button>
+      {show && (
+        <div
+          id={tooltipId}
+          className={`absolute z-50 ${positionClasses[position]} animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-200`}
+          role="tooltip"
+          aria-live="polite"
+        >
+          <div className="max-w-xs px-3 py-2 text-xs text-white bg-slate-800 dark:bg-slate-900 rounded-xl shadow-xl border border-slate-700/50 backdrop-blur-sm">
+            {content}
+          </div>
+          <div className={`absolute w-0 h-0 border-4 ${arrowClasses[position]}`} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 type MagaluOrdersApiSuccess = {
   ok: true;
@@ -60,13 +166,23 @@ const STATUS_OPTIONS = [
   { label: "canceled", value: "canceled" },
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  approved: "bg-emerald-100/80 text-emerald-700",
-  ready_to_ship: "bg-amber-100/80 text-amber-700",
-  shipped: "bg-sky-100/80 text-sky-700",
-  delivered: "bg-indigo-100/80 text-indigo-700",
-  canceled: "bg-rose-100/80 text-rose-700",
+const STATUS_STYLES: Record<string, { label: string; className: string }> = {
+  approved: { label: "Aprovado", className: "bg-emerald-100/80 text-emerald-700" },
+  ready_to_ship: { label: "Pronto para envio", className: "bg-amber-100/80 text-amber-700" },
+  shipped: { label: "Enviado", className: "bg-sky-100/80 text-sky-700" },
+  delivered: { label: "Entregue", className: "bg-indigo-100/80 text-indigo-700" },
+  canceled: { label: "Cancelado", className: "bg-rose-100/80 text-rose-700" },
+  cancelled: { label: "Cancelado", className: "bg-rose-100/80 text-rose-700" },
 };
+
+const STATUS_ORDER = [
+  "approved",
+  "ready_to_ship",
+  "shipped",
+  "delivered",
+  "canceled",
+  "cancelled",
+];
 
 const STATUS_HEX: Record<string, string> = {
   approved: "#10b981",
@@ -74,6 +190,7 @@ const STATUS_HEX: Record<string, string> = {
   shipped: "#0ea5e9",
   delivered: "#6366f1",
   canceled: "#f87171",
+  cancelled: "#f87171",
 };
 
 const formatCurrency = (value: number) =>
@@ -105,7 +222,57 @@ export default function MagaluPage() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [oauthSuccess, setOauthSuccess] = useState(false);
+  const [savingTokens, setSavingTokens] = useState(false);
   const requestIdRef = useRef(0);
+
+  // Detectar callback OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authSuccess = params.get('auth_success');
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const errorParam = params.get('error');
+
+    if (errorParam) {
+      setError(`Erro OAuth: ${errorParam}`);
+      // Limpar URL
+      window.history.replaceState({}, '', '/marketplaces/magalu');
+    }
+
+    if (authSuccess === 'true' && accessToken && refreshToken) {
+      setOauthSuccess(true);
+      // Salvar tokens automaticamente
+      saveTokens(accessToken, refreshToken);
+    }
+  }, []);
+
+  const saveTokens = async (accessToken: string, refreshToken: string) => {
+    setSavingTokens(true);
+    try {
+      const res = await fetch('/api/magalu/oauth/save-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Erro ao salvar tokens');
+      }
+
+      alert('✅ Tokens salvos com sucesso! Por favor, reinicie o servidor Next.js para aplicar as mudanças.');
+
+      // Limpar URL
+      window.history.replaceState({}, '', '/marketplaces/magalu');
+      setOauthSuccess(false);
+
+    } catch (err) {
+      console.error('Erro ao salvar tokens:', err);
+      alert('❌ Erro ao salvar tokens. Veja o console para mais detalhes.');
+    } finally {
+      setSavingTokens(false);
+    }
+  };
 
   const metrics: Metrics = useMemo(() => buildMetricsFromOrders(orders), [orders]);
 
@@ -196,7 +363,7 @@ export default function MagaluPage() {
   return (
     <AppLayout title="Magalu">
       <div className="space-y-6 pb-12">
-        <MagaluHeader
+        <MagaluHeaderSection
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
           loading={loading}
@@ -205,9 +372,16 @@ export default function MagaluPage() {
           lastUpdated={lastUpdated}
           notConfigured={notConfigured}
           totalOrders={orders.length}
+          metrics={metrics}
         />
 
-        <MagaluSummaryPanel summaries={metrics.summary} loading={loading && orders.length === 0} />
+        <MagaluSummaryPanel
+          summaries={metrics.summary}
+          loading={loading && orders.length === 0}
+          dailySeries={metrics.dailySeries}
+        />
+
+        <MagaluInsightsSection insights={metrics.insights} loading={loading && orders.length === 0} />
 
         <MagaluChartsSection metrics={metrics} loading={loading && orders.length === 0} />
 
@@ -245,6 +419,7 @@ function buildMetricsFromOrders(orders: MagaluOrder[]) {
   );
   const cancelados = orders.filter((o) => o.OrderStatus === "canceled" || o.OrderStatus === "cancelled").length;
   const pagos = orders.filter((o) => o.OrderStatus === "approved").length;
+  const prontosParaEnvio = orders.filter((o) => o.OrderStatus === "ready_to_ship").length;
   const ticketMedio = totalPedidos ? totalValor / totalPedidos : 0;
   const cancelRate = totalPedidos ? (cancelados / totalPedidos) * 100 : 0;
 
@@ -276,8 +451,6 @@ function buildMetricsFromOrders(orders: MagaluOrder[]) {
       pedidos: info.pedidos,
     }));
 
-  const allStatuses = Array.from(new Set(orders.map((o) => o.OrderStatus)));
-  const topStatuses = allStatuses.slice(0, 6);
   const statusTimeline = Object.entries(perDay)
     .sort((a, b) => {
       const [da] = a;
@@ -288,7 +461,7 @@ function buildMetricsFromOrders(orders: MagaluOrder[]) {
     })
     .map(([date, info]) => {
       const entry: Record<string, number | string> = { date };
-      topStatuses.forEach((status) => {
+      STATUS_ORDER.forEach((status) => {
         entry[status] = info.status[status] ?? 0;
       });
       return entry;
@@ -378,17 +551,17 @@ function buildMetricsFromOrders(orders: MagaluOrder[]) {
     summary: {
       totalPedidos,
       totalValor,
-      ticketMedio,
+      ticketMedio: ticketMedio,
       totalItens: itensVendidos,
       cancelRate,
       pagos,
+      prontosParaEnvio,
     },
     dailySeries,
     statusTimeline,
     statusDistribution,
     rankings: { products, cities, carriers },
     insights,
-    topStatuses,
   };
 }
 
@@ -401,38 +574,92 @@ function buildInsights(
   cities: Array<{ city: string; pedidos: number }>
 ) {
   if (!orders.length) return [];
+
   const maior = [...orders].sort((a, b) => Number(b.TotalAmount) - Number(a.TotalAmount))[0];
   const cancelPerc = totalPedidos ? Math.round((cancelados / totalPedidos) * 100) : 0;
   const topCarrier = carriers[0];
   const topCity = cities[0];
+  const ticketMedio = totalPedidos > 0 ? totalValor / totalPedidos : 0;
+
+  // Calcular melhor dia
+  const diasAgregados = orders.reduce<Record<string, { valor: number; pedidos: number }>>((acc, order) => {
+    const dateStr = order.PurchasedDate || order.InsertedDate;
+    if (!dateStr) return acc;
+    const dia = new Date(dateStr).toLocaleDateString("pt-BR", { weekday: "long" });
+    if (!acc[dia]) acc[dia] = { valor: 0, pedidos: 0 };
+    acc[dia].valor += Number(order.TotalAmount) || 0;
+    acc[dia].pedidos += 1;
+    return acc;
+  }, {});
+  const melhorDia = Object.entries(diasAgregados).sort((a, b) => b[1].valor - a[1].valor)[0];
+
+  // Calcular pedidos por hora (horário de pico)
+  const horasAgregadas = orders.reduce<Record<number, number>>((acc, order) => {
+    const dateStr = order.PurchasedDate || order.InsertedDate;
+    if (!dateStr) return acc;
+    const hora = new Date(dateStr).getHours();
+    acc[hora] = (acc[hora] || 0) + 1;
+    return acc;
+  }, {});
+  const horaPico = Object.entries(horasAgregadas).sort((a, b) => b[1] - a[1])[0];
 
   return [
     {
-      title: "Maior pedido",
-      body: `${formatCurrency(Number(maior.TotalAmount) || 0)} · ${formatDate(maior.PurchasedDate || maior.InsertedDate)} (${maior.IdOrder})`,
-      icon: Wallet,
+      title: "🏆 Maior pedido do período",
+      body: `${formatCurrency(Number(maior.TotalAmount) || 0)} em ${formatDate(maior.PurchasedDate || maior.InsertedDate)}`,
+      detail: `Pedido #${maior.IdOrder}`,
+      icon: Award,
+      type: "highlight" as const,
     },
     {
-      title: "Taxa de cancelamento",
-      body: `${cancelPerc}% dos pedidos no período`,
-      icon: Percent,
+      title: "📊 Taxa de cancelamento",
+      body: `${cancelPerc}% dos pedidos foram cancelados`,
+      detail: cancelPerc > 5 ? "Atenção: acima da média" : "Dentro do esperado",
+      icon: Target,
+      type: cancelPerc > 10 ? "warning" as const : cancelPerc > 5 ? "attention" as const : "success" as const,
+    },
+    melhorDia && {
+      title: "📅 Melhor dia da semana",
+      body: `${melhorDia[0].charAt(0).toUpperCase() + melhorDia[0].slice(1)} lidera com ${formatCurrency(melhorDia[1].valor)}`,
+      detail: `${melhorDia[1].pedidos} pedidos neste dia`,
+      icon: Star,
+      type: "info" as const,
+    },
+    horaPico && {
+      title: "⏰ Horário de pico",
+      body: `${horaPico[0]}h às ${(Number(horaPico[0]) + 1) % 24}h é o horário mais movimentado`,
+      detail: `${horaPico[1]} pedidos neste horário`,
+      icon: Zap,
+      type: "info" as const,
     },
     topCarrier && {
-      title: "Loja/Transportadora destaque",
-      body: `${topCarrier.carrier} · ${topCarrier.pedidos} pedidos`,
+      title: "🏪 Loja/transportadora favorita",
+      body: `${topCarrier.carrier} domina com ${topCarrier.pedidos} pedidos`,
+      detail: `${Math.round((topCarrier.pedidos / totalPedidos) * 100)}% dos pedidos`,
       icon: TruckIcon,
+      type: "info" as const,
     },
     topCity && {
-      title: "Cidade/UF em destaque",
-      body: `${topCity.city} · ${topCity.pedidos} pedidos`,
-      icon: Info,
+      title: "📍 Cidade destaque",
+      body: `${topCity.city} é o principal destino`,
+      detail: `${topCity.pedidos} pedidos para esta região`,
+      icon: MapPin,
+      type: "info" as const,
     },
     {
-      title: "Volume total",
-      body: `Faturamento somado: ${formatCurrency(totalValor)}`,
-      icon: CheckCircle2,
+      title: "💰 Ticket médio",
+      body: `${formatCurrency(ticketMedio)} por pedido`,
+      detail: ticketMedio > 100 ? "Excelente valor médio!" : "Oportunidade de upsell",
+      icon: TrendingUp,
+      type: ticketMedio > 150 ? "success" as const : "info" as const,
     },
-  ].filter(Boolean) as Array<{ title: string; body: string; icon: ComponentType<{ className?: string }> }>;
+  ].filter(Boolean) as Array<{
+    title: string;
+    body: string;
+    detail?: string;
+    icon: ComponentType<{ className?: string }>;
+    type: "highlight" | "success" | "warning" | "attention" | "info";
+  }>;
 }
 
 // Components
@@ -445,9 +672,10 @@ type HeaderProps = {
   lastUpdated: number | null;
   notConfigured: boolean;
   totalOrders: number;
+  metrics?: Metrics;
 };
 
-function MagaluHeader({
+function MagaluHeaderSection({
   statusFilter,
   setStatusFilter,
   loading,
@@ -456,73 +684,127 @@ function MagaluHeader({
   lastUpdated,
   notConfigured,
   totalOrders,
+  metrics,
 }: HeaderProps) {
   return (
-    <header className="relative overflow-hidden rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 sm:p-8 space-y-6 shadow-2xl">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#009DA8]/14 via-transparent to-white/12 dark:from-[#009DA8]/22 dark:to-slate-900/30" />
-      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-sm text-slate-500 dark:text-slate-400">Visão geral dos pedidos e desempenho de vendas no Magalu.</p>
-          <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Magalu</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-slate-900/60 px-3 py-1 text-xs text-slate-700 dark:text-slate-200">
-              <ShoppingBag className="w-4 h-4" />
-              {totalOrders} pedidos carregados
+    <header
+      className="relative overflow-hidden rounded-[24px] sm:rounded-[32px] border border-white/20 dark:border-white/5 shadow-2xl"
+      role="banner"
+      aria-label="Cabeçalho do Dashboard Magalu"
+    >
+      {/* Gradiente Magalu Premium */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#009DA8] via-[#00ADB8] to-[#00B5C3] dark:from-[#009DA8]/90 dark:via-[#008A94]/80 dark:to-[#007781]/70" aria-hidden="true" />
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMtNi42MjcgMC0xMiA1LjM3My0xMiAxMnM1LjM3MyAxMiAxMiAxMiAxMi01LjM3MyAxMi0xMi01LjM3My0xMi0xMi0xMnptMCAxOGMtMy4zMTQgMC02LTIuNjg2LTYtNnMyLjY4Ni02IDYtNiA2IDIuNjg2IDYgNi0yLjY4NiA2LTYgNnoiIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iLjA1Ii8+PC9nPjwvc3ZnPg==')] opacity-30" aria-hidden="true" />
+
+      <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
+        {/* Top Row: Logo + Status */}
+        <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Magalu Logo */}
+            <div className="flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-white/20 backdrop-blur-xl border border-white/30 shadow-lg" aria-hidden="true">
+              <Store className="w-6 h-6 sm:w-8 sm:h-8 text-white" aria-hidden="true" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight">Magalu</h1>
+              <p className="text-white/80 text-xs sm:text-sm mt-0.5 sm:mt-1">Dashboard de vendas e métricas</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2" role="status" aria-live="polite">
+            {/* Status Badge */}
+            <span
+              className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold backdrop-blur-xl transition-all ${
+                notConfigured
+                  ? "bg-amber-500/20 text-amber-100 border border-amber-300/30"
+                  : "bg-emerald-500/20 text-emerald-100 border border-emerald-300/30"
+              }`}
+              aria-label={notConfigured ? "Status: Integração pendente" : "Status: Conectado"}
+            >
+              <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${notConfigured ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} aria-hidden="true" />
+              {notConfigured ? "Pendente" : "Conectado"}
             </span>
-          </p>
+            {isMockMode && (
+              <span className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-white/10 border border-white/20 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white/90 backdrop-blur-xl" aria-label="Modo demonstração ativo">
+                <Sparkles className="w-3 h-3 sm:w-4 sm:h-4" aria-hidden="true" />
+                Demo
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            className={`rounded-full border px-4 py-2 text-sm font-semibold shadow-sm backdrop-blur ${
-              notConfigured
-                ? "border-amber-400 bg-amber-500/10 text-amber-700 dark:text-amber-200"
-                : "border-emerald-300/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200"
-            }`}
-          >
-            {notConfigured ? "Integração pendente" : "Conectado (env vars)"}
+
+        {/* Mini Métricas Rápidas */}
+        {metrics && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+            <div className="rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-4">
+              <p className="text-white/70 text-[10px] sm:text-xs uppercase tracking-wider mb-0.5 sm:mb-1">Faturamento</p>
+              <p className="text-lg sm:text-2xl font-bold text-white">{formatCurrency(metrics.summary.totalValor)}</p>
+            </div>
+            <div className="rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-4">
+              <p className="text-white/70 text-[10px] sm:text-xs uppercase tracking-wider mb-0.5 sm:mb-1">Pedidos</p>
+              <p className="text-lg sm:text-2xl font-bold text-white">{metrics.summary.totalPedidos}</p>
+            </div>
+            <div className="rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-4">
+              <p className="text-white/70 text-[10px] sm:text-xs uppercase tracking-wider mb-0.5 sm:mb-1">Ticket Médio</p>
+              <p className="text-lg sm:text-2xl font-bold text-white">{formatCurrency(metrics.summary.ticketMedio)}</p>
+            </div>
+            <div className="rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-4">
+              <p className="text-white/70 text-[10px] sm:text-xs uppercase tracking-wider mb-0.5 sm:mb-1">Itens</p>
+              <p className="text-lg sm:text-2xl font-bold text-white">{metrics.summary.totalItens}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Filtros */}
+        <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-3" role="group" aria-label="Filtros de visualização">
+          <div className="col-span-2 sm:col-span-1 rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-3">
+            <p className="text-[9px] sm:text-[10px] uppercase tracking-widest text-white/60 mb-1.5 sm:mb-2" id="status-filter-label">Status</p>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-labelledby="status-filter-label"
+              className="w-full px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium bg-white/10 text-white border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} className="bg-slate-800 text-white">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="col-span-2 sm:col-span-2 rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-2.5 sm:p-3 flex flex-col justify-center">
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              aria-label={loading ? "Atualizando dados..." : "Atualizar dados do Magalu"}
+              aria-busy={loading}
+              className="group w-full inline-flex items-center justify-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-[#009DA8] shadow-lg transition-all duration-300 hover:shadow-xl hover:shadow-white/30 sm:hover:scale-[1.03] active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-2 focus:ring-offset-[#009DA8]"
+            >
+              <RefreshCcw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform duration-300 ${loading ? "animate-spin" : "group-hover:rotate-180"}`} aria-hidden="true" />
+              <span className="hidden sm:inline">{loading ? "Atualizando..." : "Atualizar dados"}</span>
+              <span className="sm:hidden">{loading ? "..." : "Atualizar"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Info Row */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-white/70 text-[10px] sm:text-xs" role="contentinfo" aria-label="Informações do período">
+          <span className="inline-flex items-center gap-1 sm:gap-1.5">
+            <Package className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
+            <span>{totalOrders} pedidos</span>
           </span>
-          {isMockMode && (
-            <span className="rounded-full border border-amber-300/70 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-700 dark:text-amber-200 shadow-sm backdrop-blur">
-              Modo demonstração (dados mock)
+          {lastUpdated && (
+            <span className="inline-flex items-center gap-1 sm:gap-1.5">
+              <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Atualizado </span>
+              <time dateTime={new Date(lastUpdated).toISOString()}>
+                {new Date(lastUpdated).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </time>
             </span>
           )}
         </div>
       </div>
-
-      <div className="relative grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto]">
-        <div className="rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.28em] text-slate-500 dark:text-slate-300">Status</p>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="app-input w-full"
-          >
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-[18px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 flex items-center justify-center">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={loading}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 transition hover:shadow-xl hover:shadow-[#009DA8]/40 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            Atualizar
-          </button>
-        </div>
-      </div>
-
-      {lastUpdated && (
-        <p className="relative text-xs text-slate-500 dark:text-slate-400">
-          Atualizado em {new Date(lastUpdated).toLocaleString("pt-BR")}
-        </p>
-      )}
     </header>
   );
 }
@@ -532,110 +814,533 @@ type SummaryPanelProps = {
   loading: boolean;
 };
 
-function MagaluSummaryPanel({ summaries, loading }: SummaryPanelProps) {
+function MagaluSummaryPanel({ summaries, loading, dailySeries }: SummaryPanelProps & { dailySeries?: Array<{ date: string; valor: number; pedidos: number }> }) {
+  // Calcular variações baseado na série diária (primeira metade vs segunda metade)
+  const variations = useMemo(() => {
+    if (!dailySeries || dailySeries.length < 2) return null;
+    const mid = Math.floor(dailySeries.length / 2);
+    const firstHalf = dailySeries.slice(0, mid);
+    const secondHalf = dailySeries.slice(mid);
+
+    const firstValor = firstHalf.reduce((acc, d) => acc + d.valor, 0);
+    const secondValor = secondHalf.reduce((acc, d) => acc + d.valor, 0);
+    const firstPedidos = firstHalf.reduce((acc, d) => acc + d.pedidos, 0);
+    const secondPedidos = secondHalf.reduce((acc, d) => acc + d.pedidos, 0);
+
+    const valorChange = firstValor > 0 ? ((secondValor - firstValor) / firstValor) * 100 : 0;
+    const pedidosChange = firstPedidos > 0 ? ((secondPedidos - firstPedidos) / firstPedidos) * 100 : 0;
+    const ticketFirst = firstPedidos > 0 ? firstValor / firstPedidos : 0;
+    const ticketSecond = secondPedidos > 0 ? secondValor / secondPedidos : 0;
+    const ticketChange = ticketFirst > 0 ? ((ticketSecond - ticketFirst) / ticketFirst) * 100 : 0;
+
+    return { valorChange, pedidosChange, ticketChange };
+  }, [dailySeries]);
+
   const cards = [
-    { title: "Vendas (R$)", value: formatCurrency(summaries.totalValor), icon: Wallet, color: "text-[#009DA8] dark:text-[#00B5C3]" },
-    { title: "Pedidos", value: summaries.totalPedidos.toString(), icon: ShoppingBag, color: "text-emerald-500 dark:text-emerald-400" },
-    { title: "Ticket médio", value: summaries.totalPedidos ? formatCurrency(summaries.ticketMedio) : "—", icon: BarChart2, color: "text-amber-500 dark:text-amber-300" },
-    { title: "Itens vendidos", value: summaries.totalItens.toString(), icon: PackageCheck, color: "text-indigo-500 dark:text-indigo-300" },
-    { title: "Taxa de cancelamento", value: `${summaries.cancelRate.toFixed(1)}%`, icon: Percent, color: "text-rose-500 dark:text-rose-300" },
-    { title: "Pedidos aprovados", value: summaries.pagos.toString(), icon: CheckCircle2, color: "text-sky-500 dark:text-sky-300" },
+    {
+      title: "Faturamento Total",
+      value: formatCurrency(summaries.totalValor),
+      icon: Wallet,
+      color: "from-[#009DA8] to-[#00B5C3]",
+      iconBg: "bg-[#009DA8]/10",
+      iconColor: "text-[#009DA8]",
+      change: variations?.valorChange,
+      sparkData: dailySeries?.map(d => d.valor),
+      tooltip: "Soma total dos valores de todos os pedidos no período selecionado, incluindo frete.",
+    },
+    {
+      title: "Total de Pedidos",
+      value: summaries.totalPedidos.toString(),
+      icon: ShoppingBag,
+      color: "from-emerald-500 to-emerald-400",
+      iconBg: "bg-emerald-500/10",
+      iconColor: "text-emerald-500",
+      change: variations?.pedidosChange,
+      sparkData: dailySeries?.map(d => d.pedidos),
+      tooltip: "Quantidade total de pedidos realizados no período, independente do status.",
+    },
+    {
+      title: "Ticket Médio",
+      value: summaries.totalPedidos ? formatCurrency(summaries.ticketMedio) : "—",
+      icon: BarChart2,
+      color: "from-amber-500 to-amber-400",
+      iconBg: "bg-amber-500/10",
+      iconColor: "text-amber-500",
+      change: variations?.ticketChange,
+      tooltip: "Valor médio por pedido (faturamento ÷ número de pedidos). Indica o gasto médio dos clientes.",
+    },
+    {
+      title: "Itens Vendidos",
+      value: summaries.totalItens.toLocaleString("pt-BR"),
+      icon: PackageCheck,
+      color: "from-indigo-500 to-indigo-400",
+      iconBg: "bg-indigo-500/10",
+      iconColor: "text-indigo-500",
+      tooltip: "Quantidade total de itens vendidos em todos os pedidos do período.",
+    },
+    {
+      title: "Taxa de Cancelamento",
+      value: `${summaries.cancelRate.toFixed(1)}%`,
+      icon: Percent,
+      color: "from-rose-500 to-rose-400",
+      iconBg: "bg-rose-500/10",
+      iconColor: "text-rose-500",
+      isNegativeGood: true,
+      tooltip: "Porcentagem de pedidos cancelados em relação ao total. Valores menores são melhores.",
+    },
+    {
+      title: "Prontos para Envio",
+      value: summaries.prontosParaEnvio.toString(),
+      icon: Truck,
+      color: "from-sky-500 to-sky-400",
+      iconBg: "bg-sky-500/10",
+      iconColor: "text-sky-500",
+      urgent: summaries.prontosParaEnvio > 0,
+      tooltip: "Pedidos com status 'ready_to_ship' aguardando envio. Ação necessária!",
+    },
   ];
 
   if (loading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
         {cards.map((_, idx) => (
-          <div key={idx} className="h-28 rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 animate-pulse" />
+          <div key={idx} className="h-32 sm:h-36 rounded-[20px] sm:rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 animate-pulse" />
         ))}
       </div>
     );
   }
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map((card) => (
-        <SummaryCard key={card.title} title={card.title} value={card.value} icon={card.icon} colorClass={card.color} />
-      ))}
+    <section
+      className="grid gap-3 grid-cols-2 lg:grid-cols-3"
+      role="region"
+      aria-label="Indicadores chave de performance"
+    >
+      {cards.map((card) => {
+        const Icon = card.icon;
+        const hasChange = typeof card.change === "number" && card.change !== 0;
+        const isPositive = card.isNegativeGood ? (card.change ?? 0) < 0 : (card.change ?? 0) > 0;
+
+        return (
+          <article
+            key={card.title}
+            className="group relative rounded-[20px] sm:rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 sm:p-5 overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-slate-900/50 sm:hover:scale-[1.02] sm:hover:-translate-y-1 hover:border-white/80 dark:hover:border-white/20 animate-fade-in-up"
+            style={{ animationDelay: `${cards.indexOf(card) * 80}ms`, animationFillMode: "backwards" }}
+            aria-label={`${card.title}: ${card.value}`}
+          >
+            {/* Gradient accent line */}
+            <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${card.color} opacity-80 transition-all duration-300 group-hover:h-1.5 group-hover:opacity-100`} aria-hidden="true" />
+
+            {/* Urgency indicator */}
+            {card.urgent && (
+              <div className="absolute top-2 sm:top-3 right-2 sm:right-3" aria-hidden="true">
+                <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-amber-500" />
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-start justify-between mb-2 sm:mb-3">
+              <div className={`p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl ${card.iconBg} transition-all duration-300 group-hover:scale-110 group-hover:rotate-3`} aria-hidden="true">
+                <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${card.iconColor} transition-transform duration-300`} aria-hidden="true" />
+              </div>
+
+              {/* Variação */}
+              {hasChange && (
+                <div className={`flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-semibold ${
+                  isPositive
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                }`}>
+                  {isPositive ? (
+                    <ArrowUpRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  ) : (
+                    <ArrowDownRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  )}
+                  {Math.abs(card.change ?? 0).toFixed(1)}%
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              <p className="text-[10px] sm:text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 transition-colors duration-300 group-hover:text-slate-700 dark:group-hover:text-slate-300">
+                {card.title}
+              </p>
+              {/* Tooltip */}
+              {card.tooltip && (
+                <span className="hidden sm:inline-flex">
+                  <InfoTooltip content={card.tooltip} position="top" />
+                </span>
+              )}
+            </div>
+            <p className="text-xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight mt-0.5 sm:mt-1 transition-transform duration-300 group-hover:scale-105 origin-left">
+              {card.value}
+            </p>
+
+            {/* Mini Sparkline */}
+            {card.sparkData && card.sparkData.length > 1 && (
+              <div className="hidden sm:block mt-3 h-8 opacity-60 group-hover:opacity-100 transition-opacity">
+                <MiniSparkline data={card.sparkData} color={card.iconColor} />
+              </div>
+            )}
+
+            {hasChange && (
+              <p className="hidden sm:block text-[10px] text-slate-400 mt-2">
+                vs. período anterior
+              </p>
+            )}
+          </article>
+        );
+      })}
     </section>
+  );
+}
+
+// Mini Sparkline component para KPIs
+function MiniSparkline({ data, color }: { data: number[]; color: string }) {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const width = 100;
+  const height = 32;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(" ");
+
+  const colorMap: Record<string, string> = {
+    "text-[#009DA8]": "#009DA8",
+    "text-emerald-500": "#10b981",
+    "text-amber-500": "#f59e0b",
+    "text-indigo-500": "#6366f1",
+    "text-rose-500": "#f43f5e",
+    "text-sky-500": "#0ea5e9",
+  };
+  const strokeColor = colorMap[color] || "#94a3b8";
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`spark-${color}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={strokeColor} stopOpacity={0.3} />
+          <stop offset="100%" stopColor={strokeColor} stopOpacity={0.05} />
+        </linearGradient>
+      </defs>
+      <polygon
+        points={`0,${height} ${points} ${width},${height}`}
+        fill={`url(#spark-${color})`}
+      />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Seção de Insights Inteligentes
+function MagaluInsightsSection({ insights, loading }: { insights: Metrics["insights"]; loading: boolean }) {
+  if (loading) {
+    return (
+      <section className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 shadow-xl">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 rounded-lg bg-amber-500/10">
+            <Lightbulb className="w-5 h-5 text-amber-500" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Insights do Período</h3>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 rounded-2xl bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (!insights.length) return null;
+
+  const typeStyles = {
+    highlight: {
+      bg: "bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20",
+      border: "border-amber-200/60 dark:border-amber-500/20",
+      iconBg: "bg-amber-500/10",
+      iconColor: "text-amber-600 dark:text-amber-400",
+    },
+    success: {
+      bg: "bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20",
+      border: "border-emerald-200/60 dark:border-emerald-500/20",
+      iconBg: "bg-emerald-500/10",
+      iconColor: "text-emerald-600 dark:text-emerald-400",
+    },
+    warning: {
+      bg: "bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20",
+      border: "border-rose-200/60 dark:border-rose-500/20",
+      iconBg: "bg-rose-500/10",
+      iconColor: "text-rose-600 dark:text-rose-400",
+    },
+    attention: {
+      bg: "bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20",
+      border: "border-amber-200/60 dark:border-amber-500/20",
+      iconBg: "bg-amber-500/10",
+      iconColor: "text-amber-600 dark:text-amber-400",
+    },
+    info: {
+      bg: "bg-gradient-to-br from-slate-50 to-gray-50 dark:from-slate-800/40 dark:to-gray-900/40",
+      border: "border-slate-200/60 dark:border-slate-600/20",
+      iconBg: "bg-slate-500/10",
+      iconColor: "text-slate-600 dark:text-slate-400",
+    },
+  };
+
+  return (
+    <section
+      className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-6 shadow-xl"
+      role="region"
+      aria-labelledby="insights-heading"
+    >
+      <div className="flex items-center gap-3 mb-5">
+        <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20" aria-hidden="true">
+          <Lightbulb className="w-5 h-5 text-amber-500" aria-hidden="true" />
+        </div>
+        <div>
+          <h3 id="insights-heading" className="text-lg font-bold text-slate-900 dark:text-white">Insights do Período</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Destaques e tendências identificados</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" role="list">
+        {insights.map((insight, idx) => {
+          const Icon = insight.icon;
+          const styles = typeStyles[insight.type];
+
+          return (
+            <article
+              key={idx}
+              role="listitem"
+              className={`group relative rounded-2xl border ${styles.border} ${styles.bg} p-4 transition-all duration-300 hover:shadow-lg hover:shadow-slate-200/30 dark:hover:shadow-slate-900/30 hover:scale-[1.02] hover:-translate-y-0.5 animate-fade-in-up`}
+              style={{ animationDelay: `${idx * 100}ms`, animationFillMode: "backwards" }}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`p-2 rounded-xl ${styles.iconBg} shrink-0 transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`} aria-hidden="true">
+                  <Icon className={`w-4 h-4 ${styles.iconColor} transition-transform duration-200`} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1 leading-tight">
+                    {insight.title}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-snug">
+                    {insight.body}
+                  </p>
+                  {insight.detail && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-1 group-hover:translate-y-0">
+                      {insight.detail}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Custom tooltip para gráficos
+function ChartCustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string; color: string }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-white/60 dark:border-slate-700 shadow-2xl p-4 min-w-[180px]">
+      <p className="text-sm font-semibold text-slate-900 dark:text-white mb-2">{label}</p>
+      {payload.map((entry, index) => (
+        <div key={index} className="flex items-center justify-between gap-4 text-sm">
+          <span className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+            <span className="text-slate-600 dark:text-slate-300">{entry.name}</span>
+          </span>
+          <span className="font-semibold text-slate-900 dark:text-white">
+            {entry.name.includes("R$") ? formatCurrency(entry.value) : entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
 function MagaluChartsSection({ metrics, loading }: { metrics: Metrics; loading: boolean }) {
   return (
-    <section className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
+    <section className="grid gap-4 sm:gap-6 lg:grid-cols-2" role="region" aria-label="Gráficos de performance">
+      {/* Gráfico de Vendas */}
+      <div className="rounded-[20px] sm:rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6 shadow-xl" role="figure" aria-labelledby="sales-chart-title">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4 sm:mb-6">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Tendência de vendas e pedidos</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Valor total x quantidade por dia</p>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 sm:p-2 rounded-lg bg-[#009DA8]/10" aria-hidden="true">
+                <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#009DA8]" aria-hidden="true" />
+              </div>
+              <h3 id="sales-chart-title" className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Evolução de Vendas</h3>
+              <InfoTooltip content="Mostra a tendência diária de faturamento e número de pedidos no período selecionado." position="right" id="sales-chart-tooltip" />
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Faturamento e pedidos por dia</p>
           </div>
-          <Wallet className="w-5 h-5 text-[#009DA8]" />
+          <div className="flex items-center gap-3 sm:gap-4 text-[10px] sm:text-xs" role="legend" aria-label="Legenda do gráfico">
+            <span className="flex items-center gap-1 sm:gap-1.5">
+              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#009DA8]" aria-hidden="true" />
+              <span>Vendas</span>
+            </span>
+            <span className="flex items-center gap-1 sm:gap-1.5">
+              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500" aria-hidden="true" />
+              <span>Pedidos</span>
+            </span>
+          </div>
         </div>
-        <div className="h-64">
+        <div className="h-52 sm:h-72">
           {loading ? (
-            <div className="h-full rounded-2xl bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+            <div className="h-full rounded-xl sm:rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 animate-pulse" />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={metrics.dailySeries}>
+              <AreaChart data={metrics.dailySeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="magaluValor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#009DA8" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#009DA8" stopOpacity={0.05} />
+                  <linearGradient id="magaluGradientValor" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#009DA8" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#009DA8" stopOpacity={0.02} />
                   </linearGradient>
-                  <linearGradient id="magaluPedidos" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.05} />
+                  <linearGradient id="magaluGradientPedidos" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="valor" stroke="#009DA8" fill="url(#magaluValor)" strokeWidth={2.2} name="Vendas (R$)" />
-                <Area type="monotone" dataKey="pedidos" stroke="#f59e0b" fill="url(#magaluPedidos)" strokeWidth={2.2} name="Pedidos" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  dy={10}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  dx={-5}
+                  width={35}
+                  tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(0)}k` : value}
+                />
+                <Tooltip content={<ChartCustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="valor"
+                  stroke="#009DA8"
+                  strokeWidth={2.5}
+                  fill="url(#magaluGradientValor)"
+                  name="Vendas (R$)"
+                  dot={false}
+                  activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="pedidos"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  fill="url(#magaluGradientPedidos)"
+                  name="Pedidos"
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
+                />
               </AreaChart>
             </ResponsiveContainer>
           )}
         </div>
       </div>
 
-      <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
+      {/* Gráfico de Status + Distribuição */}
+      <div className="rounded-[20px] sm:rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-6 shadow-xl" role="figure" aria-labelledby="status-chart-title">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Status ao longo do tempo</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Volume diário por status</p>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-500/10" aria-hidden="true">
+                <BarChart2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" aria-hidden="true" />
+              </div>
+              <h3 id="status-chart-title" className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Distribuição de Status</h3>
+              <InfoTooltip content="Visualiza a distribuição dos pedidos por status ao longo do tempo. Útil para identificar gargalos operacionais." position="left" id="status-chart-tooltip" />
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Volume por status no período</p>
           </div>
         </div>
-        <div className="h-64">
+
+        {/* Status Pills */}
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide" role="list" aria-label="Distribuição por status">
+          {metrics.statusDistribution.map((status, idx) => (
+            <div
+              key={status.status}
+              role="listitem"
+              className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full bg-white/80 dark:bg-slate-800/80 border border-white/60 dark:border-slate-700 flex-shrink-0 transition-all duration-200 hover:scale-105 hover:shadow-md cursor-default animate-fade-in-up"
+              style={{ animationDelay: `${idx * 60}ms`, animationFillMode: "backwards" }}
+              aria-label={`${STATUS_STYLES[status.status]?.label || status.status}: ${status.count} pedidos`}
+            >
+              <span
+                className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full"
+                style={{ backgroundColor: getStatusColor(status.status) }}
+                aria-hidden="true"
+              />
+              <span className="text-[10px] sm:text-xs font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                {STATUS_STYLES[status.status]?.label || status.status}
+              </span>
+              <span className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-white">
+                {status.count}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="h-44 sm:h-56">
           {loading ? (
-            <div className="h-full rounded-2xl bg-white/60 dark:bg-slate-800/60 animate-pulse" />
+            <div className="h-full rounded-xl sm:rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 animate-pulse" />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={metrics.statusTimeline} stackOffset="none">
+              <AreaChart data={metrics.statusTimeline} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  {metrics.topStatuses.map((status) => (
-                    <linearGradient key={status} id={`magalu-${status}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={statusColor(status)} stopOpacity={0.35} />
-                      <stop offset="95%" stopColor={statusColor(status)} stopOpacity={0.05} />
+                  {STATUS_ORDER.map((status) => (
+                    <linearGradient key={status} id={`magalu-status-${status}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={getStatusColor(status)} stopOpacity={0.5} />
+                      <stop offset="100%" stopColor={getStatusColor(status)} stopOpacity={0.05} />
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} allowDecimals={false} />
-                <Tooltip />
-                <Legend />
-                {metrics.topStatuses.map((status) => (
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" strokeOpacity={0.5} vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={30}
+                />
+                <Tooltip content={<ChartCustomTooltip />} />
+                {STATUS_ORDER.slice(0, 4).map((status) => (
                   <Area
                     key={status}
                     type="monotone"
                     dataKey={status}
                     stackId="1"
-                    stroke={statusColor(status)}
-                    fill={`url(#magalu-${status})`}
-                    name={status}
+                    stroke={getStatusColor(status)}
+                    strokeWidth={1.5}
+                    fill={`url(#magalu-status-${status})`}
+                    name={STATUS_STYLES[status]?.label || status}
                   />
                 ))}
               </AreaChart>
@@ -647,99 +1352,381 @@ function MagaluChartsSection({ metrics, loading }: { metrics: Metrics; loading: 
   );
 }
 
+// Helper para cores de status
+function getStatusColor(status: string): string {
+  return STATUS_HEX[status] || "#94a3b8";
+}
+
 type RankingsSectionProps = {
   rankings: Metrics["rankings"];
   loading: boolean;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RANKING VISUAL CARDS - Medalhas, barras de progresso e animações
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RANK_BADGES = ["🥇", "🥈", "🥉"];
+const RANK_COLORS = [
+  "from-amber-400 to-yellow-500", // Ouro
+  "from-slate-300 to-slate-400",   // Prata
+  "from-amber-600 to-orange-500",  // Bronze
+];
+
 function MagaluRankingsSection({ rankings, loading }: RankingsSectionProps) {
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
-      <RankingCard
-        title="Top produtos"
-        subtitle="Itens mais vendidos (unidades)"
-        icon={PackageCheck}
-        loading={loading}
-        headers={["Produto", "Unidades", "Faturamento", "% Fat."]}
-        rows={rankings.products.map((p) => [p.name, p.units, formatCurrency(p.revenue), `${p.revenuePerc}%`])}
-      />
-      <RankingCard
-        title="Top cidades/UF"
-        subtitle="Destinos com mais pedidos"
-        icon={Truck}
-        loading={loading}
-        headers={["Cidade/UF", "Pedidos", "Faturamento", "% Ped."]}
-        rows={rankings.cities.map((c) => [c.city, c.pedidos, formatCurrency(c.valor), `${c.percent}%`])}
-      />
-      <RankingCard
-        title="Lojas/Transportadoras"
-        subtitle="Uso por loja/transportadora"
-        icon={TruckIcon}
-        loading={loading}
-        headers={["Loja/Transportadora", "Pedidos", "% Ped.", "Valor"]}
-        rows={rankings.carriers.map((c) => [c.carrier, c.pedidos, `${c.percent}%`, formatCurrency(c.valor)])}
-      />
+    <section className="space-y-4" role="region" aria-labelledby="rankings-heading">
+      {/* Título da seção */}
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#009DA8] to-[#00B5C3] flex items-center justify-center shadow-lg shadow-[#009DA8]/20" aria-hidden="true">
+          <Trophy className="w-5 h-5 text-white" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="rankings-heading" className="text-xl font-semibold text-slate-900 dark:text-white">Rankings</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Destaques do período selecionado</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3" role="list">
+        <ProductRankingCard products={rankings.products} loading={loading} />
+        <CityRankingCard cities={rankings.cities} loading={loading} />
+        <CarrierRankingCard carriers={rankings.carriers} loading={loading} />
+      </div>
     </section>
   );
 }
 
-function RankingCard({
-  title,
-  subtitle,
-  icon: Icon,
+function ProductRankingCard({
+  products,
   loading,
-  headers,
-  rows,
 }: {
-  title: string;
-  subtitle: string;
-  icon: ComponentType<{ className?: string }>;
-  loading: boolean;
-  headers: string[];
-  rows: Array<(string | number)[]>;
+  products: Array<{ name: string; units: number; revenue: number; revenuePerc: number }>;
+  loading?: boolean;
 }) {
+  const maxRevenue = products.length > 0 ? Math.max(...products.map(p => p.revenue)) : 1;
+
   return (
-    <div className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4">
+    <article
+      className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4 group hover:shadow-2xl hover:shadow-[#009DA8]/10 hover:border-[#009DA8]/30 transition-all duration-500 animate-fade-in-up"
+      style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+      role="listitem"
+      aria-labelledby="products-ranking-title"
+    >
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
+          <h3 id="products-ranking-title" className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <span className="text-2xl transition-transform duration-300 group-hover:scale-125 group-hover:rotate-12 inline-block" aria-hidden="true">🏆</span> Top Produtos
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300 group-hover:text-slate-600 dark:group-hover:text-slate-300">Campeões de vendas do período</p>
         </div>
-        <Icon className="w-5 h-5 text-[#009DA8]" />
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#009DA8] to-[#00B5C3] flex items-center justify-center shadow-lg shadow-[#009DA8]/30 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500" aria-hidden="true">
+          <ShoppingBag className="w-5 h-5 text-white" aria-hidden="true" />
+        </div>
       </div>
+
       {loading ? (
-        <div className="space-y-2">
-          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
-          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
-          <div className="h-6 rounded bg-white/60 dark:bg-slate-800/60 animate-pulse" />
-        </div>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">Sem dados suficientes.</p>
-      ) : (
-        <div className="space-y-2">
-          <div className="grid grid-cols-4 text-xs text-slate-500 dark:text-slate-400">
-            {headers.map((h) => (
-              <span key={h} className="truncate">
-                {h}
-              </span>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {rows.map((row, idx) => (
-              <div key={idx} className="grid grid-cols-4 text-sm text-slate-800 dark:text-slate-100">
-                {row.map((cell, cidx) => (
-                  <span key={cidx} className="truncate">
-                    {cell}
-                  </span>
-                ))}
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4" />
+                <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded w-full" />
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </div>
+      ) : products.length === 0 ? (
+        <div className="text-center py-6">
+          <Package className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Sem dados suficientes</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {products.slice(0, 5).map((product, idx) => {
+            const percentage = (product.revenue / maxRevenue) * 100;
+            const isTopThree = idx < 3;
+
+            return (
+              <div
+                key={idx}
+                className={`rounded-2xl p-3 transition-all duration-300 hover:scale-[1.02] ${
+                  isTopThree
+                    ? "bg-gradient-to-r from-white/80 to-white/40 dark:from-slate-800/80 dark:to-slate-800/40 border border-white/60 dark:border-slate-700/60"
+                    : "bg-white/40 dark:bg-slate-800/30"
+                }`}
+                style={{ animationDelay: `${idx * 100}ms` }}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Badge de posição */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-bold ${
+                    isTopThree
+                      ? `bg-gradient-to-br ${RANK_COLORS[idx]} text-white shadow-md`
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                  }`}>
+                    {isTopThree ? RANK_BADGES[idx] : idx + 1}
+                  </div>
+
+                  {/* Info do produto */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900 dark:text-white truncate text-sm">
+                        {product.name}
+                      </p>
+                      <span className="text-xs font-bold text-[#009DA8] whitespace-nowrap">
+                        {formatCurrency(product.revenue)}
+                      </span>
+                    </div>
+
+                    {/* Barra de progresso animada */}
+                    <div className="mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ease-out animate-progress-fill ${
+                          isTopThree
+                            ? "bg-gradient-to-r from-[#009DA8] to-[#00B5C3] shadow-sm shadow-[#009DA8]/30"
+                            : "bg-gradient-to-r from-slate-400 to-slate-300"
+                        }`}
+                        style={{ width: `${percentage}%`, animationDelay: `${idx * 150}ms` }}
+                      />
+                    </div>
+
+                    {/* Meta infos */}
+                    <div className="flex items-center justify-between mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{product.units} unidades</span>
+                      <span className="font-medium">{product.revenuePerc.toFixed(1)}% do total</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-    </div>
+    </article>
   );
 }
+
+function CityRankingCard({
+  cities,
+  loading,
+}: {
+  cities: Array<{ city: string; pedidos: number; valor: number; percent: number }>;
+  loading?: boolean;
+}) {
+  const maxPedidos = cities.length > 0 ? Math.max(...cities.map(c => c.pedidos)) : 1;
+
+  return (
+    <article
+      className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4 group hover:shadow-2xl hover:shadow-emerald-500/10 hover:border-emerald-500/30 transition-all duration-500 animate-fade-in-up"
+      style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+      role="listitem"
+      aria-labelledby="cities-ranking-title"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 id="cities-ranking-title" className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <span className="text-2xl transition-transform duration-300 group-hover:scale-125 group-hover:bounce inline-block" aria-hidden="true">📍</span> Top Cidades
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300 group-hover:text-slate-600 dark:group-hover:text-slate-300">Onde seus clientes estão</p>
+        </div>
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500" aria-hidden="true">
+          <MapPin className="w-5 h-5 text-white" aria-hidden="true" />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-2/3" />
+                <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : cities.length === 0 ? (
+        <div className="text-center py-6">
+          <MapPin className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Sem dados suficientes</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cities.slice(0, 5).map((city, idx) => {
+            const percentage = (city.pedidos / maxPedidos) * 100;
+            const isTopThree = idx < 3;
+
+            return (
+              <div
+                key={idx}
+                className={`rounded-2xl p-3 transition-all duration-300 hover:scale-[1.02] ${
+                  isTopThree
+                    ? "bg-gradient-to-r from-white/80 to-white/40 dark:from-slate-800/80 dark:to-slate-800/40 border border-white/60 dark:border-slate-700/60"
+                    : "bg-white/40 dark:bg-slate-800/30"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Badge de posição */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-bold ${
+                    isTopThree
+                      ? `bg-gradient-to-br ${RANK_COLORS[idx]} text-white shadow-md`
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                  }`}>
+                    {isTopThree ? RANK_BADGES[idx] : idx + 1}
+                  </div>
+
+                  {/* Info da cidade */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900 dark:text-white truncate text-sm">
+                        {city.city}
+                      </p>
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                        {city.pedidos} pedidos
+                      </span>
+                    </div>
+
+                    {/* Barra de progresso */}
+                    <div className="mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                          isTopThree
+                            ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                            : "bg-gradient-to-r from-slate-400 to-slate-300"
+                        }`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+
+                    {/* Meta infos */}
+                    <div className="flex items-center justify-between mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{formatCurrency(city.valor)} em vendas</span>
+                      <span className="font-medium">{city.percent.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function CarrierRankingCard({
+  carriers,
+  loading,
+}: {
+  carriers: Array<{ carrier: string; pedidos: number; percent: number; valor: number }>;
+  loading?: boolean;
+}) {
+  const maxPedidos = carriers.length > 0 ? Math.max(...carriers.map(c => c.pedidos)) : 1;
+
+  return (
+    <article
+      className="rounded-[36px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 sm:p-6 shadow-xl space-y-4 group hover:shadow-2xl hover:shadow-violet-500/10 hover:border-violet-500/30 transition-all duration-500 animate-fade-in-up"
+      style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
+      role="listitem"
+      aria-labelledby="carriers-ranking-title"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 id="carriers-ranking-title" className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <span className="text-2xl transition-transform duration-300 group-hover:scale-125 group-hover:-translate-x-1 inline-block" aria-hidden="true">🏪</span> Lojas/Transportadoras
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300 group-hover:text-slate-600 dark:group-hover:text-slate-300">Seus parceiros de vendas</p>
+        </div>
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center shadow-lg shadow-violet-500/30 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500" aria-hidden="true">
+          <Truck className="w-5 h-5 text-white" aria-hidden="true" />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-2/3" />
+                <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : carriers.length === 0 ? (
+        <div className="text-center py-6">
+          <Truck className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Sem dados suficientes</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {carriers.slice(0, 5).map((carrier, idx) => {
+            const percentage = (carrier.pedidos / maxPedidos) * 100;
+            const isTopThree = idx < 3;
+
+            return (
+              <div
+                key={idx}
+                className={`rounded-2xl p-3 transition-all duration-300 hover:scale-[1.02] ${
+                  isTopThree
+                    ? "bg-gradient-to-r from-white/80 to-white/40 dark:from-slate-800/80 dark:to-slate-800/40 border border-white/60 dark:border-slate-700/60"
+                    : "bg-white/40 dark:bg-slate-800/30"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Badge de posição */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg font-bold ${
+                    isTopThree
+                      ? `bg-gradient-to-br ${RANK_COLORS[idx]} text-white shadow-md`
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                  }`}>
+                    {isTopThree ? RANK_BADGES[idx] : idx + 1}
+                  </div>
+
+                  {/* Info da transportadora */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900 dark:text-white truncate text-sm">
+                        {carrier.carrier || "Não informada"}
+                      </p>
+                      <span className="text-xs font-bold text-violet-600 dark:text-violet-400 whitespace-nowrap">
+                        {carrier.pedidos} pedidos
+                      </span>
+                    </div>
+
+                    {/* Barra de progresso */}
+                    <div className="mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                          isTopThree
+                            ? "bg-gradient-to-r from-violet-500 to-purple-400"
+                            : "bg-gradient-to-r from-slate-400 to-slate-300"
+                        }`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+
+                    {/* Meta infos */}
+                    <div className="flex items-center justify-between mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{formatCurrency(carrier.valor)} em vendas</span>
+                      <span className="font-medium">{carrier.percent.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </article>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEÇÃO DE PEDIDOS - Lista com busca, filtros e detalhes expansíveis
+// ═══════════════════════════════════════════════════════════════════════════════
 
 type OrdersSectionProps = {
   orders: MagaluOrder[];
@@ -777,91 +1764,122 @@ function MagaluOrdersSection({
   setExpandedOrders,
 }: OrdersSectionProps) {
   const isInitialLoading = loading && totalOrders === 0;
-  const friendlyError =
-    error && (error.toLowerCase().includes("doctype") || error.toLowerCase().includes("html"))
-      ? "O Magalu retornou HTML (login ou erro interno) em vez de JSON. Verifique se o app está autorizado e se o token é válido."
-      : error;
-  const renderEmpty = !isInitialLoading && orders.length === 0 && !error && !notConfigured;
+  const renderEmpty = !loading && !error && !notConfigured && orders.length === 0;
+
+  const quickStats = useMemo(() => {
+    return {
+      readyToShip: orders.filter(o => o.OrderStatus === "ready_to_ship").length,
+      delivered: orders.filter(o => o.OrderStatus === "delivered").length,
+    };
+  }, [orders]);
 
   return (
-    <section className="glass-panel glass-tint border border-white/60 dark:border-white/10 rounded-[36px] shadow-2xl">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Pedidos</h2>
-          <p className="text-sm text-slate-500">Lista dos pedidos recentes do Magalu</p>
+    <section className="rounded-[28px] glass-panel glass-tint border border-white/60 dark:border-white/10 shadow-xl overflow-hidden">
+      <div className="px-6 pt-6 pb-4 border-b border-white/40 dark:border-slate-700/40">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-[#009DA8]" />
+              Pedidos
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {totalOrders} {totalOrders === 1 ? "pedido encontrado" : "pedidos encontrados"}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {quickStats.delivered > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-sm">
+                <CheckCircle2 className="w-3 h-3" /> {quickStats.delivered} entregues
+              </span>
+            )}
+            {quickStats.readyToShip > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-sm animate-pulse">
+                <span>📦</span> {quickStats.readyToShip} para enviar
+              </span>
+            )}
+            {loading && totalOrders > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/40 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                <RefreshCcw className="w-3 h-3 animate-spin" /> Atualizando...
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-          <span className="rounded-full bg-white/70 dark:bg-slate-800/60 px-3 py-1 border border-white/50 dark:border-slate-800/50">
-            {orders.length} pedidos exibidos
-          </span>
-          {loading && totalOrders > 0 && (
-            <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-              <RefreshCcw className="w-4 h-4 animate-spin" /> Atualizando...
-            </span>
-          )}
+
+        <div className="mt-4">
+          <div className="relative max-w-md">
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              className="w-full rounded-2xl bg-white/90 dark:bg-slate-900/60 border border-white/60 dark:border-slate-700/60 pl-11 pr-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#009DA8]/30 focus:border-[#009DA8]/40 transition-all shadow-sm"
+              placeholder="Buscar por número do pedido, cliente ou cidade..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="px-6 pb-4">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="app-input pl-9"
-            placeholder="Buscar por número do pedido ou cliente"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {error && !notConfigured && <MagaluErrorAlert message={friendlyError ?? "Erro ao carregar pedidos."} onRetry={onRetry} />}
-
+      {error && !notConfigured && <MagaluErrorAlert message={error} onRetry={onRetry} />}
       {notConfigured && <MagaluNotConfiguredCard onRetry={onRetry} loading={loading} />}
 
       {isMockMode && (
-        <p className="px-6 text-xs text-amber-600 dark:text-amber-300">
-          Dados simulados para testes. Os números podem não corresponder à loja real.
-        </p>
+        <div className="px-6 py-2 bg-amber-50/80 dark:bg-amber-900/20 border-b border-amber-200/60 dark:border-amber-800/40">
+          <p className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+            <span className="text-sm">⚠️</span> Dados simulados para testes.
+          </p>
+        </div>
       )}
 
       {isInitialLoading && (
-        <div className="px-6 pb-6 space-y-3">
-          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
-          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
-          <div className="h-12 rounded-2xl bg-white/60 dark:bg-slate-800/70 animate-pulse" />
-          <p className="text-sm text-slate-500 dark:text-slate-400 px-1">Carregando pedidos do Magalu...</p>
+        <div className="px-6 py-6 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-2xl bg-white/60 dark:bg-slate-800/60 p-4 animate-pulse">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/3" />
+                  <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded w-2/3" />
+                </div>
+                <div className="h-8 w-20 bg-slate-200 dark:bg-slate-700 rounded-full" />
+              </div>
+            </div>
+          ))}
+          <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-2">Carregando pedidos do Magalu...</p>
         </div>
       )}
 
       {renderEmpty && (
-        <div className="px-6 pb-6">
-          <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/50 p-6 text-center text-slate-500 dark:text-slate-400 space-y-2">
-            <AlertCircle className="w-5 h-5 mx-auto text-slate-400" />
-            <p className="font-semibold">Nenhum pedido encontrado neste período.</p>
-            <p className="text-sm">Tente ampliar o período ou alterar o status.</p>
+        <div className="px-6 py-8">
+          <div className="rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-white/40 dark:bg-slate-900/40 p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+              <Package className="w-8 h-8 text-slate-400" />
+            </div>
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Nenhum pedido encontrado</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Tente alterar os filtros.</p>
           </div>
         </div>
       )}
 
       {orders.length > 0 && !notConfigured && (
         <>
-          <div className="hidden md:block overflow-x-auto px-6 pb-6">
+          <div className="hidden md:block overflow-x-auto">
             <MagaluOrdersTable orders={orders} expandedOrders={expandedOrders} setExpandedOrders={setExpandedOrders} />
           </div>
 
-          <div className="md:hidden px-6 pb-6 space-y-3">
+          <div className="md:hidden px-4 py-4 space-y-3">
             <MagaluOrdersCardsMobile orders={orders} expandedOrders={expandedOrders} setExpandedOrders={setExpandedOrders} />
           </div>
 
           {(hasMore || nextCursor) && (
-            <div className="px-6 pb-6">
+            <div className="px-6 pb-6 pt-2">
               <button
                 type="button"
                 disabled={loadingMore || !nextCursor}
                 onClick={onLoadMore}
-                className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-[#009DA8]/60 bg-white/70 dark:bg-slate-900/60 px-4 py-2 text-sm font-semibold text-[#009DA8] dark:text-[#00B5C3] shadow-sm hover:bg-[#009DA8]/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="group w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 hover:shadow-xl hover:shadow-[#009DA8]/40 hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                {loadingMore ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+                {loadingMore ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4 transition-transform duration-300 group-hover:rotate-12" />}
                 {loadingMore ? "Carregando..." : "Carregar mais pedidos"}
               </button>
             </div>
@@ -872,200 +1890,175 @@ function MagaluOrdersSection({
   );
 }
 
-function MagaluOrdersTable({
-  orders,
-  expandedOrders,
-  setExpandedOrders,
-}: {
-  orders: MagaluOrder[];
-  expandedOrders: Record<string, boolean>;
-  setExpandedOrders: (value: Record<string, boolean>) => void;
-}) {
-  const toggle = (id: string) => {
-    setExpandedOrders({ ...expandedOrders, [id]: !expandedOrders[id] });
+function getModernStatusStyle(status: string) {
+  const styles: Record<string, { label: string; icon: string; bgClass: string; textClass: string; pulseClass?: string }> = {
+    approved: { label: "Aprovado", icon: "✅", bgClass: "bg-emerald-100/80 dark:bg-emerald-900/40", textClass: "text-emerald-700 dark:text-emerald-300" },
+    ready_to_ship: { label: "Pronto para envio", icon: "📦", bgClass: "bg-amber-100/80 dark:bg-amber-900/40", textClass: "text-amber-700 dark:text-amber-300", pulseClass: "animate-pulse" },
+    shipped: { label: "Enviado", icon: "🚚", bgClass: "bg-sky-100/80 dark:bg-sky-900/40", textClass: "text-sky-700 dark:text-sky-300" },
+    delivered: { label: "Entregue", icon: "✔️", bgClass: "bg-indigo-100/80 dark:bg-indigo-900/40", textClass: "text-indigo-700 dark:text-indigo-300" },
+    canceled: { label: "Cancelado", icon: "❌", bgClass: "bg-rose-100/80 dark:bg-rose-900/40", textClass: "text-rose-700 dark:text-rose-300" },
+    cancelled: { label: "Cancelado", icon: "❌", bgClass: "bg-rose-100/80 dark:bg-rose-900/40", textClass: "text-rose-700 dark:text-rose-300" },
   };
 
-  return (
-    <table className="min-w-full text-sm text-left">
-      <thead>
-        <tr className="text-slate-500 dark:text-slate-400">
-          <th className="py-3 pr-4">ID</th>
-          <th className="py-3 pr-4">Status</th>
-          <th className="py-3 pr-4">Data</th>
-          <th className="py-3 pr-4">Valor</th>
-          <th className="py-3 pr-4">Itens</th>
-          <th className="py-3 pr-4">Cliente</th>
-          <th className="py-3 pr-4">Cidade/UF</th>
-          <th className="py-3 pr-4">Marketplace</th>
-          <th className="py-3 pr-4">Detalhes</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-white/40 dark:divide-slate-800/60">
-        {orders.map((order) => {
-          const statusClass = STATUS_COLORS[order.OrderStatus] ?? "bg-slate-100/80 text-slate-700";
-          const qtdItens = order.Products?.reduce((acc, item) => acc + (item.Quantity || 0), 0) ?? 0;
-          const city = order.DeliveryAddressCity ?? "—";
-          const state = order.DeliveryAddressState ?? "";
-          const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
-          const expanded = expandedOrders[order.IdOrder];
-          return (
-            <tr key={order.IdOrder} className="text-slate-800 dark:text-slate-100 align-top">
-              <td className="py-3 pr-4 font-semibold">{order.IdOrder}</td>
-              <td className="py-3 pr-4">
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
-                  {order.OrderStatus}
-                </span>
-              </td>
-              <td className="py-3 pr-4">{formatDate(order.PurchasedDate || order.InsertedDate)}</td>
-              <td className="py-3 pr-4">{formatCurrency(Number(order.TotalAmount) || 0)}</td>
-              <td className="py-3 pr-4">{qtdItens || "—"}</td>
-              <td className="py-3 pr-4">{order.ReceiverName || "—"}</td>
-              <td className="py-3 pr-4 max-w-[200px] truncate">{cityInfo}</td>
-              <td className="py-3 pr-4">{order.MarketplaceName || order.StoreName || "—"}</td>
-              <td className="py-3 pr-4">
-                <button
-                  type="button"
-                  onClick={() => toggle(order.IdOrder)}
-                  className="text-xs font-semibold text-[#009DA8] hover:underline"
-                >
-                  {expanded ? "Esconder itens" : "Ver itens"}
-                </button>
-              </td>
-              {expanded && (
-                <td className="py-3 pr-4" colSpan={9}>
-                  <MagaluOrderItemsList items={order.Products} />
-                </td>
-              )}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+  return styles[status] || { label: status, icon: "📄", bgClass: "bg-slate-100/80 dark:bg-slate-800/40", textClass: "text-slate-700 dark:text-slate-300" };
 }
 
-function MagaluOrdersCardsMobile({
-  orders,
-  expandedOrders,
-  setExpandedOrders,
-}: {
-  orders: MagaluOrder[];
-  expandedOrders: Record<string, boolean>;
-  setExpandedOrders: (value: Record<string, boolean>) => void;
-}) {
-  const toggle = (id: string) => {
-    setExpandedOrders({ ...expandedOrders, [id]: !expandedOrders[id] });
+function MagaluOrdersTable({ orders, expandedOrders, setExpandedOrders }: { orders: MagaluOrder[]; expandedOrders: Record<string, boolean>; setExpandedOrders: (value: Record<string, boolean>) => void }) {
+  const toggle = (orderId: string) => {
+    setExpandedOrders({ ...expandedOrders, [orderId]: !expandedOrders[orderId] });
   };
 
   return (
-    <>
+    <div className="overflow-x-auto">
+      <table className="min-w-full">
+        <thead>
+          <tr className="bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200/60 dark:border-slate-700/60">
+            <th className="py-3.5 px-6 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pedido</th>
+            <th className="py-3.5 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+            <th className="py-3.5 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Data</th>
+            <th className="py-3.5 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Valor</th>
+            <th className="py-3.5 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cliente</th>
+            <th className="py-3.5 px-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Destino</th>
+            <th className="py-3.5 px-4 text-center text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ações</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+          {orders.map((order, idx) => {
+            const statusStyle = getModernStatusStyle(order.OrderStatus);
+            const qtdItens = order.Products.length;
+            const expanded = expandedOrders[order.IdOrder];
+            const isUrgent = order.OrderStatus === "ready_to_ship";
+
+            return (
+              <tr key={order.IdOrder} className={`hover:bg-white/60 dark:hover:bg-slate-800/40 transition-all duration-200 animate-fade-in-up ${isUrgent ? "bg-amber-50/30 dark:bg-amber-900/10" : ""}`} style={{ animationDelay: `${idx * 40}ms`, animationFillMode: "backwards" }}>
+                <td className="py-4 px-6">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${isUrgent ? "bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/20" : "bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600"}`}>{statusStyle.icon}</div>
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white text-sm">{order.IdOrder}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{qtdItens} {qtdItens === 1 ? "item" : "itens"}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-4 px-4">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${statusStyle.bgClass} ${statusStyle.textClass} ${statusStyle.pulseClass || ""}`}>
+                    <span>{statusStyle.icon}</span>{statusStyle.label}
+                  </span>
+                </td>
+                <td className="py-4 px-4"><p className="text-sm text-slate-700 dark:text-slate-200">{formatDate(order.PurchasedDate || order.InsertedDate)}</p></td>
+                <td className="py-4 px-4"><p className="font-bold text-[#009DA8] text-sm">{formatCurrency(Number(order.TotalAmount) || 0)}</p></td>
+                <td className="py-4 px-4"><p className="text-sm text-slate-700 dark:text-slate-200 truncate max-w-[140px]">{order.ReceiverName || "—"}</p></td>
+                <td className="py-4 px-4"><p className="text-sm text-slate-700 dark:text-slate-200 truncate max-w-[160px]">{order.DeliveryAddressCity ? `${order.DeliveryAddressCity} - ${order.DeliveryAddressState || ""}` : "—"}</p></td>
+                <td className="py-4 px-4 text-center">
+                  <button type="button" onClick={() => toggle(order.IdOrder)} className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all duration-200 transform hover:scale-105 active:scale-95 ${expanded ? "bg-[#009DA8] text-white shadow-lg shadow-[#009DA8]/30" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-[#009DA8]/10 hover:text-[#009DA8]"}`}>
+                    <span className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▼</span>{expanded ? "Fechar" : "Itens"}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
       {orders.map((order) => {
-        const statusClass = STATUS_COLORS[order.OrderStatus] ?? "bg-slate-100/80 text-slate-700";
-        const qtdItens = order.Products?.reduce((acc, item) => acc + (item.Quantity || 0), 0) ?? 0;
-        const city = order.DeliveryAddressCity ?? "—";
-        const state = order.DeliveryAddressState ?? "";
-        const cityInfo = `${city}${state ? ` - ${state}` : ""}`;
         const expanded = expandedOrders[order.IdOrder];
+        if (!expanded) return null;
         return (
-          <div
-            key={order.IdOrder}
-            className="rounded-2xl border border-white/60 dark:border-slate-800 glass-panel glass-tint p-4 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">Pedido</p>
-                <p className="text-lg font-semibold text-slate-900 dark:text-white">{order.IdOrder}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500">Valor</p>
-                <p className="text-base font-semibold text-slate-900 dark:text-white">
-                  {formatCurrency(Number(order.TotalAmount) || 0)}
-                </p>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div className="flex flex-col gap-1">
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
-                  {order.OrderStatus}
-                </span>
-                <span className="inline-flex items-center rounded-full bg-white/70 dark:bg-slate-800/70 px-3 py-1 text-xs text-slate-700 dark:text-slate-200">
-                  {formatDate(order.PurchasedDate || order.InsertedDate)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1 text-right">
-                <p className="text-xs text-slate-500">Marketplace</p>
-                <p className="font-medium text-slate-800 dark:text-slate-100">{order.MarketplaceName || order.StoreName || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Cliente</p>
-                <p className="font-medium text-slate-800 dark:text-slate-100">{order.ReceiverName || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Cidade/UF</p>
-                <p className="font-medium text-slate-800 dark:text-slate-100">{cityInfo}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Qtd. itens</p>
-                <p className="font-medium text-slate-800 dark:text-slate-100">{qtdItens || "—"}</p>
-              </div>
-            </div>
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => toggle(order.IdOrder)}
-                className="text-xs font-semibold text-[#009DA8] hover:underline"
-              >
-                {expanded ? "Esconder itens" : "Ver itens"}
-              </button>
-              {expanded && <MagaluOrderItemsList items={order.Products} />}
-            </div>
+          <div key={`items-${order.IdOrder}`} className="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-200/60 dark:border-slate-700/60 animate-in slide-in-from-top-2 fade-in-0 duration-300">
+            <MagaluOrderItemsList items={order.Products} orderId={order.IdOrder} />
           </div>
         );
       })}
-    </>
-  );
-}
-
-function MagaluOrderItemsList({ items }: { items: MagaluOrder["Products"] }) {
-  if (!items || items.length === 0) {
-    return <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Sem itens informados.</p>;
-  }
-  return (
-    <div className="mt-3 rounded-2xl border border-white/50 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 p-3 space-y-2">
-      {items.map((item) => (
-        <div key={`${item.IdSku}`} className="flex justify-between text-xs text-slate-700 dark:text-slate-200">
-          <div className="space-y-1">
-            <p className="font-semibold text-slate-900 dark:text-white">{item.IdSku}</p>
-            <p className="text-slate-500 dark:text-slate-400">Pacote: {item.IdOrderPackage ?? "—"}</p>
-          </div>
-          <div className="text-right space-y-1">
-            <p>{formatCurrency(Number(item.Price) || 0)}</p>
-            <p className="text-slate-500 dark:text-slate-400">Qtd: {item.Quantity || 0}</p>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
 
-// UI atoms
-type SummaryCardProps = {
-  title: string;
-  value: string;
-  icon: ComponentType<{ className?: string }>;
-  colorClass?: string;
-  helper?: string;
-};
+function MagaluOrdersCardsMobile({ orders, expandedOrders, setExpandedOrders }: { orders: MagaluOrder[]; expandedOrders: Record<string, boolean>; setExpandedOrders: (value: Record<string, boolean>) => void }) {
+  const toggle = (orderId: string) => {
+    setExpandedOrders({ ...expandedOrders, [orderId]: !expandedOrders[orderId] });
+  };
 
-function SummaryCard({ title, value, icon: Icon, colorClass = "text-[var(--accent)]", helper }: SummaryCardProps) {
   return (
-    <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs uppercase tracking-wide text-slate-500 truncate">{title}</p>
-        <Icon className={`w-5 h-5 ${colorClass} shrink-0`} />
+    <div>
+      {orders.map((order, idx) => {
+        const statusStyle = getModernStatusStyle(order.OrderStatus);
+        const qtdItens = order.Products.length;
+        const expanded = expandedOrders[order.IdOrder];
+        const isUrgent = order.OrderStatus === "ready_to_ship";
+
+        return (
+          <article key={order.IdOrder} className={`rounded-3xl border shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 animate-fade-in-up mb-3 ${isUrgent ? "border-amber-200 dark:border-amber-800/60 bg-gradient-to-br from-amber-50/80 to-white/80 dark:from-amber-900/20 dark:to-slate-900/80" : "border-white/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80"}`} style={{ animationDelay: `${idx * 80}ms`, animationFillMode: "backwards" }}>
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${isUrgent ? "bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/30" : "bg-gradient-to-br from-[#009DA8] to-[#00B5C3] shadow-lg shadow-[#009DA8]/20"}`}>{statusStyle.icon}</div>
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white">{order.IdOrder}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{formatDate(order.PurchasedDate || order.InsertedDate)}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-lg text-[#009DA8]">{formatCurrency(Number(order.TotalAmount) || 0)}</p>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusStyle.bgClass} ${statusStyle.textClass} ${statusStyle.pulseClass || ""}`}>{statusStyle.label}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white/60 dark:bg-slate-700/40 p-2.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Cliente</p>
+                  <p className="font-medium text-sm text-slate-800 dark:text-slate-100 truncate">{order.ReceiverName || "—"}</p>
+                </div>
+                <div className="col-span-2 rounded-xl bg-white/60 dark:bg-slate-700/40 p-2.5">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Destino</p>
+                  <p className="font-medium text-sm text-slate-800 dark:text-slate-100 line-clamp-2">📍 {order.DeliveryAddressCity ? `${order.DeliveryAddressCity} - ${order.DeliveryAddressState || ""}` : "—"}</p>
+                </div>
+              </div>
+
+              <button type="button" onClick={() => toggle(order.IdOrder)} className={`mt-4 w-full rounded-xl py-2.5 text-sm font-semibold transition-all duration-300 transform active:scale-[0.98] ${expanded ? "bg-[#009DA8] text-white shadow-lg shadow-[#009DA8]/30" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600"}`}>
+                <span className={`inline-block transition-transform duration-300 ${expanded ? "rotate-180" : ""}`}>▼</span>
+                {expanded ? ` Esconder ${qtdItens} ${qtdItens === 1 ? "item" : "itens"}` : ` Ver ${qtdItens} ${qtdItens === 1 ? "item" : "itens"}`}
+              </button>
+            </div>
+
+            {expanded && (
+              <div className="border-t border-slate-200/60 dark:border-slate-700/60 bg-slate-50/80 dark:bg-slate-900/40 p-4 animate-in slide-in-from-top-2 fade-in-0 duration-300">
+                <MagaluOrderItemsList items={order.Products} orderId={order.IdOrder} />
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function MagaluOrderItemsList({ items, orderId }: { items: MagaluOrder["Products"]; orderId: string }) {
+  if (!items || items.length === 0) {
+    return (
+      <div className="text-center py-4">
+        <Package className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+        <p className="text-sm text-slate-500 dark:text-slate-400">Sem itens informados</p>
       </div>
-      <p className={`text-3xl font-semibold ${colorClass} truncate`}>{value}</p>
-      {helper && <p className="text-xs text-slate-500 mt-2 truncate">{helper}</p>}
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+        <span>📦</span> Itens do pedido #{orderId}
+      </p>
+      {items.map((item, idx) => (
+        <div key={idx} className="flex items-center gap-3 rounded-2xl bg-white/80 dark:bg-slate-800/60 p-3 border border-white/60 dark:border-slate-700/60 hover:shadow-md hover:scale-[1.01] hover:border-slate-200 dark:hover:border-slate-600 transition-all duration-200 animate-fade-in-up" style={{ animationDelay: `${idx * 60}ms`, animationFillMode: "backwards" }}>
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-lg flex-shrink-0 transition-transform duration-300 hover:scale-110 hover:rotate-6">🛍️</div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">{item.IdSku}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Qtd: {item.Quantity || 1}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="font-bold text-[#009DA8]">{formatCurrency(Number(item.Price) || 0)}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1079,12 +2072,7 @@ function MagaluErrorAlert({ message, onRetry }: { message: string; onRetry: () =
           <p className="font-semibold">Não foi possível carregar os pedidos do Magalu.</p>
           <p className="text-sm">{message}</p>
         </div>
-        <button
-          onClick={onRetry}
-          className="text-xs font-semibold underline decoration-rose-500 hover:opacity-80"
-        >
-          Tentar novamente
-        </button>
+        <button onClick={onRetry} className="text-xs font-semibold underline decoration-rose-500 hover:opacity-80">Tentar novamente</button>
       </div>
     </div>
   );
@@ -1102,18 +2090,20 @@ function MagaluNotConfiguredCard({ onRetry, loading }: { onRetry: () => void; lo
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-300" />
         </div>
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          Defina MAGALU_API_KEY nas variáveis de ambiente e autorize o app para seguir.
+          A integração com o Magalu usa OAuth 2.0. Você precisa autorizar o acesso para buscar pedidos.
         </p>
-        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
-          <li>1. Configure a chave da API do Magalu (IntegraCommerce).</li>
-          <li>2. Garanta que a loja esteja ativa e autorizada.</li>
-          <li>3. Volte aqui e recarregue a página.</li>
-        </ul>
-        <div className="pt-2">
+        <div className="pt-2 flex gap-2">
+          <a
+            href="/api/magalu/oauth/auth"
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 transition hover:shadow-xl hover:shadow-[#009DA8]/40"
+          >
+            <Store className="w-4 h-4" />
+            Conectar com Magalu
+          </a>
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#009DA8] to-[#00B5C3] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-[#009DA8]/30 transition hover:shadow-xl hover:shadow-[#009DA8]/40 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 rounded-2xl bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
             disabled={loading}
           >
             <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -1123,8 +2113,4 @@ function MagaluNotConfiguredCard({ onRetry, loading }: { onRetry: () => void; lo
       </div>
     </div>
   );
-}
-
-function statusColor(status: string) {
-  return STATUS_HEX[status] ?? "#94a3b8";
 }
