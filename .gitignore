@@ -60,3 +60,6 @@ supabase/.temp/
 # Arquivos/artefatos que não devem ser versionados
 ecommerce-
 numeroPedidoEcommerce.eq.
+
+# ID Magalu CLI (binário local)
+idm
