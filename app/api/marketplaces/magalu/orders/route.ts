@@ -70,13 +70,13 @@ export async function GET(req: Request) {
   const cursor = url.searchParams.get('cursor');
   const pageFromCursor = cursor ? Number(cursor) || page : page;
 
-  if (!process.env.MAGALU_API_KEY && !MAGALU_MOCK_MODE) {
+  if (!process.env.MAGALU_ACCESS_TOKEN && !MAGALU_MOCK_MODE) {
     return NextResponse.json(
       {
         ok: false,
         error: {
           code: 'MAGALU_NOT_CONFIGURED',
-          message: 'Magalu não configurado. Defina MAGALU_API_KEY nas variáveis de ambiente.',
+          message: 'Magalu não configurado. Complete o fluxo OAuth em /marketplaces/magalu para obter o access token.',
         },
       },
       { status: 503 }
