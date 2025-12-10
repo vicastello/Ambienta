@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 
 /**
  * Inicia o fluxo OAuth 2.0 do Magalu
- * Redireciona o usuário para a página de consentimento do Magalu
+ * Redireciona o usuário para a página de login do ID Magalu
+ * que depois redireciona para /oauth/authorize
  */
 export async function GET() {
   const clientId = process.env.MAGALU_CLIENT_ID;
@@ -25,9 +26,9 @@ export async function GET() {
   // Estado para segurança (pode ser melhorado com um token aleatório salvo em sessão)
   const state = Buffer.from(JSON.stringify({ timestamp: Date.now() })).toString('base64');
 
-  // URL de autorização OAuth 2.0 do ID Magalu
-  // Endpoint correto: /oauth/authorize (não /login)
-  const authUrl = new URL('https://id.magalu.com/oauth/authorize');
+  // URL de login do ID Magalu com parâmetros OAuth
+  // O /login redireciona para /oauth/authorize após autenticação
+  const authUrl = new URL('https://id.magalu.com/login');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('scope', scopes);
