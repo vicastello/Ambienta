@@ -43,6 +43,12 @@ const CHANNEL_COLORS: Record<string, string> = {
 
 type DatePreset = "today" | "7d" | "30d" | "month" | "custom";
 
+type OrderItem = {
+  nome: string;
+  codigo: string | null;
+  quantidade: number;
+};
+
 type OrderRow = {
   tinyId: number;
   numeroPedido: number | null;
@@ -59,6 +65,7 @@ type OrderRow = {
   primeiraImagem: string | null;
   notaFiscal: string | null;
   marketplaceOrder: string | null;
+  itens?: OrderItem[];
 };
 
 type OrdersResponse = {
@@ -673,6 +680,15 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
                 {order.cliente || "Cliente não informado"} · {formatDate(order.dataCriacao)}
               </p>
               {order.marketplaceOrder && <p className="text-[11px] text-muted truncate">Marketplace: {order.marketplaceOrder}</p>}
+              {order.itens && order.itens.length > 0 && (
+                <div className="mt-1 text-[10px] text-muted space-y-0.5">
+                  {order.itens.map((item, idx) => (
+                    <p key={idx} className="truncate">
+                      {item.codigo ? `[${item.codigo}] ` : ''}{item.nome} · {item.quantidade}x
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${status ? `${status.bg} ${status.color}` : "bg-slate-100 text-slate-600"}`}>
               {status?.label ?? order.situacaoDescricao}
@@ -756,6 +772,15 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
               {order.cliente || "Cliente não informado"} · Criado em {formatDate(order.dataCriacao)}
             </p>
             {order.marketplaceOrder && <p className="text-[11px] text-muted">Pedido marketplace: {order.marketplaceOrder}</p>}
+            {order.itens && order.itens.length > 0 && (
+              <div className="mt-1 text-[11px] text-muted space-y-0.5">
+                {order.itens.map((item, idx) => (
+                  <p key={idx}>
+                    {item.codigo ? `[${item.codigo}] ` : ''}{item.nome} · {item.quantidade}x
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

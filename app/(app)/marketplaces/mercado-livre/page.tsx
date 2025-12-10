@@ -95,6 +95,21 @@ const formatDate = (dateStr: string) =>
     minute: "2-digit",
   });
 
+// Extract pack_id from raw_payload (ID que o Tiny usa)
+const getDisplayOrderId = (order: MeliOrder): string | number => {
+  try {
+    const raw = (order as any).raw_payload;
+    const packId = raw?.pack_id;
+    // Se tiver pack_id, retorna ele (é o que o Tiny usa)
+    if (packId) {
+      return packId;
+    }
+  } catch (e) {
+    // Ignore errors, fallback to order.id
+  }
+  return order.id;
+};
+
 type Metrics = ReturnType<typeof buildMetricsFromOrders>;
 
 export default function MercadoLivrePage() {
@@ -120,10 +135,17 @@ export default function MercadoLivrePage() {
     if (!searchTerm.trim()) return orders;
     const term = searchTerm.toLowerCase();
     return orders.filter(
-      (o) =>
-        String(o.id).toLowerCase().includes(term) ||
-        o.buyer?.nickname?.toLowerCase().includes(term) ||
-        (o.shipping?.receiver_address?.city?.name?.toLowerCase().includes(term) ?? false)
+      (o) => {
+        const displayId = String(getDisplayOrderId(o));
+        const packId = (o as any).raw_payload?.pack_id;
+        return (
+          String(o.id).toLowerCase().includes(term) ||
+          displayId.toLowerCase().includes(term) ||
+          (packId && String(packId).toLowerCase().includes(term)) ||
+          o.buyer?.nickname?.toLowerCase().includes(term) ||
+          (o.shipping?.receiver_address?.city?.name?.toLowerCase().includes(term) ?? false)
+        );
+      }
     );
   }, [orders, searchTerm]);
 
@@ -1063,7 +1085,14 @@ function MeliOrdersTable({
                   </div>
                 )}
               </td>
-              <td className="py-3 pr-4 font-semibold">{order.id ?? `#${idx + 1}`}</td>
+              <td className="py-3 pr-4 font-semibold">
+                {getDisplayOrderId(order) ?? `#${idx + 1}`}
+                {(order as any).raw_payload?.pack_id && (order as any).raw_payload.pack_id !== order.id && (
+                  <span className="block text-xs text-slate-500 font-normal">
+                    ID individual: {order.id}
+                  </span>
+                )}
+              </td>
               <td className="py-3 pr-4">
                 <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
                   {order.status}
@@ -1158,7 +1187,14 @@ function MeliOrdersCardsMobile({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-500">Pedido</p>
-                <p className="text-lg font-semibold text-slate-900 dark:text-white">{order.id}</p>
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {getDisplayOrderId(order)}
+                </p>
+                {(order as any).raw_payload?.pack_id && (order as any).raw_payload.pack_id !== order.id && (
+                  <p className="text-xs text-slate-500">
+                    ID individual: {order.id}
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-xs text-slate-500">Valor</p>

@@ -6,7 +6,7 @@ export async function upsertMeliOrderItems(items: MeliOrderItemsInsert[]): Promi
 
   const { error } = await supabaseAdmin
     .from('meli_order_items')
-    .upsert(items, { onConflict: 'id' });
+    .upsert(items, { onConflict: 'meli_order_id,item_id,variation_id', ignoreDuplicates: false });
 
   if (error) {
     console.error('[meliOrderItemsRepository] upsertMeliOrderItems error', error);

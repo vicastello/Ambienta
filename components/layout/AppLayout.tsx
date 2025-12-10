@@ -15,6 +15,7 @@ import {
   X,
   ShoppingCart,
   Store,
+  FileText,
 } from 'lucide-react';
 import { GlassHorizontalNav, GlassVerticalNav } from '@/src/components/navigation/GlassVerticalNav';
 
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/compras', label: 'Compras', icon: ShoppingCart },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
+  { href: '/relatorios', label: 'Relatórios', icon: FileText },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -41,7 +43,7 @@ const GLASS_NAV_ITEMS = NAV_ITEMS.map(({ label, icon }) => ({
   id: label,
   label,
   icon,
-  disableTooltip: label === 'Marketplaces',
+  disableTooltip: label === 'Marketplaces' || label === 'Relatórios',
 }));
 const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({
   id: label,
@@ -54,6 +56,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [showMarketplaceMenu, setShowMarketplaceMenu] = useState(false);
+  const [showRelatoriosMenu, setShowRelatoriosMenu] = useState(false);
   const computeNavIndex = useCallback(
     (path?: string | null) => {
       if (!path) return 0;
@@ -103,6 +106,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowMarketplaceMenu(false);
+    setShowRelatoriosMenu(false);
   }, [pathname]);
 
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
@@ -117,6 +121,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       if (!target || pathname === target.href) return;
       if (target.href === '/marketplaces') {
         setShowMarketplaceMenu(true);
+        return;
+      }
+      if (target.href === '/relatorios') {
+        setShowRelatoriosMenu(true);
         return;
       }
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -259,6 +267,38 @@ export function AppLayout({ title, children }: AppLayoutProps) {
                   }}
                 >
                   Magalu
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showRelatoriosMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowRelatoriosMenu(false)} />
+          <div className="fixed z-50 left-12 top-24">
+            <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
+                Escolha o relatório
+              </p>
+              <div className="space-y-2">
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowRelatoriosMenu(false);
+                    router.push('/relatorios/vinculos');
+                  }}
+                >
+                  Vincular Pedidos
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowRelatoriosMenu(false);
+                    router.push('/relatorios/vendas-mensais');
+                  }}
+                >
+                  Vendas Mensais
                 </button>
               </div>
             </div>

@@ -180,6 +180,7 @@ export async function GET(req: NextRequest) {
   const primeiraImagemMap: Record<number, string | null> = {};
   const codigosFromRaw: Set<string> = new Set();
   const idsFromRaw: Set<number> = new Set();
+  const itensDetalhados: Record<number, PedidoItemWithProduto[]> = {};
 
   if (orderIds.length) {
     const { data: itensData, error: itensError } = await supabaseAdmin
@@ -198,9 +199,16 @@ export async function GET(req: NextRequest) {
       itensPorPedido = itensRows.reduce<Record<number, number>>((acc, item) => {
         const idPedido = item.id_pedido;
         if (typeof idPedido === "number") {
+          // Quantidade total
           const current = acc[idPedido] ?? 0;
           const quantidade = Number(item.quantidade ?? 0);
           acc[idPedido] = current + (Number.isFinite(quantidade) ? quantidade : 0);
+
+          // Armazenar item detalhado
+          if (!itensDetalhados[idPedido]) {
+            itensDetalhados[idPedido] = [];
+          }
+          itensDetalhados[idPedido].push(item);
         }
         return acc;
       }, {});
@@ -326,6 +334,8 @@ export async function GET(req: NextRequest) {
         toStringOrNull(ecommerceRecord?.numeroPedidoEcommerce) ??
         toStringOrNull(rawRecord.numeroPedidoEcommerce);
 
+      const orderItens = itensDetalhados[order.id] ?? [];
+
       return {
         tinyId: order.tiny_id,
         numeroPedido: order.numero_pedido,
@@ -342,6 +352,11 @@ export async function GET(req: NextRequest) {
         primeiraImagem: imagem ?? null,
         notaFiscal,
         marketplaceOrder,
+        itens: orderItens.map(item => ({
+          nome: item.nome_produto ?? 'N/A',
+          codigo: item.codigo_produto ?? null,
+          quantidade: Number(item.quantidade ?? 0),
+        })),
       };
     });
 

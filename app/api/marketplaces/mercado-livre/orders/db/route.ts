@@ -154,19 +154,8 @@ export async function GET(req: NextRequest) {
         (typeof stateField === 'string' ? undefined : stateField?.id) ??
         null;
 
-      // group duplicated rows (same SKU/variation) summing quantity to avoid double counting
-      const rawItems = itemsByOrderId.get(order.meli_order_id) ?? [];
-      const grouped = new Map<string, MeliOrderItemsRow & { quantity: number }>();
-      rawItems.forEach((it) => {
-        const key = `${it.item_id}-${it.variation_id ?? ''}-${it.sku ?? ''}`;
-        const current = grouped.get(key);
-        if (current) {
-          current.quantity += Number(it.quantity) || 0;
-        } else {
-          grouped.set(key, { ...it, quantity: Number(it.quantity) || 0 });
-        }
-      });
-      const normalizedItems = Array.from(grouped.values());
+      // Get items for this order (no need to group - unique constraint prevents duplicates)
+      const normalizedItems = itemsByOrderId.get(order.meli_order_id) ?? [];
 
       return {
         id: order.meli_order_id,
@@ -175,6 +164,7 @@ export async function GET(req: NextRequest) {
         date_closed: order.last_updated,
         total_amount: Number(order.total_amount ?? 0),
         currency_id: order.currency_id,
+        raw_payload: order.raw_payload, // Incluir raw_payload para acessar pack_id
         buyer: {
           id: order.buyer_id ?? 0,
           nickname: order.buyer_nickname ?? buyerRaw.nickname ?? '',

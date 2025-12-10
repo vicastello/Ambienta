@@ -18,13 +18,38 @@ export async function upsertPedidoItens(pedido: TinyPedidoListaItem) {
   // Extrai itens do pedido (pode variar conforme payload)
   const itens = ((pedido as any).itens || (pedido as any).pedido?.itens || (pedido as any).pedido?.itensPedido || []) as any[];
   if (!Array.isArray(itens) || !itens.length) return;
+  // Buscar códigos dos produtos do catálogo
+  const produtoIds = itens
+    .map((item) => (item.produto || item).id || item.idProduto)
+    .filter(Boolean);
+
+  const produtosMap = new Map<number, string>();
+  if (produtoIds.length > 0) {
+    const { data: produtos } = await (supabaseAdmin as any)
+      .from('tiny_produtos')
+      .select('id_produto_tiny, codigo')
+      .in('id_produto_tiny', produtoIds);
+
+    if (produtos) {
+      produtos.forEach((p: any) => {
+        if (p.id_produto_tiny && p.codigo) {
+          produtosMap.set(p.id_produto_tiny, p.codigo);
+        }
+      });
+    }
+  }
+
   // Monta rows para upsert
   const rows = itens.map((item) => {
     const produto = item.produto || item;
+    const produtoId = produto.id || item.idProduto || null;
+    const codigoFromApi = produto.codigo || item.codigo || null;
+    const codigoFromCatalogo = produtoId ? produtosMap.get(produtoId) : null;
+
     return {
       id_pedido: order.id,
-      id_produto_tiny: produto.id || item.idProduto || null,
-      codigo_produto: produto.codigo || item.codigo || null,
+      id_produto_tiny: produtoId,
+      codigo_produto: codigoFromApi || codigoFromCatalogo || null,
       nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
       quantidade: Number(item.quantidade || 0),
       valor_unitario: Number(item.valorUnitario || 0),
