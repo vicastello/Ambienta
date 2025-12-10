@@ -264,7 +264,7 @@ async function handleStatusResyncOnly(periodDays: number, startTime: number) {
       );
 
       // Verificar mudanças
-      for (const order of response.data) {
+      for (const order of response.results) {
         const currentStatus = existingStatusMap.get(order.code);
         if (currentStatus && currentStatus !== order.status) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

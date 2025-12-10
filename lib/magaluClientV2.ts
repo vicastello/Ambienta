@@ -94,12 +94,17 @@ export interface MagaluOrder {
 }
 
 export interface MagaluOrderListResponse {
-  data: MagaluOrder[];
+  results: MagaluOrder[];
   meta: {
     page: {
       limit: number;
       offset: number;
-      total: number;
+      count: number;
+      max_limit: number;
+    };
+    links?: {
+      next?: string;
+      self?: string;
     };
   };
 }
@@ -366,19 +371,21 @@ export async function getAllMagaluOrdersForPeriod(params: {
       placed_at_to: toDate.toISOString(),
     });
 
-    allOrders.push(...response.data);
-    total = response.meta.page.total;
+    allOrders.push(...response.results);
+    // API não retorna total, usa count e verifica se há next
     offset += limit;
+    // Se count < limit, não há mais páginas
+    if (response.meta.page.count < limit || !response.meta.links?.next) {
+      break;
+    }
 
     if (onProgress) {
-      onProgress({ loaded: allOrders.length, total });
+      onProgress({ loaded: allOrders.length, total: allOrders.length });
     }
 
-    // Rate limiting
-    if (offset < total) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  } while (offset < total);
+    // Rate limiting entre páginas
+    await new Promise((r) => setTimeout(r, 200));
+  } while (true);
 
   return allOrders;
 }
