@@ -34,6 +34,8 @@ export async function GET() {
   authUrl.searchParams.set('scope', scopes);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('state', state);
+  // Força a tela de seleção de tenant (loja/empresa)
+  authUrl.searchParams.set('choose_tenants', 'true');
 
   console.log('[Magalu OAuth] Redirecionando para:', authUrl.toString());
 
