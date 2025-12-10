@@ -3,6 +3,7 @@
 
 export interface MagaluOrderProduct {
   IdSku: string;
+  Name?: string | null;
   Quantity: number;
   Price: string;
   Freight?: string | null;

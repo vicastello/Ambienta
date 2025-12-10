@@ -484,7 +484,8 @@ function buildMetricsFromOrders(orders: MagaluOrder[]) {
   orders.forEach((order) => {
     const seen = new Set<string>();
     order.Products.forEach((p) => {
-      const key = p.IdSku;
+      // Usar nome do produto como chave, fallback para SKU se não houver nome
+      const key = p.Name?.trim() || p.IdSku || 'Produto sem nome';
       const price = Number(p.Price) || 0;
       const prev = productMap.get(key) ?? { units: 0, revenue: 0, orders: 0 };
       prev.units += p.Quantity || 0;
