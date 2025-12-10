@@ -431,7 +431,6 @@ export function mapMagaluOrderToDb(order: any, tenantId?: string) {
 
     // Cliente/Destinatário
     receiver_name: recipient?.name || order.customer?.name,
-    customer_name: order.customer?.name,
     customer_mail: order.customer?.email,
     delivery_address_city: address?.city,
     delivery_address_state: address?.state,
