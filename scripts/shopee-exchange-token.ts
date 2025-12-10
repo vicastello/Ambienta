@@ -4,11 +4,13 @@
  * Uso:
  * 1. Acesse a URL de autorização da Shopee (você deve gerar via painel de parceiros)
  * 2. Após autorizar, copie o 'code' que aparece na página de callback
- * 3. Execute: npx tsx scripts/shopee-exchange-token.ts
- * 4. Cole o código quando solicitado
- * 5. O script irá trocar o código por um access_token e refresh_token
- * 6. Atualize o .env.local com os tokens retornados
+ * 3. Execute: npx tsx scripts/shopee-exchange-token.ts <code> <shop_id>
+ * 4. O script irá trocar o código por um access_token e refresh_token
+ * 5. Atualize o .env.local com os tokens retornados
  */
+
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
 import crypto from 'crypto';
 import readline from 'readline';
@@ -47,7 +49,8 @@ function generateSign(path: string, timestamp: number, accessToken: string = '',
 async function exchangeCodeForToken(code: string, shopId: string): Promise<void> {
   const path = '/api/v2/auth/token/get';
   const timestamp = Math.floor(Date.now() / 1000);
-  const sign = generateSign(path, timestamp, '', shopId);
+  // Para token/get, a assinatura é: partner_id + path + timestamp (sem shop_id)
+  const sign = generateSign(path, timestamp, '', '');
 
   const url = `https://partner.shopeemobile.com${path}`;
 
@@ -106,6 +109,18 @@ async function main() {
   console.log('║  🛍️  SHOPEE - Trocar código OAuth por token      ║');
   console.log('╚═══════════════════════════════════════════════════╝\n');
 
+  // Verificar se foram passados argumentos na linha de comando
+  const [, , codeArg, shopIdArg] = process.argv;
+
+  if (codeArg && shopIdArg) {
+    // Modo não-interativo: usar argumentos
+    console.log(`📋 Code: ${codeArg}`);
+    console.log(`📋 Shop ID: ${shopIdArg}\n`);
+    await exchangeCodeForToken(codeArg, shopIdArg);
+    return;
+  }
+
+  // Modo interativo: usar readline
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

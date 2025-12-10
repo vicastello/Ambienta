@@ -476,6 +476,29 @@ function startOfYearFrom(dateIso: string) {
   return d.toISOString().slice(0, 10);
 }
 
+function nowInTimeZone(timeZone: string): Date {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return new Date(Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')));
+}
+
+function endOfMonthFrom(dateIso: string) {
+  const d = new Date(`${dateIso}T00:00:00`);
+  d.setMonth(d.getMonth() + 1);
+  d.setDate(0);
+  return d.toISOString().slice(0, 10);
+}
+
 function diffDays(startIso: string, endIso: string): number {
   const a = new Date(`${startIso}T00:00:00`);
   const b = new Date(`${endIso}T00:00:00`);
@@ -858,7 +881,21 @@ export default function DashboardClient() {
     }
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
-  function resolverIntervalo(): { inicio: string; fim: string } {
+  function monthRange(referenceIso: string, startMonthOffset: number, lengthMonths: number) {
+    const base = new Date(`${referenceIso}T00:00:00`);
+    base.setMonth(base.getMonth() + startMonthOffset);
+    base.setDate(1);
+    const start = base.toISOString().slice(0, 10);
+
+    const endDate = new Date(base.getTime());
+    endDate.setMonth(endDate.getMonth() + lengthMonths);
+    endDate.setDate(0);
+    const end = endDate.toISOString().slice(0, 10);
+
+    return { start, end };
+  }
+
+  function resolverIntervalo(): { inicio: string; fim: string; previousInicio?: string; previousFim?: string } {
     const hojeIso = isoToday();
     if (preset === 'today') return { inicio: hojeIso, fim: hojeIso };
     if (preset === 'yesterday') {
@@ -871,8 +908,10 @@ export default function DashboardClient() {
       return { inicio, fim };
     }
     if (preset === 'month') {
-      const inicio = startOfMonthFrom(hojeIso);
-      return { inicio, fim: hojeIso };
+      // Últimos 2 meses completos (ex.: hoje=2025-12-09 => 2025-10-01 a 2025-11-30)
+      const { start: inicio, end: fim } = monthRange(hojeIso, -2, 2);
+      const { start: previousInicio, end: previousFim } = monthRange(hojeIso, -4, 2);
+      return { inicio, fim, previousInicio, previousFim };
     }
     if (preset === '3m') {
       const fim = hojeIso;
@@ -895,11 +934,13 @@ export default function DashboardClient() {
   const MICROTREND_WINDOW_MS = 24 * 60 * 60 * 1000;
 
   function appendMicrotrendWindows(params: URLSearchParams) {
-    const nowMs = Date.now();
-    const currentEnd = new Date(nowMs);
-    const currentStart = new Date(nowMs - MICROTREND_WINDOW_MS);
-    const previousStart = new Date(nowMs - 2 * MICROTREND_WINDOW_MS);
-    const previousEnd = new Date(nowMs - MICROTREND_WINDOW_MS);
+    const timeZone = 'America/Sao_Paulo';
+    const alignToHour = (date: Date) => new Date(Math.floor(date.getTime() / (60 * 60 * 1000)) * 60 * 60 * 1000);
+    const nowTz = nowInTimeZone(timeZone);
+    const currentEnd = alignToHour(nowTz);
+    const currentStart = new Date(currentEnd.getTime() - MICROTREND_WINDOW_MS);
+    const previousEnd = currentStart;
+    const previousStart = new Date(previousEnd.getTime() - MICROTREND_WINDOW_MS);
 
     params.set('microCurrentStart', currentStart.toISOString());
     params.set('microCurrentEnd', currentEnd.toISOString());
@@ -932,7 +973,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const force = options?.force ?? false;
     const background = options?.background ?? false;
     const requestId = ++resumoRequestId.current;
-    const { inicio, fim } = resolverIntervalo();
+    const { inicio, fim, previousInicio, previousFim } = resolverIntervalo();
     const incluiHoje = intervaloIncluiHoje(inicio, fim);
     const isHojeCard = preset === 'today';
     try {
@@ -967,6 +1008,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       params.set('dataInicial', inicio);
       params.set('dataFinal', fim);
       params.set('context', isHojeCard ? 'cards-hoje' : 'ultimos-dias');
+      if (previousInicio) params.set('previousStart', previousInicio);
+      if (previousFim) params.set('previousEnd', previousFim);
       if (!isHojeCard) params.set('noCutoff', '1');
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
@@ -987,7 +1030,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         safeWriteCache(cacheKey, parsedResumo);
       }
       try {
-        const { inicio, fim } = resolverIntervalo();
+        const { inicio, fim, previousInicio, previousFim } = resolverIntervalo();
         const diasEsperados = 1 + diffDays(inicio, fim);
         const atualDias = parsedResumo.periodoAtual.vendasPorDia.length ?? 0;
         const key = `${inicio}_${fim}`;
@@ -1265,41 +1308,69 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     fetchRecentOrders();
   }, [fetchRecentOrders]);
 
-  function resolverIntervaloChart(): { inicio: string; fim: string } {
+  function resolverIntervaloChart(): {
+    start: string;
+    end: string;
+    previousStart: string;
+    previousEnd: string;
+  } {
     const hojeIso = isoToday();
-    if (chartPreset === 'today') return { inicio: hojeIso, fim: hojeIso };
-    if (chartPreset === '7d') {
-      const fim = hojeIso;
-      const inicio = addDays(fim, -6);
-      return { inicio, fim };
+
+    let start: string;
+    let end: string;
+
+    switch (chartPreset) {
+      case 'today':
+        start = hojeIso;
+        end = hojeIso;
+        break;
+      case '7d':
+        end = hojeIso;
+        start = addDays(end, -6);
+        break;
+      case '30d':
+        end = hojeIso;
+        start = addDays(end, -29);
+        break;
+      case 'month': {
+        const inicioMes = startOfMonthFrom(hojeIso);
+        start = inicioMes;
+        end = hojeIso; // mês atual do dia 1 até hoje
+
+        const diaAntesDoMesAtual = addDays(inicioMes, -1);
+        const previousStart = startOfMonthFrom(diaAntesDoMesAtual);
+        const previousEnd = endOfMonthFrom(previousStart);
+
+        return { start, end, previousStart, previousEnd };
+      }
+      default:
+        if (chartCustomStart && chartCustomEnd) {
+          start = chartCustomStart;
+          end = chartCustomEnd;
+        } else {
+          const inicioMes = startOfMonthFrom(hojeIso);
+          start = inicioMes;
+          end = hojeIso;
+        }
+        break;
     }
-    if (chartPreset === '30d') {
-      const fim = hojeIso;
-      const inicio = addDays(fim, -29);
-      return { inicio, fim };
-    }
-    if (chartPreset === 'month') {
-      const hoje = new Date(`${hojeIso}T00:00:00`);
-      const inicio = startOfMonthFrom(hojeIso);
-      const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
-      return { inicio, fim };
-    }
-    if (chartCustomStart && chartCustomEnd) return { inicio: chartCustomStart, fim: chartCustomEnd };
-    const hoje = new Date(`${hojeIso}T00:00:00`);
-    const inicio = startOfMonthFrom(hojeIso);
-    const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
-    return { inicio, fim };
+
+    const daysSpan = 1 + diffDays(start, end);
+    const previousEnd = addDays(start, -1);
+    const previousStart = addDays(previousEnd, -1 * (daysSpan - 1));
+
+    return { start, end, previousStart, previousEnd };
   }
 
   async function carregarResumoChart() {
     const requestId = ++chartRequestId.current;
 
     try {
-      const { inicio, fim } = resolverIntervaloChart();
-      const incluiHoje = intervaloIncluiHoje(inicio, fim);
+      const { start, end, previousStart, previousEnd } = resolverIntervaloChart();
+      const incluiHoje = intervaloIncluiHoje(start, end);
       const cacheKey = buildChartCacheKey(
-        inicio,
-        fim,
+        start,
+        end,
         chartPreset,
         chartCustomStart,
         chartCustomEnd,
@@ -1318,10 +1389,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         return;
       }
       const params = new URLSearchParams();
-      params.set('dataInicial', inicio);
-      params.set('dataFinal', fim);
+      params.set('dataInicial', start);
+      params.set('dataFinal', end);
       params.set('noCutoff', '1');
       params.set('context', 'grafico-diario');
+      params.set('previousStart', previousStart);
+      params.set('previousEnd', previousEnd);
       if (canaisSelecionados.length) params.set('canais', canaisSelecionados.join(','));
       if (situacoesSelecionadas.length) params.set('situacoes', situacoesSelecionadas.join(','));
       appendMicrotrendWindows(params);
@@ -1342,7 +1415,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         safeWriteCache(cacheKey, parsedChart);
       }
       try {
-        const { inicio, fim } = resolverIntervaloChart();
+        const { start: inicio, end: fim } = resolverIntervaloChart();
         const diasEsperados = 1 + diffDays(inicio, fim);
         const atualDias = parsedChart.periodoAtual.vendasPorDia.length ?? 0;
         const key = `${inicio}_${fim}`;
@@ -1393,10 +1466,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     try {
       setComplementLoading(true);
       setComplementMsg(null);
-      const { inicio, fim } = resolverIntervaloChart();
+      const { start, end, previousStart, previousEnd } = resolverIntervaloChart();
       const params = new URLSearchParams();
-      params.set('dataInicial', inicio);
-      params.set('dataFinal', fim);
+      params.set('dataInicial', start);
+      params.set('dataFinal', end);
+      params.set('previousStart', previousStart);
+      params.set('previousEnd', previousEnd);
       params.set('complement', '1');
       params.set('noCutoff', '1');
       params.set('context', 'grafico-diario');
@@ -1725,18 +1800,58 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       .slice(0, 30);
   }, [vendasPorDiaFonte]);
 
+  // Calcula o mês baseado na data final do filtro global
+  const resumoMesAtual = useMemo(() => {
+    if (!resumoGlobalAtual) return null;
+
+    // Pega a data final do filtro global
+    const { fim } = resolverIntervalo();
+    const dataFim = new Date(`${fim}T00:00:00`);
+    const mesAtual = dataFim.getMonth(); // 0-11
+    const anoAtual = dataFim.getFullYear();
+
+    // Filtra vendas por dia do mês específico
+    const vendasDoMes = resumoGlobalAtual.vendasPorDia.filter((dia) => {
+      const [ano, mes] = dia.data.split('-').map(Number);
+      return ano === anoAtual && mes === mesAtual + 1; // mes vem como 1-12 no string
+    });
+
+    // Calcula totais do mês
+    const totalValor = vendasDoMes.reduce((acc, dia) => acc + dia.totalDia, 0);
+    const totalQuantidade = vendasDoMes.reduce((acc, dia) => acc + dia.quantidade, 0);
+
+    // Calcula frete proporcional ao valor do mês vs total global
+    const totalGlobal = resumoGlobalAtual.totalValor;
+    const totalFrete = totalGlobal > 0
+      ? (totalValor / totalGlobal) * resumoGlobalAtual.totalFreteTotal
+      : 0;
+
+    // Filtra canais do mês (precisa verificar se há dados por período)
+    // Por enquanto, vamos usar os canais globais como aproximação
+    const canaisDoMes = dashboardGlobalSource?.canais ?? [];
+
+    return {
+      vendasPorDia: vendasDoMes,
+      totalValor,
+      totalFrete,
+      totalQuantidade,
+      canais: canaisDoMes,
+      dias: vendasDoMes.length,
+    };
+  }, [resumoGlobalAtual, dashboardGlobalSource, preset, customStart, customEnd]);
+
   const trendingDias = useMemo(() => {
-    if (!resumoGlobalAtual) return [];
-    return resumoGlobalAtual.vendasPorDia.slice(-4).reverse();
-  }, [resumoGlobalAtual]);
+    if (!resumoMesAtual || !resumoMesAtual.vendasPorDia.length) return [];
+    return resumoMesAtual.vendasPorDia.slice(-4).reverse();
+  }, [resumoMesAtual]);
 
   const quickHighlights = useMemo(() => {
-    if (!resumoGlobalAtual) return [];
-    const diasMonitorados = resumoGlobalAtual.dias || resumoGlobalAtual.vendasPorDia.length || 1;
-    const mediaDiaria = diasMonitorados > 0 ? resumoGlobalAtual.totalValor / diasMonitorados : 0;
-    const fretePerc = resumoGlobalAtual.totalValor > 0 ? (resumoGlobalAtual.totalFreteTotal / resumoGlobalAtual.totalValor) * 100 : 0;
-    const melhorDia = [...resumoGlobalAtual.vendasPorDia].sort((a, b) => b.totalDia - a.totalDia)[0];
-    const melhorCanal = [...(dashboardSource?.canais ?? [])].sort((a, b) => b.totalValor - a.totalValor)[0];
+    if (!resumoMesAtual) return [];
+    const diasMonitorados = resumoMesAtual.dias || 1;
+    const mediaDiaria = diasMonitorados > 0 ? resumoMesAtual.totalValor / diasMonitorados : 0;
+    const fretePerc = resumoMesAtual.totalValor > 0 ? (resumoMesAtual.totalFrete / resumoMesAtual.totalValor) * 100 : 0;
+    const melhorDia = [...resumoMesAtual.vendasPorDia].sort((a, b) => b.totalDia - a.totalDia)[0];
+    const melhorCanal = [...resumoMesAtual.canais].sort((a, b) => b.totalValor - a.totalValor)[0];
 
     return [
       {
@@ -1746,7 +1861,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       },
       {
         label: 'Frete total',
-        value: formatBRL(resumoGlobalAtual.totalFreteTotal),
+        value: formatBRL(resumoMesAtual.totalFrete),
         helper: `${fretePerc.toFixed(1)}% do bruto`,
       },
       melhorDia && {
@@ -1760,12 +1875,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         helper: `${melhorCanal.canal} · ${melhorCanal.totalPedidos} pedidos`,
       },
     ].filter(Boolean) as Array<{ label: string; value: string; helper: string }>;
-  }, [resumoGlobalAtual, dashboardSource]);
+  }, [resumoMesAtual]);
 
   const cancelamentoPerc = resumoAtual?.percentualCancelados ?? 0;
   const totalProdutosVendidos = resumoAtual?.totalProdutosVendidos ?? 0;
   const topProdutos = useMemo(() => {
+    // Usa resumoAtual que respeita o filtro de data global do app
     const origem = resumoAtual?.topProdutos ?? [];
+    // Simplesmente pega os top 12 sem recalcular (já vem filtrado pelo filtro global)
     return origem.slice(0, 12);
   }, [resumoAtual?.topProdutos]);
 
@@ -1845,11 +1962,40 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
   const produtoDisplaySku = zoomLevelAtual?.sku ?? produtoEmFoco?.sku ?? null;
   const produtoDisplayQuantidade = zoomLevelAtual?.quantidade ?? produtoEmFoco?.quantidade ?? 0;
   const produtoDisplayReceita = zoomLevelAtual?.receita ?? produtoEmFoco?.receita ?? 0;
-  const produtoSerieBase = zoomLevelAtual?.serieDiaria ?? produtoEmFoco?.serieDiaria ?? EMPTY_SERIE;
   const zoomNivelLabel = zoomLevelAtual ? ZOOM_NIVEL_LABELS[zoomLevelAtual.nivel] ?? 'Nível atual' : 'Resumo';
 
-  const produtoSerieFiltrada = useMemo(() => {
+  // Buscar o produto correspondente no resumoGlobalAtual para ter a série completa (30 dias)
+  const produtoGlobalCorrespondente = useMemo(() => {
+    if (!produtoEmFoco || !resumoGlobalAtual?.topProdutos) return null;
+    return resumoGlobalAtual.topProdutos.find(
+      (p) => p.produtoId === produtoEmFoco.produtoId && p.sku === produtoEmFoco.sku
+    );
+  }, [produtoEmFoco, resumoGlobalAtual?.topProdutos]);
+
+  // Série base para o gráfico (usa dados globais de 30 dias)
+  const produtoSerieBaseGrafico = produtoGlobalCorrespondente?.serieDiaria ?? EMPTY_SERIE;
+
+  // Série base para os cards de estatísticas (usa dados do filtro global do app)
+  const produtoSerieBase = zoomLevelAtual?.serieDiaria ?? produtoEmFoco?.serieDiaria ?? EMPTY_SERIE;
+
+  // Série filtrada pelo filtro GLOBAL do app (para os cards de estatísticas)
+  const produtoSerieGlobal = useMemo(() => {
     if (!produtoSerieBase.length) return [];
+    const { inicio, fim } = resolverIntervalo();
+    const dataInicio = new Date(`${inicio}T00:00:00`);
+    const dataFim = new Date(`${fim}T23:59:59`);
+
+    const filtrada = produtoSerieBase.filter((dia) => {
+      const parsed = new Date(`${dia.data}T00:00:00`);
+      if (Number.isNaN(parsed.getTime())) return false;
+      return parsed >= dataInicio && parsed <= dataFim;
+    });
+    return filtrada.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+  }, [produtoSerieBase, preset, customStart, customEnd]);
+
+  // Série filtrada pelo filtro PRÓPRIO do card (para o gráfico)
+  const produtoSerieFiltrada = useMemo(() => {
+    if (!produtoSerieBaseGrafico.length) return [];
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
@@ -1863,13 +2009,13 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         ? startOfMonth
         : startOfYear;
 
-    const filtrada = produtoSerieBase.filter((dia) => {
+    const filtrada = produtoSerieBaseGrafico.filter((dia) => {
       const parsed = new Date(`${dia.data}T00:00:00`);
       if (Number.isNaN(parsed.getTime())) return false;
       return parsed >= cutoff;
     });
     return filtrada.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
-  }, [produtoCardPreset, produtoSerieBase]);
+  }, [produtoCardPreset, produtoSerieBaseGrafico]);
 
   const produtoSparkData = useMemo(() => {
     if (!produtoSerieFiltrada.length) return [];
@@ -1908,6 +2054,27 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       return dia.receita > acc.receita ? dia : acc;
     }, produtoSerieFiltrada[0]);
   }, [produtoSerieFiltrada]);
+
+  // Valores baseados no filtro GLOBAL para os cards de estatísticas
+  const produtoGlobalQuantidade = useMemo(() => {
+    return produtoSerieGlobal.reduce((acc, dia) => acc + dia.quantidade, 0);
+  }, [produtoSerieGlobal]);
+
+  const produtoGlobalReceita = useMemo(() => {
+    return produtoSerieGlobal.reduce((acc, dia) => acc + dia.receita, 0);
+  }, [produtoSerieGlobal]);
+
+  const produtoGlobalMelhorDia = useMemo(() => {
+    if (!produtoSerieGlobal.length) return null;
+    return produtoSerieGlobal.reduce((acc, dia) => {
+      if (!acc) return dia;
+      return dia.receita > acc.receita ? dia : acc;
+    }, produtoSerieGlobal[0]);
+  }, [produtoSerieGlobal]);
+
+  const produtoGlobalTicketMedio = produtoGlobalQuantidade > 0
+    ? produtoGlobalReceita / produtoGlobalQuantidade
+    : 0;
 
   const produtoTicketMedio = produtoDisplayQuantidade > 0
     ? produtoDisplayReceita / produtoDisplayQuantidade
@@ -2114,20 +2281,20 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
             </div>
 
 
-            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {quickHighlights.length ? (
                 quickHighlights.map((item) => (
                   <div
                     key={item.label}
-                    className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 flex flex-col gap-1"
+                    className="rounded-2xl bg-white/60 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3 sm:p-4 flex flex-col gap-0.5"
                   >
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
-                    <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
-                    <p className="text-xs text-slate-400">{item.helper}</p>
+                    <p className="text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">{item.label}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-0.5">{item.value}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{item.helper}</p>
                   </div>
                 ))
               ) : (
-                <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 text-sm text-slate-400 col-span-2 xl:col-span-4">
+                <div className="rounded-2xl bg-white/60 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4 text-sm text-slate-400 col-span-2 xl:col-span-4">
                   {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
                 </div>
               )}
@@ -2282,52 +2449,45 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
         {dashboardSource && resumoAtual && (
           <div className="space-y-8">
-              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 overflow-visible">
+              <div
+                className="rounded-[28px] glass-panel glass-tint p-5 min-w-0"
+                title={diffsDisponiveis ? `vs período anterior: ${formatPercent(faturamentoDeltaPercent)} (${faturamentoDelta >= 0 ? '+' : ''}${formatBRL(Math.abs(faturamentoDelta))})` : 'Aguardando dados do período anterior'}
+              >
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento líquido</p>
                   <TrendingUp className="w-5 h-5 text-[#5b21b6] dark:text-[#a78bfa] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-[#5b21b6] dark:text-[#a78bfa] truncate">{formatBRL(resumoAtual.totalValorLiquido)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
-                <p
-                  className={`text-xs mt-1 truncate ${
-                    !diffsDisponiveis
-                      ? 'text-slate-500 dark:text-slate-300'
-                      : faturamentoDelta >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-500 dark:text-rose-400'
-                  }`}
-                >
-                  {diffsDisponiveis
-                    ? `vs período anterior: ${formatPercent(faturamentoDeltaPercent)} (${`${faturamentoDelta >= 0 ? '+' : '-'}`}${formatBRL(Math.abs(faturamentoDelta))})`
-                    : 'Aguardando dados do período anterior'}
-                </p>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 truncate">Faturamento bruto</p>
                   <TrendingUp className="w-5 h-5 text-[#009DA8] dark:text-[#6fe8ff] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-[#009DA8] dark:text-[#6fe8ff] truncate">{formatBRL(resumoAtual.totalValor)}</p>
                 <p className="text-xs text-slate-500 mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
-                <p
-                  className={`text-xs mt-1 truncate ${
-                    !diffsDisponiveis
-                      ? 'text-slate-500 dark:text-slate-300'
-                      : faturamentoDelta >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-500 dark:text-rose-400'
-                  }`}
-                >
-                  {diffsDisponiveis
-                    ? `vs período anterior: ${formatPercent(faturamentoDeltaPercent)} (${`${faturamentoDelta >= 0 ? '+' : '-'}`}${formatBRL(Math.abs(faturamentoDelta))})`
-                    : 'Aguardando dados do período anterior'}
-                </p>
+
+                {/* Tooltip ao hover */}
+                {diffsDisponiveis && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
+                    <div className="flex items-center gap-2">
+                      <span className={faturamentoDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {formatPercent(faturamentoDeltaPercent)}
+                      </span>
+                      <span className="text-slate-300">vs período anterior</span>
+                      <span className={faturamentoDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        {`${faturamentoDelta >= 0 ? '+' : '-'}`}{formatBRL(Math.abs(faturamentoDelta))}
+                      </span>
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
+                  </div>
+                )}
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Pedidos</p>
                   <ShoppingCart className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
@@ -2335,19 +2495,22 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
                   {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
                 </p>
-                <p
-                  className={`text-xs mt-1 truncate ${
-                    !diffsDisponiveis
-                      ? 'text-slate-500 dark:text-slate-300'
-                      : pedidosDelta >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-500 dark:text-rose-400'
-                  }`}
-                >
-                  {diffsDisponiveis
-                    ? `vs período anterior: ${pedidosDelta >= 0 ? '+' : ''}${pedidosDelta.toLocaleString('pt-BR')} (${formatPercent(pedidosDeltaPercent)})`
-                    : 'Aguardando dados do período anterior'}
-                </p>
+
+                {/* Tooltip ao hover */}
+                {diffsDisponiveis && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
+                    <div className="flex items-center gap-2">
+                      <span className={pedidosDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {formatPercent(pedidosDeltaPercent)}
+                      </span>
+                      <span className="text-slate-300">vs período anterior</span>
+                      <span className={pedidosDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        {pedidosDelta >= 0 ? '+' : ''}{pedidosDelta.toLocaleString('pt-BR')} pedidos
+                      </span>
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -2361,25 +2524,28 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-xs text-slate-500 mt-2 truncate">Total de itens</p>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 truncate">Ticket médio</p>
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
-                <p
-                  className={`text-xs mt-1 truncate ${
-                    !diffsDisponiveis
-                      ? 'text-slate-500 dark:text-slate-300'
-                      : ticketDelta >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-500 dark:text-rose-400'
-                  }`}
-                >
-                  {diffsDisponiveis
-                    ? `vs período anterior: ${ticketDelta >= 0 ? '+' : '-'}${formatBRL(Math.abs(ticketDelta))} (${formatPercent(ticketDeltaPercent)})`
-                    : 'Aguardando dados do período anterior'}
-                </p>
+
+                {/* Tooltip ao hover */}
+                {diffsDisponiveis && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
+                    <div className="flex items-center gap-2">
+                      <span className={ticketDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {formatPercent(ticketDeltaPercent)}
+                      </span>
+                      <span className="text-slate-300">vs período anterior</span>
+                      <span className={ticketDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        {ticketDelta >= 0 ? '+' : '-'}{formatBRL(Math.abs(ticketDelta))}
+                      </span>
+                    </div>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -2579,71 +2745,43 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="flex flex-col items-end gap-2 text-xs text-slate-500">
-                                    <span className="uppercase tracking-[0.3em] text-[10px] text-slate-400">
-                                      Nível · {zoomNivelLabel}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={handleZoomOut}
-                                        disabled={!podeDarZoomOut}
-                                        className="p-2 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:border-[#009DA8] hover:text-[#009DA8] transition"
-                                        aria-label="Zoom out"
-                                        title="Mostrar nível mais agregado"
-                                      >
-                                        <ZoomOut className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={handleZoomIn}
-                                        disabled={!podeDarZoomIn}
-                                        className="p-2 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 text-slate-600 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed hover:border-[#009DA8] hover:text-[#009DA8] transition"
-                                        aria-label="Zoom in"
-                                        title="Detalhar para variação/SKU"
-                                      >
-                                        <ZoomIn className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </div>
                                 </div>
                               </div>
                               {produtoEmFoco.imagemUrl ? (
-                                <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-white/60 dark:border-white/10 flex-shrink-0">
+                                <div className="relative w-32 h-32 rounded-2xl overflow-hidden border border-white/60 dark:border-white/10 flex-shrink-0">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img src={produtoEmFoco.imagemUrl} alt={produtoDisplayDescricao} className="w-full h-full object-cover" />
                                 </div>
                               ) : null}
                             </div>
-                            <div className="mt-4 space-y-5">
-                              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
-                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Receita</p>
-                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoDisplayReceita)}</p>
+                            <div className="mt-3">
+                              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                                <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Receita</p>
+                                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoGlobalReceita)}</p>
                                 </div>
-                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
-                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Unidades</p>
-                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">
-                                    {produtoDisplayQuantidade.toLocaleString('pt-BR')} un
+                                <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Unidades</p>
+                                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                                    {produtoGlobalQuantidade.toLocaleString('pt-BR')} un
                                   </p>
                                 </div>
-                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
-                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Ticket médio</p>
-                                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTicketMedio)}</p>
+                                <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Ticket médio</p>
+                                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoGlobalTicketMedio)}</p>
                                 </div>
-                                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-4">
-                                  <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Melhor dia</p>
-                                  {produtoMelhorDia ? (
-                                    <div className="space-y-1 text-slate-700 dark:text-slate-200">
-                                      <p className="text-base font-semibold">{formatSerieLabel(produtoMelhorDia.data)}</p>
-                                      <p className="text-xs">{formatBRL(produtoMelhorDia.receita)} · {produtoMelhorDia.quantidade.toLocaleString('pt-BR')} un</p>
+                                <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
+                                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-1">Melhor dia</p>
+                                  {produtoGlobalMelhorDia ? (
+                                    <div className="text-slate-700 dark:text-slate-200">
+                                      <p className="text-sm font-semibold leading-tight">{formatSerieLabel(produtoGlobalMelhorDia.data)}</p>
+                                      <p className="text-[10px] mt-0.5">{formatBRL(produtoGlobalMelhorDia.receita)} · {produtoGlobalMelhorDia.quantidade.toLocaleString('pt-BR')} un</p>
                                     </div>
                                   ) : (
-                                    <p className="text-xl font-semibold text-slate-400">—</p>
+                                    <p className="text-lg font-semibold text-slate-400">—</p>
                                   )}
                                 </div>
                               </div>
-
                             </div>
 
                             <div className="mt-6 rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5 p-4 sm:p-5 shadow-sm">

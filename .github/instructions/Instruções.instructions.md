@@ -2,6 +2,13 @@ Big Picture
 
 Next.js App Router (TypeScript, Tailwind 4) rodando na Vercel; Supabase Postgres é o sistema de registro; Tiny ERP é o upstream.
 
+Modo agente autônomo (gestor-tiny)
+- Pode rodar npm run dev/lint/build/test, npx tsx scripts/*.ts e navegar em todo o repo.
+- Para investigar bugs: seguir fluxo completo Tiny/Supabase → API → componente; usar flags de debug (ex.: debugResumo/debugPedidos) e reproduzir local quando possível.
+- Validar sempre com npm run lint e npm run build após mudanças.
+- Evitar ações destrutivas (reset/drop); se precisar de algo arriscado, pedir confirmação.
+- Quando sem acesso a serviços externos/env vars, relatar bloqueio e instruir comandos que o usuário pode rodar.
+
 UI é majoritariamente client-side e envolvida por components/layout/AppLayout.
 
 Tabelas principais (schema public):
@@ -265,6 +272,51 @@ Ao criar/refatorar código:
 Mover lógica de acesso a dados para os repositórios.
 
 Deixar as rotas de API “finas”: validação + orquestração + resposta HTTP.
+
+MODO DEBUG VISUAL — OBRIGATÓRIO
+
+Sempre que eu pedir para corrigir um bug de frontend ou fluxo de dashboard (Next.js / React), você deve:
+
+1. Subir o servidor de desenvolvimento
+   - Verifique se as dependências estão instaladas.
+   - Rode `npm install` se necessário.
+   - Rode `npm run dev` no terminal do projeto.
+
+2. Abrir a aplicação rodando em dev
+   - Use os recursos disponíveis no ambiente para abrir a URL do app em DEV, por exemplo:
+     - `http://localhost:3000/`
+     - `http://localhost:3000/dashboard`
+     - ou qualquer rota que eu especificar.
+   - Se existir comando ou ferramenta de “Preview”/“Open in Browser”/“Open Preview” no editor, use-a para abrir a página.
+
+3. Reproduzir o problema
+   - Navegue até a tela correta.
+   - Observe:
+     - erros visuais,
+     - erros no console,
+     - respostas de API incorretas (status code, payload estranho),
+     - discrepância entre números exibidos e o esperado.
+   - Use esses sinais como base principal da sua investigação.
+
+4. Só depois mexer no código
+   - Localize os arquivos certos (API + componente React).
+   - Aplique as mudanças usando “Apply Patch” ou mecanismo equivalente.
+   - Mantenha o estilo existente.
+
+5. Validar sempre
+   - Com o dev server rodando, atualize a página e confira se:
+     - o erro sumiu,
+     - os números exibidos batem com o expected (ex.: total de pedidos, faturamento, gráficos).
+   - Rode também:
+     - `npm run lint`
+     - `npm run build`
+   - Se algum desses falhar, corrija até passar.
+
+SE NÃO CONSEGUIR ABRIR A PÁGINA
+- Se o ambiente NÃO permitir abrir preview/janela do app:
+  - Explique claramente que não conseguiu abrir a página.
+  - Me diga qual URL eu devo abrir manualmente para ver o mesmo problema.
+  - Continue a investigação usando logs, respostas de API e código-fonte.
 
 Segurança e RLS
 

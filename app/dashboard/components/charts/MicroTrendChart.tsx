@@ -1,16 +1,11 @@
 'use client';
 
-import { memo, useCallback, useMemo } from 'react';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { memo, useMemo } from 'react';
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ChartTooltipPayload, ChartTooltipValue, CustomTooltipFormatter } from './ChartTooltips';
+
+const PRIMARY_COLOR = 'rgb(168, 85, 247)';
+const SECONDARY_COLOR = '#E4E4E9';
 
 type SparkDatum = {
   label: string;
@@ -24,164 +19,168 @@ type SparkDatum = {
 
 type MicroTrendChartProps = {
   data: SparkDatum[];
-  formatter: CustomTooltipFormatter;
-};
-
-type MicroTooltipEntry = {
-  value?: ChartTooltipValue;
-  name?: string;
-  color?: string;
-  dataKey?: string | number;
-  payload?: SparkDatum;
-  fill?: string;
+  formatter?: CustomTooltipFormatter;
 };
 
 type MicroTooltipProps = {
   active?: boolean;
-  payload?: readonly MicroTooltipEntry[];
-};
-
-type MicroDotProps = {
-  index?: number;
-  cx?: number;
-  cy?: number;
-  stroke?: string;
+  payload?: ReadonlyArray<{ payload?: SparkDatum; value?: ChartTooltipValue; dataKey?: string }>;
 };
 
 const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => {
+  const gradientId = 'microTrendFill';
+  const gradientPrevId = 'microTrendPrevFill';
   const chartData = useMemo(() => data, [data]);
-  const lastHojeIndex = useMemo(() => {
-    for (let idx = chartData.length - 1; idx >= 0; idx -= 1) {
-      const value = chartData[idx]?.hoje;
-      if (value !== null && value !== undefined) return idx;
-    }
-    return null;
+  const processedData = useMemo(() => {
+    const lastHojeIdx = [...chartData]
+      .map((p, idx) => ({ idx, hasValue: (p.hoje ?? 0) > 0 || (p.quantidade ?? 0) > 0 }))
+      .filter((x) => x.hasValue)
+      .map((x) => x.idx)
+      .reduce((acc, curr) => Math.max(acc, curr), -1);
+
+    const lastOntemIdx = [...chartData]
+      .map((p, idx) => ({ idx, hasValue: (p.ontem ?? 0) > 0 || (p.quantidadeOntem ?? 0) > 0 }))
+      .filter((x) => x.hasValue)
+      .map((x) => x.idx)
+      .reduce((acc, curr) => Math.max(acc, curr), -1);
+
+    return chartData.map((point, idx) => {
+      const withinHoje = idx <= lastHojeIdx || lastHojeIdx === -1;
+      const withinOntem = idx <= lastOntemIdx || lastOntemIdx === -1;
+      return {
+        ...point,
+        hojeDisplay: withinHoje ? point.hoje : undefined,
+        ontemDisplay: withinOntem ? point.ontem : undefined,
+        quantidadeDisplay: withinHoje ? point.quantidade : undefined,
+        quantidadeOntemDisplay: withinOntem ? point.quantidadeOntem : undefined,
+        isLastActive: lastHojeIdx >= 0 && idx === lastHojeIdx,
+      };
+    });
   }, [chartData]);
   const hasComparison = useMemo(() => chartData.some((item) => item.ontem !== undefined), [chartData]);
 
-  const renderLastDot = useCallback(
-    (props: MicroDotProps) => {
-      if (lastHojeIndex === null || props?.index !== lastHojeIndex) return null;
-      if (typeof props?.cx !== 'number' || typeof props?.cy !== 'number') return null;
-      const stroke = props?.stroke ?? 'rgb(168, 85, 247)';
-      return (
-        <g>
-          <circle cx={props.cx} cy={props.cy} r={4.5} fill="#fff" stroke={stroke} strokeWidth={2} />
-          <circle cx={props.cx} cy={props.cy} r={2.2} fill={stroke} />
-        </g>
-      );
-    },
-    [lastHojeIndex]
-  );
+  const renderTooltip = (props: MicroTooltipProps) => {
+    const { active, payload } = props;
+    if (!active || !payload?.length) return null;
 
-  const renderTooltip = useCallback(
-    ({ active, payload }: MicroTooltipProps) => {
-      if (!active || !payload?.length) return null;
+    const payloadArr = payload as ReadonlyArray<{ payload?: SparkDatum; value?: ChartTooltipValue; dataKey?: string }>;
+    const point = (payloadArr[0]?.payload as SparkDatum | undefined) ?? null;
+    if (!point) return null;
 
-      const firstPayload = (payload[0]?.payload as SparkDatum | undefined) ?? null;
-      const labelResolved = firstPayload?.label ?? (typeof firstPayload?.horaIndex === 'number' ? `${firstPayload.horaIndex}h` : 'Hora');
-      const ontemEntry = payload.find((entry) => entry?.dataKey === 'ontem');
-      const hojeEntry = payload.find((entry) => entry?.dataKey === 'hoje');
-
-      const formatValue = (entry?: MicroTooltipEntry) => {
-        const raw = entry?.payload ?? null;
-        const rawValue = entry?.value as ChartTooltipValue | undefined;
-        const payloadForFormatter: ChartTooltipPayload = {
-          value: rawValue,
-          name: entry?.name,
-          color: entry?.color,
-          fill: entry?.fill,
-          dataKey: entry?.dataKey?.toString(),
-          payload: raw,
-        };
-        const valueForFormatter = typeof rawValue === 'number' || typeof rawValue === 'string' ? rawValue : 0;
-        return formatter(valueForFormatter, payloadForFormatter);
+    const label = typeof point.horaIndex === 'number' ? `${point.horaIndex}h` : point.label ?? 'Hora';
+    const formatValue = (raw: ChartTooltipValue | undefined, key: string) => {
+      const entry: ChartTooltipPayload = {
+        value: raw,
+        name: key,
+        color: '',
+        fill: '',
+        dataKey: key,
+        payload: point,
       };
+      if (!formatter) return typeof raw === 'number' ? raw.toLocaleString('pt-BR') : raw ?? '—';
+      const safeValue = typeof raw === 'number' || typeof raw === 'string' ? raw : 0;
+      return formatter(safeValue, entry);
+    };
 
-      const renderSection = (title: string, entry?: MicroTooltipEntry, isOntem?: boolean) => {
-        if (!entry) return null;
-        const quantidadeKey = entry.dataKey === 'ontem' ? 'quantidadeOntem' : 'quantidade';
-        const quantidade = (entry.payload as SparkDatum | undefined)?.[quantidadeKey] ?? null;
-        const titleColor = isOntem ? '#334155' : '#6b21a8';
-        const valueColor = isOntem ? '#1f2937' : '#6b21a8';
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <p style={{ margin: 0, fontWeight: 700, color: titleColor, fontSize: 12 }}>{title}</p>
-            <p style={{ margin: 0, fontWeight: 700, color: valueColor, fontSize: 13 }}>{formatValue(entry)}</p>
-            {typeof quantidade === 'number' ? (
-              <p style={{ margin: 0, fontWeight: 600, color: '#475569', fontSize: 12 }}>
-                {quantidade.toLocaleString('pt-BR')} pedidos
-              </p>
+    return (
+      <div className="glass-tooltip text-[12px] p-3 min-w-[180px] rounded-xl bg-white/90 shadow-xl backdrop-blur-3xl border border-white/60">
+        <p className="m-0 mb-2 font-semibold text-slate-700">{label}</p>
+        <div className="flex justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs uppercase text-slate-500">Ontem</span>
+            <span className="font-semibold text-slate-700">{formatValue(point.ontem ?? 0, 'ontem')}</span>
+            {typeof point.quantidadeOntem === 'number' ? (
+              <span className="text-xs text-slate-500">{point.quantidadeOntem.toLocaleString('pt-BR')} pedidos</span>
             ) : null}
           </div>
-        );
-      };
-
-      return (
-        <div
-          className="glass-tooltip text-[12px] p-3"
-          style={{
-            zIndex: 9999,
-            background: 'rgba(255, 255, 255, 0.95)',
-            color: 'var(--text-main, #0f172a)',
-            backdropFilter: 'blur(35px) saturate(1.4)',
-            WebkitBackdropFilter: 'blur(35px) saturate(1.4)',
-            minWidth: 240,
-          }}
-        >
-          <p style={{ margin: '0 0 8px 0', fontWeight: 700 }}>{labelResolved}</p>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr max-content 1fr',
-              alignItems: 'stretch',
-              columnGap: 10,
-            }}
-          >
-            {renderSection('Ontem:', ontemEntry, true)}
-            <div style={{ width: 1, background: 'rgba(148, 163, 184, 0.4)', borderRadius: 9999 }} />
-            {renderSection('Hoje:', hojeEntry, false)}
+          <div className="w-px bg-slate-200" />
+          <div className="flex flex-col gap-1 items-end">
+            <span className="text-xs uppercase text-purple-600">Hoje</span>
+            <span className="font-semibold text-purple-700">{formatValue(point.hoje ?? 0, 'hoje')}</span>
+            {typeof point.quantidade === 'number' ? (
+              <span className="text-xs text-slate-500">{point.quantidade.toLocaleString('pt-BR')} pedidos</span>
+            ) : null}
           </div>
         </div>
-      );
-    },
-    [formatter]
-  );
+      </div>
+    );
+  };
 
   return (
     <div className="h-32 sm:h-36 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={chartData}
+        <ComposedChart
+          data={processedData}
           margin={{ top: 1, right: 6, bottom: 1, left: 6 }}
         >
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={PRIMARY_COLOR} stopOpacity={0.6} />
+              <stop offset="100%" stopColor={PRIMARY_COLOR} stopOpacity={0.05} />
+            </linearGradient>
+            <linearGradient id={gradientPrevId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={SECONDARY_COLOR} stopOpacity={0.5} />
+              <stop offset="100%" stopColor={SECONDARY_COLOR} stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
           <XAxis dataKey="horaIndex" height={0} tick={false} tickLine={false} axisLine={false} />
           <YAxis hide />
           <Tooltip content={renderTooltip} />
           {hasComparison && (
-            <Line
-              type="monotone"
-              dataKey="ontem"
-              name="24h anteriores"
-              stroke="#CBD5E1"
-              strokeWidth={1.35}
-              strokeDasharray="6 4"
-              dot={false}
-              isAnimationActive={false}
-            />
+            <>
+              <Area
+                type="monotone"
+                dataKey="ontemDisplay"
+                stroke="none"
+                fill={`url(#${gradientPrevId})`}
+                fillOpacity={1}
+                connectNulls
+                baseValue={0}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="ontemDisplay"
+                name="24h anteriores"
+                stroke={SECONDARY_COLOR}
+                strokeWidth={1.35}
+                strokeDasharray="6 4"
+                dot={false}
+                isAnimationActive={false}
+              />
+            </>
           )}
+          <Area
+            type="monotone"
+            dataKey="hojeDisplay"
+            stroke="none"
+            fill={`url(#${gradientId})`}
+            fillOpacity={1}
+            connectNulls
+            baseValue={0}
+            isAnimationActive={false}
+          />
           <Line
             type="monotone"
-            dataKey="hoje"
+            dataKey="hojeDisplay"
             name="Últimas 24h"
-            stroke="rgb(168, 85, 247)"
+            stroke={PRIMARY_COLOR}
             strokeWidth={2}
-            dot={renderLastDot}
+            dot={({ cx, cy, payload }) => {
+              const isLast = (payload as SparkDatum & { isLastActive?: boolean }).isLastActive;
+              if (!isLast || typeof cx !== 'number' || typeof cy !== 'number') return null;
+              return (
+                <g>
+                  <circle cx={cx} cy={cy} r={5} fill="#fff" stroke={PRIMARY_COLOR} strokeWidth={2} />
+                  <circle cx={cx} cy={cy} r={2.4} fill={PRIMARY_COLOR} />
+                </g>
+              );
+            }}
             isAnimationActive={false}
-            activeDot={{ r: 3, strokeWidth: 0 }}
+            activeDot={false}
           />
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

@@ -878,3 +878,187 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
     background: #ffffff;
   }
 }
+
+/* =========================
+   Micro-interações e Animações
+   ========================= */
+
+/* Keyframes para animações personalizadas */
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-scale {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes progress-fill {
+  0% {
+    width: 0%;
+  }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes slide-in-from-top {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-from-bottom {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wiggle {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-3deg);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+}
+
+/* Classes de animação utilitárias */
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.animate-progress-fill {
+  animation: progress-fill 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 0.6s ease-in-out;
+}
+
+.animate-slide-in-top {
+  animation: slide-in-from-top 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-slide-in-bottom {
+  animation: slide-in-from-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+.animate-wiggle {
+  animation: wiggle 0.4s ease-in-out;
+}
+
+/* Transições hover suaves para elementos interativos */
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.hover-glow {
+  transition: box-shadow 0.3s ease;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 20px rgba(0, 157, 168, 0.3);
+}
+
+/* Scrollbar hide utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Focus ring para acessibilidade */
+.focus-ring {
+  transition: outline-offset 0.2s ease, outline-color 0.2s ease;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

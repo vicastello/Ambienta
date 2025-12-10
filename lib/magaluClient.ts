@@ -1,6 +1,6 @@
 import type { MagaluOrdersResponse } from '@/src/types/magalu';
 
-const MAGALU_BASE_URL = 'https://api.integracommerce.com.br/api';
+const MAGALU_BASE_URL = 'https://api.magalu.com/seller/v1';
 
 export interface ListMagaluOrdersParams {
   page?: number; // default 1
@@ -21,6 +21,8 @@ function getMagaluAuthHeaders() {
     );
   }
 
+  // X-Channel-Id pode ser necessário dependendo do contexto
+  // Por ora, vamos tentar sem
   return {
     'Authorization': `Bearer ${accessToken}`,
     'Accept': 'application/json',
@@ -31,10 +33,10 @@ function getMagaluAuthHeaders() {
 export async function listMagaluOrders(params: ListMagaluOrdersParams = {}): Promise<MagaluOrdersResponse> {
   const { page = 1, perPage = 50, status } = params;
 
-  const url = new URL(`${MAGALU_BASE_URL}/Order`);
+  const url = new URL(`${MAGALU_BASE_URL}/orders`);
   url.searchParams.set('page', String(page));
-  url.searchParams.set('perPage', String(Math.min(perPage, 100)));
-  if (status) url.searchParams.set('Status', status);
+  url.searchParams.set('limit', String(Math.min(perPage, 100)));
+  if (status) url.searchParams.set('status', status);
 
   try {
     const res = await fetch(url.toString(), {
