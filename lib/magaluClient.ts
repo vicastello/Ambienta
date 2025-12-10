@@ -1,6 +1,6 @@
 import type { MagaluOrdersResponse } from '@/src/types/magalu';
 
-const MAGALU_BASE_URL = 'https://api.magalu.com/seller/v1';
+const MAGALU_BASE_URL = 'https://api.integracommerce.com.br/api';
 
 export interface ListMagaluOrdersParams {
   page?: number; // default 1
@@ -9,22 +9,24 @@ export interface ListMagaluOrdersParams {
 }
 
 /**
- * Autenticação da API Magalu
- * Usa OAuth 2.0 Bearer token obtido via fluxo de autorização
+ * Autenticação da API Magalu (IntegrCommerce)
+ * Usa Basic Auth com API Key ID e Secret
  */
 function getMagaluAuthHeaders() {
-  const accessToken = process.env.MAGALU_ACCESS_TOKEN;
+  const apiKeyId = process.env.MAGALU_API_KEY_ID;
+  const apiKeySecret = process.env.MAGALU_API_KEY_SECRET;
 
-  if (!accessToken) {
+  if (!apiKeyId || !apiKeySecret) {
     throw new Error(
-      'MAGALU_ACCESS_TOKEN não configurado. Execute o fluxo OAuth acessando /api/magalu/oauth/auth'
+      'MAGALU_API_KEY_ID e MAGALU_API_KEY_SECRET não configurados'
     );
   }
 
-  // X-Channel-Id pode ser necessário dependendo do contexto
-  // Por ora, vamos tentar sem
+  // Basic Auth: base64(apiKeyId:apiKeySecret)
+  const credentials = Buffer.from(`${apiKeyId}:${apiKeySecret}`).toString('base64');
+
   return {
-    'Authorization': `Bearer ${accessToken}`,
+    'Authorization': `Basic ${credentials}`,
     'Accept': 'application/json',
     'Content-Type': 'application/json',
   };
@@ -33,10 +35,10 @@ function getMagaluAuthHeaders() {
 export async function listMagaluOrders(params: ListMagaluOrdersParams = {}): Promise<MagaluOrdersResponse> {
   const { page = 1, perPage = 50, status } = params;
 
-  const url = new URL(`${MAGALU_BASE_URL}/orders`);
+  const url = new URL(`${MAGALU_BASE_URL}/Order`);
   url.searchParams.set('page', String(page));
-  url.searchParams.set('limit', String(Math.min(perPage, 100)));
-  if (status) url.searchParams.set('status', status);
+  url.searchParams.set('perPage', String(Math.min(perPage, 100)));
+  if (status) url.searchParams.set('Status', status);
 
   try {
     const res = await fetch(url.toString(), {

@@ -5,15 +5,16 @@ import { createClient } from '@supabase/supabase-js';
 // Carregar .env.local
 config({ path: '.env.local' });
 
-const MAGALU_BASE_URL = 'https://api.magalu.com/seller/v1';
+const MAGALU_BASE_URL = 'https://api.integracommerce.com.br/api';
 
 // Configuração
-const accessToken = process.env.MAGALU_ACCESS_TOKEN!;
+const apiKeyId = process.env.MAGALU_API_KEY_ID!;
+const apiKeySecret = process.env.MAGALU_API_KEY_SECRET!;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-if (!accessToken) {
-  console.error('❌ MAGALU_ACCESS_TOKEN não configurado');
+if (!apiKeyId || !apiKeySecret) {
+  console.error('❌ MAGALU_API_KEY_ID e MAGALU_API_KEY_SECRET não configurados');
   process.exit(1);
 }
 
@@ -63,12 +64,15 @@ async function magaluRequest(path: string, params: Record<string, string>): Prom
     url.searchParams.set(key, value);
   }
 
+  // Basic Auth com API Key ID e Secret
+  const credentials = Buffer.from(`${apiKeyId}:${apiKeySecret}`).toString('base64');
+
   console.log(`[Magalu] Request: ${path} (page ${params.page || 1})`);
 
   const res = await fetch(url.toString(), {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
+      'Authorization': `Basic ${credentials}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     },
@@ -138,9 +142,9 @@ function mapItemsToDb(order: MagaluOrder): any[] {
 
 async function syncPage(page: number, perPage: number = 100): Promise<{ orders: MagaluOrder[]; hasMore: boolean; total: number }> {
   try {
-    const response: MagaluOrdersResponse = await magaluRequest('/orders', {
+    const response: MagaluOrdersResponse = await magaluRequest('/Order', {
       page: String(page),
-      limit: String(perPage),
+      perPage: String(perPage),
     });
 
     const orders = response.Orders || [];
