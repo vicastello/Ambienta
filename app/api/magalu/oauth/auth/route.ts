@@ -16,14 +16,13 @@ export async function GET() {
   }
 
   // Scopes necessários para acessar pedidos e produtos do Magalu
-  // Formato: open:<recurso>:<operação> (conforme documentação)
+  // Formato: open:<recurso>-<tipo>-seller:<operação>
+  // Lista completa: https://developers.magalu.com/docs/api-reference/
   const scopes = [
-    'openid',
-    'profile',
-    'email',
-    'offline_access', // Para obter refresh_token
-    'open:order-order:read', // Acesso aos pedidos
-    'open:portfolio:read', // Acesso ao portfólio/produtos
+    'open:order-order-seller:read', // Acesso aos pedidos
+    'open:portfolio-skus-seller:read', // Acesso aos SKUs/produtos
+    'open:portfolio-stocks-seller:read', // Acesso aos estoques
+    'open:portfolio-prices-seller:read', // Acesso aos preços
   ].join(' ');
 
   // Estado para segurança (pode ser melhorado com um token aleatório salvo em sessão)
