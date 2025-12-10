@@ -15,14 +15,15 @@ export async function GET() {
     );
   }
 
-  // Scopes necessários para acessar pedidos e produtos
+  // Scopes necessários para acessar pedidos e produtos do Magalu
+  // Formato: open:<recurso>:<operação> (conforme documentação)
   const scopes = [
     'openid',
     'profile',
     'email',
     'offline_access', // Para obter refresh_token
-    'orders:read',
-    'products:read',
+    'open:order-order:read', // Acesso aos pedidos
+    'open:portfolio:read', // Acesso ao portfólio/produtos
   ].join(' ');
 
   // Estado para segurança (pode ser melhorado com um token aleatório salvo em sessão)
