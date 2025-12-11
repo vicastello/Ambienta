@@ -46,3 +46,14 @@ export interface ShopeeOrderListResponse {
   has_more: boolean;
   next_cursor?: string;
 }
+
+// Resposta crua da API v2 (usa response.order_list)
+export interface ShopeeOrderListApiResponse {
+  response: {
+    order_list: ShopeeOrder[];
+    more: boolean;
+    next_cursor?: string;
+  };
+  error?: string;
+  message?: string;
+}

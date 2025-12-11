@@ -1,8 +1,14 @@
 import 'server-only';
 import crypto from 'node:crypto';
-import type { ShopeeOrder, ShopeeOrderListResponse, ShopeeOrderStatus } from '@/src/types/shopee';
+import type {
+  ShopeeOrder,
+  ShopeeOrderListApiResponse,
+  ShopeeOrderListResponse,
+  ShopeeOrderStatus,
+} from '@/src/types/shopee';
 
-const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com/api/v2';
+// Base host; prefix /api/v2 is added per-request for assinatura correta
+const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 
 function getShopeeConfig() {
   const partnerId = process.env.SHOPEE_PARTNER_ID;
@@ -48,13 +54,14 @@ async function shopeeRequest<T>(
   const timestamp = Math.floor(Date.now() / 1000);
   const isShopLevel = Boolean(options?.accessToken && options?.shopId);
   const { partnerId } = getShopeeConfig();
+  const apiPath = path.startsWith('/api/v2') ? path : `/api/v2${path}`;
 
-  const sign = generateShopeeSignature(path, timestamp, {
+  const sign = generateShopeeSignature(apiPath, timestamp, {
     accessToken: isShopLevel ? options?.accessToken : undefined,
     shopId: isShopLevel ? options?.shopId : undefined,
   });
 
-  const url = new URL(SHOPEE_BASE_URL + path);
+  const url = new URL(SHOPEE_BASE_URL + apiPath);
   const searchParams = url.searchParams;
 
   searchParams.set('partner_id', partnerId);
@@ -89,7 +96,7 @@ async function shopeeRequest<T>(
   if (errorCode && errorCode !== '0') {
     throw new Error(`Shopee error ${errorCode}: ${errorMessage ?? 'Unknown error'}`);
   }
-  if (typeof errorMessage === 'string' && errorMessage.toLowerCase() !== 'success') {
+  if (typeof errorMessage === 'string' && errorMessage && errorMessage.toLowerCase() !== 'success') {
     throw new Error(`Shopee: ${errorMessage}`);
   }
 
@@ -128,10 +135,21 @@ export async function getShopeeOrders(params: {
   };
 
   const { accessToken, shopId } = getShopeeConfig();
-  return shopeeRequest<ShopeeOrderListResponse>(path, queryParams, {
+  const data = await shopeeRequest<ShopeeOrderListApiResponse>(path, queryParams, {
     accessToken,
     shopId,
   });
+
+  const resp = (data as any).response ?? {};
+  const orders = Array.isArray(resp.order_list) ? resp.order_list : [];
+  const hasMore = Boolean(resp.more);
+  const nextCursor = resp.next_cursor;
+
+  return {
+    orders,
+    has_more: hasMore,
+    next_cursor: nextCursor,
+  };
 }
 
 // Resposta da API get_order_detail
@@ -168,7 +186,17 @@ export async function getShopeeOrderDetails(orderSnList: string[]): Promise<Shop
     { accessToken, shopId }
   );
 
-  return data.response?.order_list ?? [];
+  const orders = data.response?.order_list ?? [];
+
+  // Normalizar para garantir presença de order_items (API retorna item_list)
+  return orders.map((order: any) => ({
+    ...order,
+    order_items: Array.isArray(order.order_items) && order.order_items.length > 0
+      ? order.order_items
+      : Array.isArray(order.item_list)
+        ? order.item_list
+        : [],
+  }));
 }
 
 /**

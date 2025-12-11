@@ -33,6 +33,32 @@ function extractCityState(fullAddress: string | undefined): { city: string | nul
 // Converte pedido Shopee para formato do banco
 function mapShopeeOrderToDb(order: ShopeeOrder, shopId: string) {
   const { city, state } = extractCityState(order.recipient_address?.full_address);
+  const items =
+    (order as any).order_items?.length
+      ? (order as any).order_items
+      : Array.isArray((order as any).item_list)
+        ? (order as any).item_list
+        : [];
+
+  // Se a Shopee não mandar total_amount, calcula a partir dos itens
+  const computedTotal = items.reduce((sum: number, item: any) => {
+    const quantity =
+      Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
+    const discounted = Number(
+      item.variation_discounted_price ??
+      item.model_discounted_price ??
+      item.item_price ??
+      0
+    ) || 0;
+    const original = Number(
+      item.variation_original_price ??
+      item.model_original_price ??
+      item.item_price ??
+      0
+    ) || 0;
+    const price = discounted > 0 ? discounted : original;
+    return sum + (price || 0) * quantity;
+  }, 0);
   
   return {
     order_sn: order.order_sn,
@@ -41,7 +67,7 @@ function mapShopeeOrderToDb(order: ShopeeOrder, shopId: string) {
     create_time: new Date(order.create_time * 1000).toISOString(),
     update_time: new Date(order.update_time * 1000).toISOString(),
     currency: order.currency || 'BRL',
-    total_amount: parseFloat(order.total_amount) || 0,
+    total_amount: parseFloat(order.total_amount) || computedTotal || 0,
     shipping_carrier: order.shipping_carrier || null,
     cod: order.cod || false,
     buyer_user_id: null, // Não disponível no get_order_list básico
@@ -57,22 +83,49 @@ function mapShopeeOrderToDb(order: ShopeeOrder, shopId: string) {
 
 // Converte itens do pedido para formato do banco
 function mapShopeeOrderItemsToDb(order: ShopeeOrder) {
-  if (!order.order_items?.length) return [];
+  const items =
+    (order as any).order_items?.length
+      ? (order as any).order_items
+      : Array.isArray((order as any).item_list)
+        ? (order as any).item_list
+        : [];
+
+  if (!items.length) return [];
   
-  return order.order_items.map((item) => ({
-    order_sn: order.order_sn,
-    item_id: item.item_id,
-    model_id: item.model_id || null,
-    item_name: item.item_name,
-    model_name: item.model_name || null,
-    item_sku: item.item_sku || null,
-    model_sku: item.model_sku || null,
-    quantity: 1, // Shopee não retorna quantidade no get_order_list, sempre 1 por linha
-    original_price: parseFloat(item.variation_original_price) || null,
-    discounted_price: parseFloat(item.variation_discounted_price) || null,
-    is_wholesale: item.is_wholesale || false,
-    raw_payload: item as unknown as Record<string, unknown>,
-  }));
+  return items.map((item: any) => {
+    const quantity =
+      Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
+    const rawOriginal = Number(
+      item.variation_original_price ??
+      item.model_original_price ??
+      item.item_price ??
+      0
+    ) || 0;
+    const rawDiscounted = Number(
+      item.variation_discounted_price ??
+      item.model_discounted_price ??
+      item.item_price ??
+      item.variation_original_price ??
+      0
+    ) || 0;
+    const originalPrice = rawOriginal > 0 ? rawOriginal : null;
+    const discountedPrice = rawDiscounted > 0 ? rawDiscounted : null;
+
+    return {
+      order_sn: order.order_sn,
+      item_id: item.item_id,
+      model_id: item.model_id || null,
+      item_name: item.item_name,
+      model_name: item.model_name || null,
+      item_sku: item.item_sku || null,
+      model_sku: item.model_sku || null,
+      quantity,
+      original_price: originalPrice,
+      discounted_price: discountedPrice,
+      is_wholesale: item.is_wholesale || false,
+      raw_payload: item as unknown as Record<string, unknown>,
+    };
+  });
 }
 
 export async function POST(req: Request) {
