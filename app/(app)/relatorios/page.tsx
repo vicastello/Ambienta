@@ -7,6 +7,21 @@ import Link from "next/link";
 export default function RelatoriosPage() {
   const reports = [
     {
+      title: "Relatório de Vendas",
+      description: "Relatório completo de vendas com agrupamento por pedido, SKU ou canal. Alterne entre visão unitária ou por kits.",
+      href: "/relatorios/vendas-mensais",
+      icon: TrendingUp,
+      color: "green",
+      features: [
+        "Agrupar por pedido, SKU ou canal",
+        "Alternar entre unitário e kits (expandido)",
+        "Ranking de produtos mais vendidos",
+        "Gráficos de faturamento e distribuição",
+        "Exportação CSV, Excel e PDF",
+        "Alertas de pedidos não vinculados",
+      ],
+    },
+    {
       title: "Vincular Pedidos",
       description: "Vincule pedidos dos marketplaces (Magalu, Shopee, Mercado Livre) com pedidos do Tiny para relatórios precisos.",
       href: "/relatorios/vinculos",
@@ -17,19 +32,6 @@ export default function RelatoriosPage() {
         "Busca e filtros avançados",
         "Estatísticas de vinculação",
         "Gestão de vínculos existentes",
-      ],
-    },
-    {
-      title: "Vendas Mensais",
-      description: "Relatório completo de vendas mensais com breakdown detalhado de kits, variações e componentes individuais.",
-      href: "/relatorios/vendas-mensais",
-      icon: TrendingUp,
-      color: "green",
-      features: [
-        "Vendas por marketplace",
-        "Breakdown por tipo de produto",
-        "Expansão de kits para ver componentes",
-        "Exportação para CSV",
       ],
     },
   ];
@@ -130,22 +132,19 @@ export default function RelatoriosPage() {
         </div>
 
         {/* Info Box */}
-        <div className="mt-8 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+        <div className="mt-8 bg-[#009DA8]/10 dark:bg-[#009DA8]/20 border border-[#009DA8]/30 rounded-lg p-6">
           <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            Sobre os Relatórios
+            <FileText className="w-5 h-5 text-[#009DA8]" />
+            Dicas de Uso
           </h3>
           <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
             <p>
-              <strong>Vincular Pedidos:</strong> Antes de gerar relatórios de vendas, é importante
-              vincular os pedidos dos marketplaces com os pedidos do Tiny. Isso permite rastrear
-              vendas por SKU específico de cada marketplace.
+              <strong>Relatório de Vendas:</strong> Escolha entre ver produtos como foram vendidos (unitário) 
+              ou com kits expandidos em componentes individuais. Use a visão por kit para controle de estoque.
             </p>
             <p>
-              <strong>Vendas Mensais:</strong> Após vincular os pedidos, você pode gerar relatórios
-              mensais completos que mostram não apenas os produtos vendidos, mas também expandem
-              kits para mostrar seus componentes individuais - essencial para controle de estoque
-              e pedidos de compra.
+              <strong>Vincular Pedidos:</strong> Antes de gerar relatórios, vincule os pedidos dos marketplaces 
+              com os pedidos do Tiny. Pedidos não vinculados aparecem como alerta no relatório.
             </p>
           </div>
         </div>

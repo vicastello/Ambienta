@@ -3,9 +3,9 @@
  * Cria ou atualiza o redirect_uri da aplicação
  */
 
-const MAGALU_API_KEY_ID = process.env.MAGALU_API_KEY_ID || 'c4158267-a09f-49a5-8126-b37cdf6fe7ed';
-const MAGALU_API_KEY_SECRET = process.env.MAGALU_API_KEY_SECRET || 'bff318b3-00eb-4e17-90a7-ec30991d7603';
-const MAGALU_CLIENT_ID = process.env.MAGALU_CLIENT_ID || 'c4158267-a09f-49a5-8126-b37cdf6fe7ed';
+const MAGALU_API_KEY_ID = process.env.MAGALU_API_KEY_ID || '3bdbca17-a76a-40dd-8c40-9a15917d8885';
+const MAGALU_API_KEY_SECRET = process.env.MAGALU_API_KEY_SECRET || '71771755-198e-430a-8511-ddc10874c8d4';
+const MAGALU_CLIENT_ID = process.env.MAGALU_CLIENT_ID || '3bdbca17-a76a-40dd-8c40-9a15917d8885';
 
 async function registerMagaluApp() {
   console.log('\n🔧 Registrando aplicação OAuth no Magalu...\n');

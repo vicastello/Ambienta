@@ -6,26 +6,137 @@ import type {
   ShopeeOrderListResponse,
   ShopeeOrderStatus,
 } from '@/src/types/shopee';
+import { supabaseAdmin } from './supabaseAdmin';
 
-// Base host; prefix /api/v2 is added per-request for assinatura correta
+// Base host; prefix /api/v2 is added per-request para assinatura correta
 const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 
+type ShopeeTokens = {
+  access_token: string;
+  refresh_token?: string;
+  expires_at?: string;
+};
+
+async function getShopeeTokens(): Promise<ShopeeTokens | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabaseAdmin as any)
+    .from('shopee_tokens')
+    .select('*')
+    .eq('id', 1)
+    .single();
+
+  if (data) {
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: data.expires_at,
+    };
+  }
+
+  const envAccess = process.env.SHOPEE_ACCESS_TOKEN;
+  const envRefresh = process.env.SHOPEE_REFRESH_TOKEN;
+  if (envAccess) {
+    // Seed no banco para permitir refresh via cron
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabaseAdmin as any)
+      .from('shopee_tokens')
+      .upsert({
+        id: 1,
+        access_token: envAccess,
+        refresh_token: envRefresh,
+        updated_at: new Date().toISOString(),
+      });
+    return {
+      access_token: envAccess,
+      refresh_token: envRefresh,
+    };
+  }
+
+  return null;
+}
+
+async function saveShopeeTokens(tokens: ShopeeTokens) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabaseAdmin as any)
+    .from('shopee_tokens')
+    .upsert({
+      id: 1,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: tokens.expires_at ?? null,
+      updated_at: new Date().toISOString(),
+    });
+}
+
+async function refreshShopeeToken(refreshToken: string): Promise<ShopeeTokens> {
+  const { partnerId, partnerKey, shopId } = getShopeeConfig();
+  const PATH = '/api/v2/auth/access_token/get';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const base = `${partnerId}${PATH}${timestamp}`;
+  const sign = crypto.createHmac('sha256', partnerKey).update(base).digest('hex');
+
+  const url = new URL(`https://partner.shopeemobile.com${PATH}`);
+  url.searchParams.set('partner_id', partnerId);
+  url.searchParams.set('timestamp', String(timestamp));
+  url.searchParams.set('sign', sign);
+
+  const body = {
+    partner_id: Number(partnerId),
+    shop_id: Number(shopId),
+    refresh_token: refreshToken,
+  };
+
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(`Shopee refresh failed (${res.status}): ${data.error || res.statusText}`);
+  }
+
+  const expiresAt = data.expire_in ? new Date(Date.now() + data.expire_in * 1000).toISOString() : undefined;
+  return {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token || refreshToken,
+    expires_at: expiresAt,
+  };
+}
+
+async function ensureValidShopeeTokens(): Promise<ShopeeTokens> {
+  const tokens = await getShopeeTokens();
+  if (!tokens) {
+    throw new Error('Shopee tokens not configured. Defina SHOPEE_ACCESS_TOKEN/REFRESH_TOKEN ou preencha shopee_tokens.');
+  }
+
+  const marginMs = 5 * 60 * 1000;
+  if (tokens.expires_at) {
+    const expires = new Date(tokens.expires_at).getTime();
+    if (expires - marginMs <= Date.now() && tokens.refresh_token) {
+      const refreshed = await refreshShopeeToken(tokens.refresh_token);
+      await saveShopeeTokens(refreshed);
+      return refreshed;
+    }
+  }
+
+  return tokens;
+}
+
 function getShopeeConfig() {
-  const partnerId = process.env.SHOPEE_PARTNER_ID;
-  const partnerKey = process.env.SHOPEE_PARTNER_KEY;
-  const shopId = process.env.SHOPEE_SHOP_ID;
-  const accessToken = process.env.SHOPEE_ACCESS_TOKEN;
+  const partnerId = process.env.SHOPEE_PARTNER_ID?.trim();
+  const partnerKey = process.env.SHOPEE_PARTNER_KEY?.trim();
+  const shopId = process.env.SHOPEE_SHOP_ID?.trim();
 
   if (!partnerId) throw new Error('Missing SHOPEE_PARTNER_ID env var');
   if (!partnerKey) throw new Error('Missing SHOPEE_PARTNER_KEY env var');
   if (!shopId) throw new Error('Missing SHOPEE_SHOP_ID env var');
-  if (!accessToken) throw new Error('Missing SHOPEE_ACCESS_TOKEN env var');
 
   return {
     partnerId,
     partnerKey,
     shopId,
-    accessToken,
   };
 }
 
@@ -51,14 +162,15 @@ async function shopeeRequest<T>(
   params: Record<string, string | number | undefined>,
   options?: ShopeeSignatureOptions
 ): Promise<T> {
+  const tokens = await ensureValidShopeeTokens();
   const timestamp = Math.floor(Date.now() / 1000);
-  const isShopLevel = Boolean(options?.accessToken && options?.shopId);
-  const { partnerId } = getShopeeConfig();
+  const isShopLevel = true;
+  const { partnerId, shopId } = getShopeeConfig();
   const apiPath = path.startsWith('/api/v2') ? path : `/api/v2${path}`;
 
   const sign = generateShopeeSignature(apiPath, timestamp, {
-    accessToken: isShopLevel ? options?.accessToken : undefined,
-    shopId: isShopLevel ? options?.shopId : undefined,
+    accessToken: tokens.access_token,
+    shopId,
   });
 
   const url = new URL(SHOPEE_BASE_URL + apiPath);
@@ -69,8 +181,8 @@ async function shopeeRequest<T>(
   searchParams.set('sign', sign);
 
   if (isShopLevel) {
-    searchParams.set('access_token', options!.accessToken!);
-    searchParams.set('shop_id', options!.shopId!);
+    searchParams.set('access_token', tokens.access_token);
+    searchParams.set('shop_id', shopId);
   }
 
   for (const [key, value] of Object.entries(params)) {
@@ -88,6 +200,12 @@ async function shopeeRequest<T>(
   }
 
   if (!res.ok) {
+    // Se 401/403, tentar refresh e refazer uma vez
+    if ((res.status === 401 || res.status === 403) && tokens.refresh_token) {
+      const refreshed = await refreshShopeeToken(tokens.refresh_token);
+      await saveShopeeTokens(refreshed);
+      return shopeeRequest<T>(path, params, options);
+    }
     throw new Error(`Shopee request failed (${res.status}): ${data?.message ?? data?.error ?? 'Unknown error'}`);
   }
 
@@ -134,11 +252,7 @@ export async function getShopeeOrders(params: {
     order_status: params.status,
   };
 
-  const { accessToken, shopId } = getShopeeConfig();
-  const data = await shopeeRequest<ShopeeOrderListApiResponse>(path, queryParams, {
-    accessToken,
-    shopId,
-  });
+  const data = await shopeeRequest<ShopeeOrderListApiResponse>(path, queryParams);
 
   const resp = (data as any).response ?? {};
   const orders = Array.isArray(resp.order_list) ? resp.order_list : [];
@@ -172,7 +286,6 @@ export async function getShopeeOrderDetails(orderSnList: string[]): Promise<Shop
   }
 
   const path = '/order/get_order_detail';
-  const { accessToken, shopId } = getShopeeConfig();
 
   // A Shopee espera response_optional_fields para trazer itens, endereço, etc.
   const optionalFields = 'item_list,recipient_address,buyer_user_id,shipping_carrier';
@@ -182,8 +295,7 @@ export async function getShopeeOrderDetails(orderSnList: string[]): Promise<Shop
     {
       order_sn_list: orderSnList.join(','),
       response_optional_fields: optionalFields,
-    },
-    { accessToken, shopId }
+    }
   );
 
   const orders = data.response?.order_list ?? [];

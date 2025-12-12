@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveTokensToDb } from '@/lib/magaluClientV2';
 
+function decodeTenantFromAccessToken(accessToken?: string): string | undefined {
+  if (!accessToken) return undefined;
+  try {
+    const payload = accessToken.split('.')[1];
+    const json = Buffer.from(payload, 'base64').toString('utf-8');
+    const data = JSON.parse(json);
+    return data.tenant || data.tenant_id || data.tenants?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Callback OAuth do Magalu
  * Recebe o authorization code e troca por access_token e refresh_token
@@ -72,7 +84,7 @@ export async function GET(req: NextRequest) {
     console.log('[Magalu OAuth] Expires in:', tokenData.expires_in, 'seconds');
     console.log('[Magalu OAuth] Scopes:', tokenData.scope);
 
-    // Extrair tenant_id do state se disponível
+    // Extrair tenant_id do state ou do token
     let tenantId: string | undefined;
     if (state) {
       try {
@@ -81,6 +93,10 @@ export async function GET(req: NextRequest) {
       } catch {
         // State inválido, ignorar
       }
+    }
+
+    if (!tenantId) {
+      tenantId = tokenData.tenant_id || tokenData.tenant || decodeTenantFromAccessToken(tokenData.access_token);
     }
 
     // Salvar tokens no Supabase

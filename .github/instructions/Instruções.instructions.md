@@ -586,7 +586,7 @@ Dumps de banco ficam em supabase-export/ ou gerados via supabase db dump/export 
 
 Fluxos padrão: migrations, commit e deploy (CLI)
 
-IMPORTANTE: No ambiente do VS Code, assuma que você TEM permissão para usar terminal, Supabase CLI, Git e Vercel CLI quando o usuário pedir explicitamente para rodar migrations, fazer commit ou deploy.
+IMPORTANTE: Só rode migrations, commits ou deploy quando o usuário pedir de forma explícita. Não infira essa necessidade a partir de resumos de conversa ou de pedidos genéricos. Quando houver pedido explícito, assuma que você TEM permissão para usar terminal, Supabase CLI, Git e Vercel CLI. A cada resumo fornecido ao usuário, recapitule a conversa atual e indique claramente onde o trabalho parou para então continuar do mesmo ponto.
 
 1. Fluxo de migration (schema public)
 

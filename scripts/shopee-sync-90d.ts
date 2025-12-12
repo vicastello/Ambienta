@@ -140,21 +140,39 @@ function mapOrderToDb(order: any) {
 
 function mapItemsToDb(order: any): any[] {
   if (!order.item_list?.length) return [];
-  
-  return order.item_list.map((item: any) => ({
-    order_sn: order.order_sn,
-    item_id: item.item_id,
-    model_id: item.model_id || null,
-    item_name: item.item_name,
-    model_name: item.model_name || null,
-    item_sku: item.item_sku || null,
-    model_sku: item.model_sku || null,
-    quantity: item.model_quantity_purchased || 1,
-    original_price: parseFloat(item.model_original_price) || null,
-    discounted_price: parseFloat(item.model_discounted_price) || null,
-    is_wholesale: item.is_wholesale || false,
-    raw_payload: item,
-  }));
+
+  const agg = new Map<string, any>();
+
+  for (const item of order.item_list as any[]) {
+    const quantity = Number(item.model_quantity_purchased ?? item.quantity ?? 1) || 1;
+    const original_price = parseFloat(item.model_original_price) || null;
+    const discounted_price =
+      parseFloat(item.model_discounted_price || item.variation_discounted_price || item.item_price) || null;
+    const modelId = Number(item.model_id ?? 0) || 0;
+    const key = `${order.order_sn}|${item.item_id}|${modelId}`;
+
+    if (agg.has(key)) {
+      const curr = agg.get(key);
+      curr.quantity += quantity;
+    } else {
+      agg.set(key, {
+        order_sn: order.order_sn,
+        item_id: item.item_id,
+        model_id: modelId,
+        item_name: item.item_name,
+        model_name: item.model_name || null,
+        item_sku: item.item_sku || null,
+        model_sku: item.model_sku || null,
+        quantity,
+        original_price,
+        discounted_price,
+        is_wholesale: item.is_wholesale || false,
+        raw_payload: item,
+      });
+    }
+  }
+
+  return Array.from(agg.values());
 }
 
 async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, totalChunks: number): Promise<number> {
@@ -237,11 +255,12 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
 
 async function main() {
   console.log('='.repeat(60));
-  console.log('SHOPEE SYNC - Últimos 90 dias');
+  const argDays = process.argv.find((a) => a.startsWith('--days='));
+  const periodDays = argDays ? Math.min(Math.max(Number(argDays.split('=')[1]) || 0, 1), 180) : 90;
+  console.log(`SHOPEE SYNC - Últimos ${periodDays} dias`);
   console.log('='.repeat(60));
 
   const now = Math.floor(Date.now() / 1000);
-  const periodDays = 90;
   const timeFrom = now - periodDays * 24 * 60 * 60;
   const timeTo = now;
 

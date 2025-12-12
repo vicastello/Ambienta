@@ -1,6 +1,32 @@
+# 2025-12-11 - Ajuste relatório vendas por kit
+
+O relatório de vendas agora agrupa corretamente vendas por kit usando os vínculos de marketplace_kit_components e marketplace_order_links:
+
+- Para cada pedido do Tiny vinculado a um pedido de marketplace, verifica se os itens do pedido correspondem a um kit cadastrado (marketplace_kit_components).
+- Se sim, exibe a venda como kit (SKU do kit do marketplace), não apenas os componentes individuais.
+- No modo "unitário" segue mostrando os itens normalmente.
+
+Esse ajuste permite analisar vendas reais de kits, mesmo quando os itens vêm separados no pedido do Tiny, desde que correspondam a um kit vinculado.
+
+Deploy: commit 5f6e78b
 # Migração supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql
 
 ---
+
+Registro 2025-12-11 08:15:00 -03: `supabase db push --linked --include-all` executado sem erro. Executar manualmente no Supabase Studio para confirmar remoção do job e da função legacy:
+
+```sql
+-- Verifica se ainda existe job cron chamando a função
+select jobid, jobname, schedule, command, active
+from cron.job
+where command ilike '%sync_produtos_from_tiny%';
+
+-- Verifica se a função legacy ainda existe
+select routine_name
+from information_schema.routines
+where specific_schema = 'public'
+  and routine_name ilike '%sync_produtos_from_tiny%';
+```
 
 Registro 2025-12-11 07:43:31 -03: `supabase db push --linked --include-all` executado sem erro. Executar manualmente no Supabase Studio para confirmar remoção do job e da função legacy:
 

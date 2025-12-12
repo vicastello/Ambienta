@@ -74,6 +74,7 @@ export interface TinyOrdersRow {
   tiny_data_prevista?: string | null;      // date
   tiny_data_faturamento?: string | null;   // timestamptz
   tiny_data_atualizacao?: string | null;   // timestamptz
+  numero_pedido_ecommerce?: string | null;
   valor_total_pedido?: number | null;
   valor_total_produtos?: number | null;
   valor_desconto?: number | null;

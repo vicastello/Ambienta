@@ -167,6 +167,16 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
   const canal = deriveCanalFromRaw(p);
   const valorFrete = extrairFreteFromRaw(p);
   const { cidade, uf } = extractCidadeUfFromRaw(p);
+  const rawNumeroPedidoEcommerce =
+    typeof (p as any)?.ecommerce?.numeroPedidoEcommerce === 'string'
+      ? (p as any).ecommerce.numeroPedidoEcommerce
+      : typeof (p as any)?.pedido?.ecommerce?.numeroPedidoEcommerce === 'string'
+        ? (p as any).pedido.ecommerce.numeroPedidoEcommerce
+        : null;
+  const numeroPedidoEcommerce =
+    rawNumeroPedidoEcommerce && rawNumeroPedidoEcommerce.trim()
+      ? rawNumeroPedidoEcommerce.trim()
+      : null;
 
   // Deriva forma_pagamento conforme Swagger: prioridade
   // 1. p.formaPagamento
@@ -202,6 +212,7 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
     valor_total_produtos: parseValorTiny((p as any).valorTotalProdutos ?? null),
     valor_desconto: parseValorTiny((p as any).valorDesconto ?? (p as any).desconto ?? null),
     valor_outras_despesas: parseValorTiny((p as any).valorOutrasDespesas ?? (p as any).outrasDespesas ?? null),
+    numero_pedido_ecommerce: numeroPedidoEcommerce,
     canal,
     cliente_nome: (p as any).cliente?.nome ?? null,
     cidade: cidade ?? null,

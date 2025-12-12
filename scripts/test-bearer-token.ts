@@ -3,7 +3,7 @@
  */
 
 const MAGALU_BASE_URL = 'https://api.integracommerce.com.br/api';
-const apiKey = process.env.MAGALU_API_KEY || '9832b5ef-3e6d-425f-9ae6-623522818d8f';
+const apiKey = process.env.MAGALU_API_KEY || '7c7a8b42-39d7-4096-a9d6-234098becb75';
 
 console.log('🔑 Testando Bearer Token com API Key...\n');
 console.log('API Key:', apiKey.substring(0, 15) + '...\n');

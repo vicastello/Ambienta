@@ -1,13 +1,13 @@
 # Como Obter Credenciais da API Magalu
 
-## ⚠️ Problema Atual
+## ⚠️ Credenciais Atualizadas
 
-As credenciais fornecidas retornam **401 Unauthorized**:
-- API Key: `9832b5ef-3e6d-425f-9ae6-623522818d8f`
-- API Key ID: `c4158267-a09f-49a5-8126-b37cdf6fe7ed`
-- API Key Secret: `bff318b3-00eb-4e17-90a7-ec30991d7603`
+Novos valores fornecidos para a API IntegrCommerce:
+- API Key: `7c7a8b42-39d7-4096-a9d6-234098becb75`
+- API Key ID: `3bdbca17-a76a-40dd-8c40-9a15917d8885`
+- API Key Secret: `71771755-198e-430a-8511-ddc10874c8d4`
 
-Isso significa que essas credenciais estão:
+Se ainda houver **401 Unauthorized** com essas credenciais, significa que elas estão:
 1. **Inválidas/expiradas**
 2. **Sem permissões** para acessar pedidos
 3. **De ambiente errado** (teste vs produção)

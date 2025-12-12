@@ -327,7 +327,8 @@ export interface ListOrdersParams {
 export async function listMagaluOrdersV2(params: ListOrdersParams = {}): Promise<MagaluOrderListResponse> {
   const searchParams = new URLSearchParams();
 
-  if (params.limit) searchParams.set('_limit', String(Math.min(params.limit, 100)));
+  // API Magalu usa _offset para paginação; limit funciona sem underscore
+  if (params.limit) searchParams.set('limit', String(Math.min(params.limit, 100)));
   if (params.offset) searchParams.set('_offset', String(params.offset));
   if (params.status) searchParams.set('status', params.status);
   if (params.placed_at_from) searchParams.set('placed_at_from', params.placed_at_from);
@@ -359,9 +360,11 @@ export async function getAllMagaluOrdersForPeriod(params: {
 }): Promise<MagaluOrder[]> {
   const { fromDate, toDate, onProgress } = params;
   const allOrders: MagaluOrder[] = [];
-  const limit = 100;
+  // API impõe max_limit = 50 (mesmo se solicitarmos 100)
+  const limit = 50;
   let offset = 0;
   let total = 0;
+  let safetyCounter = 0;
 
   do {
     const response = await listMagaluOrdersV2({
@@ -372,16 +375,22 @@ export async function getAllMagaluOrdersForPeriod(params: {
     });
 
     allOrders.push(...response.results);
-    // API não retorna total, usa count e verifica se há next
-    offset += limit;
-    // Se count < limit, não há mais páginas
-    if (response.meta.page.count < limit || !response.meta.links?.next) {
-      break;
-    }
+    const page = response.meta?.page;
+    const pageLimit = page?.limit ?? limit;
+    // Meta costuma trazer a contagem total; use-a para não depender apenas do links.next
+    total = page?.count ?? Math.max(total, allOrders.length);
+    offset += pageLimit;
+    const hasNextByCount = total > offset;
+    const hasNextByLink = Boolean(response.meta?.links?.next);
+    const hasNext = (response.results?.length || 0) === pageLimit && (hasNextByCount || hasNextByLink);
 
     if (onProgress) {
-      onProgress({ loaded: allOrders.length, total: allOrders.length });
+      const progressTotal = total || allOrders.length;
+      onProgress({ loaded: allOrders.length, total: progressTotal });
     }
+
+    safetyCounter += 1;
+    if (!hasNext || safetyCounter > 500) break;
 
     // Rate limiting entre páginas
     await new Promise((r) => setTimeout(r, 200));
@@ -451,17 +460,19 @@ export function mapMagaluOrderToDb(order: any, tenantId?: string) {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function mapMagaluOrderItemsToDb(order: any) {
-  const items: Array<{
+  type ItemRow = {
     id_order: string;
     id_sku: string;
-    id_order_package: number | null;
+    id_order_package: number;
     product_name: string;
     quantity: number;
     price: number;
     freight: number;
     discount: number;
     raw_payload: unknown;
-  }> = [];
+  };
+
+  const agg = new Map<string, ItemRow>();
 
   for (const delivery of order.deliveries || []) {
     // Normalizer para converter de centavos para reais
@@ -472,22 +483,33 @@ export function mapMagaluOrderItemsToDb(order: any) {
       const unitPrice = (item.unit_price?.value || 0) / itemNormalizer;
       const itemFreight = (item.amounts?.freight?.total || 0) / itemNormalizer;
       const itemDiscount = (item.amounts?.discount?.total || 0) / itemNormalizer;
-      
-      items.push({
-        id_order: order.code,
-        id_sku: item.info?.sku || item.sku?.code || item.code || '',
-        id_order_package: null,
-        product_name: item.info?.name || item.sku?.name || '',
-        quantity: item.quantity || 1,
-        price: unitPrice,
-        freight: itemFreight,
-        discount: itemDiscount,
-        raw_payload: item,
-      });
+
+      const pkg = Number(item.package_id ?? delivery.id ?? 0) || 0;
+      const sku = item.info?.sku || item.sku?.code || item.code || '';
+      const key = `${order.code}|${sku}|${pkg}`;
+
+      const current = agg.get(key);
+      if (current) {
+        current.quantity += item.quantity || 1;
+        current.freight += itemFreight;
+        current.discount += itemDiscount;
+      } else {
+        agg.set(key, {
+          id_order: order.code,
+          id_sku: sku,
+          id_order_package: pkg,
+          product_name: item.info?.name || item.sku?.name || '',
+          quantity: item.quantity || 1,
+          price: unitPrice,
+          freight: itemFreight,
+          discount: itemDiscount,
+          raw_payload: item,
+        });
+      }
     }
   }
 
-  return items;
+  return Array.from(agg.values());
 }
 
 // ============ VERIFICAÇÃO DE STATUS ============

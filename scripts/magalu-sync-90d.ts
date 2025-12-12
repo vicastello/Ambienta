@@ -127,17 +127,38 @@ function mapOrderToDb(order: MagaluOrder) {
 function mapItemsToDb(order: MagaluOrder): any[] {
   if (!order.Products?.length) return [];
 
-  return order.Products.map((item) => ({
-    id_order: order.IdOrder,
-    id_sku: item.IdSku,
-    id_order_package: item.IdOrderPackage || null,
-    product_name: item.ProductName || null,
-    quantity: item.Quantity || 1,
-    price: item.Price ? parseFloat(item.Price) : null,
-    freight: item.Freight ? parseFloat(item.Freight) : null,
-    discount: item.Discount ? parseFloat(item.Discount) : null,
-    raw_payload: item,
-  }));
+  const agg = new Map<string, any>();
+
+  for (const item of order.Products) {
+    const pkg = Number(item.IdOrderPackage ?? 0) || 0;
+    const sku = item.IdSku;
+    const key = `${order.IdOrder}|${sku}|${pkg}`;
+    const quantity = item.Quantity || 1;
+    const freight = item.Freight ? parseFloat(item.Freight) : 0;
+    const discount = item.Discount ? parseFloat(item.Discount) : 0;
+    const price = item.Price ? parseFloat(item.Price) : 0;
+
+    if (agg.has(key)) {
+      const current = agg.get(key);
+      current.quantity += quantity;
+      current.freight += freight;
+      current.discount += discount;
+    } else {
+      agg.set(key, {
+        id_order: order.IdOrder,
+        id_sku: sku,
+        id_order_package: pkg,
+        product_name: item.ProductName || null,
+        quantity,
+        price,
+        freight,
+        discount,
+        raw_payload: item,
+      });
+    }
+  }
+
+  return Array.from(agg.values());
 }
 
 async function syncPage(page: number, perPage: number = 100): Promise<{ orders: MagaluOrder[]; hasMore: boolean; total: number }> {

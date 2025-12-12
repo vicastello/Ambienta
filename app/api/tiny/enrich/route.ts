@@ -53,16 +53,28 @@ export async function POST(req: NextRequest) {
       }
 
       if (!data || data.length === 0) {
-        // Fallback: search by raw JSON field if present (ecommerce.numeroPedidoEcommerce)
+        // Fallback: buscar pelo número do pedido no marketplace salvo na coluna dedicada
         const { data: data2 } = await supabaseAdmin
           .from('tiny_orders')
-          .select('id, tiny_id, raw')
-          .filter('raw->>ecommerce', 'cs', numeroStr)
+          .select('id, tiny_id, numero_pedido_ecommerce')
+          .eq('numero_pedido_ecommerce', numeroStr)
           .limit(1);
 
         if (data2 && data2.length) {
           const candidate = data2[0].tiny_id;
           if (typeof candidate === 'number') tinyIds = [candidate];
+        } else {
+          // Fallback: busca no raw caso ainda não tenha sido populado
+          const { data: data3 } = await supabaseAdmin
+            .from('tiny_orders')
+            .select('id, tiny_id, raw')
+            .filter('raw->>ecommerce', 'cs', numeroStr)
+            .limit(1);
+
+          if (data3 && data3.length) {
+            const candidate = data3[0].tiny_id;
+            if (typeof candidate === 'number') tinyIds = [candidate];
+          }
         }
       } else {
         const candidate = data[0].tiny_id;

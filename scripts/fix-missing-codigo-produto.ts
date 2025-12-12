@@ -12,17 +12,31 @@ async function fixMissingCodigos() {
   console.log('='.repeat(80));
   console.log();
 
-  // Buscar itens sem codigo_produto mas com id_produto_tiny
-  console.log('1️⃣  Buscando itens sem código...');
-  const { data: itens, error: itensError } = await supabaseAdmin
-    .from('tiny_pedido_itens')
-    .select('id, id_produto_tiny, codigo_produto')
-    .is('codigo_produto', null)
-    .not('id_produto_tiny', 'is', null);
+  // Buscar TODOS os itens sem codigo_produto mas com id_produto_tiny
+  console.log('1️⃣  Buscando TODOS os itens sem código...');
 
-  if (itensError) {
-    console.error('Erro ao buscar itens:', itensError);
-    return;
+  let itens: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('tiny_pedido_itens')
+      .select('id, id_produto_tiny, codigo_produto')
+      .is('codigo_produto', null)
+      .not('id_produto_tiny', 'is', null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.error('Erro ao buscar itens:', error);
+      break;
+    }
+
+    if (!data || data.length === 0) break;
+    itens = itens.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+    console.log(`   Buscados ${itens.length} itens...`);
   }
 
   console.log(`   Encontrados ${itens?.length || 0} itens sem código`);

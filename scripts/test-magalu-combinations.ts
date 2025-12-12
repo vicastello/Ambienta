@@ -4,9 +4,9 @@
 
 const MAGALU_BASE_URL = 'https://api.integracommerce.com.br/api';
 
-const apiKey = '9832b5ef-3e6d-425f-9ae6-623522818d8f';
-const apiKeyId = 'c4158267-a09f-49a5-8126-b37cdf6fe7ed';
-const apiKeySecret = 'bff318b3-00eb-4e17-90a7-ec30991d7603';
+const apiKey = process.env.MAGALU_API_KEY || '7c7a8b42-39d7-4096-a9d6-234098becb75';
+const apiKeyId = process.env.MAGALU_API_KEY_ID || '3bdbca17-a76a-40dd-8c40-9a15917d8885';
+const apiKeySecret = process.env.MAGALU_API_KEY_SECRET || '71771755-198e-430a-8511-ddc10874c8d4';
 
 console.log('🔑 Testando combinações de credenciais Magalu...\n');
 

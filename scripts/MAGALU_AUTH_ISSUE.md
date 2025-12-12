@@ -11,11 +11,11 @@ A API IntegrCommerce do Magalu (`api.integracommerce.com.br`) usa **Basic Authen
 ### Documentação Oficial:
 - https://api.integracommerce.com.br/Documentation/Authentication
 
-### O que tentamos (não funciona):
+### Credenciais atuais para teste:
 ```bash
-# API Keys fornecidas (retornam 401)
-API_KEY_ID: c4158267-a09f-49a5-8126-b37cdf6fe7ed
-API_KEY_SECRET: bff318b3-00eb-4e17-90a7-ec30991d7603
+# API Keys fornecidas
+API_KEY_ID: 3bdbca17-a76a-40dd-8c40-9a15917d8885
+API_KEY_SECRET: 71771755-198e-430a-8511-ddc10874c8d4
 ```
 
 ### O que a API espera:

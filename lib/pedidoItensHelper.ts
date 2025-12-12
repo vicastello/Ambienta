@@ -16,6 +16,25 @@ const toNumberOrNull = (value: any): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+const normalizeProdutoId = (value: any): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+const fillSkuFromCatalog = (
+  itens: Array<{
+    id_produto_tiny: number | null;
+    codigo_produto: string | null;
+  }>,
+  catalogo: Map<number, string>
+) => {
+  itens.forEach((item) => {
+    if (!item.codigo_produto && item.id_produto_tiny && catalogo.has(item.id_produto_tiny)) {
+      item.codigo_produto = catalogo.get(item.id_produto_tiny)!;
+    }
+  });
+};
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchAndUpsertProduto(accessToken: string, id: number) {
@@ -169,7 +188,7 @@ export async function salvarItensPedido(
         const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
         return {
           id_pedido: idPedidoLocal,
-          id_produto_tiny: toNumberOrNull(produto.id ?? item.idProduto),
+          id_produto_tiny: normalizeProdutoId(produto.id ?? item.idProduto),
           codigo_produto: produto.codigo ?? item.codigo ?? null,
           nome_produto: produto.descricao ?? produto.nome ?? item.descricao ?? 'Sem descrição',
           quantidade: qtd ?? 0,
@@ -186,6 +205,19 @@ export async function salvarItensPedido(
       if (idsTiny.length) {
         await ensureProdutosNoCatalog(accessToken, idsTiny);
         await atualizarEstoqueProdutos(accessToken, idsTiny);
+      }
+
+      // Preencher código faltante a partir do catálogo
+      if (idsTiny.length) {
+        const { data: catalog } = await supabaseAdmin
+          .from('tiny_produtos')
+          .select('id_produto_tiny, codigo')
+          .in('id_produto_tiny', idsTiny);
+        const map = new Map<number, string>();
+        (catalog ?? []).forEach((p: any) => {
+          if (p.codigo) map.set(p.id_produto_tiny, p.codigo);
+        });
+        fillSkuFromCatalog(itensParaSalvar, map);
       }
 
       const { error: insertErr } = await supabaseAdmin
@@ -245,7 +277,7 @@ export async function salvarItensPedido(
       const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
       return {
         id_pedido: idPedidoLocal,
-        id_produto_tiny: toNumberOrNull(produto.id ?? item.idProduto),
+        id_produto_tiny: normalizeProdutoId(produto.id ?? item.idProduto),
         codigo_produto: produto.codigo || item.codigo || null,
         nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
         quantidade: qtd,
@@ -258,18 +290,24 @@ export async function salvarItensPedido(
     // Zera id_produto_tiny se produto não existe no catálogo para evitar violar FK
     const idsTiny = itensParaSalvar
       .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
-      .filter((v): v is number => !!v);
+      .filter((v): v is number => v !== null);
     if (idsTiny.length) {
       await ensureProdutosNoCatalog(accessToken, idsTiny);
       await atualizarEstoqueProdutos(accessToken, idsTiny);
       const { data: existentes } = await supabaseAdmin
         .from('tiny_produtos')
-        .select('id_produto_tiny')
+        .select('id_produto_tiny, codigo')
         .in('id_produto_tiny', idsTiny);
       const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
+      const mapCodigos = new Map<number, string>();
+      (existentes ?? []).forEach((p: any) => {
+        if (p.codigo) mapCodigos.set(p.id_produto_tiny, p.codigo);
+      });
       for (const row of itensParaSalvar) {
         if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
           row.id_produto_tiny = null;
+        } else if (!row.codigo_produto && row.id_produto_tiny && mapCodigos.has(row.id_produto_tiny)) {
+          row.codigo_produto = mapCodigos.get(row.id_produto_tiny)!;
         }
       }
     }

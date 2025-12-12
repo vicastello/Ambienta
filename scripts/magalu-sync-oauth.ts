@@ -209,26 +209,41 @@ function mapOrderToDb(order: MagaluOrder) {
 }
 
 function mapItemsToDb(order: MagaluOrder) {
-  const items: unknown[] = [];
+  const items = new Map<string, any>();
 
   for (const delivery of order.deliveries || []) {
     for (const item of delivery.items || []) {
-      items.push({
-        id_order: order.code,
-        id_sku: item.sku?.code || item.code,
-        id_order_package: null,
-        product_name: item.sku?.name || '',
-        quantity: item.quantity,
-        price: item.unit_price?.total || 0,
-        freight: item.unit_price?.freight || 0,
-        discount: item.unit_price?.discount || 0,
-        raw_payload: item,
-        updated_at: new Date().toISOString(),
-      });
+      const pkg = Number((item as any).package_id ?? delivery.id ?? 0) || 0;
+      const sku = item.sku?.code || item.code;
+      const key = `${order.code}|${sku}|${pkg}`;
+      const quantity = item.quantity || 1;
+      const price = item.unit_price?.total || 0;
+      const freight = item.unit_price?.freight || 0;
+      const discount = item.unit_price?.discount || 0;
+
+      if (items.has(key)) {
+        const curr = items.get(key);
+        curr.quantity += quantity;
+        curr.freight += freight;
+        curr.discount += discount;
+      } else {
+        items.set(key, {
+          id_order: order.code,
+          id_sku: sku,
+          id_order_package: pkg,
+          product_name: item.sku?.name || '',
+          quantity,
+          price,
+          freight,
+          discount,
+          raw_payload: item,
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
   }
 
-  return items;
+  return Array.from(items.values());
 }
 
 async function main() {

@@ -31,6 +31,7 @@ type PedidoSelectRow = Pick<
   | "canal"
   | "cliente_nome"
   | "raw"
+  | "numero_pedido_ecommerce"
 >;
 
 type PedidoItemWithProduto = Pick<
@@ -134,7 +135,7 @@ export async function GET(req: NextRequest) {
     let query = supabaseAdmin
       .from("tiny_orders")
       .select(
-        "id, tiny_id, numero_pedido, situacao, data_criacao, valor, valor_frete, canal, cliente_nome, raw",
+        "id, tiny_id, numero_pedido, situacao, data_criacao, valor, valor_frete, canal, cliente_nome, raw, numero_pedido_ecommerce",
         { count: "exact" }
       );
 
@@ -156,6 +157,8 @@ export async function GET(req: NextRequest) {
       const conditions = [
         `cliente_nome.ilike.%${escaped}%`,
         `canal.ilike.%${escaped}%`,
+        `numero_pedido_ecommerce.ilike.%${escaped}%`,
+        `raw->>numeroPedidoEcommerce.ilike.%${escaped}%`,
       ];
       if (Number.isFinite(numericSearch)) {
         conditions.push(`numero_pedido.eq.${numericSearch}`);
@@ -331,6 +334,7 @@ export async function GET(req: NextRequest) {
       const dataPrevista = toStringOrNull(rawRecord.dataPrevista) ?? toStringOrNull(pedidoRecord?.dataPrevista);
       const notaFiscal = toStringOrNull(rawRecord.numeroNota) ?? toStringOrNull(pedidoRecord?.numeroNota);
       const marketplaceOrder =
+        toStringOrNull(order.numero_pedido_ecommerce) ??
         toStringOrNull(ecommerceRecord?.numeroPedidoEcommerce) ??
         toStringOrNull(rawRecord.numeroPedidoEcommerce);
 

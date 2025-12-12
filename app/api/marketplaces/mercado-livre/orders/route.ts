@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { listMeliOrders } from '@/lib/mercadoLivreClient';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import type { MeliOrder, MeliOrderItem, MeliOrdersSearchResponse } from '@/src/types/mercadoLivre';
 import { extractMeliSku } from '@/src/types/mercadoLivre';
 
@@ -89,10 +90,11 @@ export async function GET(req: Request) {
   const timeToIso = timeTo.toISOString();
 
   const appId = process.env.ML_APP_ID;
-  const accessToken = process.env.ML_ACCESS_TOKEN;
+  const envAccessToken = process.env.ML_ACCESS_TOKEN?.trim();
+  const envRefreshToken = process.env.ML_REFRESH_TOKEN?.trim();
   const sellerId = process.env.ML_SELLER_ID ?? '571389990';
 
-  if (!appId || !accessToken) {
+  if (!appId || !envAccessToken) {
     return NextResponse.json(
       {
         ok: false,
@@ -107,6 +109,30 @@ export async function GET(req: Request) {
   }
 
   try {
+    // Buscar token do banco; fallback para env
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tokenRow } = await (supabaseAdmin as any)
+      .from('meli_tokens')
+      .select('*')
+      .eq('id', 1)
+      .single();
+
+    const accessToken = tokenRow?.access_token || envAccessToken;
+    const refreshToken = tokenRow?.refresh_token || envRefreshToken;
+
+    if (!accessToken) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: 'ML_NOT_CONFIGURED',
+            message: 'Token do Mercado Livre ausente. Faça o OAuth ou configure ML_ACCESS_TOKEN.',
+          },
+        },
+        { status: 503 }
+      );
+    }
+
     const paramsDebug = {
       offset,
       limit,
@@ -115,6 +141,7 @@ export async function GET(req: Request) {
       timeFrom: timeFromIso,
       timeTo: timeToIso,
       sellerId,
+      tokenSource: tokenRow ? 'db' : 'env',
     };
     console.log('[ML Orders API] Calling listMeliOrders with:', paramsDebug);
 
@@ -135,6 +162,19 @@ export async function GET(req: Request) {
           offset,
           limit,
           recent: true,
+          refreshToken,
+          onTokenRefreshed: async (tokens) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabaseAdmin as any)
+              .from('meli_tokens')
+              .upsert({
+                id: 1,
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token ?? tokenRow?.refresh_token ?? envRefreshToken,
+                expires_at: tokens.expires_at ?? null,
+                updated_at: new Date().toISOString(),
+              });
+          },
         });
 
     const hasMore = response.paging.offset + response.paging.limit < response.paging.total;

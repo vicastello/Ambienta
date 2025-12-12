@@ -92,7 +92,9 @@ function mapShopeeOrderItemsToDb(order: ShopeeOrder) {
 
   if (!items.length) return [];
   
-  return items.map((item: any) => {
+  const agg = new Map<string, any>();
+
+  for (const item of items as any[]) {
     const quantity =
       Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
     const rawOriginal = Number(
@@ -111,21 +113,30 @@ function mapShopeeOrderItemsToDb(order: ShopeeOrder) {
     const originalPrice = rawOriginal > 0 ? rawOriginal : null;
     const discountedPrice = rawDiscounted > 0 ? rawDiscounted : null;
 
-    return {
-      order_sn: order.order_sn,
-      item_id: item.item_id,
-      model_id: item.model_id || null,
-      item_name: item.item_name,
-      model_name: item.model_name || null,
-      item_sku: item.item_sku || null,
-      model_sku: item.model_sku || null,
-      quantity,
-      original_price: originalPrice,
-      discounted_price: discountedPrice,
-      is_wholesale: item.is_wholesale || false,
-      raw_payload: item as unknown as Record<string, unknown>,
-    };
-  });
+    const modelId = Number(item.model_id ?? 0) || 0;
+    const key = `${order.order_sn}|${item.item_id}|${modelId}`;
+    const curr = agg.get(key);
+    if (curr) {
+      curr.quantity += quantity;
+    } else {
+      agg.set(key, {
+        order_sn: order.order_sn,
+        item_id: item.item_id,
+        model_id: modelId,
+        item_name: item.item_name,
+        model_name: item.model_name || null,
+        item_sku: item.item_sku || null,
+        model_sku: item.model_sku || null,
+        quantity,
+        original_price: originalPrice,
+        discounted_price: discountedPrice,
+        is_wholesale: item.is_wholesale || false,
+        raw_payload: item as unknown as Record<string, unknown>,
+      });
+    }
+  }
+
+  return Array.from(agg.values());
 }
 
 export async function POST(req: Request) {
