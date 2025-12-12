@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Box, DollarSign, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
+import { AlertCircle, Box, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -649,6 +649,73 @@ export default function ProdutosClient() {
     }
   }
 
+  const exportarCSV = () => {
+    try {
+      // Headers do CSV
+      const headers = [
+        'ID Tiny',
+        'Código',
+        'Nome',
+        'GTIN',
+        'Tipo',
+        'Situação',
+        'Preço',
+        'Preço Promocional',
+        'Unidade',
+        'Saldo',
+        'Reservado',
+        'Disponível',
+        'Fornecedor'
+      ];
+
+      // Mapear produtos filtrados para linhas CSV
+      const rows = produtosFiltrados.map(p => [
+        p.id_produto_tiny,
+        p.codigo || '',
+        `"${p.nome.replace(/"/g, '""')}"`, // Escape aspas duplas
+        p.gtin || '',
+        p.tipo || '',
+        p.situacao || '',
+        p.preco || '',
+        p.preco_promocional || '',
+        p.unidade || '',
+        p.saldo || '',
+        p.reservado || '',
+        p.disponivel_total ?? p.disponivel ?? '',
+        p.fornecedor_nome ? `"${p.fornecedor_nome.replace(/"/g, '""')}"` : ''
+      ]);
+
+      // Combinar headers e rows
+      const csv = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n');
+
+      // Criar blob e download
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', `produtos_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setNotification({
+        type: 'success',
+        message: `${produtosFiltrados.length} produtos exportados com sucesso!`
+      });
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Erro ao exportar CSV: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
+      });
+    }
+  };
+
   // Callback para atualizar embalagens de um produto sem reload
   const handleEmbalagemUpdate = useCallback(async (produtoId: number) => {
     try {
@@ -684,6 +751,15 @@ export default function ProdutosClient() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <button
+              onClick={exportarCSV}
+              disabled={produtosFiltrados.length === 0}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-400 disabled:opacity-50 text-white px-5 py-2.5 text-sm font-semibold transition-all"
+              title={produtosFiltrados.length > 0 ? `Exportar ${produtosFiltrados.length} produtos para CSV` : 'Nenhum produto para exportar'}
+            >
+              <Download className="w-4 h-4" />
+              Exportar CSV
+            </button>
             <button
               onClick={syncProdutos}
               disabled={syncing}
