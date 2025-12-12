@@ -6,12 +6,7 @@ import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
 import type { CustomTooltipFormatter } from "@/app/dashboard/components/charts/ChartTooltips";
-
-type Embalagem = {
-  id: string;
-  codigo: string;
-  nome: string;
-};
+import type { Embalagem } from "@/src/types/embalagens";
 
 type ProdutoEmbalagem = {
   embalagem_id: string;
@@ -1535,6 +1530,17 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
   const [selectedQuantidade, setSelectedQuantidade] = useState(1);
   const [editingLink, setEditingLink] = useState<{ embalagem_id: string; quantidade: number } | null>(null);
 
+  const formatEmbalagemTooltip = (embalagem: Embalagem, quantidade: number) => {
+    return `${embalagem.nome}
+Código: ${embalagem.codigo}
+Dimensões: ${embalagem.altura} × ${embalagem.largura} × ${embalagem.comprimento} cm
+Preço unitário: ${formatBRL(embalagem.preco_unitario)}
+Estoque: ${embalagem.estoque_atual} un
+Quantidade neste produto: ${quantidade}x
+
+Clique para editar embalagem/quantidade`;
+  };
+
   const handleAddEmbalagem = async () => {
     if (!selectedEmbalagemId) return;
     if (!Number.isFinite(selectedQuantidade) || selectedQuantidade <= 0) {
@@ -1687,7 +1693,7 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
                   });
                 }}
                 className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-500/10 dark:text-blue-400"
-                title="Clique para editar embalagem/quantidade"
+                title={formatEmbalagemTooltip(link.embalagem, link.quantidade)}
               >
                 <Box className="h-3 w-3" />
                 <span className="font-medium">{link.embalagem.nome}</span>
