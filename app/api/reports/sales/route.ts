@@ -155,13 +155,22 @@ export async function GET(request: NextRequest) {
       .select('codigo, nome, tipo');
     const produtoMap = new Map(produtos?.map(p => [p.codigo, { nome: p.nome, tipo: p.tipo }]) || []);
 
-    // Buscar vínculos de pedidos marketplace <-> tiny apenas para os pedidos do período
-    const { data: orderLinks } = await supabaseAdmin
-      .from('marketplace_order_links')
-      .select('marketplace, marketplace_order_id, tiny_order_id')
-      .in('tiny_order_id', pedidoIds);
+    // Buscar vínculos de pedidos marketplace <-> tiny em chunks
+    const allOrderLinks: any[] = [];
+    for (let i = 0; i < pedidoIds.length; i += chunkSize) {
+      const chunk = pedidoIds.slice(i, i + chunkSize);
+      const { data: linksChunk } = await supabaseAdmin
+        .from('marketplace_order_links')
+        .select('marketplace, marketplace_order_id, tiny_order_id')
+        .in('tiny_order_id', chunk);
+
+      if (linksChunk) {
+        allOrderLinks.push(...linksChunk);
+      }
+    }
+
     const orderLinkMap = new Map();
-    (orderLinks || []).forEach(link => {
+    allOrderLinks.forEach(link => {
       orderLinkMap.set(link.tiny_order_id, link);
     });
 
