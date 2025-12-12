@@ -790,7 +790,14 @@ export default function ProdutosClient() {
               <Package className="w-4 h-4 text-purple-600" />
               Catálogo
             </div>
-            <h1 className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+            <div className="flex items-center gap-3 mt-4">
+              <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+              {quickFilter && produtosFiltrados.length !== produtos.length && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-400">
+                  {produtosFiltrados.length} / {produtos.length}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-500 mt-2 max-w-3xl">
               {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
             </p>
@@ -1175,7 +1182,7 @@ export default function ProdutosClient() {
       </section>
 
       {produtoEmFoco && (
-        <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
+        <section className="glass-panel glass-tint rounded-[32px] border-2 border-purple-200 dark:border-purple-500/30 p-6 md:p-8 space-y-6 shadow-lg shadow-purple-500/10">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col sm:flex-row gap-4 flex-1">
               <div
@@ -1191,7 +1198,10 @@ export default function ProdutosClient() {
                 )}
               </div>
               <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Produto em foco</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Produto em foco</p>
+                  <span className="inline-flex h-2 w-2 rounded-full bg-purple-500 animate-pulse"></span>
+                </div>
                 <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span>Código {produtoEmFoco.codigo || "—"}</span>
@@ -1576,7 +1586,7 @@ type MetricCardProps = {
   loading?: boolean;
 };
 
-function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProps) {
+const MetricCard = memo(function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProps) {
   const colorClasses = {
     blue: "from-blue-500 to-cyan-500",
     green: "from-green-500 to-emerald-500",
@@ -1623,7 +1633,7 @@ function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProp
       </div>
     </div>
   );
-}
+});
 
 type NotificationToastProps = {
   type: 'success' | 'error' | 'info';
