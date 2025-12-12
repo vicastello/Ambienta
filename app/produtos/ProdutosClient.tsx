@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Box, DollarSign, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown } from "lucide-react";
+import { AlertCircle, Box, DollarSign, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -926,7 +926,7 @@ export default function ProdutosClient() {
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
                 aria-label="Limpar filtro de fornecedor"
               >
-                &times;
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -1014,7 +1014,7 @@ export default function ProdutosClient() {
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
                         aria-label="Limpar filtro de fornecedor"
                       >
-                        &times;
+                        <X className="w-4 h-4" />
                       </button>
                     )}
                   </div>
@@ -1688,7 +1688,7 @@ Clique para editar embalagem/quantidade`;
                 }}
                 className="text-slate-500 hover:text-slate-700"
               >
-                <span className="text-base leading-none">&times;</span>
+                <X className="h-4 w-4" />
               </button>
             </div>
           ) : (
@@ -1723,7 +1723,7 @@ Clique para editar embalagem/quantidade`;
                   {removing === link.embalagem_id ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
-                    <span className="text-base leading-none">&times;</span>
+                    <X className="h-3 w-3" />
                   )}
                 </button>
               )}
@@ -1772,7 +1772,7 @@ Clique para editar embalagem/quantidade`;
             disabled={adding}
             className="text-slate-500 hover:text-slate-700 disabled:opacity-50"
           >
-            <span className="text-base leading-none">&times;</span>
+            <X className="h-4 w-4" />
           </button>
         </div>
       ) : availableEmbalagens.length > 0 && linkedEmbalagens.length === 0 ? (
