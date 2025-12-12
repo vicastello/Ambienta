@@ -180,6 +180,7 @@ export default function ProdutosClient() {
   } | null>(null);
   const [estoqueLiveLoading, setEstoqueLiveLoading] = useState(false);
   const [estoqueLiveError, setEstoqueLiveError] = useState<string | null>(null);
+  const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -240,6 +241,21 @@ export default function ProdutosClient() {
   useEffect(() => {
     fetchProdutos();
   }, [fetchProdutos]);
+
+  // Buscar embalagens uma única vez
+  useEffect(() => {
+    const fetchEmbalagens = async () => {
+      try {
+        const res = await fetch("/api/embalagens");
+        if (!res.ok) throw new Error("Erro ao buscar embalagens");
+        const data = await res.json();
+        setEmbalagens(data.embalagens || []);
+      } catch (err) {
+        console.error("Erro ao buscar embalagens:", err);
+      }
+    };
+    fetchEmbalagens();
+  }, []);
 
   const fetchProdutosRef = useRef(fetchProdutos);
   useEffect(() => {
@@ -563,6 +579,26 @@ export default function ProdutosClient() {
       setSyncing(false);
     }
   }
+
+  // Callback para atualizar embalagens de um produto sem reload
+  const handleEmbalagemUpdate = useCallback(async (produtoId: number) => {
+    try {
+      // Buscar dados atualizados do produto
+      const res = await fetch(`/api/produtos?limit=1&offset=0&search=${produtoId}`);
+      if (!res.ok) throw new Error("Erro ao buscar produto atualizado");
+
+      const data = await res.json();
+      const produtoAtualizado = data.produtos?.find((p: Produto) => p.id === produtoId);
+
+      if (produtoAtualizado) {
+        setProdutos(prev => prev.map(p => p.id === produtoId ? produtoAtualizado : p));
+      }
+    } catch (err) {
+      console.error("Erro ao atualizar produto:", err);
+      // Em caso de erro, refetch toda a lista
+      fetchProdutos();
+    }
+  }, [fetchProdutos]);
 
   return (
     <div className="space-y-6">
@@ -1052,6 +1088,8 @@ export default function ProdutosClient() {
                   produto={produto}
                   selected={produtoSelecionadoId === produto.id_produto_tiny}
                   onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                  embalagens={embalagens}
+                  onEmbalagemUpdate={handleEmbalagemUpdate}
                 />
               ))}
             </div>
@@ -1079,6 +1117,8 @@ export default function ProdutosClient() {
                       produto={produto}
                       selected={produtoSelecionadoId === produto.id_produto_tiny}
                       onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                      embalagens={embalagens}
+                      onEmbalagemUpdate={handleEmbalagemUpdate}
                     />
                   ))}
                 </tbody>
@@ -1123,9 +1163,11 @@ type ProdutoRowProps = {
   produto: Produto;
   selected?: boolean;
   onSelect?: () => void;
+  embalagens: Embalagem[];
+  onEmbalagemUpdate: (produtoId: number) => void;
 };
 
-const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: ProdutoRowProps) {
+const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -1210,33 +1252,36 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: P
             )}
           </div>
         </div>
+        {/* Embalagens no mobile */}
+        {produto.embalagens && produto.embalagens.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {produto.embalagens.map((link) => (
+              <span key={link.embalagem_id} className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-700 dark:text-blue-400">
+                <Box className="h-2.5 w-2.5" />
+                <span className="font-medium">{link.embalagem.nome}</span>
+                <span className="opacity-70">({link.quantidade}x)</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   );
 });
 
-const EmbalagemSelector = memo(function EmbalagemSelector({ produto }: { produto: Produto }) {
-  const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
-  const [loading, setLoading] = useState(false);
+const EmbalagemSelector = memo(function EmbalagemSelector({
+  produto,
+  embalagens,
+  onEmbalagemUpdate
+}: {
+  produto: Produto;
+  embalagens: Embalagem[];
+  onEmbalagemUpdate: (produtoId: number) => void;
+}) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [showSelect, setShowSelect] = useState(false);
   const [selectedEmbalagemId, setSelectedEmbalagemId] = useState("");
-
-  // Fetch available embalagens
-  useEffect(() => {
-    const fetchEmbalagens = async () => {
-      try {
-        const res = await fetch("/api/embalagens");
-        if (!res.ok) throw new Error("Erro ao buscar embalagens");
-        const data = await res.json();
-        setEmbalagens(data.embalagens || []);
-      } catch (err) {
-        console.error("Erro ao buscar embalagens:", err);
-      }
-    };
-    fetchEmbalagens();
-  }, []);
 
   const handleAddEmbalagem = async () => {
     if (!selectedEmbalagemId) return;
@@ -1256,15 +1301,15 @@ const EmbalagemSelector = memo(function EmbalagemSelector({ produto }: { produto
         throw new Error(errorData.error || "Erro ao vincular embalagem");
       }
 
-      // Refresh the page to show updated data
-      window.location.reload();
+      // Atualizar produto sem reload
+      await onEmbalagemUpdate(produto.id);
+      setShowSelect(false);
+      setSelectedEmbalagemId("");
     } catch (err) {
       console.error("Erro ao vincular embalagem:", err);
       alert(err instanceof Error ? err.message : "Erro ao vincular embalagem");
     } finally {
       setAdding(false);
-      setShowSelect(false);
-      setSelectedEmbalagemId("");
     }
   };
 
@@ -1282,8 +1327,8 @@ const EmbalagemSelector = memo(function EmbalagemSelector({ produto }: { produto
         throw new Error(errorData.error || "Erro ao desvincular embalagem");
       }
 
-      // Refresh the page to show updated data
-      window.location.reload();
+      // Atualizar produto sem reload
+      await onEmbalagemUpdate(produto.id);
     } catch (err) {
       console.error("Erro ao desvincular embalagem:", err);
       alert(err instanceof Error ? err.message : "Erro ao desvincular embalagem");
@@ -1373,7 +1418,7 @@ const EmbalagemSelector = memo(function EmbalagemSelector({ produto }: { produto
   );
 });
 
-const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect }: ProdutoRowProps) {
+const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -1457,7 +1502,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
           )}
       </td>
       <td className="px-6 py-4">
-        <EmbalagemSelector produto={produto} />
+        <EmbalagemSelector produto={produto} embalagens={embalagens} onEmbalagemUpdate={onEmbalagemUpdate} />
       </td>
       <td className="px-6 py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
