@@ -16,6 +16,7 @@ import {
   ShoppingCart,
   Store,
   FileText,
+  Box,
 } from 'lucide-react';
 import { GlassHorizontalNav, GlassVerticalNav } from '@/src/components/navigation/GlassVerticalNav';
 
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/pedidos', label: 'Pedidos', icon: ShoppingBag },
   { href: '/marketplaces', label: 'Marketplaces', icon: Store },
   { href: '/produtos', label: 'Produtos', icon: Package },
+  { href: '/embalagens', label: 'Embalagens', icon: Box },
   { href: '/clientes', label: 'Clientes', icon: Users },
   { href: '/compras', label: 'Compras', icon: ShoppingCart },
   { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
