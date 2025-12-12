@@ -211,6 +211,19 @@ export default function ProdutosClient() {
     produtoId: number;
   } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  
+  // Filtros avançados de preço e estoque
+  const [precoMin, setPrecoMin] = useState<string>('');
+  const [precoMax, setPrecoMax] = useState<string>('');
+  const [estoqueMin, setEstoqueMin] = useState<string>('');
+  const [estoqueMax, setEstoqueMax] = useState<string>('');
+  
+  // Progresso de sincronização
+  const [syncProgress, setSyncProgress] = useState<{
+    current: number;
+    total: number;
+    message: string;
+  } | null>(null);
 
   // Hooks de navegação para salvar filtros na URL
   const router = useRouter();
@@ -534,6 +547,30 @@ export default function ProdutosClient() {
         })
       : produtos;
 
+    // Aplicar filtros de preço
+    const precoMinNum = precoMin ? parseFloat(precoMin) : null;
+    const precoMaxNum = precoMax ? parseFloat(precoMax) : null;
+    if (precoMinNum !== null || precoMaxNum !== null) {
+      filtered = filtered.filter((produto) => {
+        const preco = produto.preco || 0;
+        if (precoMinNum !== null && preco < precoMinNum) return false;
+        if (precoMaxNum !== null && preco > precoMaxNum) return false;
+        return true;
+      });
+    }
+
+    // Aplicar filtros de estoque
+    const estoqueMinNum = estoqueMin ? parseInt(estoqueMin, 10) : null;
+    const estoqueMaxNum = estoqueMax ? parseInt(estoqueMax, 10) : null;
+    if (estoqueMinNum !== null || estoqueMaxNum !== null) {
+      filtered = filtered.filter((produto) => {
+        const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
+        if (estoqueMinNum !== null && disponivel < estoqueMinNum) return false;
+        if (estoqueMaxNum !== null && disponivel > estoqueMaxNum) return false;
+        return true;
+      });
+    }
+
     // Depois ordena
     if (sortColumn) {
       filtered = [...filtered].sort((a, b) => {
@@ -572,7 +609,7 @@ export default function ProdutosClient() {
     }
 
     return filtered;
-  }, [produtos, quickFilter, sortColumn, sortDirection]);
+  }, [produtos, quickFilter, precoMin, precoMax, estoqueMin, estoqueMax, sortColumn, sortDirection]);
 
   const carregarEstoqueLive = useCallback(
     async (mode: "hybrid" | "live" = "hybrid") => {
@@ -731,8 +768,11 @@ export default function ProdutosClient() {
   async function syncProdutos() {
     if (syncing) return;
     setSyncing(true);
+    setSyncProgress({ current: 0, total: 100, message: 'Iniciando sincronização...' });
 
     try {
+      setSyncProgress({ current: 10, total: 100, message: 'Conectando ao Tiny ERP...' });
+      
       const response = await fetch("/api/produtos/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -742,14 +782,18 @@ export default function ProdutosClient() {
         }),
       });
 
+      setSyncProgress({ current: 70, total: 100, message: 'Processando produtos...' });
       const data = await response.json();
 
       if (data.success) {
+        setSyncProgress({ current: 90, total: 100, message: 'Atualizando cache...' });
+        clearCacheByPrefix("produtos:");
+        
+        setSyncProgress({ current: 100, total: 100, message: 'Concluído!' });
         setNotification({
           type: 'success',
           message: `Sincronização concluída!\n\n${data.totalSincronizados} produtos\n${data.totalNovos} novos\n${data.totalAtualizados} atualizados`
         });
-        clearCacheByPrefix("produtos:");
         fetchProdutos();
       } else {
         throw new Error(data.error || "Erro desconhecido");
@@ -761,6 +805,8 @@ export default function ProdutosClient() {
       });
     } finally {
       setSyncing(false);
+      // Limpar progresso após 1.5s
+      setTimeout(() => setSyncProgress(null), 1500);
     }
   }
 
@@ -912,6 +958,22 @@ export default function ProdutosClient() {
             </button>
           </div>
         </div>
+
+        {/* Barra de progresso da sincronização */}
+        {syncProgress && (
+          <div className="rounded-2xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 p-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-purple-700 dark:text-purple-400">{syncProgress.message}</span>
+              <span className="text-purple-600 dark:text-purple-300">{syncProgress.current}%</span>
+            </div>
+            <div className="h-2 bg-purple-100 dark:bg-purple-900/50 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${syncProgress.current}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Cards de Métricas */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
@@ -1163,6 +1225,66 @@ export default function ProdutosClient() {
           </div>
         </form>
 
+        {/* Filtros avançados de preço e estoque */}
+        <div className="hidden md:flex flex-wrap gap-3 items-end">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Preço:</span>
+            <input
+              type="number"
+              placeholder="Min"
+              value={precoMin}
+              onChange={(e) => setPrecoMin(e.target.value)}
+              className="app-input w-24 text-sm"
+              min={0}
+              step={0.01}
+            />
+            <span className="text-slate-400">–</span>
+            <input
+              type="number"
+              placeholder="Max"
+              value={precoMax}
+              onChange={(e) => setPrecoMax(e.target.value)}
+              className="app-input w-24 text-sm"
+              min={0}
+              step={0.01}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Estoque:</span>
+            <input
+              type="number"
+              placeholder="Min"
+              value={estoqueMin}
+              onChange={(e) => setEstoqueMin(e.target.value)}
+              className="app-input w-20 text-sm"
+              min={0}
+            />
+            <span className="text-slate-400">–</span>
+            <input
+              type="number"
+              placeholder="Max"
+              value={estoqueMax}
+              onChange={(e) => setEstoqueMax(e.target.value)}
+              className="app-input w-20 text-sm"
+              min={0}
+            />
+          </div>
+          {(precoMin || precoMax || estoqueMin || estoqueMax) && (
+            <button
+              type="button"
+              onClick={() => {
+                setPrecoMin('');
+                setPrecoMax('');
+                setEstoqueMin('');
+                setEstoqueMax('');
+              }}
+              className="text-xs text-slate-500 hover:text-purple-600 font-medium"
+            >
+              Limpar faixas
+            </button>
+          )}
+        </div>
+
         {mobileFiltersOpen && (
           <div className="fixed inset-0 z-40 md:hidden">
             <button
@@ -1248,6 +1370,56 @@ export default function ProdutosClient() {
                         <X className="w-4 h-4" />
                       </button>
                     )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Preço mínimo</label>
+                    <input
+                      type="number"
+                      placeholder="R$ 0"
+                      value={precoMin}
+                      onChange={(e) => setPrecoMin(e.target.value)}
+                      className="app-input w-full"
+                      min={0}
+                      step={0.01}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Preço máximo</label>
+                    <input
+                      type="number"
+                      placeholder="R$ ∞"
+                      value={precoMax}
+                      onChange={(e) => setPrecoMax(e.target.value)}
+                      className="app-input w-full"
+                      min={0}
+                      step={0.01}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Estoque mínimo</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={estoqueMin}
+                      onChange={(e) => setEstoqueMin(e.target.value)}
+                      className="app-input w-full"
+                      min={0}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Estoque máximo</label>
+                    <input
+                      type="number"
+                      placeholder="∞"
+                      value={estoqueMax}
+                      onChange={(e) => setEstoqueMax(e.target.value)}
+                      className="app-input w-full"
+                      min={0}
+                    />
                   </div>
                 </div>
                 <button
