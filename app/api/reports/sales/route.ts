@@ -137,10 +137,12 @@ export async function GET(request: NextRequest) {
       .select('codigo, nome, tipo');
     const produtoMap = new Map(produtos?.map(p => [p.codigo, { nome: p.nome, tipo: p.tipo }]) || []);
 
-    // Buscar vínculos de pedidos marketplace <-> tiny
+    // Buscar vínculos de pedidos marketplace <-> tiny apenas para os pedidos do período
+    const pedidoIds = (pedidos || []).map((p: any) => p.id);
     const { data: orderLinks } = await supabaseAdmin
       .from('marketplace_order_links')
-      .select('marketplace, marketplace_order_id, tiny_order_id');
+      .select('marketplace, marketplace_order_id, tiny_order_id')
+      .in('tiny_order_id', pedidoIds);
     const orderLinkMap = new Map();
     (orderLinks || []).forEach(link => {
       orderLinkMap.set(link.tiny_order_id, link);
