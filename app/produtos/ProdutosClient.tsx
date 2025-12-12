@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Box, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Box, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -182,6 +182,8 @@ export default function ProdutosClient() {
     message: string;
   } | null>(null);
   const [imageZoom, setImageZoom] = useState<{ url: string; alt: string } | null>(null);
+  const [sortColumn, setSortColumn] = useState<'nome' | 'preco' | 'disponivel' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -437,27 +439,59 @@ export default function ProdutosClient() {
 
   // Produtos filtrados por quick filter
   const produtosFiltrados = useMemo(() => {
-    if (!quickFilter) return produtos;
+    // Primeiro filtra
+    let filtered = quickFilter
+      ? produtos.filter((produto) => {
+          const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
 
-    return produtos.filter((produto) => {
-      const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
+          switch (quickFilter) {
+            case 'estoque-critico':
+              return disponivel <= 0;
+            case 'estoque-baixo':
+              return disponivel > 0 && disponivel < 5;
+            case 'sem-imagem':
+              return !produto.imagem_url;
+            case 'em-promocao':
+              return produto.preco_promocional != null && produto.preco_promocional < (produto.preco || 0);
+            case 'sem-embalagem':
+              return !produto.embalagens || produto.embalagens.length === 0;
+            default:
+              return true;
+          }
+        })
+      : produtos;
 
-      switch (quickFilter) {
-        case 'estoque-critico':
-          return disponivel <= 0;
-        case 'estoque-baixo':
-          return disponivel > 0 && disponivel < 5;
-        case 'sem-imagem':
-          return !produto.imagem_url;
-        case 'em-promocao':
-          return produto.preco_promocional != null && produto.preco_promocional < (produto.preco || 0);
-        case 'sem-embalagem':
-          return !produto.embalagens || produto.embalagens.length === 0;
-        default:
-          return true;
-      }
-    });
-  }, [produtos, quickFilter]);
+    // Depois ordena
+    if (sortColumn) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal: any;
+        let bVal: any;
+
+        switch (sortColumn) {
+          case 'nome':
+            aVal = a.nome.toLowerCase();
+            bVal = b.nome.toLowerCase();
+            break;
+          case 'preco':
+            aVal = a.preco || 0;
+            bVal = b.preco || 0;
+            break;
+          case 'disponivel':
+            aVal = a.disponivel_total ?? a.disponivel ?? 0;
+            bVal = b.disponivel_total ?? b.disponivel ?? 0;
+            break;
+          default:
+            return 0;
+        }
+
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [produtos, quickFilter, sortColumn, sortDirection]);
 
   const carregarEstoqueLive = useCallback(
     async (mode: "hybrid" | "live" = "hybrid") => {
@@ -648,6 +682,17 @@ export default function ProdutosClient() {
       setSyncing(false);
     }
   }
+
+  const handleSort = (column: 'nome' | 'preco' | 'disponivel') => {
+    if (sortColumn === column) {
+      // Toggle direction
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to asc
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
 
   const exportarCSV = () => {
     try {
@@ -1401,12 +1446,42 @@ export default function ProdutosClient() {
                   <tr>
                     <th className="px-6 py-4 text-left">Imagem</th>
                     <th className="px-6 py-4 text-left">Código</th>
-                    <th className="px-6 py-4 text-left">Produto</th>
+                    <th className="px-6 py-4 text-left">
+                      <button
+                        onClick={() => handleSort('nome')}
+                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
+                      >
+                        Produto
+                        {sortColumn === 'nome' && (
+                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-left">Tipo</th>
-                    <th className="px-6 py-4 text-right">Preço</th>
+                    <th className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleSort('preco')}
+                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
+                      >
+                        Preço
+                        {sortColumn === 'preco' && (
+                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-right">Estoque</th>
                     <th className="px-6 py-4 text-right">Reservado</th>
-                    <th className="px-6 py-4 text-right">Disponível total</th>
+                    <th className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleSort('disponivel')}
+                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
+                      >
+                        Disponível total
+                        {sortColumn === 'disponivel' && (
+                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-left">Embalagem</th>
                     <th className="px-6 py-4 text-center">Status</th>
                   </tr>
