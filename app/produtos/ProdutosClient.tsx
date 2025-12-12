@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowDown, ArrowUp, Box, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { AlertCircle, ArrowDown, ArrowUp, Box, Check, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -138,6 +139,26 @@ const getErrorMessage = (error: unknown): string => {
 
 const buildProdutosCacheKey = (params: URLSearchParams) => `produtos:${params.toString()}`;
 
+// Hook de debounce
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+// Função para copiar texto
+const copyToClipboard = async (text: string, onSuccess?: () => void) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    onSuccess?.();
+  } catch (err) {
+    console.error('Erro ao copiar:', err);
+  }
+};
+
 export default function ProdutosClient() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [total, setTotal] = useState(0);
@@ -182,8 +203,21 @@ export default function ProdutosClient() {
     message: string;
   } | null>(null);
   const [imageZoom, setImageZoom] = useState<{ url: string; alt: string } | null>(null);
-  const [sortColumn, setSortColumn] = useState<'nome' | 'preco' | 'disponivel' | null>(null);
+  const [sortColumn, setSortColumn] = useState<'nome' | 'preco' | 'disponivel' | 'codigo' | 'reservado' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [confirmDialog, setConfirmDialog] = useState<{
+    embalagemId: string;
+    embalagemNome: string;
+    produtoId: number;
+  } | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Hooks de navegação para salvar filtros na URL
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Debounce da busca (300ms)
+  const debouncedSearchInput = useDebounce(searchInput, 300);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -244,6 +278,45 @@ export default function ProdutosClient() {
   useEffect(() => {
     fetchProdutos();
   }, [fetchProdutos]);
+
+  // Inicializar filtros a partir da URL (só na montagem)
+  useEffect(() => {
+    const urlSearch = searchParams.get('search') || '';
+    const urlSituacao = searchParams.get('situacao') || 'all';
+    const urlTipo = searchParams.get('tipo') || 'all';
+    const urlFornecedor = searchParams.get('fornecedor') || '';
+    const urlPage = parseInt(searchParams.get('page') || '0', 10);
+    
+    setSearchInput(urlSearch);
+    setSearch(urlSearch);
+    setSituacao(urlSituacao);
+    setTipo(urlTipo);
+    setFornecedorInput(urlFornecedor);
+    setFornecedor(urlFornecedor);
+    setPage(urlPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Só roda uma vez na montagem
+
+  // Aplicar debounce na busca automaticamente
+  useEffect(() => {
+    if (debouncedSearchInput !== search) {
+      setSearch(debouncedSearchInput);
+      setPage(0);
+    }
+  }, [debouncedSearchInput, search]);
+
+  // Sincronizar filtros com a URL
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (situacao !== 'all') params.set('situacao', situacao);
+    if (tipo !== 'all') params.set('tipo', tipo);
+    if (fornecedor) params.set('fornecedor', fornecedor);
+    if (page > 0) params.set('page', String(page));
+    
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.replace(newUrl, { scroll: false });
+  }, [search, situacao, tipo, fornecedor, page, router]);
 
   // Buscar embalagens uma única vez
   useEffect(() => {
@@ -464,17 +537,25 @@ export default function ProdutosClient() {
     // Depois ordena
     if (sortColumn) {
       filtered = [...filtered].sort((a, b) => {
-        let aVal: any;
-        let bVal: any;
+        let aVal: string | number;
+        let bVal: string | number;
 
         switch (sortColumn) {
           case 'nome':
             aVal = a.nome.toLowerCase();
             bVal = b.nome.toLowerCase();
             break;
+          case 'codigo':
+            aVal = (a.codigo || '').toLowerCase();
+            bVal = (b.codigo || '').toLowerCase();
+            break;
           case 'preco':
             aVal = a.preco || 0;
             bVal = b.preco || 0;
+            break;
+          case 'reservado':
+            aVal = a.reservado || 0;
+            bVal = b.reservado || 0;
             break;
           case 'disponivel':
             aVal = a.disponivel_total ?? a.disponivel ?? 0;
@@ -683,7 +764,7 @@ export default function ProdutosClient() {
     }
   }
 
-  const handleSort = (column: 'nome' | 'preco' | 'disponivel') => {
+  const handleSort = (column: 'nome' | 'preco' | 'disponivel' | 'codigo' | 'reservado') => {
     if (sortColumn === column) {
       // Toggle direction
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -1204,9 +1285,60 @@ export default function ProdutosClient() {
                 </div>
                 <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <span>Código {produtoEmFoco.codigo || "—"}</span>
-                  <span>GTIN {produtoEmFoco.gtin || "—"}</span>
-                  <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
+                  {produtoEmFoco.codigo && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(produtoEmFoco.codigo!, () => {
+                        setCopiedField('codigo');
+                        setTimeout(() => setCopiedField(null), 2000);
+                      })}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                      title="Copiar código"
+                    >
+                      <span>Código {produtoEmFoco.codigo}</span>
+                      {copiedField === 'codigo' ? (
+                        <Check className="w-3 h-3 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
+                  )}
+                  {!produtoEmFoco.codigo && <span>Código —</span>}
+                  {produtoEmFoco.gtin && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(produtoEmFoco.gtin!, () => {
+                        setCopiedField('gtin');
+                        setTimeout(() => setCopiedField(null), 2000);
+                      })}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                      title="Copiar GTIN"
+                    >
+                      <span>GTIN {produtoEmFoco.gtin}</span>
+                      {copiedField === 'gtin' ? (
+                        <Check className="w-3 h-3 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
+                  )}
+                  {!produtoEmFoco.gtin && <span>GTIN —</span>}
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(String(produtoEmFoco.id_produto_tiny), () => {
+                      setCopiedField('id');
+                      setTimeout(() => setCopiedField(null), 2000);
+                    })}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                    title="Copiar ID Tiny"
+                  >
+                    <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
+                    {copiedField === 'id' ? (
+                      <Check className="w-3 h-3 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
+                  </button>
                   <a
                     href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
                     target="_blank"
@@ -1419,9 +1551,58 @@ export default function ProdutosClient() {
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
         {loading ? (
-          <div className="px-6 py-12 text-center">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" />
-            <p className="text-sm text-slate-500 mt-2">Carregando produtos...</p>
+          <div className="hidden md:block">
+            {/* Skeleton da tabela */}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
+                  <tr>
+                    <th className="px-6 py-4 text-left">Imagem</th>
+                    <th className="px-6 py-4 text-left">Código</th>
+                    <th className="px-6 py-4 text-left">Produto</th>
+                    <th className="px-6 py-4 text-left">Tipo</th>
+                    <th className="px-6 py-4 text-right">Preço</th>
+                    <th className="px-6 py-4 text-right">Estoque</th>
+                    <th className="px-6 py-4 text-right">Reservado</th>
+                    <th className="px-6 py-4 text-right">Disponível</th>
+                    <th className="px-6 py-4 text-left">Embalagem</th>
+                    <th className="px-6 py-4 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={i} className="border-b border-white/10 animate-pulse">
+                      <td className="px-6 py-4"><div className="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="md:hidden p-4 space-y-3">
+            {/* Skeleton mobile */}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="app-card p-4 animate-pulse">
+                <div className="flex gap-3">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-200 dark:bg-slate-700" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-3/4 rounded bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-6 w-20 rounded-full bg-slate-200 dark:bg-slate-700" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : !produtos.length ? (
           <div className="px-6 py-12 text-center">
@@ -1450,12 +1631,22 @@ export default function ProdutosClient() {
               ))}
             </div>
 
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto max-h-[600px]">
               <table className="w-full">
-                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                   <tr>
                     <th className="px-6 py-4 text-left">Imagem</th>
-                    <th className="px-6 py-4 text-left">Código</th>
+                    <th className="px-6 py-4 text-left">
+                      <button
+                        onClick={() => handleSort('codigo')}
+                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
+                      >
+                        Código
+                        {sortColumn === 'codigo' && (
+                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-left">
                       <button
                         onClick={() => handleSort('nome')}
@@ -1480,7 +1671,17 @@ export default function ProdutosClient() {
                       </button>
                     </th>
                     <th className="px-6 py-4 text-right">Estoque</th>
-                    <th className="px-6 py-4 text-right">Reservado</th>
+                    <th className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleSort('reservado')}
+                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
+                      >
+                        Reservado
+                        {sortColumn === 'reservado' && (
+                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-right">
                       <button
                         onClick={() => handleSort('disponivel')}
@@ -1548,6 +1749,35 @@ export default function ProdutosClient() {
           type={notification.type}
           message={notification.message}
           onClose={() => setNotification(null)}
+        />
+      )}
+
+      {confirmDialog && (
+        <ConfirmDialog
+          title="Desvincular Embalagem"
+          message={`Deseja realmente desvincular a embalagem "${confirmDialog.embalagemNome}" deste produto?`}
+          onConfirm={async () => {
+            const { embalagemId, produtoId } = confirmDialog;
+            setConfirmDialog(null);
+            try {
+              const res = await fetch(
+                `/api/produtos/${produtoId}/embalagens?embalagem_id=${embalagemId}`,
+                { method: "DELETE" }
+              );
+              if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || "Erro ao desvincular embalagem");
+              }
+              setNotification({ type: 'success', message: 'Embalagem desvinculada com sucesso!' });
+              await fetchProdutos();
+            } catch (err) {
+              setNotification({
+                type: 'error',
+                message: err instanceof Error ? err.message : "Erro ao desvincular embalagem"
+              });
+            }
+          }}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
 
@@ -1680,6 +1910,58 @@ function NotificationToast({ type, message, onClose }: NotificationToastProps) {
         >
           <X className="w-4 h-4" />
         </button>
+      </div>
+    </div>
+  );
+}
+
+type ConfirmDialogProps = {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+function ConfirmDialog({ title, message, onConfirm, onCancel }: ConfirmDialogProps) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full border-2 border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                {title}
+              </h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {message}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 justify-end pt-2">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30"
+            >
+              Confirmar
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2079,10 +2361,10 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
 
   return (
     <tr
-      className={`cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+      className={`cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 group ${
         selected
-          ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-sm"
-          : "hover:bg-slate-50 dark:hover:bg-slate-800/30 border-l-4 border-l-transparent"
+          ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-md shadow-purple-500/10"
+          : "hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent dark:hover:from-slate-800/50 dark:hover:to-transparent border-l-4 border-l-transparent hover:border-l-slate-300 dark:hover:border-l-slate-600 hover:shadow-sm"
       }`}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -2096,10 +2378,10 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
       aria-pressed={Boolean(selected)}
     >
       <td className="px-6 py-4">
-        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60">
+        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 group-hover:ring-2 group-hover:ring-purple-200 dark:group-hover:ring-purple-500/30 transition-all">
           {produto.imagem_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />
+            <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
           ) : (
             <Package className="w-5 h-5 text-slate-400" />
           )}
