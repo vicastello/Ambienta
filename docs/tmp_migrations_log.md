@@ -9,7 +9,30 @@ O relatório de vendas agora agrupa corretamente vendas por kit usando os víncu
 Esse ajuste permite analisar vendas reais de kits, mesmo quando os itens vêm separados no pedido do Tiny, desde que correspondam a um kit vinculado.
 
 Deploy: commit 5f6e78b
+
+---
+
 # Migração supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql
+
+Registro 2025-12-14 ~XX:XX -03: `supabase db push --linked --include-all` executado.
+Resultado: **Remote database is up to date** (migration já havia sido aplicada anteriormente).
+
+Para confirmar que o job cron e a função legacy foram removidos, rode manualmente no Supabase Studio:
+
+```sql
+-- Verifica se ainda existe job cron chamando a função
+SELECT jobid, jobname, schedule, command, active
+FROM cron.job
+WHERE command ILIKE '%sync_produtos_from_tiny%';
+
+-- Verifica se a função legacy ainda existe
+SELECT routine_name
+FROM information_schema.routines
+WHERE specific_schema = 'public'
+  AND routine_name ILIKE '%sync_produtos_from_tiny%';
+```
+
+Ambas as queries devem retornar **0 rows** se a migration foi aplicada corretamente.
 
 ---
 
