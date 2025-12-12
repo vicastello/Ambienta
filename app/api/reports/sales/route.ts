@@ -60,19 +60,6 @@ interface PedidoItem {
   valor_total: number;
 }
 
-interface PedidoRow {
-  id: number;
-  tiny_id: number;
-  numero_pedido: number | null;
-  data_criacao: string | null;
-  canal: string | null;
-  cliente_nome: string | null;
-  situacao: number | null;
-  valor: number | null;
-  numero_pedido_ecommerce: string | null;
-  tiny_pedido_itens: PedidoItem[];
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -86,50 +73,81 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
 
-    // Base query para pedidos
-    let pedidosQuery = supabaseAdmin
-      .from('tiny_orders')
-      .select(`
-        id,
-        tiny_id,
-        numero_pedido,
-        data_criacao,
-        canal,
-        cliente_nome,
-        situacao,
-        valor,
-        numero_pedido_ecommerce,
-        tiny_pedido_itens (
-          id,
-          id_produto_tiny,
-          codigo_produto,
-          nome_produto,
-          quantidade,
-          valor_unitario,
-          valor_total
-        )
-      `)
-      .gte('data_criacao', dataInicio)
-      .lte('data_criacao', dataFim)
-      .order('data_criacao', { ascending: false });
+    // Buscar TODOS os pedidos usando paginação (Supabase limita em 1000 por query)
+    const allPedidos: any[] = [];
+    let currentPage = 0;
+    const pageSize = 1000;
 
-    // Filtro por canal
-    if (canal && canal !== 'todos') {
-      pedidosQuery = pedidosQuery.ilike('canal', `%${canal}%`);
+    while (true) {
+      let pedidosQuery = supabaseAdmin
+        .from('tiny_orders')
+        .select('id, tiny_id, numero_pedido, data_criacao, canal, cliente_nome, situacao, valor, numero_pedido_ecommerce')
+        .gte('data_criacao', dataInicio)
+        .lte('data_criacao', dataFim)
+        .order('data_criacao', { ascending: false })
+        .range(currentPage * pageSize, (currentPage + 1) * pageSize - 1);
+
+      // Filtro por canal
+      if (canal && canal !== 'todos') {
+        pedidosQuery = pedidosQuery.ilike('canal', `%${canal}%`);
+      }
+
+      // Filtro por situação
+      if (situacao) {
+        pedidosQuery = pedidosQuery.eq('situacao', parseInt(situacao));
+      }
+
+      const { data: pedidosPage, error: pedidosError } = await pedidosQuery;
+
+      if (pedidosError) {
+        console.error('Erro ao buscar pedidos:', pedidosError);
+        return NextResponse.json({ success: false, error: pedidosError.message }, { status: 500 });
+      }
+
+      if (!pedidosPage || pedidosPage.length === 0) break;
+
+      allPedidos.push(...pedidosPage);
+
+      if (pedidosPage.length < pageSize) break; // Última página
+      currentPage++;
     }
 
-    // Filtro por situação
-    if (situacao) {
-      pedidosQuery = pedidosQuery.eq('situacao', parseInt(situacao));
+    const pedidos = allPedidos;
+
+    // Buscar itens dos pedidos separadamente com paginação
+    const pedidoIds = (pedidos || []).map((p: any) => p.id);
+    const allItens: any[] = [];
+
+    // Dividir pedidoIds em chunks de 1000 para evitar limite do .in()
+    const chunkSize = 1000;
+    for (let i = 0; i < pedidoIds.length; i += chunkSize) {
+      const chunk = pedidoIds.slice(i, i + chunkSize);
+      const { data: itensChunk } = await supabaseAdmin
+        .from('tiny_pedido_itens')
+        .select('id, id_pedido, id_produto_tiny, codigo_produto, nome_produto, quantidade, valor_unitario, valor_total')
+        .in('id_pedido', chunk);
+
+      if (itensChunk) {
+        allItens.push(...itensChunk);
+      }
     }
 
-    const { data: pedidos, error: pedidosError } = await pedidosQuery;
-
-    if (pedidosError) {
-      console.error('Erro ao buscar pedidos:', pedidosError);
-      return NextResponse.json({ success: false, error: pedidosError.message }, { status: 500 });
-    }
-
+    // Criar mapa de itens por pedido
+    const itensMap = new Map<number, PedidoItem[]>();
+    (allItens || []).forEach((item: any) => {
+      if (!itensMap.has(item.id_pedido)) {
+        itensMap.set(item.id_pedido, []);
+      }
+      itensMap.get(item.id_pedido)!.push({
+        id: item.id,
+        id_produto_tiny: item.id_produto_tiny,
+        codigo_produto: item.codigo_produto,
+        nome_produto: item.nome_produto,
+        quantidade: item.quantidade,
+        valor_unitario: item.valor_unitario,
+        valor_total: item.valor_total,
+      });
+    });
 
     // Buscar info de produtos (tipo)
     const { data: produtos } = await supabaseAdmin
@@ -138,7 +156,6 @@ export async function GET(request: NextRequest) {
     const produtoMap = new Map(produtos?.map(p => [p.codigo, { nome: p.nome, tipo: p.tipo }]) || []);
 
     // Buscar vínculos de pedidos marketplace <-> tiny apenas para os pedidos do período
-    const pedidoIds = (pedidos || []).map((p: any) => p.id);
     const { data: orderLinks } = await supabaseAdmin
       .from('marketplace_order_links')
       .select('marketplace, marketplace_order_id, tiny_order_id')
@@ -168,8 +185,8 @@ export async function GET(request: NextRequest) {
     const canaisMap = new Map<string, { pedidos: Set<string | number>; quantidade: number; faturamento: number }>();
     const skuMap = new Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number> }>();
 
-    for (const pedido of (pedidos || []) as unknown as PedidoRow[]) {
-      const pedidoItens = pedido.tiny_pedido_itens || [];
+    for (const pedido of (pedidos || []) as any[]) {
+      const pedidoItens = itensMap.get(pedido.id) || [];
       // Verificar vinculação
       const link = orderLinkMap.get(pedido.id);
       if (!link && pedido.canal && (
