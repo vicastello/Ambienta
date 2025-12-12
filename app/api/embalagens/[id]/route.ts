@@ -13,10 +13,10 @@ import type { EmbalagemUpdate } from '@/src/types/embalagens';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     const embalagem = await getEmbalagemById(id);
     return NextResponse.json({ embalagem });
   } catch (error) {
@@ -32,10 +32,10 @@ export async function GET(
  */
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     const body = await req.json().catch(() => ({}));
 
     const update: EmbalagemUpdate = {};
@@ -124,10 +124,10 @@ export async function PUT(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     await deleteEmbalagem(id);
     return NextResponse.json({ success: true });
   } catch (error) {
