@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowDown, ArrowUp, Box, Check, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Box, Check, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, MoreVertical, Package, Plus, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -225,6 +225,21 @@ export default function ProdutosClient() {
     message: string;
   } | null>(null);
 
+  // Pull-to-refresh state
+  const [pullToRefresh, setPullToRefresh] = useState<{
+    isPulling: boolean;
+    pullDistance: number;
+    isRefreshing: boolean;
+  }>({ isPulling: false, pullDistance: 0, isRefreshing: false });
+
+  // FAB state
+  const [fabOpen, setFabOpen] = useState(false);
+
+  // Infinite scroll mobile state
+  const [mobileProducts, setMobileProducts] = useState<Produto[]>([]);
+  const [mobileHasMore, setMobileHasMore] = useState(true);
+  const mobileLoaderRef = useRef<HTMLDivElement>(null);
+
   // Hooks de navegação para salvar filtros na URL
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -331,6 +346,52 @@ export default function ProdutosClient() {
     router.replace(newUrl, { scroll: false });
   }, [search, situacao, tipo, fornecedor, page, router]);
 
+  // Pull-to-refresh handler
+  const handlePullToRefresh = useCallback(async () => {
+    if (pullToRefresh.isRefreshing) return;
+    
+    setPullToRefresh((prev) => ({ ...prev, isRefreshing: true }));
+    try {
+      clearCacheByPrefix("produtos:");
+      await fetchProdutos();
+    } finally {
+      setPullToRefresh({ isPulling: false, pullDistance: 0, isRefreshing: false });
+    }
+  }, [pullToRefresh.isRefreshing, fetchProdutos]);
+
+  // Touch handlers para pull-to-refresh
+  const touchStartY = useRef(0);
+  const PULL_THRESHOLD = 80;
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (window.scrollY === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (window.scrollY > 0 || pullToRefresh.isRefreshing) return;
+    
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - touchStartY.current;
+    
+    if (diff > 0 && diff < 150) {
+      setPullToRefresh((prev) => ({
+        ...prev,
+        isPulling: true,
+        pullDistance: Math.min(diff, 120),
+      }));
+    }
+  }, [pullToRefresh.isRefreshing]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (pullToRefresh.pullDistance >= PULL_THRESHOLD) {
+      handlePullToRefresh();
+    } else {
+      setPullToRefresh({ isPulling: false, pullDistance: 0, isRefreshing: false });
+    }
+  }, [pullToRefresh.pullDistance, handlePullToRefresh]);
+
   // Buscar embalagens uma única vez
   useEffect(() => {
     const fetchEmbalagens = async () => {
@@ -346,18 +407,19 @@ export default function ProdutosClient() {
     fetchEmbalagens();
   }, []);
 
-  // Fechar modal de zoom com ESC
+  // Fechar FAB e modal de zoom com ESC
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setImageZoom(null);
+        setFabOpen(false);
       }
     };
-    if (imageZoom) {
+    if (imageZoom || fabOpen) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [imageZoom]);
+  }, [imageZoom, fabOpen]);
 
   const fetchProdutosRef = useRef(fetchProdutos);
   useEffect(() => {
@@ -610,6 +672,38 @@ export default function ProdutosClient() {
 
     return filtered;
   }, [produtos, quickFilter, precoMin, precoMax, estoqueMin, estoqueMax, sortColumn, sortDirection]);
+
+  // Reset mobile products quando mudar filtros
+  useEffect(() => {
+    setMobileProducts(produtosFiltrados.slice(0, PRODUTOS_PAGE_SIZE));
+    setMobileHasMore(produtosFiltrados.length > PRODUTOS_PAGE_SIZE);
+  }, [produtosFiltrados]);
+
+  // Infinite scroll mobile com IntersectionObserver
+  useEffect(() => {
+    const loader = mobileLoaderRef.current;
+    if (!loader) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && mobileHasMore && !loading) {
+          const currentCount = mobileProducts.length;
+          const nextBatch = produtosFiltrados.slice(currentCount, currentCount + PRODUTOS_PAGE_SIZE);
+          if (nextBatch.length > 0) {
+            setMobileProducts((prev) => [...prev, ...nextBatch]);
+            setMobileHasMore(currentCount + nextBatch.length < produtosFiltrados.length);
+          } else {
+            setMobileHasMore(false);
+          }
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+
+    observer.observe(loader);
+    return () => observer.disconnect();
+  }, [mobileProducts.length, mobileHasMore, produtosFiltrados, loading]);
 
   const carregarEstoqueLive = useCallback(
     async (mode: "hybrid" | "live" = "hybrid") => {
@@ -909,7 +1003,28 @@ export default function ProdutosClient() {
   }, [fetchProdutos]);
 
   return (
-    <div className="space-y-6">
+    <div 
+      className="space-y-6"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull-to-refresh indicator */}
+      {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
+        <div 
+          className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center transition-all duration-200 md:hidden"
+          style={{ 
+            height: pullToRefresh.isRefreshing ? 60 : pullToRefresh.pullDistance,
+            opacity: pullToRefresh.isRefreshing ? 1 : Math.min(pullToRefresh.pullDistance / 80, 1)
+          }}
+        >
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600 text-white text-sm font-medium shadow-lg ${pullToRefresh.isRefreshing ? 'animate-pulse' : ''}`}>
+            <RefreshCcw className={`w-4 h-4 ${pullToRefresh.isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{pullToRefresh.isRefreshing ? 'Atualizando...' : pullToRefresh.pullDistance >= 80 ? 'Solte para atualizar' : 'Puxe para atualizar'}</span>
+          </div>
+        </div>
+      )}
+
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1839,8 +1954,9 @@ export default function ProdutosClient() {
           </div>
         ) : (
           <>
+            {/* Mobile - Infinite Scroll */}
             <div className="md:hidden space-y-3 p-4">
-              {produtosFiltrados.map((produto) => (
+              {mobileProducts.map((produto) => (
                 <ProdutoCard
                   key={produto.id}
                   produto={produto}
@@ -1851,6 +1967,21 @@ export default function ProdutosClient() {
                   onNotify={(type, message) => setNotification({ type, message })}
                 />
               ))}
+              
+              {/* Infinite scroll loader */}
+              <div ref={mobileLoaderRef} className="py-4 flex justify-center">
+                {mobileHasMore && (
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Carregando mais...</span>
+                  </div>
+                )}
+                {!mobileHasMore && mobileProducts.length > 0 && (
+                  <p className="text-sm text-slate-400">
+                    Mostrando todos os {mobileProducts.length} produtos
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="hidden md:block overflow-x-auto max-h-[600px]">
@@ -2026,6 +2157,78 @@ export default function ProdutosClient() {
           </div>
         </div>
       )}
+
+      {/* FAB (Floating Action Button) - Mobile only */}
+      <div className="md:hidden fixed bottom-6 right-6 z-40">
+        {/* FAB backdrop when open */}
+        {fabOpen && (
+          <div 
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setFabOpen(false)}
+          />
+        )}
+        
+        {/* FAB Actions */}
+        <div className={`absolute bottom-16 right-0 flex flex-col gap-3 items-end transition-all duration-200 ${fabOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+          <button
+            onClick={() => {
+              setFabOpen(false);
+              exportarCSV();
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-500 transition-all"
+          >
+            <span className="text-sm font-medium whitespace-nowrap">Exportar CSV</span>
+            <Download className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => {
+              setFabOpen(false);
+              syncProdutos();
+            }}
+            disabled={syncing}
+            className="flex items-center gap-3 px-4 py-3 rounded-full bg-purple-600 text-white shadow-lg shadow-purple-500/30 hover:bg-purple-500 disabled:opacity-50 transition-all"
+          >
+            <span className="text-sm font-medium whitespace-nowrap">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+            <RefreshCcw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={() => {
+              setFabOpen(false);
+              setMobileFiltersOpen(true);
+            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-full bg-slate-700 text-white shadow-lg shadow-slate-500/30 hover:bg-slate-600 transition-all"
+          >
+            <span className="text-sm font-medium whitespace-nowrap">Filtros</span>
+            <Search className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Main FAB button */}
+        <button
+          onClick={() => setFabOpen(!fabOpen)}
+          className={`relative w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 ${
+            fabOpen 
+              ? 'bg-slate-700 rotate-45' 
+              : 'bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
+          }`}
+          aria-label={fabOpen ? 'Fechar menu' : 'Abrir menu de ações'}
+        >
+          {fabOpen ? (
+            <Plus className="w-6 h-6 text-white" />
+          ) : (
+            <MoreVertical className="w-6 h-6 text-white" />
+          )}
+        </button>
+
+        {/* Scroll to top button */}
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="absolute -left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          aria-label="Voltar ao topo"
+        >
+          <ChevronUp className="w-5 h-5" />
+        </button>
+      </div>
     </div>
   );
 }
