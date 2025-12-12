@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Box, DollarSign, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown } from "lucide-react";
+import { AlertCircle, Box, DollarSign, ExternalLink, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -1046,10 +1046,20 @@ export default function ProdutosClient() {
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Produto em foco</p>
                 <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
-                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span>Código {produtoEmFoco.codigo || "—"}</span>
                   <span>GTIN {produtoEmFoco.gtin || "—"}</span>
                   <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
+                  <a
+                    href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-purple-700 hover:bg-purple-200 dark:bg-purple-500/20 dark:text-purple-400 dark:hover:bg-purple-500/30 transition-all font-medium"
+                    title="Abrir produto no Tiny ERP"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Ver no Tiny
+                  </a>
                 </div>
               </div>
             </div>
