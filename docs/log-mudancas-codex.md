@@ -7,3 +7,4 @@ Registro rápido de alterações feitas pelo agente. Atualize sempre que fizer m
 - Deduplicação de itens do Meli no relatório e criação de scripts de suporte (`report-kit-vs-unit`, `cleanup-meli-items`, `meli-link-pack-orders`, `meli-backfill-missing-items`).
 - Migration criada para evitar itens duplicados no Tiny: `supabase/migrations/20251215183000_tiny_pedido_itens_unique_constraint.sql` (NOT NULL + UNIQUE em `id_pedido,codigo_produto,valor_unitario,valor_total`).
 - Cleanup rodado em `meli_order_items` para remover 6 duplicatas.
+- Produtos: adicionado multiplicador (quantidade) ao vincular embalagens na UI de produtos; POST envia `quantidade` para `produto_embalagens` (permitindo 1x, 2x, etc.).

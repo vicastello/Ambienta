@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Loader2, Package, RefreshCcw, Search } from "lucide-react";
+import { AlertCircle, Box, DollarSign, ImageOff, Loader2, Package, RefreshCcw, Search, TrendingDown } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -539,6 +539,33 @@ export default function ProdutosClient() {
   const estoqueCriticoTotal =
     estoqueTotalPaiVariacoes !== null && estoqueTotalPaiVariacoes > 0 && estoqueTotalPaiVariacoes < 5;
 
+  // Métricas calculadas
+  const metrics = useMemo(() => {
+    const totalAtivos = produtos.filter(p => p.situacao === 'A').length;
+    const estoqueCritico = produtos.filter(p => {
+      const disponivel = p.disponivel_total ?? p.disponivel ?? 0;
+      return disponivel <= 0;
+    }).length;
+    const estoqueBaixo = produtos.filter(p => {
+      const disponivel = p.disponivel_total ?? p.disponivel ?? 0;
+      return disponivel > 0 && disponivel < 5;
+    }).length;
+    const semImagem = produtos.filter(p => !p.imagem_url).length;
+    const valorTotal = produtos.reduce((acc, p) => {
+      const preco = p.preco ?? 0;
+      const estoque = p.saldo ?? 0;
+      return acc + (preco * estoque);
+    }, 0);
+
+    return {
+      totalAtivos,
+      estoqueCritico,
+      estoqueBaixo,
+      semImagem,
+      valorTotal,
+    };
+  }, [produtos]);
+
   const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
     const fornecedorFormatado = formatFornecedorNome(fornecedorInput);
@@ -633,6 +660,45 @@ export default function ProdutosClient() {
               )}
             </button>
           </div>
+        </div>
+
+        {/* Cards de Métricas */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+          <MetricCard
+            icon={Package}
+            label="Total Ativos"
+            value={metrics.totalAtivos.toLocaleString("pt-BR")}
+            color="blue"
+            loading={loading}
+          />
+          <MetricCard
+            icon={AlertCircle}
+            label="Estoque Crítico"
+            value={metrics.estoqueCritico.toLocaleString("pt-BR")}
+            color="red"
+            loading={loading}
+          />
+          <MetricCard
+            icon={TrendingDown}
+            label="Estoque Baixo"
+            value={metrics.estoqueBaixo.toLocaleString("pt-BR")}
+            color="amber"
+            loading={loading}
+          />
+          <MetricCard
+            icon={ImageOff}
+            label="Sem Imagem"
+            value={metrics.semImagem.toLocaleString("pt-BR")}
+            color="purple"
+            loading={loading}
+          />
+          <MetricCard
+            icon={DollarSign}
+            label="Valor Total"
+            value={formatBRL(metrics.valorTotal)}
+            color="green"
+            loading={loading}
+          />
         </div>
 
         <div className="md:hidden space-y-3">
@@ -1159,6 +1225,63 @@ export default function ProdutosClient() {
   );
 }
 
+type MetricCardProps = {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  color: "blue" | "green" | "red" | "purple" | "amber";
+  loading?: boolean;
+};
+
+function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProps) {
+  const colorClasses = {
+    blue: "from-blue-500 to-cyan-500",
+    green: "from-green-500 to-emerald-500",
+    red: "from-red-500 to-rose-500",
+    purple: "from-purple-500 to-pink-500",
+    amber: "from-amber-500 to-orange-500",
+  };
+
+  const bgClasses = {
+    blue: "bg-blue-50 dark:bg-blue-500/10",
+    green: "bg-green-50 dark:bg-green-500/10",
+    red: "bg-red-50 dark:bg-red-500/10",
+    purple: "bg-purple-50 dark:bg-purple-500/10",
+    amber: "bg-amber-50 dark:bg-amber-500/10",
+  };
+
+  const iconClasses = {
+    blue: "text-blue-600 dark:text-blue-400",
+    green: "text-green-600 dark:text-green-400",
+    red: "text-red-600 dark:text-red-400",
+    purple: "text-purple-600 dark:text-purple-400",
+    amber: "text-amber-600 dark:text-amber-400",
+  };
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 animate-pulse">
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-20 mb-3"></div>
+        <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-32"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 hover:shadow-lg transition-all duration-300">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{label}</span>
+        <div className={`p-2.5 rounded-xl ${bgClasses[color]}`}>
+          <Icon className={`w-5 h-5 ${iconClasses[color]}`} />
+        </div>
+      </div>
+      <div className={`text-2xl font-bold bg-gradient-to-r ${colorClasses[color]} bg-clip-text text-transparent`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 type ProdutoRowProps = {
   produto: Produto;
   selected?: boolean;
@@ -1282,9 +1405,15 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
   const [removing, setRemoving] = useState<string | null>(null);
   const [showSelect, setShowSelect] = useState(false);
   const [selectedEmbalagemId, setSelectedEmbalagemId] = useState("");
+  const [selectedQuantidade, setSelectedQuantidade] = useState(1);
+  const [editingLink, setEditingLink] = useState<{ embalagem_id: string; quantidade: number } | null>(null);
 
   const handleAddEmbalagem = async () => {
     if (!selectedEmbalagemId) return;
+    if (!Number.isFinite(selectedQuantidade) || selectedQuantidade <= 0) {
+      alert("Quantidade deve ser maior que zero");
+      return;
+    }
     setAdding(true);
     try {
       const res = await fetch(`/api/produtos/${produto.id}/embalagens`, {
@@ -1292,7 +1421,7 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           embalagem_id: selectedEmbalagemId,
-          quantidade: 1,
+          quantidade: selectedQuantidade,
         }),
       });
 
@@ -1305,6 +1434,7 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
       await onEmbalagemUpdate(produto.id);
       setShowSelect(false);
       setSelectedEmbalagemId("");
+      setSelectedQuantidade(1);
     } catch (err) {
       console.error("Erro ao vincular embalagem:", err);
       alert(err instanceof Error ? err.message : "Erro ao vincular embalagem");
@@ -1345,28 +1475,117 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
   return (
     <div className="flex flex-col gap-1.5">
       {linkedEmbalagens.map((link) => (
-        <div
-          key={link.embalagem_id}
-          className="flex items-center gap-1.5 text-xs"
-        >
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700">
-            <Box className="h-3 w-3" />
-            <span className="font-medium">{link.embalagem.nome}</span>
-            <span className="text-[10px] opacity-70">({link.quantidade}x)</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => handleRemoveEmbalagem(link.embalagem_id)}
-            disabled={removing === link.embalagem_id}
-            className="text-rose-500 hover:text-rose-700 disabled:opacity-50"
-            title="Desvincular"
-          >
-            {removing === link.embalagem_id ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span className="text-base leading-none">&times;</span>
-            )}
-          </button>
+        <div key={link.embalagem_id} className="flex flex-col gap-1 text-xs">
+          {editingLink?.embalagem_id === link.embalagem_id ? (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={editingLink.embalagem_id}
+                onChange={(e) =>
+                  setEditingLink((prev) =>
+                    prev ? { ...prev, embalagem_id: e.target.value } : prev
+                  )
+                }
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
+              >
+                {[link.embalagem, ...availableEmbalagens].map((emb) => (
+                  <option key={emb.id} value={emb.id}>
+                    {emb.nome} ({emb.codigo})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min={1}
+                value={editingLink.quantidade}
+                onChange={(e) =>
+                  setEditingLink((prev) =>
+                    prev ? { ...prev, quantidade: Math.max(1, Number(e.target.value) || 1) } : prev
+                  )
+                }
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                className="w-16 rounded border border-slate-300 px-1 py-1 text-xs text-right dark:border-slate-600 dark:bg-slate-800"
+              />
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!editingLink) return;
+                  try {
+                    const res = await fetch(`/api/produtos/${produto.id}/embalagens`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        embalagem_id: editingLink.embalagem_id,
+                        quantidade: editingLink.quantidade,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const errorData = await res.json().catch(() => ({}));
+                      throw new Error(errorData.error || "Erro ao salvar");
+                    }
+                    await onEmbalagemUpdate(produto.id);
+                    setEditingLink(null);
+                  } catch (err) {
+                    console.error("Erro ao salvar embalagem:", err);
+                    alert(err instanceof Error ? err.message : "Erro ao salvar embalagem");
+                  }
+                }}
+                className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                OK
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingLink(null);
+                }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <span className="text-base leading-none">&times;</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingLink({
+                    embalagem_id: link.embalagem_id,
+                    quantidade: link.quantidade || 1,
+                  });
+                }}
+                className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-500/10 dark:text-blue-400"
+                title="Clique para editar embalagem/quantidade"
+              >
+                <Box className="h-3 w-3" />
+                <span className="font-medium">{link.embalagem.nome}</span>
+                <span className="text-[10px] opacity-70">({link.quantidade}x)</span>
+              </button>
+              {editingLink?.embalagem_id === link.embalagem_id && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveEmbalagem(link.embalagem_id);
+                  }}
+                  disabled={removing === link.embalagem_id}
+                  className="text-rose-500 hover:text-rose-700 disabled:opacity-50"
+                  title="Desvincular"
+                >
+                  {removing === link.embalagem_id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <span className="text-base leading-none">&times;</span>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       ))}
 
@@ -1385,6 +1604,14 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
               </option>
             ))}
           </select>
+          <input
+            type="number"
+            min={1}
+            value={selectedQuantidade}
+            onChange={(e) => setSelectedQuantidade(Math.max(1, Number(e.target.value) || 1))}
+            className="w-16 rounded border border-slate-300 px-1 py-1 text-xs text-right dark:border-slate-600 dark:bg-slate-800"
+            disabled={adding}
+          />
           <button
             type="button"
             onClick={handleAddEmbalagem}
@@ -1405,7 +1632,7 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
             <span className="text-base leading-none">&times;</span>
           </button>
         </div>
-      ) : availableEmbalagens.length > 0 ? (
+      ) : availableEmbalagens.length > 0 && linkedEmbalagens.length === 0 ? (
         <button
           type="button"
           onClick={() => setShowSelect(true)}
