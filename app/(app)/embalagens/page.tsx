@@ -332,7 +332,7 @@ export default function EmbalagensPage() {
                             {embalagem.nome}
                           </div>
                           {embalagem.descricao && (
-                            <div className="text-sm text-slate-600 dark:text-slate-400 line-clamp-1">
+                            <div className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-xs">
                               {embalagem.descricao}
                             </div>
                           )}
@@ -392,8 +392,8 @@ export default function EmbalagensPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 slide-in-from-bottom-4 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                 {editingEmbalagem ? "Editar Embalagem" : "Nova Embalagem"}
