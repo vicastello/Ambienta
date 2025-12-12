@@ -181,6 +181,7 @@ export default function ProdutosClient() {
     type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
+  const [imageZoom, setImageZoom] = useState<{ url: string; alt: string } | null>(null);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -256,6 +257,19 @@ export default function ProdutosClient() {
     };
     fetchEmbalagens();
   }, []);
+
+  // Fechar modal de zoom com ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setImageZoom(null);
+      }
+    };
+    if (imageZoom) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [imageZoom]);
 
   const fetchProdutosRef = useRef(fetchProdutos);
   useEffect(() => {
@@ -1043,7 +1057,11 @@ export default function ProdutosClient() {
         <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col sm:flex-row gap-4 flex-1">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/70 dark:bg-white/5 border border-white/60 flex items-center justify-center overflow-hidden">
+              <div
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/70 dark:bg-white/5 border border-white/60 flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all"
+                onClick={() => produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })}
+                title={produtoEmFoco.imagem_url ? "Clique para ampliar" : undefined}
+              >
                 {produtoEmFoco.imagem_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={produtoEmFoco.imagem_url} alt={produtoEmFoco.nome} className="w-full h-full object-cover" />
@@ -1370,6 +1388,30 @@ export default function ProdutosClient() {
           message={notification.message}
           onClose={() => setNotification(null)}
         />
+      )}
+
+      {imageZoom && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setImageZoom(null)}
+        >
+          <div className="relative max-w-6xl max-h-[90vh] w-full">
+            <button
+              onClick={() => setImageZoom(null)}
+              className="absolute -top-12 right-0 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+              title="Fechar (ESC)"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageZoom.url}
+              alt={imageZoom.alt}
+              className="w-full h-auto max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
