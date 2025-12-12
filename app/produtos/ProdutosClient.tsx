@@ -1709,8 +1709,10 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           onSelect();
         }
       }}
-      className={`app-card p-4 flex gap-3 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-[#009DA8] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
-        selected ? "ring-2 ring-[#009DA8] shadow-lg shadow-[#009DA8]/20" : ""
+      className={`app-card p-4 flex gap-3 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+        selected
+          ? "ring-2 ring-purple-500 shadow-lg shadow-purple-500/20 border-purple-500 bg-purple-50/80 dark:bg-purple-500/10"
+          : ""
       }`}
     >
       <div className="w-16 h-16 rounded-2xl bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
@@ -2067,8 +2069,10 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
 
   return (
     <tr
-      className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#009DA8] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
-        selected ? "bg-slate-50/80 dark:bg-slate-800/40" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
+      className={`cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+        selected
+          ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-sm"
+          : "hover:bg-slate-50 dark:hover:bg-slate-800/30 border-l-4 border-l-transparent"
       }`}
       onClick={onSelect}
       onKeyDown={(event) => {
