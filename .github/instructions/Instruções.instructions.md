@@ -689,3 +689,8 @@ Se houver erros, ajustar o código/configuração e tentar novamente.
 Se o deploy for bem-sucedido, informar a URL final (output da Vercel CLI).
 
 Não diga que “não tem acesso ao CLI” — neste contexto, assuma que o terminal está disponível e execute os comandos necessários quando solicitado.
+
+Log de mudanças (obrigatório)
+- Leia e atualize o arquivo `docs/log-mudancas-codex.md` a cada modificação relevante (código, scripts rodados, migrations aplicadas, tokens renovados).
+- Cada entrada deve ter data e resumo curto do que foi feito (inclua scripts/comandos manuais, se houver).
+- Antes de atuar, consulte o log para entender o estado mais recente.
