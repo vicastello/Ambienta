@@ -919,11 +919,33 @@ export default function ProdutosClient() {
             </div>
             <div className="flex items-center gap-3 mt-4">
               <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
-              {quickFilter && produtosFiltrados.length !== produtos.length && (
+              {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-400">
                   {produtosFiltrados.length} / {produtos.length}
                 </span>
               )}
+              {/* Contador de filtros ativos */}
+              {(() => {
+                const activeFilters = [
+                  search && 'busca',
+                  situacao !== 'all' && 'situação',
+                  tipo !== 'all' && 'tipo',
+                  fornecedor && 'fornecedor',
+                  precoMin && 'preço min',
+                  precoMax && 'preço max',
+                  estoqueMin && 'estoque min',
+                  estoqueMax && 'estoque max',
+                  quickFilter && 'filtro rápido'
+                ].filter(Boolean);
+                
+                if (activeFilters.length === 0) return null;
+                
+                return (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-700 px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    {activeFilters.length} filtro{activeFilters.length > 1 ? 's' : ''} ativo{activeFilters.length > 1 ? 's' : ''}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-sm text-slate-500 mt-2 max-w-3xl">
               {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
@@ -1777,15 +1799,43 @@ export default function ProdutosClient() {
             ))}
           </div>
         ) : !produtos.length ? (
-          <div className="px-6 py-12 text-center">
-            <Box className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-            <p className="text-sm text-slate-500">Nenhum produto encontrado</p>
-            <button
-              onClick={syncProdutos}
-              className="mt-4 text-sm text-purple-600 hover:text-purple-700 font-medium"
-            >
-              Sincronizar produtos
-            </button>
+          <div className="px-8 py-16 text-center">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-100 to-slate-100 dark:from-purple-500/20 dark:to-slate-500/20 flex items-center justify-center">
+              <Package className="w-10 h-10 text-purple-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Nenhum produto encontrado</h3>
+            <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">
+              {search || quickFilter || precoMin || precoMax || estoqueMin || estoqueMax
+                ? "Tente ajustar os filtros ou buscar por outro termo"
+                : "Sincronize seus produtos do Tiny ERP para começar"}
+            </p>
+            <div className="flex flex-wrap gap-3 justify-center">
+              {(search || quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && (
+                <button
+                  onClick={() => {
+                    setSearchInput('');
+                    setSearch('');
+                    setQuickFilter(null);
+                    setPrecoMin('');
+                    setPrecoMax('');
+                    setEstoqueMin('');
+                    setEstoqueMax('');
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-600 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                >
+                  <X className="w-4 h-4" />
+                  Limpar filtros
+                </button>
+              )}
+              <button
+                onClick={syncProdutos}
+                disabled={syncing}
+                className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 text-sm font-semibold transition-all"
+              >
+                <RefreshCcw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Sincronizando...' : 'Sincronizar produtos'}
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -2588,16 +2638,23 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
         <div className="font-semibold text-amber-600">{formatNumber(produto.reservado)}</div>
       </td>
       <td className="px-6 py-4 text-right">
-          <div
-            className={`font-semibold ${
-              disponivelSnapshot <= 0
-                ? "text-rose-600"
-                : temEstoqueBaixo
-                  ? "text-amber-600"
-                  : "text-emerald-600"
-            }`}
-          >
-            {formatNumber(disponivelSnapshot)}
+          <div className="flex items-center justify-end gap-1.5">
+            {disponivelSnapshot <= 0 && (
+              <span title="Estoque zerado!">
+                <AlertCircle className="w-4 h-4 text-rose-500 animate-pulse" />
+              </span>
+            )}
+            <span
+              className={`font-semibold ${
+                disponivelSnapshot <= 0
+                  ? "text-rose-600"
+                  : temEstoqueBaixo
+                    ? "text-amber-600"
+                    : "text-emerald-600"
+              }`}
+            >
+              {formatNumber(disponivelSnapshot)}
+            </span>
           </div>
           {produto.disponivel_total != null && (
             <div className="text-[10px] text-slate-400">Pai + variações</div>
