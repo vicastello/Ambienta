@@ -57,6 +57,7 @@ export async function listProdutos({
   const rawProdutos = (data || []) as unknown as TinyProdutosRow[];
   const produtos = rawProdutos.map((row) => ({ ...row })) as TinyProdutoWithAgregado[];
   await attachDisponivelTotal(produtos);
+  await attachEmbalagens(produtos);
 
   return { produtos, total: count || 0 };
 }
@@ -314,5 +315,54 @@ async function attachDisponivelTotal(produtos: TinyProdutoWithAgregado[]) {
     const parentId = produtoToParentId.get(produto.id_produto_tiny);
     const aggregated = parentId ? parentTotals.get(parentId) ?? null : null;
     produto.disponivel_total = aggregated ?? produto.disponivel ?? null;
+  }
+}
+
+/**
+ * Anexa embalagens vinculadas aos produtos
+ */
+async function attachEmbalagens(produtos: TinyProdutoWithAgregado[]) {
+  if (!produtos.length) return;
+
+  const produtoIds = produtos.map((p) => p.id);
+
+  // Busca todas as embalagens vinculadas em uma única query
+  const { data, error } = await supabaseAdmin
+    .from('produto_embalagens')
+    .select(`
+      produto_id,
+      embalagem_id,
+      quantidade,
+      embalagem:embalagens(id, codigo, nome)
+    `)
+    .in('produto_id', produtoIds);
+
+  if (error) {
+    console.error('Erro ao buscar embalagens vinculadas:', error);
+    return;
+  }
+
+  // Mapeia embalagens por produto_id
+  type EmbalagemVinculo = {
+    produto_id: number;
+    embalagem_id: string;
+    quantidade: number;
+    embalagem: { id: string; codigo: string; nome: string } | null;
+  };
+
+  const embalagensByProduto = new Map<number, any[]>();
+  for (const vinculo of (data || []) as EmbalagemVinculo[]) {
+    const existing = embalagensByProduto.get(vinculo.produto_id) || [];
+    existing.push({
+      embalagem_id: vinculo.embalagem_id,
+      quantidade: vinculo.quantidade,
+      embalagem: vinculo.embalagem,
+    });
+    embalagensByProduto.set(vinculo.produto_id, existing);
+  }
+
+  // Anexa as embalagens aos produtos
+  for (const produto of produtos) {
+    (produto as any).embalagens = embalagensByProduto.get(produto.id) || [];
   }
 }

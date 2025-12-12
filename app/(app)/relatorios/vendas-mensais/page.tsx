@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Package,
@@ -112,11 +112,16 @@ const CANAIS = [
 ];
 
 const SITUACOES = [
-  { value: "", label: "Todas as situações" },
-  { value: "6", label: "Faturado" },
-  { value: "9", label: "Aprovado" },
-  { value: "3", label: "Em aberto" },
-  { value: "12", label: "Entregue" },
+  { value: "0", label: "Aberta (0)" },
+  { value: "1", label: "Faturada (1)" },
+  { value: "2", label: "Cancelada (2)" },
+  { value: "3", label: "Aprovada (3)" },
+  { value: "4", label: "Preparando envio (4)" },
+  { value: "5", label: "Enviada (5)" },
+  { value: "6", label: "Entregue (6)" },
+  { value: "7", label: "Pronto para envio (7)" },
+  { value: "8", label: "Dados incompletos (8)" },
+  { value: "9", label: "Não entregue (9)" },
 ];
 
 const COLORS = ["#009DA8", "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"];
@@ -147,7 +152,7 @@ export default function VendasMensaisPage() {
   });
   const [dataFim, setDataFim] = useState(() => new Date().toISOString().split("T")[0]);
   const [canal, setCanal] = useState("todos");
-  const [situacao, setSituacao] = useState("");
+  const [situacoes, setSituacoes] = useState<string[]>([]);
   const [skuFilter, setSkuFilter] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("sku");
   const [viewMode, setViewMode] = useState<ViewMode>("unitario");
@@ -172,13 +177,16 @@ export default function VendasMensaisPage() {
         dataInicio,
         dataFim,
         canal,
-        situacao,
         sku: skuFilter,
         groupBy,
         viewMode,
         page: String(page),
         limit: "50",
       });
+
+      if (situacoes.length > 0) {
+        params.set("situacoes", situacoes.join(","));
+      }
 
       const res = await fetch(`/api/reports/sales?${params}`);
       const result = await res.json();
@@ -199,7 +207,7 @@ export default function VendasMensaisPage() {
     } finally {
       setLoading(false);
     }
-  }, [dataInicio, dataFim, canal, situacao, skuFilter, groupBy, viewMode]);
+  }, [dataInicio, dataFim, canal, situacoes, skuFilter, groupBy, viewMode]);
 
   // Carregar ao montar
   useEffect(() => {
@@ -415,20 +423,38 @@ export default function VendasMensaisPage() {
               </select>
             </div>
 
-            {/* Situação */}
+            {/* Situações (múltipla escolha) */}
             <div>
-              <label className="block text-sm font-medium mb-1">Situação</label>
-              <select
-                value={situacao}
-                onChange={(e) => setSituacao(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
-              >
-                {SITUACOES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium mb-1">Situações</label>
+              <div className="max-h-40 overflow-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2 space-y-2 bg-white dark:bg-gray-700">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={situacoes.length === 0}
+                    onChange={() => setSituacoes([])}
+                    className="h-4 w-4"
+                  />
+                  <span>Todas</span>
+                </label>
+                {SITUACOES.map((s) => {
+                  const checked = situacoes.includes(s.value);
+                  return (
+                    <label key={s.value} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={checked}
+                        onChange={() => {
+                          setSituacoes((prev) =>
+                            checked ? prev.filter((v) => v !== s.value) : [...prev, s.value]
+                          );
+                        }}
+                      />
+                      <span>{s.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             {/* SKU */}
@@ -707,14 +733,14 @@ export default function VendasMensaisPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row) => {
+                  {data.map((row, idx) => {
                     if (groupBy === "pedido") {
                       const pedido = row as PedidoAgrupado;
+                      const keyPedido = pedido.pedido_id ?? pedido.numero_pedido ?? `idx-${idx}`;
                       const isExpanded = expandedRows.has(pedido.pedido_id);
                       return (
-                        <>
+                        <React.Fragment key={`pedido-${keyPedido}`}>
                           <tr
-                            key={pedido.pedido_id}
                             className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
                             onClick={() => toggleRow(pedido.pedido_id)}
                           >
@@ -736,9 +762,9 @@ export default function VendasMensaisPage() {
                             </td>
                           </tr>
                           {isExpanded &&
-                            pedido.items?.map((item) => (
+                            pedido.items?.map((item, idx) => (
                               <tr
-                                key={item.id}
+                                key={`item-${pedido.pedido_id}-${item.sku}-${item.valor_unitario}-${idx}`}
                                 className="bg-gray-50 dark:bg-gray-700/30 border-b border-gray-100 dark:border-gray-800"
                               >
                                 <td></td>
@@ -754,7 +780,7 @@ export default function VendasMensaisPage() {
                                 <td className="py-1 px-3 text-xs text-right">{formatCurrency(item.valor_total)}</td>
                               </tr>
                             ))}
-                        </>
+                        </React.Fragment>
                       );
                     }
 
@@ -762,7 +788,7 @@ export default function VendasMensaisPage() {
                       const produto = row as TopProduct;
                       return (
                         <tr
-                          key={produto.sku}
+                          key={`sku-${produto.sku}-${idx}`}
                           className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                         >
                           <td className="py-2 px-3 font-mono text-xs">{produto.sku}</td>
@@ -780,7 +806,7 @@ export default function VendasMensaisPage() {
                       const canalData = row as ByChannel;
                       return (
                         <tr
-                          key={canalData.canal}
+                          key={`canal-${canalData.canal}-${idx}`}
                           className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50"
                         >
                           <td className="py-2 px-3 font-medium">{canalData.canal}</td>

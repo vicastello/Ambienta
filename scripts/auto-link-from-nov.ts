@@ -217,11 +217,11 @@ async function linkMagaluOrders(): Promise<LinkResult> {
       continue;
     }
 
-    // Verificar se existe no Magalu
+    // Verificar se existe no Magalu (coluna id_order, não order_id)
     const { data: magaluOrder } = await supabaseAdmin
       .from('magalu_orders')
-      .select('order_id')
-      .eq('order_id', normalizedId)
+      .select('id_order')
+      .eq('id_order', normalizedId)
       .maybeSingle();
 
     if (!magaluOrder) {
@@ -314,14 +314,30 @@ async function linkMercadoLivreOrders(): Promise<LinkResult> {
       continue;
     }
 
-    // Verificar se existe no Mercado Livre (tanto meli_order_id quanto pack_id)
-    const { data: mlOrder } = await supabaseAdmin
-      .from('mercado_livre_orders')
-      .select('order_id')
-      .eq('order_id', parseInt(marketplaceOrderId))
-      .maybeSingle();
+    // Verificar se existe no Mercado Livre (meli_orders) e também via pack_id (meli_orders.pack_id)
+    const orderIdNum = Number(marketplaceOrderId);
+    let mlOrderFound = false;
 
-    if (!mlOrder) {
+    if (Number.isFinite(orderIdNum)) {
+      const { data: mlOrder } = await supabaseAdmin
+        .from('meli_orders')
+        .select('meli_order_id')
+        .eq('meli_order_id', orderIdNum)
+        .maybeSingle();
+      if (mlOrder) mlOrderFound = true;
+    }
+
+    if (!mlOrderFound) {
+      const { data: mlOrderPack } = await supabaseAdmin
+        .from('meli_orders')
+        .select('meli_order_id, raw_payload')
+        .contains('raw_payload', { pack_id: orderIdNum })
+        .limit(1)
+        .maybeSingle();
+      if (mlOrderPack) mlOrderFound = true;
+    }
+
+    if (!mlOrderFound) {
       console.log(`  ✗ Pedido ${marketplaceOrderId}: não encontrado no Mercado Livre`);
       result.total_not_found++;
       continue;

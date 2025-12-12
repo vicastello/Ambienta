@@ -103,8 +103,10 @@ async function getValidAccessToken(): Promise<string> {
 interface MagaluOrder {
   code: string;
   status: string;
-  placed_at: string;
-  updated_at: string;
+  purchased_at?: string;
+  approved_at?: string;
+  updated_at?: string;
+  created_at?: string;
   approved_at?: string;
   customer: {
     name: string;
@@ -148,14 +150,10 @@ interface MagaluOrder {
 async function fetchOrders(accessToken: string, params: {
   limit: number;
   offset: number;
-  placed_at_from?: string;
-  placed_at_to?: string;
 }): Promise<{ data: MagaluOrder[]; total: number }> {
   const searchParams = new URLSearchParams();
   searchParams.set('_limit', String(params.limit));
   searchParams.set('_offset', String(params.offset));
-  if (params.placed_at_from) searchParams.set('placed_at_from', params.placed_at_from);
-  if (params.placed_at_to) searchParams.set('placed_at_to', params.placed_at_to);
 
   const url = `${MAGALU_API_BASE}/seller/v1/orders?${searchParams}`;
 
@@ -173,8 +171,8 @@ async function fetchOrders(accessToken: string, params: {
 
   const result = await response.json();
   return {
-    data: result.data || [],
-    total: result.meta?.page?.total || 0,
+    data: result.results || result.data || [],
+    total: result.meta?.page?.count ?? (result.results?.length || result.data?.length || 0),
   };
 }
 
@@ -187,13 +185,13 @@ function mapOrderToDb(order: MagaluOrder) {
     id_order_marketplace: order.code,
     order_status: order.status,
     marketplace_name: 'Magalu',
-    purchased_date: order.placed_at,
+    purchased_date: order.purchased_at || order.created_at,
     approved_date: order.approved_at,
     updated_date: order.updated_at,
     estimated_delivery_date: delivery?.estimate_delivery_date,
-    total_amount: order.total?.order || 0,
-    total_freight: order.total?.freight || 0,
-    total_discount: order.total?.discount || 0,
+    total_amount: order.total?.order || null,
+    total_freight: order.total?.freight || null,
+    total_discount: order.total?.discount || null,
     receiver_name: order.customer?.name || delivery?.recipient?.name,
     customer_mail: order.customer?.email,
     delivery_address_city: address?.city,
@@ -260,33 +258,31 @@ async function main() {
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - 90);
 
-    console.log(`Período: ${fromDate.toISOString().split('T')[0]} a ${toDate.toISOString().split('T')[0]}\n`);
+    console.log(`Período (referência): ${fromDate.toISOString().split('T')[0]} a ${toDate.toISOString().split('T')[0]} (fetch sem filtro por data na API)\n`);
 
     // Buscar todos os pedidos com paginação
     const allOrders: MagaluOrder[] = [];
     const limit = 100;
     let offset = 0;
-    let total = 0;
-
-    do {
+    while (true) {
       const result = await fetchOrders(accessToken, {
         limit,
         offset,
-        placed_at_from: fromDate.toISOString(),
-        placed_at_to: toDate.toISOString(),
       });
 
+      if ((result.data || []).length === 0) {
+        break;
+      }
+
       allOrders.push(...result.data);
-      total = result.total;
       offset += limit;
 
-      console.log(`Carregados: ${allOrders.length}/${total} pedidos`);
+      console.log(`Carregados: ${allOrders.length} pedidos (última página trouxe ${result.data.length})`);
 
       // Rate limiting
-      if (offset < total) {
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    } while (offset < total);
+      if (result.data.length < limit) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
 
     console.log(`\n✓ Total de ${allOrders.length} pedidos obtidos da API\n`);
 

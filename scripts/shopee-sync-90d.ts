@@ -12,13 +12,26 @@ const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 const partnerId = process.env.SHOPEE_PARTNER_ID!;
 const partnerKey = process.env.SHOPEE_PARTNER_KEY!;
 const shopId = process.env.SHOPEE_SHOP_ID!;
-const accessToken = process.env.SHOPEE_ACCESS_TOKEN!;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-function generateSignature(path: string, timestamp: number): string {
+async function getAccessToken(): Promise<string> {
+  // Prioriza token armazenado na tabela; fallback para env se existir
+  const { data } = await (supabase as any)
+    .from('shopee_tokens')
+    .select('access_token')
+    .eq('id', 1)
+    .single();
+  if (data?.access_token) return data.access_token;
+  if (!process.env.SHOPEE_ACCESS_TOKEN) {
+    throw new Error('Shopee access token não configurado');
+  }
+  return process.env.SHOPEE_ACCESS_TOKEN;
+}
+
+function generateSignature(path: string, timestamp: number, accessToken: string): string {
   // path deve ser o caminho completo incluindo /api/v2
   const baseString = `${partnerId}${path}${timestamp}${accessToken}${shopId}`;
   const hmac = crypto.createHmac('sha256', partnerKey);
@@ -27,10 +40,11 @@ function generateSignature(path: string, timestamp: number): string {
 }
 
 async function shopeeRequest<T>(apiPath: string, params: Record<string, string | number>): Promise<T> {
+  const accessToken = await getAccessToken();
   // apiPath é sem /api/v2, mas para assinatura precisamos do path completo
   const fullPath = `/api/v2${apiPath}`;
   const timestamp = Math.floor(Date.now() / 1000);
-  const sign = generateSignature(fullPath, timestamp);
+  const sign = generateSignature(fullPath, timestamp, accessToken);
 
   const url = new URL(SHOPEE_BASE_URL + fullPath);
   url.searchParams.set('partner_id', partnerId);
@@ -68,6 +82,13 @@ interface OrderDetailResponse {
   };
 }
 
+interface EscrowResponse {
+  response?: {
+    order_income?: any;
+    order_income_items?: any[];
+  };
+}
+
 async function getOrderList(timeFrom: number, timeTo: number, cursor?: string): Promise<OrderListResponse> {
   return shopeeRequest<OrderListResponse>('/order/get_order_list', {
     time_range_field: 'create_time',
@@ -87,6 +108,16 @@ async function getOrderDetails(orderSns: string[]): Promise<any[]> {
   });
 
   return response.response?.order_list || [];
+}
+
+async function getEscrowDetail(orderSn: string): Promise<EscrowResponse | null> {
+  try {
+    const data = await shopeeRequest<EscrowResponse>('/payment/get_escrow_detail', { order_sn: orderSn });
+    return data;
+  } catch (err: any) {
+    console.warn(`  Aviso: falha ao buscar escrow para ${orderSn}: ${err?.message || err}`);
+    return null;
+  }
 }
 
 function sleep(ms: number) {
@@ -116,6 +147,9 @@ function extractCityState(fullAddress: string | undefined): { city: string | nul
 
 function mapOrderToDb(order: any) {
   const { city, state } = extractCityState(order.recipient_address?.full_address);
+  const orderIncome = order.order_income || {};
+  const orderDiscounted = Number(orderIncome.order_discounted_price || order.total_amount || 0) || 0;
+  const buyerTotal = Number(orderIncome.buyer_total_amount || orderDiscounted || 0) || 0;
   
   return {
     order_sn: order.order_sn,
@@ -124,7 +158,7 @@ function mapOrderToDb(order: any) {
     create_time: new Date(order.create_time * 1000).toISOString(),
     update_time: new Date(order.update_time * 1000).toISOString(),
     currency: order.currency || 'BRL',
-    total_amount: parseFloat(order.total_amount) || 0,
+    total_amount: buyerTotal || orderDiscounted || parseFloat(order.total_amount) || 0,
     shipping_carrier: order.shipping_carrier || null,
     cod: order.cod || false,
     buyer_user_id: order.buyer_user_id || null,
@@ -142,12 +176,24 @@ function mapItemsToDb(order: any): any[] {
   if (!order.item_list?.length) return [];
 
   const agg = new Map<string, any>();
+  const escrowItems: Record<string, any> = {};
+  (order.order_income?.items || order.order_income_items || []).forEach((it: any) => {
+    const key = `${it.item_id}|${Number(it.model_id ?? 0) || 0}`;
+    escrowItems[key] = it;
+  });
 
   for (const item of order.item_list as any[]) {
     const quantity = Number(item.model_quantity_purchased ?? item.quantity ?? 1) || 1;
     const original_price = parseFloat(item.model_original_price) || null;
-    const discounted_price =
+    let discounted_price =
       parseFloat(item.model_discounted_price || item.variation_discounted_price || item.item_price) || null;
+
+    const keyEscrow = `${item.item_id}|${Number(item.model_id ?? 0) || 0}`;
+    const escrow = escrowItems[keyEscrow];
+    if (escrow?.discounted_price) {
+      discounted_price = Number(escrow.discounted_price) / quantity;
+    }
+
     const modelId = Number(item.model_id ?? 0) || 0;
     const key = `${order.order_sn}|${item.item_id}|${modelId}`;
 
@@ -211,7 +257,17 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
     
     try {
       const details = await getOrderDetails(batch);
-      allOrders.push(...details);
+      for (const order of details) {
+        const escrow = await getEscrowDetail(order.order_sn);
+        if (escrow?.response?.order_income) {
+          order.order_income = escrow.response.order_income;
+        }
+        if (escrow?.response?.order_income_items) {
+          order.order_income_items = escrow.response.order_income_items;
+        }
+        allOrders.push(order);
+        await sleep(150); // leve rate limit entre pedidos
+      }
     } catch (err: any) {
       console.error(`  Erro ao buscar detalhes: ${err.message}`);
     }

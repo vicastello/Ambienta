@@ -45,11 +45,12 @@ export async function upsertPedidoItens(pedido: TinyPedidoListaItem) {
     const produtoId = produto.id || item.idProduto || null;
     const codigoFromApi = produto.codigo || item.codigo || null;
     const codigoFromCatalogo = produtoId ? produtosMap.get(produtoId) : null;
+    const codigoFinal = codigoFromApi || codigoFromCatalogo || 'SEM-CODIGO';
 
     return {
       id_pedido: order.id,
       id_produto_tiny: produtoId,
-      codigo_produto: codigoFromApi || codigoFromCatalogo || null,
+      codigo_produto: codigoFinal,
       nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
       quantidade: Number(item.quantidade || 0),
       valor_unitario: Number(item.valorUnitario || 0),
@@ -67,7 +68,7 @@ export async function upsertPedidoItens(pedido: TinyPedidoListaItem) {
   if (rows.length) {
     const { error } = await (supabaseAdmin as any)
       .from('tiny_pedido_itens')
-      .upsert(rows, { onConflict: ['id_pedido', 'id_produto_tiny', 'codigo_produto'] });
+      .upsert(rows, { onConflict: ['id_pedido', 'codigo_produto', 'valor_unitario', 'valor_total'] });
     if (error) throw error;
   }
 }

@@ -7,6 +7,18 @@ import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
 import type { CustomTooltipFormatter } from "@/app/dashboard/components/charts/ChartTooltips";
 
+type Embalagem = {
+  id: string;
+  codigo: string;
+  nome: string;
+};
+
+type ProdutoEmbalagem = {
+  embalagem_id: string;
+  quantidade: number;
+  embalagem: Embalagem;
+};
+
 type Produto = {
   id: number;
   id_produto_tiny: number;
@@ -24,6 +36,7 @@ type Produto = {
   fornecedor_nome: string | null;
   gtin: string | null;
   imagem_url: string | null;
+  embalagens?: ProdutoEmbalagem[];
 };
 
 type ProdutosResponse = {
@@ -1055,6 +1068,7 @@ export default function ProdutosClient() {
                     <th className="px-6 py-4 text-right">Estoque</th>
                     <th className="px-6 py-4 text-right">Reservado</th>
                     <th className="px-6 py-4 text-right">Disponível total</th>
+                    <th className="px-6 py-4 text-left">Embalagem</th>
                     <th className="px-6 py-4 text-center">Status</th>
                   </tr>
                 </thead>
@@ -1201,6 +1215,164 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect }: P
   );
 });
 
+const EmbalagemSelector = memo(function EmbalagemSelector({ produto }: { produto: Produto }) {
+  const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [showSelect, setShowSelect] = useState(false);
+  const [selectedEmbalagemId, setSelectedEmbalagemId] = useState("");
+
+  // Fetch available embalagens
+  useEffect(() => {
+    const fetchEmbalagens = async () => {
+      try {
+        const res = await fetch("/api/embalagens");
+        if (!res.ok) throw new Error("Erro ao buscar embalagens");
+        const data = await res.json();
+        setEmbalagens(data.embalagens || []);
+      } catch (err) {
+        console.error("Erro ao buscar embalagens:", err);
+      }
+    };
+    fetchEmbalagens();
+  }, []);
+
+  const handleAddEmbalagem = async () => {
+    if (!selectedEmbalagemId) return;
+    setAdding(true);
+    try {
+      const res = await fetch(`/api/produtos/${produto.id}/embalagens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          embalagem_id: selectedEmbalagemId,
+          quantidade: 1,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Erro ao vincular embalagem");
+      }
+
+      // Refresh the page to show updated data
+      window.location.reload();
+    } catch (err) {
+      console.error("Erro ao vincular embalagem:", err);
+      alert(err instanceof Error ? err.message : "Erro ao vincular embalagem");
+    } finally {
+      setAdding(false);
+      setShowSelect(false);
+      setSelectedEmbalagemId("");
+    }
+  };
+
+  const handleRemoveEmbalagem = async (embalagemId: string) => {
+    if (!confirm("Deseja desvincular esta embalagem?")) return;
+    setRemoving(embalagemId);
+    try {
+      const res = await fetch(
+        `/api/produtos/${produto.id}/embalagens?embalagem_id=${embalagemId}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Erro ao desvincular embalagem");
+      }
+
+      // Refresh the page to show updated data
+      window.location.reload();
+    } catch (err) {
+      console.error("Erro ao desvincular embalagem:", err);
+      alert(err instanceof Error ? err.message : "Erro ao desvincular embalagem");
+    } finally {
+      setRemoving(null);
+    }
+  };
+
+  const linkedEmbalagens = produto.embalagens || [];
+  const availableEmbalagens = embalagens.filter(
+    (emb) => !linkedEmbalagens.some((linked) => linked.embalagem_id === emb.id)
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {linkedEmbalagens.map((link) => (
+        <div
+          key={link.embalagem_id}
+          className="flex items-center gap-1.5 text-xs"
+        >
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700">
+            <Box className="h-3 w-3" />
+            <span className="font-medium">{link.embalagem.nome}</span>
+            <span className="text-[10px] opacity-70">({link.quantidade}x)</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => handleRemoveEmbalagem(link.embalagem_id)}
+            disabled={removing === link.embalagem_id}
+            className="text-rose-500 hover:text-rose-700 disabled:opacity-50"
+            title="Desvincular"
+          >
+            {removing === link.embalagem_id ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span className="text-base leading-none">&times;</span>
+            )}
+          </button>
+        </div>
+      ))}
+
+      {showSelect ? (
+        <div className="flex items-center gap-1.5">
+          <select
+            value={selectedEmbalagemId}
+            onChange={(e) => setSelectedEmbalagemId(e.target.value)}
+            className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
+            disabled={adding}
+          >
+            <option value="">Selecione...</option>
+            {availableEmbalagens.map((emb) => (
+              <option key={emb.id} value={emb.id}>
+                {emb.nome} ({emb.codigo})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleAddEmbalagem}
+            disabled={!selectedEmbalagemId || adding}
+            className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : "OK"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowSelect(false);
+              setSelectedEmbalagemId("");
+            }}
+            disabled={adding}
+            className="text-slate-500 hover:text-slate-700 disabled:opacity-50"
+          >
+            <span className="text-base leading-none">&times;</span>
+          </button>
+        </div>
+      ) : availableEmbalagens.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowSelect(true)}
+          className="w-fit rounded border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:border-blue-500 hover:text-blue-600 dark:border-slate-600"
+        >
+          + Adicionar
+        </button>
+      ) : null}
+    </div>
+  );
+});
+
 const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
@@ -1283,6 +1455,9 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
           {produto.disponivel_total != null && (
             <div className="text-[10px] text-slate-400">Pai + variações</div>
           )}
+      </td>
+      <td className="px-6 py-4">
+        <EmbalagemSelector produto={produto} />
       </td>
       <td className="px-6 py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
