@@ -181,6 +181,7 @@ export default function ProdutosClient() {
   const [estoqueLiveLoading, setEstoqueLiveLoading] = useState(false);
   const [estoqueLiveError, setEstoqueLiveError] = useState<string | null>(null);
   const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
+  const [quickFilter, setQuickFilter] = useState<string | null>(null);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -420,6 +421,30 @@ export default function ProdutosClient() {
     if (produtoSelecionadoId == null) return produtos[0];
     return produtos.find((produto) => produto.id_produto_tiny === produtoSelecionadoId) ?? produtos[0];
   }, [produtos, produtoSelecionadoId]);
+
+  // Produtos filtrados por quick filter
+  const produtosFiltrados = useMemo(() => {
+    if (!quickFilter) return produtos;
+
+    return produtos.filter((produto) => {
+      const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
+
+      switch (quickFilter) {
+        case 'estoque-critico':
+          return disponivel <= 0;
+        case 'estoque-baixo':
+          return disponivel > 0 && disponivel < 5;
+        case 'sem-imagem':
+          return !produto.imagem_url;
+        case 'em-promocao':
+          return produto.preco_promocional != null && produto.preco_promocional < (produto.preco || 0);
+        case 'sem-embalagem':
+          return !produto.embalagens || produto.embalagens.length === 0;
+        default:
+          return true;
+      }
+    });
+  }, [produtos, quickFilter]);
 
   const carregarEstoqueLive = useCallback(
     async (mode: "hybrid" | "live" = "hybrid") => {
@@ -700,6 +725,108 @@ export default function ProdutosClient() {
             loading={loading}
           />
         </div>
+
+        {/* Filtros Rápidos com Chips */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === 'estoque-critico' ? null : 'estoque-critico')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+              quickFilter === 'estoque-critico'
+                ? 'bg-red-100 text-red-700 ring-2 ring-red-500 dark:bg-red-500/20 dark:text-red-400'
+                : 'bg-white/70 text-slate-600 hover:bg-red-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-red-500/10'
+            }`}
+          >
+            <AlertCircle className="w-4 h-4" />
+            Estoque crítico
+            {metrics.estoqueCritico > 0 && (
+              <span className="ml-1 rounded-full bg-red-500 text-white px-2 py-0.5 text-xs">
+                {metrics.estoqueCritico}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === 'estoque-baixo' ? null : 'estoque-baixo')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+              quickFilter === 'estoque-baixo'
+                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-500/20 dark:text-amber-400'
+                : 'bg-white/70 text-slate-600 hover:bg-amber-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-amber-500/10'
+            }`}
+          >
+            <TrendingDown className="w-4 h-4" />
+            Estoque baixo
+            {metrics.estoqueBaixo > 0 && (
+              <span className="ml-1 rounded-full bg-amber-500 text-white px-2 py-0.5 text-xs">
+                {metrics.estoqueBaixo}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === 'sem-imagem' ? null : 'sem-imagem')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+              quickFilter === 'sem-imagem'
+                ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-500 dark:bg-purple-500/20 dark:text-purple-400'
+                : 'bg-white/70 text-slate-600 hover:bg-purple-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-purple-500/10'
+            }`}
+          >
+            <ImageOff className="w-4 h-4" />
+            Sem imagem
+            {metrics.semImagem > 0 && (
+              <span className="ml-1 rounded-full bg-purple-500 text-white px-2 py-0.5 text-xs">
+                {metrics.semImagem}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === 'em-promocao' ? null : 'em-promocao')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+              quickFilter === 'em-promocao'
+                ? 'bg-green-100 text-green-700 ring-2 ring-green-500 dark:bg-green-500/20 dark:text-green-400'
+                : 'bg-white/70 text-slate-600 hover:bg-green-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-green-500/10'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            Em promoção
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setQuickFilter(quickFilter === 'sem-embalagem' ? null : 'sem-embalagem')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+              quickFilter === 'sem-embalagem'
+                ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500 dark:bg-blue-500/20 dark:text-blue-400'
+                : 'bg-white/70 text-slate-600 hover:bg-blue-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-blue-500/10'
+            }`}
+          >
+            <Box className="w-4 h-4" />
+            Sem embalagem
+          </button>
+
+          {quickFilter && (
+            <button
+              type="button"
+              onClick={() => setQuickFilter(null)}
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-all"
+            >
+              Limpar filtro
+            </button>
+          )}
+        </div>
+
+        {quickFilter && (
+          <div className="flex items-center justify-center py-2">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Mostrando <span className="font-semibold text-purple-600 dark:text-purple-400">{produtosFiltrados.length}</span> de{" "}
+              <span className="font-semibold">{produtos.length}</span> produtos
+            </p>
+          </div>
+        )}
 
         <div className="md:hidden space-y-3">
           <div className="relative">
@@ -1148,7 +1275,7 @@ export default function ProdutosClient() {
         ) : (
           <>
             <div className="md:hidden space-y-3 p-4">
-              {produtos.map((produto) => (
+              {produtosFiltrados.map((produto) => (
                 <ProdutoCard
                   key={produto.id}
                   produto={produto}
@@ -1177,7 +1304,7 @@ export default function ProdutosClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {produtos.map((produto) => (
+                  {produtosFiltrados.map((produto) => (
                     <ProdutoTableRow
                       key={produto.id}
                       produto={produto}
