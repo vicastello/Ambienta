@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowDown, ArrowUp, Box, Check, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, MoreVertical, Package, Plus, RefreshCcw, Search, TrendingDown, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, MoreVertical, Package, Plus, RefreshCcw, Search, Square, Trash2, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -211,6 +211,10 @@ export default function ProdutosClient() {
     produtoId: number;
   } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  
+  // Seleção múltipla
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBatchActions, setShowBatchActions] = useState(false);
   
   // Filtros avançados de preço e estoque
   const [precoMin, setPrecoMin] = useState<string>('');
@@ -914,6 +918,87 @@ export default function ProdutosClient() {
       setSortDirection('asc');
     }
   };
+
+  // Funções de seleção múltipla
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === produtosFiltrados.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(produtosFiltrados.map(p => p.id)));
+    }
+  }, [selectedIds.size, produtosFiltrados]);
+
+  const toggleSelectOne = useCallback((id: number) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  // Exportar apenas selecionados
+  const exportarSelecionados = useCallback(() => {
+    const produtosSelecionados = produtosFiltrados.filter(p => selectedIds.has(p.id));
+    if (produtosSelecionados.length === 0) {
+      setNotification({ type: 'error', message: 'Nenhum produto selecionado' });
+      return;
+    }
+
+    try {
+      const headers = [
+        'ID Tiny', 'Código', 'Nome', 'GTIN', 'Tipo', 'Situação',
+        'Preço', 'Preço Promocional', 'Unidade', 'Saldo', 'Reservado', 'Disponível', 'Fornecedor'
+      ];
+
+      const rows = produtosSelecionados.map(p => [
+        p.id_produto_tiny,
+        p.codigo || '',
+        `"${p.nome.replace(/"/g, '""')}"`,
+        p.gtin || '',
+        p.tipo || '',
+        p.situacao || '',
+        p.preco || '',
+        p.preco_promocional || '',
+        p.unidade || '',
+        p.saldo || '',
+        p.reservado || '',
+        p.disponivel_total ?? p.disponivel ?? '',
+        p.fornecedor_nome ? `"${p.fornecedor_nome.replace(/"/g, '""')}"` : ''
+      ]);
+
+      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', `produtos_selecionados_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setNotification({
+        type: 'success',
+        message: `${produtosSelecionados.length} produtos exportados com sucesso!`
+      });
+      clearSelection();
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Erro ao exportar: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
+      });
+    }
+  }, [produtosFiltrados, selectedIds, clearSelection]);
 
   const exportarCSV = () => {
     try {
@@ -1984,10 +2069,58 @@ export default function ProdutosClient() {
               </div>
             </div>
 
+            {/* Barra de ações em lote */}
+            {selectedIds.size > 0 && (
+              <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={clearSelection}
+                    className="p-1.5 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 transition-colors"
+                    title="Limpar seleção"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
+                    {selectedIds.size} produto{selectedIds.size > 1 ? 's' : ''} selecionado{selectedIds.size > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="h-5 w-px bg-purple-300 dark:bg-purple-600" />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportarSelecionados}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exportar selecionados
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="hidden md:block overflow-x-auto max-h-[600px]">
               <table className="w-full">
                 <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                   <tr>
+                    <th className="px-4 py-4 text-center w-12">
+                      <button
+                        onClick={toggleSelectAll}
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title={selectedIds.size === produtosFiltrados.length ? "Desmarcar todos" : "Selecionar todos"}
+                      >
+                        {selectedIds.size === produtosFiltrados.length && produtosFiltrados.length > 0 ? (
+                          <CheckSquare className="w-5 h-5 text-purple-600" />
+                        ) : selectedIds.size > 0 ? (
+                          <div className="relative">
+                            <Square className="w-5 h-5 text-slate-400" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-2 h-2 bg-purple-600 rounded-sm" />
+                            </div>
+                          </div>
+                        ) : (
+                          <Square className="w-5 h-5 text-slate-400" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-left">Imagem</th>
                     <th className="px-6 py-4 text-left">
                       <button
@@ -2060,6 +2193,8 @@ export default function ProdutosClient() {
                       embalagens={embalagens}
                       onEmbalagemUpdate={handleEmbalagemUpdate}
                       onNotify={(type, message) => setNotification({ type, message })}
+                      checked={selectedIds.has(produto.id)}
+                      onCheckChange={() => toggleSelectOne(produto.id)}
                     />
                   ))}
                 </tbody>
@@ -2399,6 +2534,8 @@ type ProdutoRowProps = {
   embalagens: Embalagem[];
   onEmbalagemUpdate: (produtoId: number) => void;
   onNotify?: (type: 'success' | 'error' | 'info', message: string) => void;
+  checked?: boolean;
+  onCheckChange?: () => void;
 };
 
 const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify }: ProdutoRowProps) {
@@ -2771,7 +2908,7 @@ Clique para editar embalagem/quantidade`;
   );
 });
 
-const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify }: ProdutoRowProps) {
+const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify, checked, onCheckChange }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -2789,7 +2926,9 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
       className={`cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 group ${
         selected
           ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-md shadow-purple-500/10"
-          : "hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent dark:hover:from-slate-800/50 dark:hover:to-transparent border-l-4 border-l-transparent hover:border-l-slate-300 dark:hover:border-l-slate-600 hover:shadow-sm"
+          : checked
+            ? "bg-purple-50/50 dark:bg-purple-500/5 border-l-4 border-l-purple-300"
+            : "hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent dark:hover:from-slate-800/50 dark:hover:to-transparent border-l-4 border-l-transparent hover:border-l-slate-300 dark:hover:border-l-slate-600 hover:shadow-sm"
       }`}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -2802,6 +2941,21 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
       tabIndex={0}
       aria-pressed={Boolean(selected)}
     >
+      <td className="px-4 py-4 text-center">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onCheckChange?.();
+          }}
+          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        >
+          {checked ? (
+            <CheckSquare className="w-5 h-5 text-purple-600" />
+          ) : (
+            <Square className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300" />
+          )}
+        </button>
+      </td>
       <td className="px-6 py-4">
         <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 group-hover:ring-2 group-hover:ring-purple-200 dark:group-hover:ring-purple-500/30 transition-all">
           {produto.imagem_url ? (
