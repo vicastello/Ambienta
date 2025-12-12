@@ -177,6 +177,10 @@ export default function ProdutosClient() {
   const [estoqueLiveError, setEstoqueLiveError] = useState<string | null>(null);
   const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
 
   const produtosRequestId = useRef(0);
   const produtoDesempenhoRequestId = useRef(0);
@@ -612,16 +616,20 @@ export default function ProdutosClient() {
       const data = await response.json();
 
       if (data.success) {
-        alert(
-          `Sincronização concluída!\n\n${data.totalSincronizados} produtos\n${data.totalNovos} novos\n${data.totalAtualizados} atualizados`
-        );
+        setNotification({
+          type: 'success',
+          message: `Sincronização concluída!\n\n${data.totalSincronizados} produtos\n${data.totalNovos} novos\n${data.totalAtualizados} atualizados`
+        });
         clearCacheByPrefix("produtos:");
         fetchProdutos();
       } else {
         throw new Error(data.error || "Erro desconhecido");
       }
     } catch (syncError) {
-      alert("Erro: " + (getErrorMessage(syncError) || "Erro desconhecido"));
+      setNotification({
+        type: 'error',
+        message: "Erro: " + (getErrorMessage(syncError) || "Erro desconhecido")
+      });
     } finally {
       setSyncing(false);
     }
@@ -1288,6 +1296,7 @@ export default function ProdutosClient() {
                   onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
                   embalagens={embalagens}
                   onEmbalagemUpdate={handleEmbalagemUpdate}
+                  onNotify={(type, message) => setNotification({ type, message })}
                 />
               ))}
             </div>
@@ -1317,6 +1326,7 @@ export default function ProdutosClient() {
                       onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
                       embalagens={embalagens}
                       onEmbalagemUpdate={handleEmbalagemUpdate}
+                      onNotify={(type, message) => setNotification({ type, message })}
                     />
                   ))}
                 </tbody>
@@ -1353,6 +1363,14 @@ export default function ProdutosClient() {
           </>
         )}
       </section>
+
+      {notification && (
+        <NotificationToast
+          type={notification.type}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1414,15 +1432,66 @@ function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProp
   );
 }
 
+type NotificationToastProps = {
+  type: 'success' | 'error' | 'info';
+  message: string;
+  onClose: () => void;
+};
+
+function NotificationToast({ type, message, onClose }: NotificationToastProps) {
+  const styles = {
+    success: {
+      bg: 'bg-green-50 dark:bg-green-500/10 border-green-500',
+      icon: 'text-green-600 dark:text-green-400',
+      text: 'text-green-900 dark:text-green-100',
+    },
+    error: {
+      bg: 'bg-red-50 dark:bg-red-500/10 border-red-500',
+      icon: 'text-red-600 dark:text-red-400',
+      text: 'text-red-900 dark:text-red-100',
+    },
+    info: {
+      bg: 'bg-blue-50 dark:bg-blue-500/10 border-blue-500',
+      icon: 'text-blue-600 dark:text-blue-400',
+      text: 'text-blue-900 dark:text-blue-100',
+    },
+  };
+
+  const style = styles[type];
+
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top duration-300">
+      <div className={`flex items-start gap-3 rounded-2xl border-2 ${style.bg} p-4 shadow-2xl max-w-md backdrop-blur-sm`}>
+        <AlertCircle className={`w-5 h-5 mt-0.5 ${style.icon}`} />
+        <div className="flex-1">
+          <p className={`text-sm font-medium ${style.text} whitespace-pre-line`}>{message}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className={`rounded-lg p-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${style.icon}`}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type ProdutoRowProps = {
   produto: Produto;
   selected?: boolean;
   onSelect?: () => void;
   embalagens: Embalagem[];
   onEmbalagemUpdate: (produtoId: number) => void;
+  onNotify?: (type: 'success' | 'error' | 'info', message: string) => void;
 };
 
-const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate }: ProdutoRowProps) {
+const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -1527,11 +1596,13 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
 const EmbalagemSelector = memo(function EmbalagemSelector({
   produto,
   embalagens,
-  onEmbalagemUpdate
+  onEmbalagemUpdate,
+  onNotify
 }: {
   produto: Produto;
   embalagens: Embalagem[];
   onEmbalagemUpdate: (produtoId: number) => void;
+  onNotify?: (type: 'success' | 'error' | 'info', message: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -1554,7 +1625,7 @@ Clique para editar embalagem/quantidade`;
   const handleAddEmbalagem = async () => {
     if (!selectedEmbalagemId) return;
     if (!Number.isFinite(selectedQuantidade) || selectedQuantidade <= 0) {
-      alert("Quantidade deve ser maior que zero");
+      onNotify?.('error', "Quantidade deve ser maior que zero");
       return;
     }
     setAdding(true);
@@ -1580,7 +1651,7 @@ Clique para editar embalagem/quantidade`;
       setSelectedQuantidade(1);
     } catch (err) {
       console.error("Erro ao vincular embalagem:", err);
-      alert(err instanceof Error ? err.message : "Erro ao vincular embalagem");
+      onNotify?.('error', err instanceof Error ? err.message : "Erro ao vincular embalagem");
     } finally {
       setAdding(false);
     }
@@ -1604,7 +1675,7 @@ Clique para editar embalagem/quantidade`;
       await onEmbalagemUpdate(produto.id);
     } catch (err) {
       console.error("Erro ao desvincular embalagem:", err);
-      alert(err instanceof Error ? err.message : "Erro ao desvincular embalagem");
+      onNotify?.('error', err instanceof Error ? err.message : "Erro ao desvincular embalagem");
     } finally {
       setRemoving(null);
     }
@@ -1673,7 +1744,7 @@ Clique para editar embalagem/quantidade`;
                     setEditingLink(null);
                   } catch (err) {
                     console.error("Erro ao salvar embalagem:", err);
-                    alert(err instanceof Error ? err.message : "Erro ao salvar embalagem");
+                    onNotify?.('error', err instanceof Error ? err.message : "Erro ao salvar embalagem");
                   }
                 }}
                 className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
@@ -1788,7 +1859,7 @@ Clique para editar embalagem/quantidade`;
   );
 });
 
-const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate }: ProdutoRowProps) {
+const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -1872,7 +1943,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
           )}
       </td>
       <td className="px-6 py-4">
-        <EmbalagemSelector produto={produto} embalagens={embalagens} onEmbalagemUpdate={onEmbalagemUpdate} />
+        <EmbalagemSelector produto={produto} embalagens={embalagens} onEmbalagemUpdate={onEmbalagemUpdate} onNotify={onNotify} />
       </td>
       <td className="px-6 py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
