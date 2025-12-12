@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
     const dataFim = searchParams.get('dataFim') || new Date().toISOString().split('T')[0];
     const canal = searchParams.get('canal') || 'todos';
     const situacao = searchParams.get('situacao');
+    const situacoesParam = searchParams.get('situacoes');
     const sku = searchParams.get('sku');
     const groupBy = (searchParams.get('groupBy') || 'sku') as GroupBy;
     const viewMode = (searchParams.get('viewMode') || 'unitario') as ViewMode;
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
     while (true) {
       let pedidosQuery = supabaseAdmin
         .from('tiny_orders')
-        .select('id, tiny_id, numero_pedido, data_criacao, canal, cliente_nome, situacao, valor, numero_pedido_ecommerce')
+        .select('id, tiny_id, numero_pedido, data_criacao, canal, cliente_nome, situacao, valor, numero_pedido_ecommerce, valor_total_pedido, valor_total_produtos, valor_desconto, raw_payload')
         .gte('data_criacao', dataInicio)
         .lte('data_criacao', dataFim)
         .order('data_criacao', { ascending: false })
@@ -93,8 +94,22 @@ export async function GET(request: NextRequest) {
       }
 
       // Filtro por situação
-      if (situacao) {
-        pedidosQuery = pedidosQuery.eq('situacao', parseInt(situacao));
+      const situacoes: number[] = [];
+      if (situacoesParam) {
+        situacoesParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .forEach((s) => {
+            const n = Number(s);
+            if (Number.isFinite(n)) situacoes.push(n);
+          });
+      } else if (situacao) {
+        const n = Number(situacao);
+        if (Number.isFinite(n)) situacoes.push(n);
+      }
+      if (situacoes.length > 0) {
+        pedidosQuery = pedidosQuery.in('situacao', situacoes);
       }
 
       const { data: pedidosPage, error: pedidosError } = await pedidosQuery;
@@ -114,21 +129,51 @@ export async function GET(request: NextRequest) {
 
     const pedidos = allPedidos;
 
-    // Buscar itens dos pedidos separadamente com paginação
-    const pedidoIds = (pedidos || []).map((p: any) => p.id);
+    // Buscar itens dos pedidos com paginação usando join no intervalo (evita perder itens por chunking do .in)
     const allItens: any[] = [];
+    {
+      const pageSizeItems = 1000;
+      let from = 0;
+      while (true) {
+        let itensQuery = supabaseAdmin
+          .from('tiny_pedido_itens')
+          .select('id, id_pedido, id_produto_tiny, codigo_produto, nome_produto, quantidade, valor_unitario, valor_total, tiny_orders!inner(data_criacao, canal, situacao)')
+          .gte('tiny_orders.data_criacao', dataInicio)
+          .lte('tiny_orders.data_criacao', dataFim)
+          .range(from, from + pageSizeItems - 1);
 
-    // Dividir pedidoIds em chunks de 1000 para evitar limite do .in()
-    const chunkSize = 1000;
-    for (let i = 0; i < pedidoIds.length; i += chunkSize) {
-      const chunk = pedidoIds.slice(i, i + chunkSize);
-      const { data: itensChunk } = await supabaseAdmin
-        .from('tiny_pedido_itens')
-        .select('id, id_pedido, id_produto_tiny, codigo_produto, nome_produto, quantidade, valor_unitario, valor_total')
-        .in('id_pedido', chunk);
+        // Filtro por canal (mesmo usado nos pedidos)
+        if (canal && canal !== 'todos') {
+          itensQuery = itensQuery.ilike('tiny_orders.canal', `%${canal}%`);
+        }
+        // Filtro por situação (mesmo usado nos pedidos)
+        const situacoes: number[] = [];
+        if (situacoesParam) {
+          situacoesParam
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .forEach((s) => {
+              const n = Number(s);
+              if (Number.isFinite(n)) situacoes.push(n);
+            });
+        } else if (situacao) {
+          const n = Number(situacao);
+          if (Number.isFinite(n)) situacoes.push(n);
+        }
+        if (situacoes.length > 0) {
+          itensQuery = itensQuery.in('tiny_orders.situacao', situacoes);
+        }
 
-      if (itensChunk) {
+        const { data: itensChunk, error: itensError } = await itensQuery;
+        if (itensError) {
+          console.error('Erro ao buscar itens:', itensError);
+          return NextResponse.json({ success: false, error: itensError.message }, { status: 500 });
+        }
+        if (!itensChunk || itensChunk.length === 0) break;
         allItens.push(...itensChunk);
+        if (itensChunk.length < pageSizeItems) break;
+        from += pageSizeItems;
       }
     }
 
@@ -157,15 +202,28 @@ export async function GET(request: NextRequest) {
 
     // Buscar vínculos de pedidos marketplace <-> tiny em chunks
     const allOrderLinks: any[] = [];
+    const pedidoIds = (pedidos || []).map((p: any) => p.id);
+    const chunkSize = 1000;
     for (let i = 0; i < pedidoIds.length; i += chunkSize) {
       const chunk = pedidoIds.slice(i, i + chunkSize);
-      const { data: linksChunk } = await supabaseAdmin
-        .from('marketplace_order_links')
-        .select('marketplace, marketplace_order_id, tiny_order_id')
-        .in('tiny_order_id', chunk);
+      let from = 0;
+      const pageSizeLinks = 1000;
+      while (true) {
+        const { data: linksChunk, error: linksError } = await supabaseAdmin
+          .from('marketplace_order_links')
+          .select('marketplace, marketplace_order_id, tiny_order_id')
+          .in('tiny_order_id', chunk)
+          .range(from, from + pageSizeLinks - 1);
 
-      if (linksChunk) {
+        if (linksError) {
+          console.error('Erro ao buscar vínculos de pedidos:', linksError);
+          return NextResponse.json({ success: false, error: linksError.message }, { status: 500 });
+        }
+
+        if (!linksChunk || linksChunk.length === 0) break;
         allOrderLinks.push(...linksChunk);
+        if (linksChunk.length < pageSizeLinks) break;
+        from += pageSizeLinks;
       }
     }
 
@@ -174,10 +232,26 @@ export async function GET(request: NextRequest) {
       orderLinkMap.set(link.tiny_order_id, link);
     });
 
-    // Buscar vínculos de kits do marketplace
-    const { data: kitComponents } = await supabaseAdmin
-      .from('marketplace_kit_components')
-      .select('marketplace, marketplace_sku, component_sku, component_qty');
+    // Buscar vínculos de kits do marketplace (paginado)
+    const kitComponents: any[] = [];
+    {
+      const pageSizeKits = 1000;
+      let from = 0;
+      while (true) {
+        const { data: kitsChunk, error: kitsError } = await supabaseAdmin
+          .from('marketplace_kit_components')
+          .select('marketplace, marketplace_sku, component_sku, component_qty')
+          .range(from, from + pageSizeKits - 1);
+        if (kitsError) {
+          console.error('Erro ao buscar kits:', kitsError);
+          return NextResponse.json({ success: false, error: kitsError.message }, { status: 500 });
+        }
+        if (!kitsChunk || kitsChunk.length === 0) break;
+        kitComponents.push(...kitsChunk);
+        if (kitsChunk.length < pageSizeKits) break;
+        from += pageSizeKits;
+      }
+    }
     // Agrupar por (marketplace, marketplace_sku)
     const kitMap = new Map();
     (kitComponents || []).forEach(row => {
@@ -185,6 +259,152 @@ export async function GET(request: NextRequest) {
       if (!kitMap.has(key)) kitMap.set(key, []);
       kitMap.get(key).push({ sku: row.component_sku, qty: Number(row.component_qty) });
     });
+
+    // Buscar itens do marketplace (SKU original do pedido) para poder expandir kits a partir do SKU do marketplace
+    const orderItemsMap = new Map<number, { sku: string; name: string; quantity: number; price: number | null }[]>();
+    // Agrupar order_ids por marketplace
+    const shopeeOrders: string[] = [];
+    const magaluOrders: string[] = [];
+    const meliOrders: string[] = [];
+    allOrderLinks.forEach(l => {
+      if (l.marketplace === 'shopee') shopeeOrders.push(l.marketplace_order_id);
+      else if (l.marketplace === 'magalu') magaluOrders.push(l.marketplace_order_id);
+      else if (l.marketplace === 'mercado_livre') meliOrders.push(l.marketplace_order_id);
+    });
+    // Helper para inserir no map
+    const seenOrderItems = new Map<number, Set<string>>();
+    const pushOrderItems = (tinyOrderId: number, items: { sku: string; name: string; quantity: number; price: number | null }[]) => {
+      if (!orderItemsMap.has(tinyOrderId)) orderItemsMap.set(tinyOrderId, []);
+      orderItemsMap.get(tinyOrderId)!.push(...items);
+      // marca para deduplicar por (sku,price)
+      const set = seenOrderItems.get(tinyOrderId) || new Set<string>();
+      items.forEach(it => {
+        const key = `${it.sku}||${it.price ?? 'na'}`;
+        set.add(key);
+      });
+      seenOrderItems.set(tinyOrderId, set);
+    };
+    // Shopee
+    const fetchShopee = async (ids: string[]) => {
+      const chunkSizeOrders = 500;
+      for (let i = 0; i < ids.length; i += chunkSizeOrders) {
+        const chunk = ids.slice(i, i + chunkSizeOrders);
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabaseAdmin
+            .from('shopee_order_items')
+            .select('order_sn, item_name, item_sku, model_sku, quantity, original_price, discounted_price')
+            .in('order_sn', chunk)
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          data.forEach(row => {
+            const sku = row.model_sku || row.item_sku || '';
+            const price = row.discounted_price ?? row.original_price ?? null;
+            // descobrir tiny_order_id a partir do link
+            const link = allOrderLinks.find(l => l.marketplace === 'shopee' && l.marketplace_order_id === row.order_sn);
+            if (link) {
+              const key = `${sku}||${price ?? 'na'}`;
+              const seen = seenOrderItems.get(link.tiny_order_id) || new Set<string>();
+              if (!seen.has(key)) {
+                pushOrderItems(link.tiny_order_id, [{
+                  sku,
+                  name: row.item_name || sku,
+                  quantity: Number(row.quantity || 0),
+                  price,
+                }]);
+                seen.add(key);
+                seenOrderItems.set(link.tiny_order_id, seen);
+              }
+            }
+          });
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+    };
+    // Magalu
+    const fetchMagalu = async (ids: string[]) => {
+      const chunkSizeOrders = 500;
+      for (let i = 0; i < ids.length; i += chunkSizeOrders) {
+        const chunk = ids.slice(i, i + chunkSizeOrders);
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabaseAdmin
+            .from('magalu_order_items')
+            .select('id_order, id_sku, product_name, quantity, price, discount')
+            .in('id_order', chunk)
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          data.forEach(row => {
+            const price = typeof row.price === 'number' ? row.price : Number(row.price) || null;
+            const link = allOrderLinks.find(l => l.marketplace === 'magalu' && l.marketplace_order_id === row.id_order);
+            if (link) {
+              const sku = String(row.id_sku ?? '');
+              const key = `${sku}||${price ?? 'na'}`;
+              const seen = seenOrderItems.get(link.tiny_order_id) || new Set<string>();
+              if (!seen.has(key)) {
+                pushOrderItems(link.tiny_order_id, [{
+                  sku,
+                  name: String((row as any).product_name ?? row.id_sku ?? ''),
+                  quantity: Number(row.quantity || 0),
+                  price,
+                }]);
+                seen.add(key);
+                seenOrderItems.set(link.tiny_order_id, seen);
+              }
+            }
+          });
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+    };
+    // Mercado Livre
+    const fetchMeli = async (ids: string[]) => {
+      const chunkSizeOrders = 500;
+      for (let i = 0; i < ids.length; i += chunkSizeOrders) {
+        const chunk = ids.slice(i, i + chunkSizeOrders);
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabaseAdmin
+            .from('meli_order_items')
+            .select('meli_order_id, sku, title, quantity, unit_price')
+            .in('meli_order_id', chunk.map(id => Number(id)))
+            .range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          data.forEach(row => {
+            const link = allOrderLinks.find(l => l.marketplace === 'mercado_livre' && l.marketplace_order_id === String(row.meli_order_id));
+            if (link) {
+              const sku = row.sku || '';
+              const price = typeof row.unit_price === 'number' ? row.unit_price : Number(row.unit_price) || null;
+              const key = `${sku}||${price ?? 'na'}`;
+              const seen = seenOrderItems.get(link.tiny_order_id) || new Set<string>();
+              if (!seen.has(key)) {
+                pushOrderItems(link.tiny_order_id, [{
+                  sku,
+                  name: row.title || row.sku || '',
+                  quantity: Number(row.quantity || 0),
+                  price,
+                }]);
+                seen.add(key);
+                seenOrderItems.set(link.tiny_order_id, seen);
+              }
+            }
+          });
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      }
+    };
+    if (shopeeOrders.length) await fetchShopee(shopeeOrders);
+    if (magaluOrders.length) await fetchMagalu(magaluOrders);
+    if (meliOrders.length) await fetchMeli(meliOrders);
 
     // Processar itens
     const items: SalesItem[] = [];
@@ -195,7 +415,24 @@ export async function GET(request: NextRequest) {
     const skuMap = new Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number> }>();
 
     for (const pedido of (pedidos || []) as any[]) {
-      const pedidoItens = itensMap.get(pedido.id) || [];
+      const pedidoItensRaw = itensMap.get(pedido.id) || [];
+      // Mantemos os valores originais do Tiny (não normalizamos pelo total do pedido para não mascarar diferenças com o marketplace)
+      const pedidoItensValorAjustado = pedidoItensRaw;
+
+      // Mapa de preços do marketplace para este pedido (prioridade para valor dos marketplaces)
+      const marketplacePriceRemaining = new Map<string, { qtd: number; price: number }[]>();
+      const orderItems = orderItemsMap.get(pedido.id) || [];
+      for (const oi of orderItems) {
+        const price = oi.price != null ? Number(oi.price) : null;
+        const qty = Number(oi.quantity || 0);
+        const skuMarket = oi.sku || '';
+        if (price != null && price > 0 && qty > 0 && skuMarket) {
+          if (!marketplacePriceRemaining.has(skuMarket)) marketplacePriceRemaining.set(skuMarket, []);
+          marketplacePriceRemaining.get(skuMarket)!.push({ qtd: qty, price });
+        }
+      }
+      // Deduplica itens iguais (mesmo SKU e valor unitário) somando quantidades/valor_total
+      const pedidoItens = mergePedidoItens(pedidoItensValorAjustado);
       // Verificar vinculação
       const link = orderLinkMap.get(pedido.id);
       if (!link && pedido.canal && (
@@ -205,53 +442,365 @@ export async function GET(request: NextRequest) {
       ) {
         pedidosNaoVinculados++;
       }
-      // Verificar problemas (pedido sem itens)
+      // Verificar problemas (pedido sem itens) — só conta Tiny
       if (pedidoItens.length === 0) {
         pedidosComProblema++;
       }
 
-      // Se modo kit, tentar identificar kits vendidos via vínculo
+      // Se modo kit, tentar identificar kits vendidos via SKU do marketplace (melhor fonte)
+      const kitsDoMarketplace: Array<{ marketplace_sku: string; nome: string; qtd: number; vt: number; components?: { sku: string; qty: number }[] }> = [];
+      const skusCobertosPorKit = new Set<string>(); // mantido para compat, mas vamos usar remainingAfterKits para não descartar sobras
+      let remainingAfterKits: Map<string, { qtd: number; vu: number }[]> | null = null;
+      const tinyItemBySku = new Map<string, { quantidade: number; valor_unitario: number; valor_total: number }>();
+      pedidoItens.forEach(it => {
+        const key = it.codigo_produto || '';
+        tinyItemBySku.set(key, {
+          quantidade: Number(it.quantidade || 0),
+          valor_unitario: Number(it.valor_unitario || 0),
+          valor_total: Number(it.valor_total || 0),
+        });
+      });
+
       if (viewMode === 'kit' && link) {
-        // Para cada kit do marketplace, verificar se os componentes batem com os itens do pedido Tiny
-        for (const [kitKey, components] of kitMap.entries()) {
-          // Checar se todos os componentes do kit estão presentes no pedido Tiny nas quantidades corretas
-          let kitQtd = Infinity;
-          for (const comp of components) {
-            const found = pedidoItens.find(i => i.codigo_produto === comp.sku);
-            if (!found) { kitQtd = 0; break; }
-            kitQtd = Math.min(kitQtd, Math.floor(found.quantidade / comp.qty));
+        const canalNorm = (pedido.canal || '').toLowerCase();
+        let marketplaceForOrder: string | null = null;
+        if (canalNorm.includes('shopee')) marketplaceForOrder = 'shopee';
+        else if (canalNorm.includes('magalu') || canalNorm.includes('magazine')) marketplaceForOrder = 'magalu';
+        else if (canalNorm.includes('mercado') || canalNorm.includes('meli')) marketplaceForOrder = 'mercado_livre';
+
+        const orderItems = orderItemsMap.get(pedido.id);
+        if (orderItems && orderItems.length > 0) {
+          for (const oi of orderItems) {
+            const kitKey = marketplaceForOrder ? `${marketplaceForOrder}||${oi.sku}` : null;
+            if (!kitKey || !kitMap.has(kitKey)) {
+              continue; // item de marketplace que não é kit
+            }
+            const components = kitMap.get(kitKey) as { sku: string; qty: number }[];
+            const prodInfo = produtoMap.get(oi.sku) || { nome: oi.name || oi.sku, tipo: 'K' };
+            const qtdKit = Number(oi.quantity || 0);
+            const valorTotal = (oi.price ?? 0) * qtdKit;
+            kitsDoMarketplace.push({
+              marketplace_sku: oi.sku,
+              nome: prodInfo.nome,
+              qtd: qtdKit,
+              vt: valorTotal,
+              components,
+            });
           }
-          if (kitQtd > 0 && kitQtd !== Infinity) {
-            // Encontrou kit vendido
-            const [marketplace, marketplace_sku] = kitKey.split('||');
-            // Nome do kit: pode buscar do produtoMap se mapeado
-            const prodInfo = produtoMap.get(marketplace_sku) || { nome: marketplace_sku, tipo: 'K' };
+        }
+
+        // Se já temos itens do marketplace para este pedido, usamos eles como fonte de verdade em modo kit.
+        if (orderItems && orderItems.length > 0) {
+          const agg = new Map<string, { sku: string; nome: string; qtd: number; price: number; isKit: boolean }>();
+          for (const oi of orderItems) {
+            const price = oi.price != null ? Number(oi.price) : undefined;
+            const nome = (produtoMap.get(oi.sku)?.nome) || oi.name || oi.sku;
+            const key = `${oi.sku}||${price ?? 'na'}`;
+            const isKit = marketplaceForOrder ? kitMap.has(`${marketplaceForOrder}||${oi.sku}`) : false;
+            const current = agg.get(key) || { sku: oi.sku, nome, qtd: 0, price: price ?? 0, isKit };
+            current.qtd += Number(oi.quantity || 0);
+            agg.set(key, current);
+          }
+          for (const entry of agg.values()) {
+            const vt = Math.round(((entry.price || 0) * entry.qtd + Number.EPSILON) * 100) / 100;
             items.push({
-              id: `${pedido.id}-KIT-${marketplace_sku}`,
+              id: `${pedido.id}-MP-${entry.sku}`,
               pedido_id: pedido.id,
               numero_pedido: pedido.numero_pedido || pedido.tiny_id,
               data: pedido.data_criacao || '',
               canal: normalizeCanal(pedido.canal),
-              sku: marketplace_sku,
-              nome_produto: prodInfo.nome,
-              quantidade: kitQtd,
-              valor_unitario: pedido.valor ? pedido.valor / kitQtd : 0,
-              valor_total: pedido.valor || 0,
+              sku: entry.sku,
+              nome_produto: entry.nome,
+              quantidade: entry.qtd,
+              valor_unitario: entry.qtd > 0 ? vt / entry.qtd : 0,
+              valor_total: vt,
+              tipo_produto: entry.isKit ? 'K' : (produtoMap.get(entry.sku)?.tipo || 'S'),
+              is_kit: entry.isKit,
+              cliente_nome: pedido.cliente_nome || '',
+              situacao: pedido.situacao ?? undefined,
+            });
+            pedidosSet.add(pedido.id);
+            updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, entry.qtd, vt);
+            updateSkuMap(skuMap, entry.sku, entry.nome, entry.qtd, vt, pedido.id);
+          }
+          // pula processamento baseado no Tiny (evita transformar unitário em kit)
+          continue;
+        }
+
+        // fallback: inferir kit a partir dos componentes Tiny (somente se não há itens de marketplace para este pedido)
+        if (kitsDoMarketplace.length === 0 && (!orderItems || orderItems.length === 0)) {
+          // agrega por SKU somando quantidades e valor_total para calcular vu médio (evita perder preços diferentes do mesmo SKU)
+          const itemCountMap = new Map<string, { qtd: number; vu: number; vt: number }>();
+          for (const it of pedidoItens) {
+            const vu = Number(it.valor_unitario || 0);
+            const vt = Number(it.valor_total || 0);
+            const key = it.codigo_produto || '';
+            const current = itemCountMap.get(key) || { qtd: 0, vu: 0, vt: 0 };
+            const newQtd = current.qtd + Number(it.quantidade || 0);
+            const newVt = current.vt + vt;
+            itemCountMap.set(key, {
+              qtd: newQtd,
+              vt: newVt,
+              vu: newQtd > 0 ? newVt / newQtd : vu,
+            });
+          }
+          const kitsForMarketplace: Array<{
+            marketplace: string;
+            marketplace_sku: string;
+            components: { sku: string; qty: number }[];
+          }> = [];
+          for (const [kitKey, components] of kitMap.entries()) {
+            if (marketplaceForOrder && !kitKey.startsWith(`${marketplaceForOrder}||`)) continue;
+            const [marketplace, marketplace_sku] = kitKey.split('||');
+            kitsForMarketplace.push({ marketplace, marketplace_sku, components });
+          }
+          kitsForMarketplace.sort((a, b) => {
+            const sumA = a.components.reduce((s, c) => s + Number(c.qty || 0), 0);
+            const sumB = b.components.reduce((s, c) => s + Number(c.qty || 0), 0);
+            return sumB - sumA;
+          });
+          for (const kit of kitsForMarketplace) {
+            let kitQtd = Infinity;
+            for (const comp of kit.components) {
+              const entry = itemCountMap.get(comp.sku);
+              if (!entry || entry.qtd <= 0) { kitQtd = 0; break; }
+              kitQtd = Math.min(kitQtd, Math.floor(entry.qtd / comp.qty));
+            }
+            if (!kitQtd || kitQtd === Infinity) continue;
+            let kitValorTotal = 0;
+            for (const comp of kit.components) {
+              const entry = itemCountMap.get(comp.sku)!;
+              kitValorTotal += (entry.vu || 0) * comp.qty * kitQtd;
+            }
+            const prodInfo = produtoMap.get(kit.marketplace_sku) || { nome: kit.marketplace_sku, tipo: 'K' };
+            kitsDoMarketplace.push({
+              marketplace_sku: kit.marketplace_sku,
+              nome: prodInfo.nome,
+              qtd: kitQtd,
+              vt: kitValorTotal,
+              components: kit.components,
+            });
+            kit.components.forEach(c => skusCobertosPorKit.add(c.sku));
+            for (const comp of kit.components) {
+              const entry = itemCountMap.get(comp.sku)!;
+              entry.qtd -= comp.qty * kitQtd;
+              if (entry.qtd < 0) entry.qtd = 0;
+              itemCountMap.set(comp.sku, entry);
+            }
+          }
+        }
+
+        // Renderiza kits identificados consumindo quantidades dos itens Tiny (evita contar o mesmo componente em múltiplos kits)
+        if (kitsDoMarketplace.length > 0) {
+          // Mantém as quantidades por SKU e por valor unitário (evita subestimar kits quando há preços diferentes do mesmo SKU)
+          const remainingDetailed = new Map<string, { qtd: number; vu: number }[]>();
+          pedidoItens.forEach(it => {
+            const key = it.codigo_produto || '';
+            if (!remainingDetailed.has(key)) remainingDetailed.set(key, []);
+            remainingDetailed.get(key)!.push({
+              qtd: Number(it.quantidade || 0),
+              vu: Number(it.valor_unitario || 0),
+            });
+          });
+
+          const totalQtyForSku = (sku: string) =>
+            (remainingDetailed.get(sku) || []).reduce((s, e) => s + e.qtd, 0);
+
+          const computeCost = (sku: string, needed: number) => {
+            const entriesTiny = remainingDetailed.get(sku) || [];
+            const totalAvailable = entriesTiny.reduce((s, e) => s + e.qtd, 0);
+            if (totalAvailable < needed) return { ok: false, cost: 0 };
+
+            // Usa primeiro o preço do marketplace (não muta)
+            const priceEntries = (marketplacePriceRemaining.get(sku) || []).map(e => ({ ...e }));
+            let rem = needed;
+            let cost = 0;
+            for (const pe of priceEntries) {
+              if (rem <= 0) break;
+              const use = Math.min(pe.qtd, rem);
+              cost += use * pe.price;
+              rem -= use;
+            }
+            // Se ainda falta, usa o valor unitário do Tiny
+            if (rem > 0) {
+              for (const entry of entriesTiny) {
+                if (rem <= 0) break;
+                const use = Math.min(entry.qtd, rem);
+                cost += use * entry.vu;
+                rem -= use;
+              }
+            }
+            return { ok: rem <= 0, cost };
+          };
+
+          const consume = (sku: string, needed: number) => {
+            const entriesTiny = remainingDetailed.get(sku) || [];
+            let rem = needed;
+            let cost = 0;
+
+            // Primeiro consome dos preços do marketplace
+            const priceEntries = marketplacePriceRemaining.get(sku) || [];
+            for (const pe of priceEntries) {
+              if (rem <= 0) break;
+              const use = Math.min(pe.qtd, rem);
+              if (use > 0) {
+                cost += use * pe.price;
+                pe.qtd -= use;
+                rem -= use;
+              }
+            }
+            // remove entradas zeradas
+            marketplacePriceRemaining.set(sku, priceEntries.filter(e => e.qtd > 0));
+
+            // Depois consome das quantidades do Tiny
+            for (const entry of entriesTiny) {
+              if (rem <= 0) break;
+              const use = Math.min(entry.qtd, rem);
+              if (use > 0) {
+                cost += use * entry.vu;
+                entry.qtd -= use;
+                rem -= use;
+              }
+            }
+            return { ok: rem <= 0, cost };
+          };
+
+          for (const k of kitsDoMarketplace) {
+            if (!k.components || k.components.length === 0) continue;
+
+            // máximo possível com base nos itens do Tiny
+            let maxPossible = Infinity;
+            k.components.forEach(comp => {
+              const totalQtd = totalQtyForSku(comp.sku);
+              if (!totalQtd || totalQtd <= 0) {
+                maxPossible = 0;
+              } else {
+                maxPossible = Math.min(maxPossible, Math.floor(totalQtd / comp.qty));
+              }
+            });
+            const desiredQty = k.qtd ?? maxPossible;
+            const kitQty = Math.min(desiredQty, maxPossible);
+            // Se não conseguimos montar a quantidade desejada, não registrar o kit (deixa os itens avulsos)
+            if (!kitQty || kitQty === Infinity || kitQty < desiredQty) continue;
+
+            // calcula valor total a partir dos itens Tiny
+            let vt = 0;
+            let canPrice = true;
+            for (const comp of k.components) {
+              const res = computeCost(comp.sku, comp.qty * kitQty);
+              if (!res.ok) {
+                canPrice = false;
+                break;
+              }
+              vt += res.cost;
+            }
+
+            // só registra kit se conseguiu calcular valor a partir dos componentes
+            if (!canPrice || vt === 0) continue;
+
+            const vtRounded = Math.round((vt + Number.EPSILON) * 100) / 100;
+            const valor_unitario = kitQty > 0 ? vtRounded / kitQty : 0;
+            items.push({
+              id: `${pedido.id}-KIT-${k.marketplace_sku}`,
+              pedido_id: pedido.id,
+              numero_pedido: pedido.numero_pedido || pedido.tiny_id,
+              data: pedido.data_criacao || '',
+              canal: normalizeCanal(pedido.canal),
+              sku: k.marketplace_sku,
+              nome_produto: k.nome,
+              quantidade: kitQty,
+              valor_unitario,
+              valor_total: vtRounded,
               tipo_produto: 'K',
               is_kit: true,
               cliente_nome: pedido.cliente_nome || '',
               situacao: pedido.situacao ?? undefined,
             });
             pedidosSet.add(pedido.id);
-            updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, kitQtd, pedido.valor || 0);
-            updateSkuMap(skuMap, marketplace_sku, prodInfo.nome, kitQtd, pedido.valor || 0, pedido.id);
+            updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, kitQty, vt);
+            updateSkuMap(skuMap, k.marketplace_sku, k.nome, kitQty, vt, pedido.id);
+
+            // consome quantidades restantes e marca componentes cobertos
+            k.components.forEach(comp => {
+              const res = consume(comp.sku, comp.qty * kitQty);
+              if (!res.ok) {
+                // Caso improvável: se falhar, apenas continua; as sobras serão tratadas abaixo.
+                return;
+              }
+              skusCobertosPorKit.add(comp.sku);
+            });
+          }
+
+          // guarda o restante para uso ao renderizar itens não cobertos (evita descartar sobras de componentes)
+          remainingAfterKits = new Map<string, { qtd: number; vu: number }[]>();
+          for (const [skuKey, entries] of remainingDetailed.entries()) {
+            const left = entries.filter(e => e.qtd > 0);
+            if (left.length > 0) {
+              remainingAfterKits.set(skuKey, left.map(e => ({ ...e })));
+            }
           }
         }
-        continue; // Não processa itens individuais se modo kit
       }
 
       // Modo unitário (ou pedido sem vínculo de kit)
       pedidoItens.forEach((item) => {
+        // Em modo kit, só descarta a quantidade que já foi consumida; inclui sobras se houver.
+        if (viewMode === 'kit' && remainingAfterKits) {
+          const key = item.codigo_produto || '';
+          const entries = remainingAfterKits.get(key) || [];
+          const totalDisponivel = entries.reduce((s, e) => s + e.qtd, 0);
+          if (totalDisponivel <= 0) return;
+          const qtdItem = Number(item.quantidade || 0);
+          let qtdParaUsar = Math.min(qtdItem, totalDisponivel);
+          if (qtdParaUsar <= 0) return;
+
+          // Primeiro usa preços do marketplace para este SKU, se houver
+          const priceEntries = marketplacePriceRemaining.get(key) || [];
+          let valorTotal = 0;
+          let qtdUsada = 0;
+          let pIdx = 0;
+          while (qtdParaUsar > 0 && pIdx < priceEntries.length) {
+            const pe = priceEntries[pIdx];
+            const use = Math.min(pe.qtd, qtdParaUsar);
+            if (use > 0) {
+              valorTotal += use * pe.price;
+              pe.qtd -= use;
+              qtdParaUsar -= use;
+              qtdUsada += use;
+            }
+            if (pe.qtd <= 0) pIdx++;
+          }
+          // Remove entradas zeradas
+          marketplacePriceRemaining.set(key, priceEntries.filter(e => e.qtd > 0));
+
+          // Se ainda falta, usa valores do Tiny (vu)
+          let eIdx = 0;
+          while (qtdParaUsar > 0 && eIdx < entries.length) {
+            const entry = entries[eIdx];
+            const use = Math.min(entry.qtd, qtdParaUsar);
+            if (use > 0) {
+              valorTotal += use * entry.vu;
+              entry.qtd -= use;
+              qtdParaUsar -= use;
+              qtdUsada += use;
+            }
+            if (entry.qtd <= 0) eIdx++;
+          }
+
+          // Limpa entradas zeradas
+          const rest = entries.filter(e => e.qtd > 0);
+          if (rest.length > 0) remainingAfterKits.set(key, rest);
+          else remainingAfterKits.delete(key);
+
+          if (qtdUsada <= 0) return;
+          const vtUsado = Math.round((valorTotal + Number.EPSILON) * 100) / 100;
+          item = {
+            ...item,
+            quantidade: qtdUsada,
+            valor_total: vtUsado,
+            valor_unitario: Math.round((vtUsado / qtdUsada + Number.EPSILON) * 100) / 100,
+          };
+        }
         const skuOriginal = item.codigo_produto || '';
         // Filtro por SKU
         if (sku && !skuOriginal.toLowerCase().includes(sku.toLowerCase())) {
@@ -259,10 +808,7 @@ export async function GET(request: NextRequest) {
         }
         const prodInfo = produtoMap.get(skuOriginal);
         const isKit = prodInfo?.tipo === 'K';
-        if (viewMode === 'kit' && !isKit) {
-          return; // Pula produtos que não são kits
-        }
-        // Item normal (ou kit mantido como kit)
+        // Item normal (ou kit mantido como kit). Em modo kit, itens não cobertos (ou sobras de componentes) continuam aparecendo.
         items.push({
           id: `${pedido.id}-${item.id}`,
           pedido_id: pedido.id,
@@ -283,18 +829,20 @@ export async function GET(request: NextRequest) {
         updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, item.quantidade, item.valor_total);
         updateSkuMap(skuMap, skuOriginal, item.nome_produto, item.quantidade, item.valor_total, pedido.id);
       });
+
     }
 
     // Calcular resumo
     const faturamentoTotal = items.reduce((sum, i) => sum + i.valor_total, 0);
     const quantidadeTotal = items.reduce((sum, i) => sum + i.quantidade, 0);
+    const totalPedidos = pedidos.length;
     
     const summary: Summary = {
-      total_pedidos: pedidosSet.size,
+      total_pedidos: totalPedidos,
       total_itens: items.length,
       quantidade_total: quantidadeTotal,
       faturamento_total: faturamentoTotal,
-      ticket_medio: pedidosSet.size > 0 ? faturamentoTotal / pedidosSet.size : 0,
+      ticket_medio: totalPedidos > 0 ? faturamentoTotal / totalPedidos : 0,
       pedidos_nao_vinculados: pedidosNaoVinculados,
       pedidos_com_problema: pedidosComProblema,
     };
@@ -333,18 +881,22 @@ export async function GET(request: NextRequest) {
         pedidoMap.get(item.pedido_id)!.push(item);
       });
       
-      groupedData = Array.from(pedidoMap.entries()).map(([pedidoId, pedidoItems]) => ({
-        pedido_id: pedidoId,
-        numero_pedido: pedidoItems[0].numero_pedido,
-        data: pedidoItems[0].data,
-        canal: pedidoItems[0].canal,
-        cliente_nome: pedidoItems[0].cliente_nome,
-        situacao: pedidoItems[0].situacao,
-        itens: pedidoItems.length,
-        quantidade_total: pedidoItems.reduce((s, i) => s + i.quantidade, 0),
-        valor_total: pedidoItems.reduce((s, i) => s + i.valor_total, 0),
-        items: pedidoItems,
-      }));
+      groupedData = Array.from(pedidoMap.entries()).map(([pedidoId, pedidoItems]) => {
+        // Dedup por SKU + valor_unitario dentro do pedido
+        const merged = mergeSalesItems(pedidoItems);
+        return {
+          pedido_id: pedidoId,
+          numero_pedido: merged[0]?.numero_pedido,
+          data: merged[0]?.data,
+          canal: merged[0]?.canal,
+          cliente_nome: merged[0]?.cliente_nome,
+          situacao: merged[0]?.situacao,
+          itens: merged.length,
+          quantidade_total: merged.reduce((s, i) => s + i.quantidade, 0),
+          valor_total: merged.reduce((s, i) => s + i.valor_total, 0),
+          items: merged,
+        };
+      });
     } else if (groupBy === 'canal') {
       groupedData = byChannel.map(c => ({
         ...c,
@@ -357,8 +909,9 @@ export async function GET(request: NextRequest) {
 
     // Paginação
     const totalItems = groupedData.length;
-    const totalPages = Math.ceil(totalItems / limit);
-    const paginatedData = groupedData.slice((page - 1) * limit, page * limit);
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const safePage = Math.min(Math.max(page, 1), totalPages);
+    const paginatedData = groupedData.slice((safePage - 1) * limit, safePage * limit);
 
     return NextResponse.json({
       success: true,
@@ -368,7 +921,7 @@ export async function GET(request: NextRequest) {
       data: paginatedData,
       items: items.slice(0, 1000), // Limitar items raw para exportação
       pagination: {
-        page,
+        page: currentPage,
         limit,
         totalItems,
         totalPages,
@@ -433,4 +986,41 @@ function updateSkuMap(
   data.quantidade += quantidade;
   data.faturamento += valor;
   data.pedidos.add(pedidoId);
+}
+
+// Deduplica itens de um pedido quando agrupados por pedido na resposta:
+// mesma lógica do mergePedidoItens, mas preservando fields do SalesItem.
+function mergeSalesItems(items: SalesItem[]): SalesItem[] {
+  const map = new Map<string, SalesItem>();
+  items.forEach((item, idx) => {
+    const vu = Number(item.valor_unitario || 0);
+    const vuRounded = Math.round((vu + Number.EPSILON) * 100) / 100;
+    const key = `${item.sku || ''}||${vuRounded}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...item, id: item.id ?? String(idx), valor_unitario: vuRounded });
+    } else {
+      existing.quantidade += item.quantidade;
+      existing.valor_total += item.valor_total;
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergePedidoItens(items: PedidoItem[]): PedidoItem[] {
+  const map = new Map<string, PedidoItem>();
+  items.forEach((item, idx) => {
+    const vu = Number(item.valor_unitario || 0);
+    const vuRounded = Math.round((vu + Number.EPSILON) * 100) / 100;
+    const key = `${item.codigo_produto || ''}||${vuRounded}`;
+    const existing = map.get(key);
+    if (!existing) {
+      // Clona para não mutar o array original
+      map.set(key, { ...item, id: item.id ?? idx, valor_unitario: vuRounded });
+    } else {
+      existing.quantidade += item.quantidade;
+      existing.valor_total += item.valor_total;
+    }
+  });
+  return Array.from(map.values());
 }

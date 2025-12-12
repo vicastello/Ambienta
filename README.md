@@ -57,6 +57,12 @@
 - **Compras**: o PDF (`jspdf` + `jspdf-autotable`) é carregado dinamicamente. Mantenha feedback visual (`Gerando…`) para exportações pesadas e preserve o debounce de recalcular sugestões (350 ms) ao alterar filtros numéricos.
 - **Rate Limits Tiny**: scripts já aplicam delay; não reduza `batchDelayMs` sem testar, ou os 429s quebram o job. Todos os writes em `tiny_orders` devem passar por `upsertOrdersPreservingEnriched`.
 
+### Relatórios / Kits & Marketplaces
+- **Fonte de verdade = marketplace** para vendas de kit: no handler `/api/reports/sales` os itens do marketplace são usados diretamente quando existem; só caímos no fallback do Tiny quando não há itens do marketplace. Kits não são mais “inferidos” a partir de componentes do Tiny se o marketplace disser que a venda é avulsa.
+- **Comparar unitário vs kit**: `npx tsx scripts/report-kit-vs-unit.ts 2025-11-01 2025-11-30` gera a lista de pedidos com diferença (útil para auditar ruídos de centavos ou packs do Mercado Livre).
+- **Dedup de itens do Meli**: `npx tsx scripts/cleanup-meli-items.ts` remove duplicatas por `(meli_order_id, sku, unit_price)` em `meli_order_items` (evita contabilizar duas vezes no relatório). Se houver packs, rode antes `npx tsx scripts/meli-link-pack-orders.ts` para garantir que todos os pedidos irmãos estão vinculados ao mesmo pedido Tiny.
+- **Re-sync Meli**: `npx tsx scripts/refresh-meli-token.ts` para renovar token e `npx tsx scripts/sync-meli-now.ts` (ou `fetch` para `/api/marketplaces/mercado-livre/sync`) com `force:true` e janela personalizada.
+
 ## Produtos & Estoque
 - **Round-robin de estoque**: cron `/api/tiny/cron/estoque-round-robin` roda a cada 5 min com `batchSize` padrão 200 (clamp em `MAX_PRODUCTS_PER_JOB=200`). Respeita ~120 req/min com `BASE_REQUEST_DELAY_MS=450ms`, tolera até `MAX_429_PER_JOB=8` (delay 3s em cada 429) e avança o cursor apenas até o último sucesso.
 - **Catálogo**: `cron_run_produtos_backfill` (migration `20251129122000*` + ajustes `20251202*`) chama `/api/admin/sync/produtos` em modo backfill com `limit: 10`, `workers: 1` e `cursorKey: 'catalog_backfill'`. Para evitar bater demais em `/produtos`, o rate limiter agora trava em ~90 req/min (estoque-only em ~110 req/min) e o cron deve rodar poucas vezes ao dia ou manualmente.
