@@ -231,7 +231,9 @@ export default function ShopeePage() {
   const [isMockMode, setIsMockMode] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [sortBy, setSortBy] = useState<"date" | "value">("date");
   const requestIdRef = useRef(0);
 
   const { timeFrom, timeTo } = useMemo(() => {
@@ -241,15 +243,22 @@ export default function ShopeePage() {
 
   const metrics: Metrics = useMemo(() => buildMetricsFromOrders(orders), [orders]);
 
-  const filteredOrders = useMemo(() => {
-    if (!searchTerm.trim()) return orders;
-    const term = searchTerm.toLowerCase();
-    return orders.filter(
-      (o) =>
-        o.order_sn.toLowerCase().includes(term) ||
-        (o.recipient_address?.name?.toLowerCase().includes(term) ?? false)
-    );
-  }, [orders, searchTerm]);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchDebounced(searchTerm.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const sortedOrders = useMemo(() => {
+    const copy = [...orders];
+    if (sortBy === "value") {
+      copy.sort((a, b) => Number(b.total_amount) - Number(a.total_amount));
+    } else {
+      copy.sort((a, b) => b.create_time - a.create_time);
+    }
+    return copy;
+  }, [orders, sortBy]);
+
+  const filteredOrders = sortedOrders;
 
   // Estado para sync
   const [syncing, setSyncing] = useState(false);
@@ -315,6 +324,7 @@ export default function ShopeePage() {
         params.set("to", String(timeTo));
         params.set("pageSize", "100");
         if (statusFilter !== "ALL") params.set("status", statusFilter);
+        if (searchDebounced) params.set("search", searchDebounced);
         if (opts?.offset) params.set("offset", String(opts.offset));
 
         // Buscar do banco de dados
@@ -378,7 +388,7 @@ export default function ShopeePage() {
         }
       }
     },
-    [statusFilter, timeFrom, timeTo]
+    [statusFilter, timeFrom, timeTo, searchDebounced]
   );
 
   useEffect(() => {
@@ -460,9 +470,11 @@ export default function ShopeePage() {
           notConfigured={notConfigured}
           isMockMode={isMockMode}
           onRetry={() => fetchOrders()}
-          onLoadMore={() => nextOffset && fetchOrders({ offset: nextOffset, append: true })}
+          onLoadMore={() => typeof nextOffset === "number" && fetchOrders({ offset: nextOffset, append: true })}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
           expandedOrders={expandedOrders}
           setExpandedOrders={setExpandedOrders}
         />
@@ -902,6 +914,36 @@ function ShopeeHeaderSection({
               <span className="sm:hidden">{loading ? "..." : "Atualizar"}</span>
             </button>
           </div>
+        </div>
+
+        {/* Chips rápidos de status */}
+        <div className="flex flex-wrap gap-2 sm:gap-3 items-center" aria-label="Filtro rápido de status">
+          {[
+            { value: "ALL" as const, label: "Todos", tone: "bg-white text-[#EE4D2D] shadow", count: totalCount ?? totalOrders },
+            { value: "READY_TO_SHIP" as const, label: "Prontos", tone: "bg-amber-100 text-amber-800", count: metrics?.statusDistribution.find((s) => s.status === "READY_TO_SHIP")?.count ?? 0 },
+            { value: "UNPAID" as const, label: "Aguardando", tone: "bg-orange-100 text-orange-800", count: metrics?.statusDistribution.find((s) => s.status === "UNPAID")?.count ?? 0 },
+            { value: "COMPLETED" as const, label: "Concluídos", tone: "bg-emerald-100 text-emerald-800", count: metrics?.statusDistribution.find((s) => s.status === "COMPLETED")?.count ?? 0 },
+            { value: "CANCELLED" as const, label: "Cancelados", tone: "bg-rose-100 text-rose-800", count: (metrics?.statusDistribution.find((s) => s.status === "CANCELLED")?.count ?? 0) + (metrics?.statusDistribution.find((s) => s.status === "IN_CANCEL")?.count ?? 0) },
+          ].map((s) => {
+            const active = statusFilter === s.value;
+            return (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setStatusFilter(s.value)}
+                className={`inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all ${
+                  active
+                    ? `${s.tone} ring-2 ring-white/70 dark:ring-white/30`
+                    : "bg-white/15 text-white hover:bg-white/25 border border-white/20"
+                }`}
+              >
+                <span>{s.label}</span>
+                <span className={`min-w-[34px] h-7 sm:h-8 inline-flex items-center justify-center rounded-full text-[11px] sm:text-xs font-bold ${active ? "bg-white/20 text-inherit" : "bg-white/20 text-white"}`}>
+                  {s.count?.toLocaleString("pt-BR") ?? 0}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Info Row - compacto no mobile */}
@@ -1870,6 +1912,8 @@ type OrdersSectionProps = {
   onLoadMore: () => void;
   searchTerm: string;
   setSearchTerm: (value: string) => void;
+  sortBy: "date" | "value";
+  setSortBy: (value: "date" | "value") => void;
   expandedOrders: Record<string, boolean>;
   setExpandedOrders: (value: Record<string, boolean>) => void;
 };
@@ -1947,6 +1991,7 @@ function ShopeeOrdersSection({
   loadingMore,
   hasMore,
   nextCursor,
+  nextOffset,
   error,
   notConfigured,
   isMockMode,
@@ -1954,6 +1999,8 @@ function ShopeeOrdersSection({
   onLoadMore,
   searchTerm,
   setSearchTerm,
+  sortBy,
+  setSortBy,
   expandedOrders,
   setExpandedOrders,
 }: OrdersSectionProps) {
@@ -1971,6 +2018,7 @@ function ShopeeOrdersSection({
     const completed = orders.filter(o => o.order_status === "COMPLETED").length;
     return { total, readyToShip, completed };
   }, [orders]);
+  const canLoadMore = hasMore || typeof nextOffset === "number" || Boolean(nextCursor);
 
   return (
     <section 
@@ -2010,8 +2058,8 @@ function ShopeeOrdersSection({
         </div>
         
         {/* Barra de busca melhorada */}
-        <div className="mt-4" role="search">
-          <div className="relative max-w-md">
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" role="search">
+          <div className="relative max-w-md w-full">
             <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <label htmlFor="orders-search" className="sr-only">Buscar pedidos</label>
             <input
@@ -2023,6 +2071,23 @@ function ShopeeOrdersSection({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+          </div>
+          <div className="inline-flex items-center gap-2 bg-white/70 dark:bg-slate-800/70 border border-white/60 dark:border-slate-700/60 rounded-2xl p-1 shadow-sm">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 px-2">Ordenar</span>
+            <button
+              type="button"
+              onClick={() => setSortBy("date")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition ${sortBy === "date" ? "bg-[#EE4D2D] text-white shadow" : "text-slate-600 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700"}`}
+            >
+              Data
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy("value")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition ${sortBy === "value" ? "bg-[#EE4D2D] text-white shadow" : "text-slate-600 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700"}`}
+            >
+              Valor
+            </button>
           </div>
         </div>
       </div>
@@ -2082,11 +2147,11 @@ function ShopeeOrdersSection({
           </div>
 
           {/* Botão "Carregar mais" modernizado */}
-          {(hasMore || nextCursor) && (
+          {canLoadMore && (
             <div className="px-6 pb-6 pt-2">
               <button
                 type="button"
-                disabled={loadingMore || !nextCursor}
+                disabled={loadingMore || !canLoadMore || typeof nextOffset !== "number"}
                 onClick={onLoadMore}
                 className="group w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#EE4D2D] to-[#FF8566] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-[#EE4D2D]/30 hover:shadow-xl hover:shadow-[#EE4D2D]/40 hover:scale-[1.03] active:scale-[0.97] transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
@@ -2214,7 +2279,7 @@ function ShopeeOrdersTable({
                         : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-[#EE4D2D]/10 hover:text-[#EE4D2D]"
                     }`}
                   >
-                    <span className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} aria-hidden="true">▼</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
                     {expanded ? "Fechar" : "Itens"}
                   </button>
                 </td>
