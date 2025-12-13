@@ -990,6 +990,28 @@ export default function ProdutosClient() {
     return `${delta > 0 ? "▲" : delta < 0 ? "▼" : "—"} ${Math.abs(delta).toFixed(0)}%`;
   };
 
+  const formatPercent = (value: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return null;
+    return `${Math.round(value)}%`;
+  };
+
+  const getProdutoMainImage = (produto: Produto | null) => {
+    if (!produto?.imagem_url) return null;
+    return produto.imagem_url;
+  };
+
+  const isPromoAtiva = (produto: Produto | null) => {
+    if (!produto) return false;
+    if (produto.preco == null || produto.preco_promocional == null) return false;
+    return produto.preco_promocional > 0 && produto.preco_promocional < produto.preco;
+  };
+
+  const getPrecoExibido = (produto: Produto | null) => {
+    if (!produto) return { atual: null as number | null, original: null as number | null };
+    if (isPromoAtiva(produto)) return { atual: produto.preco_promocional ?? null, original: produto.preco ?? null };
+    return { atual: produto.preco ?? null, original: null as number | null };
+  };
+
   // Métricas calculadas
   const metrics = useMemo(() => {
     const totalAtivos = produtos.filter(p => p.situacao === 'A').length;
