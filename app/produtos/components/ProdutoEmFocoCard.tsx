@@ -224,8 +224,17 @@ const ProdutoEmFocoCardComponent = ({
                 </div>
 
                 <div className="min-w-0">
-                  <h2 className="text-base md:text-lg font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
-                    {produto.nome}
+                  <h2 className="flex items-center gap-2 text-base md:text-lg font-semibold text-slate-900 dark:text-white leading-snug">
+                    <span className="line-clamp-2">{produto.nome}</span>
+                    <a
+                      href={`https://erp.tiny.com.br/produto/${produto.id_produto_tiny}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-slate-600 dark:text-slate-300"
+                      title="Abrir no Tiny"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
                   </h2>
                   <div className="mt-1 flex flex-col gap-2">
                     <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
@@ -242,7 +251,7 @@ const ProdutoEmFocoCardComponent = ({
                         <button
                           type="button"
                           onClick={() => handleCopy("codigo", produto.codigo!, `${produto.codigo} copiado!`)}
-                          className="inline-flex items-center gap-2 group"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm group"
                           title="Copiar código"
                           aria-label={`Copiar código ${produto.codigo}`}
                         >
@@ -261,38 +270,6 @@ const ProdutoEmFocoCardComponent = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-              {produto.codigo && (
-                <button
-                  type="button"
-                  onClick={() => handleCopy("codigo", produto.codigo!, `Código ${produto.codigo} copiado!`)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-white/10 border border-white/60 dark:border-white/10 px-3 py-1.5 hover:bg-slate-200/80 dark:hover:bg-white/15 transition-all group shadow-none"
-                  title="Copiar código"
-                  aria-label={`Copiar código ${produto.codigo}`}
-                >
-                  <span className="font-semibold">Código {produto.codigo}</span>
-                  {copiedField === "codigo" ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                  )}
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => handleCopy("id", String(produto.id_produto_tiny), `ID ${produto.id_produto_tiny} copiado!`)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-white/10 border border-white/60 dark:border-white/10 px-3 py-1.5 hover:bg-slate-200/80 dark:hover:bg-white/15 transition-all group shadow-none"
-                title="Copiar ID Tiny"
-                aria-label={`Copiar ID Tiny ${produto.id_produto_tiny}`}
-              >
-                <span className="font-semibold">ID {produto.id_produto_tiny}</span>
-                {copiedField === "id" ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                )}
-              </button>
-
               {produto.gtin && (
                 <button
                   type="button"
@@ -405,37 +382,49 @@ const ProdutoEmFocoCardComponent = ({
               </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="metric-pill min-w-0">
-                <p className="metric-label truncate">Receita</p>
-                <p className="metric-value truncate">{formatBRL(totalReceita)}</p>
+            
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Estoque</p>
+                <div className="mt-2 flex items-center gap-3">
+                  <div>
+                    <p className="text-[10px] text-slate-500">Saldo</p>
+                    <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSku.saldo)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500">Reservado</p>
+                    <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSku.reservado)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500">Disponível</p>
+                    <p className={`text-lg font-semibold ${disponivelSku <= 0 ? 'text-rose-600' : estoqueCriticoSku ? 'text-amber-700' : 'text-emerald-700'}`}>{formatNumber(estoqueSku.disponivel)}</p>
+                  </div>
+                </div>
               </div>
-              <div className="metric-pill min-w-0">
-                <p className="metric-label truncate">Unidades</p>
-                <p className="metric-value truncate">{formatNumber(totalQuantidade)}</p>
-              </div>
-              <div className="metric-pill min-w-0">
-                <p className="metric-label truncate">Melhor dia</p>
-                <p className="metric-value truncate">{melhorDiaLabel ?? "—"}</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300 truncate">
-                  {melhorDiaReceita == null ? "—" : `${formatBRL(melhorDiaReceita)}${melhorDiaQuantidade != null ? ` · ${formatNumber(melhorDiaQuantidade)} un` : ""}`}
-                </p>
-              </div>
-              <div className="metric-pill min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="metric-label truncate">Ruptura</p>
+
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Ruptura</p>
                   {rupturaStatus && (
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${rupturaStatus.tone}`}>
                       {rupturaStatus.label}
                     </span>
                   )}
                 </div>
-                <p className="metric-value truncate">
-                  {produtoDiasParaZerar === null ? "—" : `${produtoDiasParaZerar} dia${produtoDiasParaZerar === 1 ? "" : "s"}`}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300 truncate">
-                  Média {formatNumber(mediaDiariaVendas || 0)} un/dia
-                </p>
+                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar}`}</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar} dia${produtoDiasParaZerar === 1 ? '' : 's'}`}</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Média {formatNumber(mediaDiariaVendas || 0)} un/dia</p>
+              </div>
+
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Receita</p>
+                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatBRL(totalReceita)}</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Período selecionado</p>
+              </div>
+
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Quantidade vendida</p>
+                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(totalQuantidade)}</p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Unidades no período</p>
               </div>
             </div>
 
@@ -477,75 +466,55 @@ const ProdutoEmFocoCardComponent = ({
                 </div>
               </div>
 
-              <div className="mt-3">
-                {trendLoading ? (
-                  <div className="h-64 rounded-2xl bg-slate-100/80 dark:bg-white/5 animate-pulse border border-white/70 dark:border-white/10" />
-                ) : trendError ? (
-                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-200">{trendError}</p>
-                ) : trendData.length ? (
-                  <ProdutoTrendChart data={trendData} containerClassName="h-64 sm:h-72 min-w-0" />
-                ) : (
-                  <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
-                )}
+              <div className="mt-3 flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 min-w-0">
+                  {trendLoading ? (
+                    <div className="h-64 rounded-2xl bg-slate-100/80 dark:bg-white/5 animate-pulse border border-white/70 dark:border-white/10" />
+                  ) : trendError ? (
+                    <p className="text-xs font-semibold text-rose-600 dark:text-rose-200">{trendError}</p>
+                  ) : trendData.length ? (
+                    <ProdutoTrendChart data={trendData} containerClassName="h-64 sm:h-72 min-w-0" />
+                  ) : (
+                    <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
+                  )}
+                </div>
+
+                <div className="w-full sm:w-64 grid grid-cols-1 gap-3">
+                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Disponível</p>
+                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(estoqueSku.disponivel)}</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Reservado {formatNumber(estoqueSku.reservado)} · Saldo {formatNumber(estoqueSku.saldo)}</p>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Ruptura</p>
+                      {rupturaStatus && (
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${rupturaStatus.tone}`}>
+                          {rupturaStatus.label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar}`}</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Média {formatNumber(mediaDiariaVendas || 0)} un/dia</p>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Receita</p>
+                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatBRL(totalReceita)}</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Período selecionado</p>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Quantidade vendida</p>
+                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(totalQuantidade)}</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Unidades no período</p>
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="grid gap-3">
-              <details className="group rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
-                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex items-center gap-3">
-                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-2xl bg-white/80 dark:bg-white/10 border border-white/60 dark:border-white/10">
-                      <Package className="w-4 h-4 text-purple-600 dark:text-purple-200" />
-                    </span>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Estoque</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 min-w-0">
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300 max-w-[220px] truncate text-right">
-                      {estoqueFonteLabel} • {estoqueAtualizadoLabel}
-                    </span>
-                    <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-                      {formatNumber(estoqueSku.disponivel)} disp
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
-                  </div>
-                </summary>
-
-                <div className="mt-3 rounded-2xl glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 md:p-4">
-                  <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 dark:text-slate-300">Saldo</p>
-              <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSku.saldo)}</p>
-            </div>
-            <div className="rounded-xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 dark:text-slate-300">Reservado</p>
-              <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
-                {formatNumber(estoqueSku.reservado)}
-              </p>
-            </div>
-            <div
-              className={`rounded-xl border p-3 ${
-                disponivelSku <= 0
-                  ? "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30"
-                  : estoqueCriticoSku
-                    ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
-                    : "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30"
-              }`}
-            >
-              <p className="text-[10px] uppercase tracking-[0.15em] text-slate-600 dark:text-slate-200">Disponível</p>
-              <p className="mt-1 text-lg font-semibold">{formatNumber(estoqueSku.disponivel)}</p>
-            </div>
-                  </div>
-
-                  {produto.disponivel_total != null && produto.disponivel_total !== produto.disponivel && (
-                    <p className="mt-3 text-[11px] font-semibold text-purple-700 dark:text-purple-200">
-                      Inclui variações/kit: {formatNumber(estoqueTotalPaiVariacoes ?? produto.disponivel_total ?? 0)} un
-                    </p>
-                  )}
-                  {estoqueLiveError && (
-                    <p className="mt-2 text-[11px] font-semibold text-rose-600 dark:text-rose-200">{estoqueLiveError}</p>
-                  )}
-                </div>
-              </details>
 
               <details className="group rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
                 <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3">
@@ -604,52 +573,7 @@ const ProdutoEmFocoCardComponent = ({
                 </div>
               </details>
 
-              <details className="group rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
-                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex items-center gap-3">
-                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-2xl bg-white/80 dark:bg-white/10 border border-white/60 dark:border-white/10">
-                      <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-200" />
-                    </span>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Ações</p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">3 atalhos</span>
-                    <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
-                  </div>
-                </summary>
-
-                <div className="mt-3 rounded-2xl glass-panel glass-tint border border-white/60 dark:border-white/10 p-3 md:p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-            <a
-              href={`https://erp.tiny.com.br/produto/${produto.id_produto_tiny}#aba_edicao`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 px-3 py-1.5 text-xs font-semibold hover:bg-purple-200/80 dark:hover:bg-purple-500/30 transition-colors border border-purple-200/80 dark:border-purple-500/30 shadow-none"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Editar
-            </a>
-            <a
-              href={`https://erp.tiny.com.br/pedidos#/pesquisar/produto:${produto.id_produto_tiny}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 px-3 py-1.5 text-xs font-semibold hover:bg-blue-200/80 dark:hover:bg-blue-500/30 transition-colors border border-blue-200/80 dark:border-blue-500/30 shadow-none"
-            >
-              <Package className="w-3.5 h-3.5" />
-              Pedidos
-            </a>
-            <a
-              href={`https://erp.tiny.com.br/estoque/movimentacoes#/produto/${produto.id_produto_tiny}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/80 dark:bg-white/10 text-slate-700 dark:text-slate-200 px-3 py-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-white/15 transition-colors border border-white/60 dark:border-white/10 shadow-none"
-            >
-              <Box className="w-3.5 h-3.5" />
-              Movimentações
-            </a>
-                  </div>
-                </div>
-              </details>
+              {/* Ações removidas per request: Editar / Pedidos / Movimentações */}
             </div>
 
             <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-300">

@@ -51,16 +51,16 @@ const PRODUTOS_AUTO_REFRESH_MS = 180_000;
 const PRODUTOS_PAGE_SIZE = 25;
 
 const TIPO_CONFIG: Record<string, { label: string; color: string }> = {
-  K: { label: "Kit", color: "bg-fuchsia-100 text-fuchsia-700" },
-  V: { label: "Variação", color: "bg-blue-100 text-blue-700" },
-  S: { label: "Simples", color: "bg-emerald-100 text-emerald-700" },
-  P: { label: "Produto", color: "bg-purple-100 text-purple-700" },
+  K: { label: "Kit", color: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-600/20 dark:text-fuchsia-100" },
+  V: { label: "Variação", color: "bg-blue-100 text-blue-700 dark:bg-blue-600/20 dark:text-blue-100" },
+  S: { label: "Simples", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-600/20 dark:text-emerald-100" },
+  P: { label: "Produto", color: "bg-purple-100 text-purple-700 dark:bg-purple-600/20 dark:text-purple-100" },
 };
 
 const SITUACAO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  A: { label: "Ativo", color: "text-emerald-700", bg: "bg-emerald-100" },
-  I: { label: "Inativo", color: "text-amber-700", bg: "bg-amber-100" },
-  E: { label: "Excluído", color: "text-rose-700", bg: "bg-rose-100" },
+  A: { label: "Ativo", color: "text-emerald-700 dark:text-emerald-100", bg: "bg-emerald-100 dark:bg-emerald-600/20" },
+  I: { label: "Inativo", color: "text-amber-700 dark:text-amber-100", bg: "bg-amber-100 dark:bg-amber-600/20" },
+  E: { label: "Excluído", color: "text-rose-700 dark:text-rose-100", bg: "bg-rose-100 dark:bg-rose-500/20" },
 };
 
 const formatBRL = (value: number | null) => {
@@ -1456,13 +1456,7 @@ export default function ProdutosClient() {
             color="amber"
             loading={loading}
           />
-          <MetricCard
-            icon={ImageOff}
-            label="Sem Imagem"
-            value={metrics.semImagem.toLocaleString("pt-BR")}
-            color="purple"
-            loading={loading}
-          />
+          
           <MetricCard
             icon={DollarSign}
             label="Valor Total"
@@ -1548,23 +1542,6 @@ export default function ProdutosClient() {
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setQuickFilter(quickFilter === 'sem-imagem' ? null : 'sem-imagem')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-              quickFilter === 'sem-imagem'
-                ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-500 dark:bg-purple-500/25 dark:text-purple-100 dark:ring-purple-400'
-                : 'bg-white/70 text-slate-600 hover:bg-purple-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-purple-500/15'
-            }`}
-          >
-            <ImageOff className="w-4 h-4" />
-            Sem imagem
-            {metrics.semImagem > 0 && (
-              <span className="ml-1 rounded-full bg-purple-500 text-white px-2 py-0.5 text-xs">
-                {metrics.semImagem}
-              </span>
-            )}
-          </button>
 
           <button
             type="button"
@@ -1579,18 +1556,7 @@ export default function ProdutosClient() {
             Em promoção
           </button>
 
-          <button
-            type="button"
-            onClick={() => setQuickFilter(quickFilter === 'sem-embalagem' ? null : 'sem-embalagem')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-              quickFilter === 'sem-embalagem'
-                ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500 dark:bg-blue-500/25 dark:text-blue-100 dark:ring-blue-400'
-                : 'bg-white/70 text-slate-600 hover:bg-blue-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-blue-500/15'
-            }`}
-          >
-            <Box className="w-4 h-4" />
-            Sem embalagem
-          </button>
+          
 
           {quickFilter && (
             <button
@@ -1979,49 +1945,34 @@ export default function ProdutosClient() {
                     {/* desconto exibido apenas na coluna de preço (direita) */}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
-                      Saldo {produtoEmFoco.saldo != null ? formatNumber(produtoEmFoco.saldo) : '—'} · Reservado {produtoEmFoco.reservado != null ? formatNumber(produtoEmFoco.reservado) : '—'} · Disponível {(produtoEmFoco.disponivel_total ?? produtoEmFoco.disponivel) != null ? formatNumber(produtoEmFoco.disponivel_total ?? produtoEmFoco.disponivel) : '—'}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
-                      {produtoEmFoco.fornecedor_nome || "Fornecedor —"} · {produtoEmFoco.unidade || "Unid —"}
-                    </span>
-                    {!produtoEmFoco.gtin && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/25 px-3 py-1 font-semibold text-amber-700 dark:text-amber-100 text-xs">
-                        <AlertCircle className="w-3 h-3" />
-                        Adicionar GTIN
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                  <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
                     {produtoEmFoco.codigo ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyToClipboard(produtoEmFoco.codigo!, () => {
-                              setCopiedField('codigo');
-                              setTimeout(() => setCopiedField(null), 2000);
-                              setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
-                            })
-                          }
-                          className="inline-flex items-center gap-2 group"
-                          title="Copiar código"
-                          aria-label={`Copiar código ${produtoEmFoco.codigo}`}
-                        >
-                          <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
-                          {copiedField === 'codigo' ? (
-                            <Check className="w-3 h-3 text-emerald-500" />
-                          ) : (
-                            <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(produtoEmFoco.codigo!, () => {
+                            setCopiedField('codigo');
+                            setTimeout(() => setCopiedField(null), 2000);
+                            setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
+                          })
+                        }
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm group"
+                        title="Copiar código"
+                        aria-label={`Copiar código ${produtoEmFoco.codigo}`}
+                      >
+                        <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
+                        {copiedField === 'codigo' ? (
+                          <Check className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                        )}
+                      </button>
                     ) : null}
+
+                    <div className="min-w-0 truncate">
+                      <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
+                    </div>
+
                     {produtoEmFoco.gtin && (
                       <button
                         type="button"
@@ -2032,7 +1983,7 @@ export default function ProdutosClient() {
                             setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
                           })
                         }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group ml-auto"
                         title="Copiar GTIN"
                         aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
                       >
@@ -2044,36 +1995,6 @@ export default function ProdutosClient() {
                         )}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        copyToClipboard(String(produtoEmFoco.id_produto_tiny), () => {
-                          setCopiedField('id');
-                          setTimeout(() => setCopiedField(null), 2000);
-                          setNotification({ type: 'success', message: `ID ${produtoEmFoco.id_produto_tiny} copiado!` });
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
-                      title="Copiar ID Tiny"
-                      aria-label={`Copiar ID Tiny ${produtoEmFoco.id_produto_tiny}`}
-                    >
-                      <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
-                      {copiedField === 'id' ? (
-                        <Check className="w-3 h-3 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                      )}
-                    </button>
-                    <a
-                      href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-purple-700 hover:bg-purple-200 dark:bg-purple-500/20 dark:text-purple-400 dark:hover:bg-purple-500/30 transition-all font-medium"
-                      title="Abrir produto no Tiny ERP"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      Ver no Tiny
-                    </a>
                   </div>
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
@@ -2099,28 +2020,11 @@ export default function ProdutosClient() {
                 </div>
               </div>
 
-              {produtoAlertasInfo.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-amber-700 dark:text-amber-300">
-                  {produtoAlertasInfo.map((info) => (
-                    <span
-                      key={info}
-                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-500/15 px-2.5 py-1 font-semibold border border-amber-200 dark:border-amber-500/25"
-                    >
-                      <AlertCircle className="w-3 h-3" />
-                      {info}
-                    </span>
-                  ))}
-                </div>
-              )}
+              
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
-              <p className="text-[11px] text-slate-500">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
-            </div>
             <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
               <p
@@ -2303,35 +2207,9 @@ export default function ProdutosClient() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 justify-between text-[12px] text-slate-600 dark:text-slate-300">
+              <div className="flex flex-wrap items-center gap-2 justify-between text-[12px] text-slate-600 dark:text-slate-300">
             <div className="flex flex-wrap items-center gap-2">
-              <a
-                href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}#aba_edicao`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 px-3 py-1.5 text-xs font-semibold hover:bg-purple-200 dark:hover:bg-purple-500/30 transition-colors"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Editar
-              </a>
-              <a
-                href={`https://erp.tiny.com.br/pedidos#/pesquisar/produto:${produtoEmFoco.id_produto_tiny}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-3 py-1.5 text-xs font-semibold hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
-              >
-                <Package className="w-3.5 h-3.5" />
-                Pedidos
-              </a>
-              <a
-                href={`https://erp.tiny.com.br/estoque/movimentacoes#/produto/${produtoEmFoco.id_produto_tiny}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              >
-                <Box className="w-3.5 h-3.5" />
-                Movimentações
-              </a>
+              {/* Editar / Pedidos / Movimentações removed per request */}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
@@ -2397,11 +2275,7 @@ export default function ProdutosClient() {
                   {metrics.estoqueCritico} estoque crítico
                 </span>
               )}
-              {metrics.semImagem > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60">
-                  {metrics.semImagem} sem imagem
-                </span>
-              )}
+              
             </div>
             <div className="inline-flex items-center gap-2 bg-white/70 dark:bg-slate-800/70 border border-white/60 dark:border-slate-700/60 rounded-2xl p-1 shadow-sm">
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 px-2">Ordenar</span>
@@ -3459,7 +3333,6 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
         <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
           {produto.nome}
         </div>
-        <div className="text-xs text-slate-500 dark:text-slate-300">ID Tiny {produto.id_produto_tiny}</div>
       </td>
       <td className="px-6 py-4">
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoConfig.color}`}>
