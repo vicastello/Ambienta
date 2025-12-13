@@ -402,6 +402,32 @@ where specific_schema = 'public'
   and routine_name ilike '%sync_produtos_from_tiny%';
 ```
 
+---
+
+# Registro automático 2025-12-16 18:00: Supabase push executado
+
+Executado `supabase db push --linked --include-all` na raiz do projeto.
+
+Resultado observado no CLI: **Remote database is up to date** (nenhuma alteração pendente a aplicar ou migration já aplicada).
+
+Para confirmar manualmente no Supabase Studio (copiar/colar):
+
+```sql
+-- Ver se ainda existe job de cron chamando a função
+select jobid, jobname, schedule, command, active
+from cron.job
+where command ilike '%sync_produtos_from_tiny%';
+
+-- Ver se a função ainda existe
+select routine_name
+from information_schema.routines
+where specific_schema = 'public'
+and routine_name ilike '%sync_produtos_from_tiny%';
+```
+
+Ambas as queries devem retornar **0 rows** quando a remoção estiver confirmada.
+
+
 Registro 2025-12-08 15:08:41 -03: `supabase db push --linked --include-all` executado sem erro. Executar manualmente no Supabase Studio para confirmar remoção do job e da função legacy:
 
 ```sql

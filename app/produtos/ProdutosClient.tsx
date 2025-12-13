@@ -1928,6 +1928,16 @@ export default function ProdutosClient() {
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+                    <a
+                      href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ver produto no Tiny"
+                      className="text-slate-400 hover:text-slate-600 dark:text-slate-300 ml-1"
+                      aria-label="Abrir no Tiny"
+                    >
+                      <ExternalLink className="w-4 h-4 inline-block" />
+                    </a>
                     {situacaoProdutoEmFoco && (
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}
@@ -2024,111 +2034,10 @@ export default function ProdutosClient() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
-              <p
-                className={`text-xl font-semibold ${
-                  rupturaCritica
-                    ? 'text-rose-700 dark:text-rose-200'
-                    : rupturaAtencao
-                      ? 'text-amber-700 dark:text-amber-200'
-                      : 'text-emerald-700 dark:text-emerald-200'
-                }`}
-              >
-                {produtoDiasParaZerar !== null && produtoMediaDiariaVendas > 0
-                  ? `~${produtoDiasParaZerar} dia(s)`
-                  : 'Sem giro'}
-              </p>
-              <p className="text-[11px] text-slate-500">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
-            </div>
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</span>
-                {desempenhoDeltaReceita && (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                      (desempenhoDeltaReceita.deltaPercent ?? 0) >= 0
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-50'
-                        : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-50'
-                    }`}
-                  >
-                    {formatDeltaPercent(desempenhoDeltaReceita.deltaPercent)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
-                {desempenhoDeltaQuantidade && (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                      (desempenhoDeltaQuantidade.deltaPercent ?? 0) >= 0
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-50'
-                        : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-50'
-                    }`}
-                  >
-                    {formatDeltaPercent(desempenhoDeltaQuantidade.deltaPercent)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* metrics summary removed */}
 
-          <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Estoque</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-300">{estoqueFonteLabel}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => carregarEstoqueLive('live')}
-                  disabled={estoqueLiveLoading}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1.5 font-semibold text-slate-700 dark:text-slate-200 text-xs hover:bg-white dark:hover:bg-white/10 transition-colors disabled:opacity-50"
-                  title="Atualizar do Tiny"
-                >
-                  <RefreshCcw className={`w-3.5 h-3.5 ${estoqueLiveLoading ? 'animate-spin' : ''}`} />
-                  Atualizar
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-white/90 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">Saldo</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.saldo)}</p>
-                </div>
-                <div className="rounded-xl bg-white/90 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">Reservado</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.reservado)}</p>
-                </div>
-                <div
-                  className={`rounded-xl border p-3 ${
-                    disponivelSku <= 0
-                      ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30'
-                      : estoqueCriticoSku
-                        ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30'
-                        : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
-                  }`}
-                >
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-600 dark:text-slate-200">Disponível</p>
-                  <p className="text-lg font-semibold">{formatNumber(estoqueSkuExibido.disponivel)}</p>
-                </div>
-              </div>
-              {produtoEmFoco.disponivel_total != null && produtoEmFoco.disponivel_total !== produtoEmFoco.disponivel && (
-                <p className="text-[11px] text-purple-700 dark:text-purple-200">
-                  Inclui variações/kit: {formatNumber(estoqueTotalPaiVariacoes ?? produtoEmFoco.disponivel_total ?? 0)} un
-                </p>
-              )}
-              {estoqueLiveError && (
-                <p className="text-[11px] text-rose-500 dark:text-rose-400">{estoqueLiveError}</p>
-              )}
-            </div>
-
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3 h-full flex flex-col min-h-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trend de vendas</p>
@@ -2151,7 +2060,7 @@ export default function ProdutosClient() {
                   ))}
                 </div>
               </div>
-              <div className="relative min-h-[120px]">
+              <div className="relative min-h-[120px] lg:min-h-0 lg:h-full flex-1">
                 {produtoDesempenhoLoading && (
                   <div className="absolute inset-0 z-10 rounded-2xl bg-white/80 dark:bg-slate-900/60 flex items-center justify-center">
                     <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
@@ -2168,6 +2077,43 @@ export default function ProdutosClient() {
               <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-600 dark:text-slate-300">
                 <span>Melhor dia: {produtoMelhorDia ? `${produtoMelhorDiaLabel} · ${formatBRL(produtoMelhorDia.receita)}` : '—'}</span>
                 <span>Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3 h-full">
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
+                <p className="text-[11px] text-slate-500 whitespace-normal break-words">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
+                <p
+                  className={`text-xl font-semibold ${
+                    rupturaCritica
+                      ? 'text-rose-700 dark:text-rose-200'
+                      : rupturaAtencao
+                        ? 'text-amber-700 dark:text-amber-200'
+                        : 'text-emerald-700 dark:text-emerald-200'
+                  }`}
+                >
+                  {produtoDiasParaZerar !== null && produtoMediaDiariaVendas > 0
+                    ? `~${produtoDiasParaZerar} dia(s)`
+                    : 'Sem giro'}
+                </p>
+                <p className="text-[11px] text-slate-500 whitespace-normal">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
+              </div>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</span>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
+                </div>
               </div>
             </div>
           </div>

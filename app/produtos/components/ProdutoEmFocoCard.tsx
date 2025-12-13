@@ -59,10 +59,7 @@ type ProdutoEmFocoCardProps = {
   estoqueParaRuptura: number;
   mediaDiariaVendas: number;
   estoqueLiveLoading: boolean;
-  estoqueLiveError: string | null;
-  onRefreshEstoque: () => void;
-  trendPreset: ProdutoSeriePreset;
-  trendPresetOptions: readonly ProdutoSeriePresetOption[];
+  // Removed stray JSX line
   onTrendPresetChange: (preset: ProdutoSeriePreset) => void;
   trendLoading: boolean;
   trendError: string | null;
@@ -382,7 +379,8 @@ const ProdutoEmFocoCardComponent = ({
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/85 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3 md:p-4 overflow-hidden min-w-0">
+            <div className="rounded-2xl bg-white/85 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3 md:p-4 overflow-hidden min-w-0 min-h-0 h-full flex flex-col lg:flex-row gap-4 lg:items-stretch">
+              <div className="min-w-0 lg:flex-none lg:w-[70%] h-full">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">Trend de vendas</p>
@@ -420,50 +418,47 @@ const ProdutoEmFocoCardComponent = ({
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
-                <div>
-                  {trendLoading ? (
-                    <div className="h-64 rounded-2xl bg-slate-100/80 dark:bg-white/5 animate-pulse border border-white/70 dark:border-white/10" />
-                  ) : trendError ? (
-                    <p className="text-xs font-semibold text-rose-600 dark:text-rose-200">{trendError}</p>
-                  ) : trendData.length ? (
-                    <ProdutoTrendChart data={trendData} containerClassName="h-64 sm:h-72 min-w-0" />
-                  ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
-                  )}
+              <div className="mt-3 flex-1 min-h-0">
+                {trendLoading ? (
+                  <div className="h-48 sm:h-64 lg:h-full rounded-2xl bg-slate-100/80 dark:bg-white/5 animate-pulse border border-white/70 dark:border-white/10" />
+                ) : trendError ? (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-200">{trendError}</p>
+                ) : trendData.length ? (
+                  <ProdutoTrendChart data={trendData} containerClassName="h-48 sm:h-64 lg:h-full min-w-0" />
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
+                )}
+              </div>
+              </div>
+
+            {/* metrics grid moved into right column for proper 70/30 layout */}
+
+            <div className="min-w-0 min-h-0 lg:flex-none lg:w-[30%] h-full grid gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueSku.disponivel)}</p>
+                  <p className="text-[11px] text-slate-500">Reservado {formatNumber(estoqueSku.reservado ?? 0)} · Saldo {formatNumber(estoqueSku.saldo ?? 0)}</p>
                 </div>
-
-                <div className="grid gap-3">
-                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Ruptura</p>
-                      {rupturaStatus && (
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${rupturaStatus.tone}`}>
-                          {rupturaStatus.label}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar}`}</p>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar} dia${produtoDiasParaZerar === 1 ? '' : 's'}`}</p>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Média {formatNumber(mediaDiariaVendas || 0)} un/dia</p>
+                <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
+                  <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-200">{produtoDiasParaZerar === null ? 'Sem giro' : produtoDiasParaZerar}</p>
+                  <p className="text-[11px] text-slate-500">Média {formatNumber(mediaDiariaVendas)} un/dia</p>
+                </div>
+                <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(totalReceita)}</span>
                   </div>
-
-                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Receita</p>
-                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatBRL(totalReceita)}</p>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Período selecionado</p>
-                  </div>
-
-                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Quantidade vendida</p>
-                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(totalQuantidade)}</p>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Unidades no período</p>
+                </div>
+                <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(totalQuantidade)}</span>
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className="grid gap-3">
 
               <details className="group rounded-2xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3">
                 <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between gap-3">
@@ -545,6 +540,7 @@ const ProdutoEmFocoCardComponent = ({
             </div>
           </div>
         </div>
+      </div>
       </div>
     </section>
   );
