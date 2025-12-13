@@ -382,52 +382,6 @@ const ProdutoEmFocoCardComponent = ({
               </div>
             </div>
 
-            
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Estoque</p>
-                <div className="mt-2 flex items-center gap-3">
-                  <div>
-                    <p className="text-[10px] text-slate-500">Saldo</p>
-                    <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSku.saldo)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500">Reservado</p>
-                    <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSku.reservado)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-500">Disponível</p>
-                    <p className={`text-lg font-semibold ${disponivelSku <= 0 ? 'text-rose-600' : estoqueCriticoSku ? 'text-amber-700' : 'text-emerald-700'}`}>{formatNumber(estoqueSku.disponivel)}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Ruptura</p>
-                  {rupturaStatus && (
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${rupturaStatus.tone}`}>
-                      {rupturaStatus.label}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar}`}</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar} dia${produtoDiasParaZerar === 1 ? '' : 's'}`}</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Média {formatNumber(mediaDiariaVendas || 0)} un/dia</p>
-              </div>
-
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Receita</p>
-                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatBRL(totalReceita)}</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Período selecionado</p>
-              </div>
-
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Quantidade vendida</p>
-                <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(totalQuantidade)}</p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Unidades no período</p>
-              </div>
-            </div>
-
             <div className="rounded-2xl bg-white/85 dark:bg-white/5 border border-white/70 dark:border-white/10 p-3 md:p-4 overflow-hidden min-w-0">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -466,8 +420,8 @@ const ProdutoEmFocoCardComponent = ({
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 min-w-0">
+              <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+                <div>
                   {trendLoading ? (
                     <div className="h-64 rounded-2xl bg-slate-100/80 dark:bg-white/5 animate-pulse border border-white/70 dark:border-white/10" />
                   ) : trendError ? (
@@ -479,13 +433,7 @@ const ProdutoEmFocoCardComponent = ({
                   )}
                 </div>
 
-                <div className="w-full sm:w-64 grid grid-cols-1 gap-3">
-                  <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Disponível</p>
-                    <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{formatNumber(estoqueSku.disponivel)}</p>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Reservado {formatNumber(estoqueSku.reservado)} · Saldo {formatNumber(estoqueSku.saldo)}</p>
-                  </div>
-
+                <div className="grid gap-3">
                   <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">Ruptura</p>
@@ -496,6 +444,7 @@ const ProdutoEmFocoCardComponent = ({
                       )}
                     </div>
                     <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar}`}</p>
+                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{produtoDiasParaZerar === null ? '—' : `${produtoDiasParaZerar} dia${produtoDiasParaZerar === 1 ? '' : 's'}`}</p>
                     <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Média {formatNumber(mediaDiariaVendas || 0)} un/dia</p>
                   </div>
 
