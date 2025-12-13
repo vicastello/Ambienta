@@ -227,14 +227,34 @@ const ProdutoEmFocoCardComponent = ({
                   <h2 className="text-base md:text-lg font-semibold text-slate-900 dark:text-white leading-snug line-clamp-2">
                     {produto.nome}
                   </h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
-                    {produto.fornecedor_nome ? (
-                      <span className="truncate max-w-[240px]">{produto.fornecedor_nome}</span>
-                    ) : (
-                      <span>Fornecedor —</span>
-                    )}
-                    <span className="text-slate-300 dark:text-slate-600">·</span>
-                    <span>{produto.unidade || "Un"}</span>
+                  <div className="mt-1 flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
+                      {produto.fornecedor_nome ? (
+                        <span className="truncate max-w-[240px]">{produto.fornecedor_nome}</span>
+                      ) : (
+                        <span>Fornecedor —</span>
+                      )}
+                      <span className="text-slate-300 dark:text-slate-600">·</span>
+                      <span>{produto.unidade || "Un"}</span>
+                    </div>
+                    {produto.codigo ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy("codigo", produto.codigo!, `${produto.codigo} copiado!`)}
+                          className="inline-flex items-center gap-2 group"
+                          title="Copiar código"
+                          aria-label={`Copiar código ${produto.codigo}`}
+                        >
+                          <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produto.codigo}</span>
+                          {copiedField === "codigo" ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>

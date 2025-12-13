@@ -1997,29 +1997,31 @@ export default function ProdutosClient() {
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
-                    {produtoEmFoco.codigo && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(produtoEmFoco.codigo!, () => {
-                            setCopiedField('codigo');
-                            setTimeout(() => setCopiedField(null), 2000);
-                            setNotification({ type: 'success', message: `Código ${produtoEmFoco.codigo} copiado!` });
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
-                        title="Copiar código"
-                        aria-label={`Copiar código ${produtoEmFoco.codigo}`}
-                      >
-                        <span>Código {produtoEmFoco.codigo}</span>
-                        {copiedField === 'codigo' ? (
-                          <Check className="w-3 h-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                        )}
-                      </button>
-                    )}
+                  <div className="flex flex-col gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                    {produtoEmFoco.codigo ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyToClipboard(produtoEmFoco.codigo!, () => {
+                              setCopiedField('codigo');
+                              setTimeout(() => setCopiedField(null), 2000);
+                              setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
+                            })
+                          }
+                          className="inline-flex items-center gap-2 group"
+                          title="Copiar código"
+                          aria-label={`Copiar código ${produtoEmFoco.codigo}`}
+                        >
+                          <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
+                          {copiedField === 'codigo' ? (
+                            <Check className="w-3 h-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
                     {produtoEmFoco.gtin && (
                       <button
                         type="button"
