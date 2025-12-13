@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, Loader2, MoreVertical, Package, Plus, RefreshCcw, Search, Square, Trash2, TrendingDown, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, LayoutGrid, Loader2, MoreVertical, Package, Plus, RefreshCcw, Rows, Search, Square, Trash2, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -78,6 +78,33 @@ const formatSerieDayLabel = (date: Date) => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}`;
+};
+
+const formatRelativeTime = (timestamp: number | null | undefined) => {
+  if (!timestamp) return "agora";
+  const diffSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (diffSeconds < 60) return "agora";
+  if (diffSeconds < 3600) return `${Math.round(diffSeconds / 60)} min`;
+  if (diffSeconds < 86400) return `${Math.round(diffSeconds / 3600)} h`;
+  return `${Math.round(diffSeconds / 86400)} d`;
+};
+
+const computeDeltaFromSerie = (
+  serie: ProdutoDesempenhoPoint[],
+  key: "receita" | "quantidade"
+) => {
+  if (!serie?.length) return null;
+  const janela = Math.min(7, Math.floor(serie.length / 2));
+  if (janela < 1 || serie.length < janela * 2) return null;
+
+  const tail = serie.slice(-janela);
+  const prev = serie.slice(-janela * 2, -janela);
+  const sum = (points: typeof serie) => points.reduce((acc, item) => acc + (item?.[key] ?? 0), 0);
+  const atual = sum(tail);
+  const anterior = sum(prev);
+  if (anterior === 0 && atual === 0) return { deltaPercent: 0, atual, anterior };
+  const deltaPercent = anterior === 0 ? 100 : ((atual - anterior) / anterior) * 100;
+  return { deltaPercent, atual, anterior };
 };
 
 const formatTooltipCurrency: CustomTooltipFormatter = (value) =>
@@ -243,10 +270,13 @@ export default function ProdutosClient() {
   const [mobileProducts, setMobileProducts] = useState<Produto[]>([]);
   const [mobileHasMore, setMobileHasMore] = useState(true);
   const mobileLoaderRef = useRef<HTMLDivElement>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
 
   // Hooks de navegação para salvar filtros na URL
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const debugMockEnabled = searchParams.get("mockProduto") === "1";
 
   // Debounce da busca (300ms)
   const debouncedSearchInput = useDebounce(searchInput, 300);
@@ -256,6 +286,90 @@ export default function ProdutosClient() {
   const produtoDesempenhoCacheRef = useRef(
     new Map<string, { payload: ProdutoDesempenhoResponse; timestamp: number }>()
   );
+
+  // Debug local: se ?mockProduto=1 e não houver dados carregados, injeta um produto fictício para visualizar o card
+  useEffect(() => {
+    if (!debugMockEnabled || produtos.length) return;
+
+    const nowIso = new Date().toISOString();
+    const mockEmbalagem: Embalagem = {
+      id: "emb-mock-1",
+      codigo: "CX-12",
+      nome: "Caixa 12 un",
+      descricao: "Pack fechado para envio",
+      altura: 30,
+      largura: 25,
+      comprimento: 40,
+      preco_unitario: 20,
+      estoque_atual: 50,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    const mockProduto: Produto = {
+      id: 464,
+      id_produto_tiny: 464,
+      codigo: "464-V1",
+      nome: "Rainha – Fruteira De Chão 4 Andares Com Rodinhas",
+      unidade: "Un",
+      preco: 65.9,
+      preco_promocional: 55.9,
+      saldo: 181,
+      reservado: 0,
+      disponivel: 139,
+      disponivel_total: 139,
+      situacao: "A",
+      tipo: "K",
+      fornecedor_nome: "Rainha Industria E Comercio De Plasticos Ltda",
+      gtin: null,
+      imagem_url: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=400&q=80",
+      embalagens: [
+        {
+          embalagem_id: mockEmbalagem.id,
+          quantidade: 1,
+          embalagem: mockEmbalagem,
+        },
+      ],
+    };
+
+    const mockSerie: ProdutoDesempenhoPoint[] = Array.from({ length: 30 }).map((_, idx) => ({
+      data: `2025-11-${String(idx + 1).padStart(2, "0")}`,
+      quantidade: Math.max(0, 5 + Math.round(Math.sin(idx / 3) * 4) + (idx % 5)),
+      receita: Math.max(0, 5 + Math.round(Math.sin(idx / 3) * 4) + (idx % 5)) * 55.9,
+    }));
+
+    const mockDesempenho: ProdutoDesempenhoResponse = {
+      produtoId: mockProduto.id,
+      preset: "30d",
+      startDate: "2025-11-01",
+      endDate: "2025-11-30",
+      totalQuantidade: mockSerie.reduce((acc, v) => acc + v.quantidade, 0),
+      totalReceita: mockSerie.reduce((acc, v) => acc + v.receita, 0),
+      serie: mockSerie,
+      melhorDia: mockSerie.reduce(
+        (best, curr) => (curr.receita > (best?.receita ?? 0) ? curr : best),
+        null as ProdutoDesempenhoPoint | null
+      ),
+      meta: {
+        aggregatedIds: [],
+        aggregatedCodes: [],
+        matchedIds: [],
+        matchedCodes: [],
+        consolidatedChildren: 1,
+        childSource: "kit",
+        usedCodigoFallback: false,
+      },
+    };
+
+    setProdutos([mockProduto]);
+    setTotal(1);
+    setProdutoSelecionadoId(mockProduto.id_produto_tiny);
+    setEmbalagens([mockEmbalagem]);
+    setProdutoDesempenho(mockDesempenho);
+    setProdutoDesempenhoError(null);
+    setProdutoDesempenhoLoading(false);
+    setLoading(false);
+  }, [debugMockEnabled, produtos.length]);
 
   const fetchProdutos = useCallback(async () => {
     const requestId = ++produtosRequestId.current;
@@ -826,10 +940,61 @@ export default function ProdutosClient() {
   const estoqueCriticoSku = disponivelSku > 0 && disponivelSku < 5;
   const estoqueCriticoTotal =
     estoqueTotalPaiVariacoes !== null && estoqueTotalPaiVariacoes > 0 && estoqueTotalPaiVariacoes < 5;
+  const desempenhoDeltaReceita = useMemo(
+    () => computeDeltaFromSerie(produtoDesempenho?.serie ?? [], "receita"),
+    [produtoDesempenho]
+  );
+  const desempenhoDeltaQuantidade = useMemo(
+    () => computeDeltaFromSerie(produtoDesempenho?.serie ?? [], "quantidade"),
+    [produtoDesempenho]
+  );
+  const produtoDiasPeriodo = useMemo(() => {
+    if (!produtoDesempenho) return null;
+    if (produtoDesempenho.serie?.length) return produtoDesempenho.serie.length;
+    if (produtoDesempenho.startDate && produtoDesempenho.endDate) {
+      const start = new Date(`${produtoDesempenho.startDate}T00:00:00`);
+      const end = new Date(`${produtoDesempenho.endDate}T00:00:00`);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        const diffMs = Math.abs(end.getTime() - start.getTime());
+        return Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      }
+    }
+    return null;
+  }, [produtoDesempenho]);
+  const produtoMediaDiariaVendas =
+    produtoDiasPeriodo && produtoDiasPeriodo > 0 ? produtoTotalQuantidade / produtoDiasPeriodo : 0;
+  const estoqueParaRuptura = estoqueTotalPaiVariacoes ?? disponivelSku;
+  const produtoDiasParaZerar =
+    produtoMediaDiariaVendas > 0 ? Math.max(1, Math.round(estoqueParaRuptura / produtoMediaDiariaVendas)) : null;
+  const rupturaCritica = produtoDiasParaZerar !== null && produtoDiasParaZerar <= 3;
+  const rupturaAtencao = produtoDiasParaZerar !== null && produtoDiasParaZerar > 3 && produtoDiasParaZerar <= 7;
+  const estoqueFonteLabel = estoqueLive
+    ? estoqueLive.source === "live"
+      ? "Live Tiny"
+      : "Tiny + cache"
+    : "Snapshot";
+  const estoqueAtualizadoLabel = estoqueLive?.updatedAt ? formatRelativeTime(estoqueLive.updatedAt) : "em cache";
+  const produtoAlertasInfo = useMemo(() => {
+    const infos: string[] = [];
+    if (!produtoEmFoco?.imagem_url) infos.push("Sem imagem");
+    if (!produtoEmFoco?.gtin) infos.push("Sem GTIN");
+    if (!produtoEmFoco?.embalagens?.length) infos.push("Sem embalagem");
+    return infos;
+  }, [produtoEmFoco]);
+  const produtoPercentualDesconto =
+    produtoEmFoco?.preco_promocional && produtoEmFoco.preco
+      ? Math.max(0, Math.round((1 - produtoEmFoco.preco_promocional / produtoEmFoco.preco) * 100))
+      : null;
+  const formatDeltaPercent = (delta?: number | null) => {
+    if (delta === null || delta === undefined || Number.isNaN(delta)) return "—";
+    return `${delta > 0 ? "▲" : delta < 0 ? "▼" : "—"} ${Math.abs(delta).toFixed(0)}%`;
+  };
 
   // Métricas calculadas
   const metrics = useMemo(() => {
     const totalAtivos = produtos.filter(p => p.situacao === 'A').length;
+    const totalInativos = produtos.filter(p => p.situacao === 'I').length;
+    const totalExcluidos = produtos.filter(p => p.situacao === 'E').length;
     const estoqueCritico = produtos.filter(p => {
       const disponivel = p.disponivel_total ?? p.disponivel ?? 0;
       return disponivel <= 0;
@@ -847,12 +1012,22 @@ export default function ProdutosClient() {
 
     return {
       totalAtivos,
+      totalInativos,
+      totalExcluidos,
       estoqueCritico,
       estoqueBaixo,
       semImagem,
       valorTotal,
     };
   }, [produtos]);
+
+  const sortSelectValue = useMemo(() => {
+    if (sortColumn === 'preco') return `preco-${sortDirection}` as const;
+    if (sortColumn === 'disponivel') return `estoque-${sortDirection}` as const;
+    if (sortColumn === 'codigo') return 'codigo-asc' as const;
+    if (sortColumn === 'reservado') return `reservado-${sortDirection}` as const;
+    return 'nome-asc' as const;
+  }, [sortColumn, sortDirection]);
 
   const handleFiltersSubmit = () => {
     setSearch(searchInput.trim());
@@ -916,6 +1091,45 @@ export default function ProdutosClient() {
       // New column, default to asc
       setSortColumn(column);
       setSortDirection('asc');
+    }
+  };
+
+  const applySortOption = (option: 'nome-asc' | 'preco-desc' | 'preco-asc' | 'estoque-desc' | 'estoque-asc' | 'codigo-asc' | 'reservado-desc' | 'reservado-asc') => {
+    switch (option) {
+      case 'nome-asc':
+        setSortColumn('nome');
+        setSortDirection('asc');
+        break;
+      case 'preco-desc':
+        setSortColumn('preco');
+        setSortDirection('desc');
+        break;
+      case 'preco-asc':
+        setSortColumn('preco');
+        setSortDirection('asc');
+        break;
+      case 'estoque-desc':
+        setSortColumn('disponivel');
+        setSortDirection('desc');
+        break;
+      case 'estoque-asc':
+        setSortColumn('disponivel');
+        setSortDirection('asc');
+        break;
+      case 'codigo-asc':
+        setSortColumn('codigo');
+        setSortDirection('asc');
+        break;
+      case 'reservado-desc':
+        setSortColumn('reservado');
+        setSortDirection('desc');
+        break;
+      case 'reservado-asc':
+        setSortColumn('reservado');
+        setSortDirection('asc');
+        break;
+      default:
+        break;
     }
   };
 
@@ -1117,13 +1331,13 @@ export default function ProdutosClient() {
               <Package className="w-4 h-4 text-purple-600" />
               Catálogo
             </div>
-            <div className="flex items-center gap-3 mt-4">
-              <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
-              {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-400">
-                  {produtosFiltrados.length} / {produtos.length}
-                </span>
-              )}
+              <div className="flex items-center gap-3 mt-4">
+                <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+                {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/25 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-100">
+                  {produtosFiltrados.length} / {produtos.length} nesta página
+                  </span>
+                )}
               {/* Contador de filtros ativos */}
               {(() => {
                 const activeFilters = [
@@ -1147,7 +1361,7 @@ export default function ProdutosClient() {
                 );
               })()}
             </div>
-            <p className="text-sm text-slate-500 mt-2 max-w-3xl">
+            <p className="text-sm text-slate-500 dark:text-slate-300 mt-2 max-w-3xl">
               {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
             </p>
           </div>
@@ -1198,6 +1412,9 @@ export default function ProdutosClient() {
         )}
 
         {/* Cards de Métricas */}
+        <p className="text-xs text-slate-500 dark:text-slate-300">
+          Resumo desta página ({produtosFiltrados.length.toLocaleString("pt-BR")} itens visíveis)
+        </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           <MetricCard
             icon={Package}
@@ -1236,6 +1453,44 @@ export default function ProdutosClient() {
           />
         </div>
 
+        {/* Trilho de status à la Shopee */}
+        <div className="rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/50 dark:border-white/10 p-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">Status</span>
+          {[
+            { value: "all", label: "Todos", color: "bg-gradient-to-r from-orange-500 to-orange-600", text: "text-white", count: total },
+            { value: "A", label: "Ativos", color: "bg-gradient-to-r from-emerald-500 to-emerald-600", text: "text-white", count: metrics.totalAtivos },
+            { value: "I", label: "Inativos", color: "bg-gradient-to-r from-amber-500 to-amber-600", text: "text-white", count: metrics.totalInativos },
+            { value: "E", label: "Excluídos", color: "bg-gradient-to-r from-rose-500 to-rose-600", text: "text-white", count: metrics.totalExcluidos },
+          ].map((status) => {
+            const active = situacao === status.value;
+            return (
+              <button
+                key={status.value}
+                type="button"
+                onClick={() => {
+                  setSituacao(status.value);
+                  setPage(0);
+                }}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                  active
+                    ? `${status.color} ${status.text}`
+                    : "bg-white/80 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-white/60 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-700"
+                }`}
+                title={`Filtrar ${status.label.toLowerCase()}`}
+              >
+                <span>{status.label}</span>
+                <span
+                  className={`min-w-[38px] h-7 inline-flex items-center justify-center rounded-full text-xs font-bold ${
+                    active ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  {status.count.toLocaleString("pt-BR")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Filtros Rápidos com Chips */}
         <div className="flex flex-wrap gap-2">
           <button
@@ -1243,8 +1498,8 @@ export default function ProdutosClient() {
             onClick={() => setQuickFilter(quickFilter === 'estoque-critico' ? null : 'estoque-critico')}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
               quickFilter === 'estoque-critico'
-                ? 'bg-red-100 text-red-700 ring-2 ring-red-500 dark:bg-red-500/20 dark:text-red-400'
-                : 'bg-white/70 text-slate-600 hover:bg-red-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-red-500/10'
+                ? 'bg-red-100 text-red-700 ring-2 ring-red-500 dark:bg-red-500/25 dark:text-red-100 dark:ring-red-400'
+                : 'bg-white/70 text-slate-600 hover:bg-red-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-red-500/15'
             }`}
           >
             <AlertCircle className="w-4 h-4" />
@@ -1261,8 +1516,8 @@ export default function ProdutosClient() {
             onClick={() => setQuickFilter(quickFilter === 'estoque-baixo' ? null : 'estoque-baixo')}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
               quickFilter === 'estoque-baixo'
-                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-500/20 dark:text-amber-400'
-                : 'bg-white/70 text-slate-600 hover:bg-amber-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-amber-500/10'
+                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-500/25 dark:text-amber-100 dark:ring-amber-400'
+                : 'bg-white/70 text-slate-600 hover:bg-amber-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-amber-500/15'
             }`}
           >
             <TrendingDown className="w-4 h-4" />
@@ -1279,8 +1534,8 @@ export default function ProdutosClient() {
             onClick={() => setQuickFilter(quickFilter === 'sem-imagem' ? null : 'sem-imagem')}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
               quickFilter === 'sem-imagem'
-                ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-500 dark:bg-purple-500/20 dark:text-purple-400'
-                : 'bg-white/70 text-slate-600 hover:bg-purple-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-purple-500/10'
+                ? 'bg-purple-100 text-purple-700 ring-2 ring-purple-500 dark:bg-purple-500/25 dark:text-purple-100 dark:ring-purple-400'
+                : 'bg-white/70 text-slate-600 hover:bg-purple-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-purple-500/15'
             }`}
           >
             <ImageOff className="w-4 h-4" />
@@ -1297,8 +1552,8 @@ export default function ProdutosClient() {
             onClick={() => setQuickFilter(quickFilter === 'em-promocao' ? null : 'em-promocao')}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
               quickFilter === 'em-promocao'
-                ? 'bg-green-100 text-green-700 ring-2 ring-green-500 dark:bg-green-500/20 dark:text-green-400'
-                : 'bg-white/70 text-slate-600 hover:bg-green-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-green-500/10'
+                ? 'bg-green-100 text-green-700 ring-2 ring-green-500 dark:bg-green-500/25 dark:text-green-100 dark:ring-green-400'
+                : 'bg-white/70 text-slate-600 hover:bg-green-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-green-500/15'
             }`}
           >
             <DollarSign className="w-4 h-4" />
@@ -1310,8 +1565,8 @@ export default function ProdutosClient() {
             onClick={() => setQuickFilter(quickFilter === 'sem-embalagem' ? null : 'sem-embalagem')}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
               quickFilter === 'sem-embalagem'
-                ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500 dark:bg-blue-500/20 dark:text-blue-400'
-                : 'bg-white/70 text-slate-600 hover:bg-blue-50 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-blue-500/10'
+                ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500 dark:bg-blue-500/25 dark:text-blue-100 dark:ring-blue-400'
+                : 'bg-white/70 text-slate-600 hover:bg-blue-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-blue-500/15'
             }`}
           >
             <Box className="w-4 h-4" />
@@ -1322,7 +1577,7 @@ export default function ProdutosClient() {
             <button
               type="button"
               onClick={() => setQuickFilter(null)}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-all"
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700 transition-all"
             >
               Limpar filtro
             </button>
@@ -1333,7 +1588,7 @@ export default function ProdutosClient() {
           <div className="flex items-center justify-center py-2">
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Mostrando <span className="font-semibold text-purple-600 dark:text-purple-400">{produtosFiltrados.length}</span> de{" "}
-              <span className="font-semibold">{produtos.length}</span> produtos
+              <span className="font-semibold">{produtos.length}</span> produtos desta página
             </p>
           </div>
         )}
@@ -1444,6 +1699,14 @@ export default function ProdutosClient() {
                 <X className="w-4 h-4" />
               </button>
             )}
+          </div>
+          <div className="flex items-center justify-end col-span-full">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 text-sm font-semibold"
+            >
+              Aplicar filtros
+            </button>
           </div>
         </form>
 
@@ -1657,159 +1920,288 @@ export default function ProdutosClient() {
       </section>
 
       {produtoEmFoco && (
-        <section className="glass-panel glass-tint rounded-[32px] border-2 border-purple-200 dark:border-purple-500/30 p-6 md:p-8 space-y-6 shadow-lg shadow-purple-500/10">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-col sm:flex-row gap-4 flex-1">
-              <div
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/70 dark:bg-white/5 border border-white/60 flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all"
-                onClick={() => produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })}
-                title={produtoEmFoco.imagem_url ? "Clique para ampliar" : undefined}
-              >
-                {produtoEmFoco.imagem_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={produtoEmFoco.imagem_url} alt={produtoEmFoco.nome} className="w-full h-full object-cover" />
-                ) : (
-                  <Package className="w-7 h-7 text-slate-400" />
-                )}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Produto em foco</p>
-                  <span className="inline-flex h-2 w-2 rounded-full bg-purple-500 animate-pulse"></span>
-                </div>
-                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  {produtoEmFoco.codigo && (
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(produtoEmFoco.codigo!, () => {
-                        setCopiedField('codigo');
-                        setTimeout(() => setCopiedField(null), 2000);
-                      })}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
-                      title="Copiar código"
-                    >
-                      <span>Código {produtoEmFoco.codigo}</span>
-                      {copiedField === 'codigo' ? (
-                        <Check className="w-3 h-3 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  )}
-                  {!produtoEmFoco.codigo && <span>Código —</span>}
-                  {produtoEmFoco.gtin && (
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(produtoEmFoco.gtin!, () => {
-                        setCopiedField('gtin');
-                        setTimeout(() => setCopiedField(null), 2000);
-                      })}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
-                      title="Copiar GTIN"
-                    >
-                      <span>GTIN {produtoEmFoco.gtin}</span>
-                      {copiedField === 'gtin' ? (
-                        <Check className="w-3 h-3 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  )}
-                  {!produtoEmFoco.gtin && <span>GTIN —</span>}
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(String(produtoEmFoco.id_produto_tiny), () => {
-                      setCopiedField('id');
-                      setTimeout(() => setCopiedField(null), 2000);
-                    })}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
-                    title="Copiar ID Tiny"
-                  >
-                    <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
-                    {copiedField === 'id' ? (
-                      <Check className="w-3 h-3 text-emerald-500" />
-                    ) : (
-                      <Copy className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-6 md:p-7 space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <button
+              type="button"
+              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all"
+              onClick={() =>
+                produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })
+              }
+              title={produtoEmFoco.imagem_url ? "Clique para ampliar" : undefined}
+            >
+              {produtoEmFoco.imagem_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={produtoEmFoco.imagem_url} alt={produtoEmFoco.nome} className="w-full h-full object-cover" />
+              ) : (
+                <Package className="w-7 h-7 text-slate-400" />
+              )}
+            </button>
+
+            <div className="flex-1 min-w-0 space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+                    {situacaoProdutoEmFoco && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}
+                      >
+                        {situacaoProdutoEmFoco.label}
+                      </span>
                     )}
-                  </button>
-                  <a
-                    href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-purple-700 hover:bg-purple-200 dark:bg-purple-500/20 dark:text-purple-400 dark:hover:bg-purple-500/30 transition-all font-medium"
-                    title="Abrir produto no Tiny ERP"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    Ver no Tiny
-                  </a>
+                    {tipoProdutoEmFoco && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${tipoProdutoEmFoco.color}`}
+                      >
+                        {tipoProdutoEmFoco.label}
+                      </span>
+                    )}
+                    {produtoPercentualDesconto !== null && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2.5 py-1 text-[11px] font-semibold">
+                        {produtoPercentualDesconto}% off
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
+                      {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0)
+                        ? `${formatBRL(produtoEmFoco.preco_promocional)} promo`
+                        : `Preço ${formatBRL(produtoEmFoco.preco)}`}
+                    </span>
+                    {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) && (
+                      <span className="text-xs text-slate-500 dark:text-slate-300 line-through">{formatBRL(produtoEmFoco.preco)}</span>
+                    )}
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
+                      {produtoEmFoco.fornecedor_nome || "Fornecedor —"} · {produtoEmFoco.unidade || "Unid —"}
+                    </span>
+                    {!produtoEmFoco.gtin && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/25 px-3 py-1 font-semibold text-amber-700 dark:text-amber-100 text-xs">
+                        <AlertCircle className="w-3 h-3" />
+                        Adicionar GTIN
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                    {produtoEmFoco.codigo && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(produtoEmFoco.codigo!, () => {
+                            setCopiedField('codigo');
+                            setTimeout(() => setCopiedField(null), 2000);
+                            setNotification({ type: 'success', message: `Código ${produtoEmFoco.codigo} copiado!` });
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                        title="Copiar código"
+                        aria-label={`Copiar código ${produtoEmFoco.codigo}`}
+                      >
+                        <span>Código {produtoEmFoco.codigo}</span>
+                        {copiedField === 'codigo' ? (
+                          <Check className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                        )}
+                      </button>
+                    )}
+                    {produtoEmFoco.gtin && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(produtoEmFoco.gtin!, () => {
+                            setCopiedField('gtin');
+                            setTimeout(() => setCopiedField(null), 2000);
+                            setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                        title="Copiar GTIN"
+                        aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
+                      >
+                        <span>GTIN {produtoEmFoco.gtin}</span>
+                        {copiedField === 'gtin' ? (
+                          <Check className="w-3 h-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(String(produtoEmFoco.id_produto_tiny), () => {
+                          setCopiedField('id');
+                          setTimeout(() => setCopiedField(null), 2000);
+                          setNotification({ type: 'success', message: `ID ${produtoEmFoco.id_produto_tiny} copiado!` });
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
+                      title="Copiar ID Tiny"
+                      aria-label={`Copiar ID Tiny ${produtoEmFoco.id_produto_tiny}`}
+                    >
+                      <span>ID Tiny {produtoEmFoco.id_produto_tiny}</span>
+                      {copiedField === 'id' ? (
+                        <Check className="w-3 h-3 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                      )}
+                    </button>
+                    <a
+                      href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-3 py-1 text-purple-700 hover:bg-purple-200 dark:bg-purple-500/20 dark:text-purple-400 dark:hover:bg-purple-500/30 transition-all font-medium"
+                      title="Abrir produto no Tiny ERP"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Ver no Tiny
+                    </a>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 dark:bg-slate-800/70 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                      {estoqueFonteLabel} · {estoqueAtualizadoLabel}
+                    </span>
+                  </div>
+                </div>
+                <div className="hidden sm:flex flex-col items-end gap-1 text-right text-xs text-slate-500 dark:text-slate-300">
+                  <span className="font-semibold text-slate-700 dark:text-slate-100">{estoqueFonteLabel}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/50 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1">
+                    Snapshot · {estoqueAtualizadoLabel}
+                  </span>
                 </div>
               </div>
-            </div>
-            <div className="flex flex-col gap-2 text-left lg:text-right lg:items-end">
-              <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
-                {situacaoProdutoEmFoco && (
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${situacaoProdutoEmFoco.color} ${situacaoProdutoEmFoco.bg}`}>
-                    {situacaoProdutoEmFoco.label}
-                  </span>
-                )}
-                {tipoProdutoEmFoco && (
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoProdutoEmFoco.color}`}>
-                    {tipoProdutoEmFoco.label}
-                  </span>
-                )}
-              </div>
-              {produtoEmFoco.disponivel_total != null && produtoEmFoco.disponivel_total !== produtoEmFoco.disponivel && (
-                <p className="text-xs text-slate-400">Estoque total pai + variações (snapshot)</p>
-              )}
-              {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
-                <p className="flex items-center gap-2 text-xs text-slate-500 lg:justify-end">
-                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
-                  Atualizando dados diretamente do Tiny...
-                </p>
-              ) : produtoAtualizacaoMeta && produtoSelecionadoId === produtoEmFoco.id_produto_tiny ? (
-                <p className="text-xs text-slate-500">
-                  Última atualização sincronizada agora
-                  {produtoAtualizacaoMeta.attempts429 ? ` · ${produtoAtualizacaoMeta.attempts429} retentativa(s)` : ""}
-                </p>
-              ) : null}
-              {produtoAtualizacaoErro && produtoSelecionadoId === produtoEmFoco.id_produto_tiny && (
-                <p className="text-xs text-rose-500">{produtoAtualizacaoErro}</p>
-              )}
-              {consolidacaoMensagem && (
-                <p className="text-xs text-slate-400">{consolidacaoMensagem}</p>
+
+              {produtoAlertasInfo.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-amber-700 dark:text-amber-300">
+                  {produtoAlertasInfo.map((info) => (
+                    <span
+                      key={info}
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-500/15 px-2.5 py-1 font-semibold border border-amber-200 dark:border-amber-500/25"
+                    >
+                      <AlertCircle className="w-3 h-3" />
+                      {info}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.2fr)]">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
-                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Preço base</p>
-                <p className="text-xl font-semibold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco)}</p>
-              </div>
-              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
-                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Promoção</p>
-                <p className="text-xl font-semibold text-emerald-600">
-                  {produtoEmFoco.preco_promocional ? formatBRL(produtoEmFoco.preco_promocional) : "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
-                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Fornecedor</p>
-                <p className="text-base font-semibold text-slate-900 dark:text-white truncate">
-                  {produtoEmFoco.fornecedor_nome || "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-4">
-                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Unidade</p>
-                <p className="text-base font-semibold text-slate-900 dark:text-white">{produtoEmFoco.unidade || "—"}</p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
+              <p className="text-[11px] text-slate-500">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
+            </div>
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
+              <p
+                className={`text-xl font-semibold ${
+                  rupturaCritica
+                    ? 'text-rose-700 dark:text-rose-200'
+                    : rupturaAtencao
+                      ? 'text-amber-700 dark:text-amber-200'
+                      : 'text-emerald-700 dark:text-emerald-200'
+                }`}
+              >
+                {produtoDiasParaZerar !== null && produtoMediaDiariaVendas > 0
+                  ? `~${produtoDiasParaZerar} dia(s)`
+                  : 'Sem giro'}
+              </p>
+              <p className="text-[11px] text-slate-500">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
+            </div>
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</span>
+                {desempenhoDeltaReceita && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      (desempenhoDeltaReceita.deltaPercent ?? 0) >= 0
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-50'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-50'
+                    }`}
+                  >
+                    {formatDeltaPercent(desempenhoDeltaReceita.deltaPercent)}
+                  </span>
+                )}
               </div>
             </div>
-            <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
+                {desempenhoDeltaQuantidade && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      (desempenhoDeltaQuantidade.deltaPercent ?? 0) >= 0
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-50'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-50'
+                    }`}
+                  >
+                    {formatDeltaPercent(desempenhoDeltaQuantidade.deltaPercent)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Desempenho de vendas</p>
-                  <p className="text-xs text-slate-500">Receita e unidades vendidas (Tiny)</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Estoque</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-300">{estoqueFonteLabel}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => carregarEstoqueLive('live')}
+                  disabled={estoqueLiveLoading}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1.5 font-semibold text-slate-700 dark:text-slate-200 text-xs hover:bg-white dark:hover:bg-white/10 transition-colors disabled:opacity-50"
+                  title="Atualizar do Tiny"
+                >
+                  <RefreshCcw className={`w-3.5 h-3.5 ${estoqueLiveLoading ? 'animate-spin' : ''}`} />
+                  Atualizar
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-white/90 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">Saldo</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.saldo)}</p>
+                </div>
+                <div className="rounded-xl bg-white/90 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500">Reservado</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.reservado)}</p>
+                </div>
+                <div
+                  className={`rounded-xl border p-3 ${
+                    disponivelSku <= 0
+                      ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30'
+                      : estoqueCriticoSku
+                        ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30'
+                        : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30'
+                  }`}
+                >
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-slate-600 dark:text-slate-200">Disponível</p>
+                  <p className="text-lg font-semibold">{formatNumber(estoqueSkuExibido.disponivel)}</p>
+                </div>
+              </div>
+              {produtoEmFoco.disponivel_total != null && produtoEmFoco.disponivel_total !== produtoEmFoco.disponivel && (
+                <p className="text-[11px] text-purple-700 dark:text-purple-200">
+                  Inclui variações/kit: {formatNumber(estoqueTotalPaiVariacoes ?? produtoEmFoco.disponivel_total ?? 0)} un
+                </p>
+              )}
+              {estoqueLiveError && (
+                <p className="text-[11px] text-rose-500 dark:text-rose-400">{estoqueLiveError}</p>
+              )}
+            </div>
+
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trend de vendas</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-300">Período {produtoHeroPreset}</p>
                 </div>
                 <div className="inline-flex items-center gap-1 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/0 p-1 text-[11px] font-semibold">
                   {PRODUTO_SERIE_PRESETS.map(({ value, label }) => (
@@ -1817,10 +2209,10 @@ export default function ProdutosClient() {
                       key={value}
                       type="button"
                       onClick={() => setProdutoHeroPreset(value)}
-                      className={`px-2.5 py-1 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/60 ${
+                      className={`px-2 py-1 rounded-full transition ${
                         produtoHeroPreset === value
-                          ? "bg-purple-600 text-white shadow"
-                          : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                          ? 'bg-purple-600 text-white shadow'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
                       }`}
                     >
                       {label}
@@ -1828,7 +2220,7 @@ export default function ProdutosClient() {
                   ))}
                 </div>
               </div>
-              <div className="relative min-h-[140px]">
+              <div className="relative min-h-[120px]">
                 {produtoDesempenhoLoading && (
                   <div className="absolute inset-0 z-10 rounded-2xl bg-white/80 dark:bg-slate-900/60 flex items-center justify-center">
                     <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
@@ -1839,114 +2231,176 @@ export default function ProdutosClient() {
                 ) : produtoDesempenhoError ? (
                   <p className="text-xs text-rose-500">{produtoDesempenhoError}</p>
                 ) : (
-                  <p className="text-xs text-slate-500">Sem vendas registradas para o período selecionado.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
                 )}
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Receita período</p>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</p>
-                </div>
-                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Unidades vendidas</p>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</p>
-                </div>
-                <div className="rounded-2xl bg-white/80 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Melhor dia</p>
-                  {produtoMelhorDia ? (
-                    <div className="space-y-1">
-                      <p className="text-base font-semibold text-slate-900 dark:text-white">
-                        {produtoMelhorDiaLabel}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {formatBRL(produtoMelhorDia.receita)} · {formatNumber(produtoMelhorDia.quantidade)} un
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-base font-semibold text-slate-400">—</p>
-                  )}
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                <span>Melhor dia: {produtoMelhorDia ? `${produtoMelhorDiaLabel} · ${formatBRL(produtoMelhorDia.receita)}` : '—'}</span>
+                <span>Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Embalagens</span>
+            {produtoEmFoco.embalagens?.length ? (
+              produtoEmFoco.embalagens.map((emb) => (
+                <div
+                  key={emb.embalagem_id}
+                  className="inline-flex items-center gap-2 rounded-full bg-white/80 dark:bg-slate-900/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-slate-700 dark:text-slate-200"
+                >
+                  <span className="font-semibold truncate max-w-[160px]">{emb.embalagem?.nome || 'Embalagem'}</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">x{emb.quantidade}</span>
+                  {emb.embalagem?.codigo && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(emb.embalagem!.codigo, () =>
+                          setNotification({ type: 'success', message: `Código ${emb.embalagem?.codigo} copiado!` })
+                        )
+                      }
+                      className="inline-flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 w-6 h-6 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                      title="Copiar código da embalagem"
+                      aria-label={`Copiar código da embalagem ${emb.embalagem.codigo}`}
+                    >
+                      <Copy className="w-3 h-3 text-slate-500" />
+                    </button>
+                  )}
+                </div>
+              ))
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 dark:bg-slate-800/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-slate-600 dark:text-slate-300">
+                <Package className="w-3.5 h-3.5 text-slate-400" />
+                Nenhuma vinculada
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 justify-between text-[12px] text-slate-600 dark:text-slate-300">
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
-                  estoqueTotalPaiVariacoes === null
-                    ? "bg-white/70 dark:bg-white/5 text-slate-600"
-                    : estoqueTotalPaiVariacoes <= 0
-                      ? "bg-rose-100 text-rose-700"
-                      : estoqueCriticoTotal
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
-                }`}
+              <a
+                href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}#aba_edicao`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 px-3 py-1.5 text-xs font-semibold hover:bg-purple-200 dark:hover:bg-purple-500/30 transition-colors"
               >
-                Estoque total (pai + variações): <strong>{formatNumber(estoqueTotalPaiVariacoes)}</strong>
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
-                Fonte: snapshot do Supabase (round-robin)
-              </span>
+                <ExternalLink className="w-3.5 h-3.5" />
+                Editar
+              </a>
+              <a
+                href={`https://erp.tiny.com.br/pedidos#/pesquisar/produto:${produtoEmFoco.id_produto_tiny}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-3 py-1.5 text-xs font-semibold hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
+              >
+                <Package className="w-3.5 h-3.5" />
+                Pedidos
+              </a>
+              <a
+                href={`https://erp.tiny.com.br/estoque/movimentacoes#/produto/${produtoEmFoco.id_produto_tiny}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                <Box className="w-3.5 h-3.5" />
+                Movimentações
+              </a>
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
-                  Saldo (SKU): <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.saldo)}</strong>
+            <div className="flex flex-wrap items-center gap-2">
+              {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                  Atualizando...
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1">
-                  Reservado (SKU):{" "}
-                  <strong className="text-slate-900 dark:text-white">{formatNumber(estoqueSkuExibido.reservado)}</strong>
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
-                    disponivelSku <= 0
-                      ? "bg-rose-100 text-rose-700"
-                      : estoqueCriticoSku
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-emerald-100 text-emerald-700"
-                  }`}
-                >
-                  Disponível deste SKU ({estoqueSkuExibido.source || "hybrid"}): <strong>{formatNumber(estoqueSkuExibido.disponivel)}</strong>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {estoqueLiveLoading ? (
-                  <span className="inline-flex items-center gap-1 text-slate-500">
-                    <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
-                    Atualizando estoque em tempo real...
-                  </span>
-                ) : estoqueLiveError ? (
-                  <span className="text-rose-500">Falha ao consultar estoque em tempo real · usando snapshot</span>
-                ) : estoqueLive ? (
-                  <span className="inline-flex items-center gap-1 text-slate-500">
-                    Fonte: Tiny {estoqueLive.source || "hybrid"} · atualizado agora
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-slate-500">
-                    Fonte: snapshot do Supabase
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => carregarEstoqueLive("live")}
-                  className="inline-flex items-center gap-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1 font-semibold text-slate-700 dark:text-slate-200 text-xs"
-                >
-                  <RefreshCcw className="w-3 h-3" />
-                  Atualizar estoque agora
-                </button>
-              </div>
+              ) : produtoAtualizacaoMeta && produtoSelecionadoId === produtoEmFoco.id_produto_tiny ? (
+                <span>Atualizado agora{produtoAtualizacaoMeta.attempts429 ? ` · ${produtoAtualizacaoMeta.attempts429} retentativa(s)` : ''}</span>
+              ) : null}
+              {produtoAtualizacaoErro && produtoSelecionadoId === produtoEmFoco.id_produto_tiny && (
+                <span className="text-rose-500">{produtoAtualizacaoErro}</span>
+              )}
+              {consolidacaoMensagem && <span>{consolidacaoMensagem}</span>}
             </div>
           </div>
         </section>
       )}
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
-        {loading ? (
-          <div className="hidden md:block">
-            {/* Skeleton da tabela */}
+        <div className="hidden md:flex items-center justify-between gap-3 px-6 pt-5 pb-2">
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Catálogo</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 dark:text-slate-300">Visualização</span>
+            <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800/70 p-1 border border-white/40 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                  viewMode === 'table'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+                title="Visualizar em tabela detalhada"
+              >
+                <Rows className="w-4 h-4" />
+                Tabela
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                  viewMode === 'grid'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+                title="Visualizar em vitrine (cards)"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                Vitrine
+              </button>
+            </div>
+          </div>
+        </div>
+        {!loading && (
+          <div className="hidden md:flex items-center justify-between gap-3 px-6 pb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60 shadow-sm">
+                <span className="text-purple-600 dark:text-purple-300">{produtosFiltrados.length}</span> exibidos
+              </span>
+              {metrics.estoqueCritico > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                  {metrics.estoqueCritico} estoque crítico
+                </span>
+              )}
+              {metrics.semImagem > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60">
+                  {metrics.semImagem} sem imagem
+                </span>
+              )}
+            </div>
+            <div className="inline-flex items-center gap-2 bg-white/70 dark:bg-slate-800/70 border border-white/60 dark:border-slate-700/60 rounded-2xl p-1 shadow-sm">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 px-2">Ordenar</span>
+              <select
+                value={sortSelectValue}
+                onChange={(e) => {
+                  const value = e.target.value as 'nome-asc' | 'preco-desc' | 'preco-asc' | 'estoque-desc' | 'estoque-asc' | 'codigo-asc' | 'reservado-desc' | 'reservado-asc';
+                  applySortOption(value);
+                }}
+                className="text-xs font-semibold bg-transparent px-2 py-1 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              >
+                <option value="nome-asc">Nome A-Z</option>
+                <option value="preco-desc">Preço (maior)</option>
+                <option value="preco-asc">Preço (menor)</option>
+                <option value="estoque-desc">Estoque (maior)</option>
+                <option value="estoque-asc">Estoque (menor)</option>
+                <option value="codigo-asc">Código</option>
+                <option value="reservado-desc">Reservado (maior)</option>
+                <option value="reservado-asc">Reservado (menor)</option>
+              </select>
+            </div>
+          </div>
+        )}
+      {loading ? (
+        <div className="hidden md:block">
+          {/* Skeleton da tabela */}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
@@ -1956,9 +2410,7 @@ export default function ProdutosClient() {
                     <th className="px-6 py-4 text-left">Produto</th>
                     <th className="px-6 py-4 text-left">Tipo</th>
                     <th className="px-6 py-4 text-right">Preço</th>
-                    <th className="px-6 py-4 text-right">Estoque</th>
-                    <th className="px-6 py-4 text-right">Reservado</th>
-                    <th className="px-6 py-4 text-right">Disponível</th>
+                    <th className="px-6 py-4 text-left">Estoque</th>
                     <th className="px-6 py-4 text-left">Embalagem</th>
                     <th className="px-6 py-4 text-center">Status</th>
                   </tr>
@@ -1971,9 +2423,7 @@ export default function ProdutosClient() {
                       <td className="px-6 py-4"><div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" /></td>
                       <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
                       <td className="px-6 py-4 text-right"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
-                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
-                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
-                      <td className="px-6 py-4 text-right"><div className="h-4 w-12 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-6 py-4"><div className="h-5 w-32 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
                       <td className="px-6 py-4"><div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
                       <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto" /></td>
                     </tr>
@@ -2070,7 +2520,7 @@ export default function ProdutosClient() {
             </div>
 
             {/* Barra de ações em lote */}
-            {selectedIds.size > 0 && (
+            {selectedIds.size > 0 && viewMode === 'table' && (
               <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
                 <div className="flex items-center gap-2">
                   <button
@@ -2082,6 +2532,9 @@ export default function ProdutosClient() {
                   </button>
                   <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
                     {selectedIds.size} produto{selectedIds.size > 1 ? 's' : ''} selecionado{selectedIds.size > 1 ? 's' : ''}
+                  </span>
+                  <span className="text-xs text-purple-600/80 dark:text-purple-200/80">
+                    (somente desta página)
                   </span>
                 </div>
                 <div className="h-5 w-px bg-purple-300 dark:bg-purple-600" />
@@ -2097,95 +2550,104 @@ export default function ProdutosClient() {
               </div>
             )}
 
-            <div className="hidden md:block overflow-x-auto max-h-[600px]">
-              <table className="w-full">
-                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
-                  <tr>
-                    <th className="px-4 py-4 text-center w-12">
-                      <button
-                        onClick={toggleSelectAll}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        title={selectedIds.size === produtosFiltrados.length ? "Desmarcar todos" : "Selecionar todos"}
-                      >
-                        {selectedIds.size === produtosFiltrados.length && produtosFiltrados.length > 0 ? (
-                          <CheckSquare className="w-5 h-5 text-purple-600" />
-                        ) : selectedIds.size > 0 ? (
-                          <div className="relative">
-                            <Square className="w-5 h-5 text-slate-400" />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="w-2 h-2 bg-purple-600 rounded-sm" />
+            {viewMode === 'table' ? (
+              <div className="hidden md:block overflow-x-auto max-h-[600px]">
+                <table className="w-full">
+                  <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
+                    <tr>
+                      <th className="px-4 py-4 text-center w-12">
+                        <button
+                          onClick={toggleSelectAll}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title={selectedIds.size === produtosFiltrados.length ? "Desmarcar todos" : "Selecionar todos"}
+                        >
+                          {selectedIds.size === produtosFiltrados.length && produtosFiltrados.length > 0 ? (
+                            <CheckSquare className="w-5 h-5 text-purple-600" />
+                          ) : selectedIds.size > 0 ? (
+                            <div className="relative">
+                              <Square className="w-5 h-5 text-slate-400" />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-2 h-2 bg-purple-600 rounded-sm" />
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <Square className="w-5 h-5 text-slate-400" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left">Imagem</th>
-                    <th className="px-6 py-4 text-left">
-                      <button
-                        onClick={() => handleSort('codigo')}
-                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
-                      >
-                        Código
-                        {sortColumn === 'codigo' && (
-                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left">
-                      <button
-                        onClick={() => handleSort('nome')}
-                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
-                      >
-                        Produto
-                        {sortColumn === 'nome' && (
-                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left">Tipo</th>
-                    <th className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleSort('preco')}
-                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
-                      >
-                        Preço
-                        {sortColumn === 'preco' && (
-                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-right">Estoque</th>
-                    <th className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleSort('reservado')}
-                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
-                      >
-                        Reservado
-                        {sortColumn === 'reservado' && (
-                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleSort('disponivel')}
-                        className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
-                      >
-                        Disponível total
-                        {sortColumn === 'disponivel' && (
-                          sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-6 py-4 text-left">Embalagem</th>
-                    <th className="px-6 py-4 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-400" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left">Imagem</th>
+                      <th className="px-6 py-4 text-left">
+                        <button
+                          onClick={() => handleSort('codigo')}
+                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
+                        >
+                          Código
+                          {sortColumn === 'codigo' && (
+                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left">
+                        <button
+                          onClick={() => handleSort('nome')}
+                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
+                        >
+                          Produto
+                          {sortColumn === 'nome' && (
+                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left">Tipo</th>
+                      <th className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => handleSort('preco')}
+                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
+                        >
+                          Preço
+                          {sortColumn === 'preco' && (
+                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left">
+                        <button
+                          onClick={() => handleSort('disponivel')}
+                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
+                        >
+                          Estoque
+                          {sortColumn === 'disponivel' && (
+                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-6 py-4 text-left">Embalagem</th>
+                      <th className="px-6 py-4 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {produtosFiltrados.map((produto) => (
+                      <ProdutoTableRow
+                        key={produto.id}
+                        produto={produto}
+                        selected={produtoSelecionadoId === produto.id_produto_tiny}
+                        onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                        embalagens={embalagens}
+                        onEmbalagemUpdate={handleEmbalagemUpdate}
+                        onNotify={(type, message) => setNotification({ type, message })}
+                        checked={selectedIds.has(produto.id)}
+                        onCheckChange={() => toggleSelectOne(produto.id)}
+                        onConfirmEmbalagemRemove={(payload) => setConfirmDialog(payload)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="hidden md:block px-4 pb-6">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {produtosFiltrados.map((produto) => (
-                    <ProdutoTableRow
+                    <ProdutoCard
                       key={produto.id}
                       produto={produto}
                       selected={produtoSelecionadoId === produto.id_produto_tiny}
@@ -2193,13 +2655,12 @@ export default function ProdutosClient() {
                       embalagens={embalagens}
                       onEmbalagemUpdate={handleEmbalagemUpdate}
                       onNotify={(type, message) => setNotification({ type, message })}
-                      checked={selectedIds.has(produto.id)}
-                      onCheckChange={() => toggleSelectOne(produto.id)}
+                      layout="grid"
                     />
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="px-6 pt-4 text-sm text-rose-600">{error}</div>
@@ -2536,9 +2997,11 @@ type ProdutoRowProps = {
   onNotify?: (type: 'success' | 'error' | 'info', message: string) => void;
   checked?: boolean;
   onCheckChange?: () => void;
+  onConfirmEmbalagemRemove?: (payload: { produtoId: number; embalagemId: string; embalagemNome: string }) => void;
+  layout?: 'list' | 'grid';
 };
 
-const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify }: ProdutoRowProps) {
+const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify, layout = 'list' }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -2550,6 +3013,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
   };
   const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
   const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
+  const isGrid = layout === 'grid';
 
   return (
     <article
@@ -2563,13 +3027,13 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           onSelect();
         }
       }}
-      className={`app-card p-4 flex gap-3 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+      className={`app-card p-4 flex ${isGrid ? 'flex-col items-start gap-4' : 'gap-3'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
         selected
           ? "ring-2 ring-purple-500 shadow-lg shadow-purple-500/20 border-purple-500 bg-purple-50/80 dark:bg-purple-500/10"
           : ""
       }`}
     >
-      <div className="w-16 h-16 rounded-2xl bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60 shrink-0">
+      <div className={`${isGrid ? 'w-full h-44 sm:h-52 rounded-3xl' : 'w-16 h-16 rounded-2xl shrink-0'} bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60`}>
         {produto.imagem_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />
@@ -2578,10 +3042,10 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
         )}
       </div>
       <div className="flex-1 min-w-0 space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+        <div className={`flex ${isGrid ? 'flex-col items-start gap-2' : 'items-start justify-between gap-2'}`}>
+          <div className={`min-w-0 ${isGrid ? 'space-y-1' : ''}`}>
             <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-            <p className="text-[11px] text-slate-500 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
           </div>
           <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
             {sitConfig.label}
@@ -2591,24 +3055,24 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${tipoConfig.color}`}>
             {tipoConfig.label}
           </span>
-          <span className="font-semibold text-slate-900 dark:text-white">{formatBRL(produto.preco)}</span>
+          <span className={`font-semibold text-slate-900 dark:text-white ${isGrid ? 'text-lg' : ''}`}>{formatBRL(produto.preco)}</span>
           {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
-            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
+            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-100">
               Promo {formatBRL(produto.preco_promocional)}
             </span>
           )}
         </div>
-        <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className={`grid text-xs ${isGrid ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-3'} gap-2`}>
           <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500">Estoque</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-300">Estoque</p>
             <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.saldo)}</p>
           </div>
           <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500">Reservado</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-300">Reservado</p>
             <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.reservado)}</p>
           </div>
           <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500">Disponível total</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-300">Disponível total</p>
             <p
               className={`font-semibold ${
                 disponivelSnapshot <= 0
@@ -2646,15 +3110,16 @@ const EmbalagemSelector = memo(function EmbalagemSelector({
   produto,
   embalagens,
   onEmbalagemUpdate,
-  onNotify
+  onNotify,
+  onConfirmEmbalagemRemove,
 }: {
   produto: Produto;
   embalagens: Embalagem[];
   onEmbalagemUpdate: (produtoId: number) => void;
   onNotify?: (type: 'success' | 'error' | 'info', message: string) => void;
+  onConfirmEmbalagemRemove?: (payload: { produtoId: number; embalagemId: string; embalagemNome: string }) => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<string | null>(null);
   const [showSelect, setShowSelect] = useState(false);
   const [selectedEmbalagemId, setSelectedEmbalagemId] = useState("");
   const [selectedQuantidade, setSelectedQuantidade] = useState(1);
@@ -2707,27 +3172,15 @@ Clique para editar embalagem/quantidade`;
   };
 
   const handleRemoveEmbalagem = async (embalagemId: string) => {
-    if (!confirm("Deseja desvincular esta embalagem?")) return;
-    setRemoving(embalagemId);
-    try {
-      const res = await fetch(
-        `/api/produtos/${produto.id}/embalagens?embalagem_id=${embalagemId}`,
-        { method: "DELETE" }
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Erro ao desvincular embalagem");
-      }
-
-      // Atualizar produto sem reload
-      await onEmbalagemUpdate(produto.id);
-    } catch (err) {
-      console.error("Erro ao desvincular embalagem:", err);
-      onNotify?.('error', err instanceof Error ? err.message : "Erro ao desvincular embalagem");
-    } finally {
-      setRemoving(null);
-    }
+    if (!onConfirmEmbalagemRemove) return;
+    setEditingLink(null);
+    const nomeEmbalagem =
+      produto.embalagens?.find((e) => e.embalagem_id === embalagemId)?.embalagem?.nome || `Embalagem ${embalagemId}`;
+    onConfirmEmbalagemRemove({
+      produtoId: produto.id,
+      embalagemId,
+      embalagemNome: nomeEmbalagem,
+    });
   };
 
   const linkedEmbalagens = produto.embalagens || [];
@@ -2836,15 +3289,10 @@ Clique para editar embalagem/quantidade`;
                     e.stopPropagation();
                     handleRemoveEmbalagem(link.embalagem_id);
                   }}
-                  disabled={removing === link.embalagem_id}
-                  className="text-rose-500 hover:text-rose-700 disabled:opacity-50"
+                  className="text-rose-500 hover:text-rose-700"
                   title="Desvincular"
                 >
-                  {removing === link.embalagem_id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <X className="h-3 w-3" />
-                  )}
+                  <X className="h-3 w-3" />
                 </button>
               )}
             </div>
@@ -2908,7 +3356,17 @@ Clique para editar embalagem/quantidade`;
   );
 });
 
-const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify, checked, onCheckChange }: ProdutoRowProps) {
+const ProdutoTableRow = memo(function ProdutoTableRow({
+  produto,
+  selected,
+  onSelect,
+  embalagens,
+  onEmbalagemUpdate,
+  onNotify,
+  checked,
+  onCheckChange,
+  onConfirmEmbalagemRemove,
+}: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -2923,7 +3381,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
 
   return (
     <tr
-      className={`cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 group ${
+      className={`cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 group odd:bg-white/40 even:bg-white/20 dark:odd:bg-slate-900/30 dark:even:bg-slate-900/20 ${
         selected
           ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-md shadow-purple-500/10"
           : checked
@@ -2968,13 +3426,13 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
       </td>
       <td className="px-6 py-4">
         <div className="text-sm font-medium text-slate-900 dark:text-white">{produto.codigo || "—"}</div>
-        <div className="text-xs text-slate-500">GTIN {produto.gtin || "—"}</div>
+        <div className="text-xs text-slate-500 dark:text-slate-300">GTIN {produto.gtin || "—"}</div>
       </td>
       <td className="px-6 py-4 max-w-[320px]">
         <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
           {produto.nome}
         </div>
-        <div className="text-xs text-slate-500">ID Tiny {produto.id_produto_tiny}</div>
+        <div className="text-xs text-slate-500 dark:text-slate-300">ID Tiny {produto.id_produto_tiny}</div>
       </td>
       <td className="px-6 py-4">
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoConfig.color}`}>
@@ -2987,38 +3445,39 @@ const ProdutoTableRow = memo(function ProdutoTableRow({ produto, selected, onSel
           <div className="text-xs text-emerald-600">Promo {formatBRL(produto.preco_promocional)}</div>
         )}
       </td>
-      <td className="px-6 py-4 text-right">
-        <div className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.saldo)}</div>
-        <div className="text-[11px] text-slate-500">Unidade {produto.unidade || "—"}</div>
-      </td>
-      <td className="px-6 py-4 text-right">
-        <div className="font-semibold text-amber-600">{formatNumber(produto.reservado)}</div>
-      </td>
-      <td className="px-6 py-4 text-right">
-          <div className="flex items-center justify-end gap-1.5">
-            {disponivelSnapshot <= 0 && (
-              <span title="Estoque zerado!">
-                <AlertCircle className="w-4 h-4 text-rose-500 animate-pulse" />
-              </span>
-            )}
-            <span
-              className={`font-semibold ${
-                disponivelSnapshot <= 0
-                  ? "text-rose-600"
-                  : temEstoqueBaixo
-                    ? "text-amber-600"
-                    : "text-emerald-600"
-              }`}
-            >
-              {formatNumber(disponivelSnapshot)}
-            </span>
-          </div>
-          {produto.disponivel_total != null && (
-            <div className="text-[10px] text-slate-400">Pai + variações</div>
-          )}
+      <td className="px-6 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+            Saldo {formatNumber(produto.saldo)}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+            Reservado {formatNumber(produto.reservado)}
+          </span>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+              disponivelSnapshot <= 0
+                ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
+                : temEstoqueBaixo
+                  ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                  : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200"
+            }`}
+          >
+            {disponivelSnapshot <= 0 && <AlertCircle className="w-3.5 h-3.5" />}
+            Disp. {formatNumber(disponivelSnapshot)}
+          </span>
+        </div>
+        {produto.disponivel_total != null && (
+          <div className="text-[10px] text-slate-400 mt-1">Pai + variações</div>
+        )}
       </td>
       <td className="px-6 py-4">
-        <EmbalagemSelector produto={produto} embalagens={embalagens} onEmbalagemUpdate={onEmbalagemUpdate} onNotify={onNotify} />
+        <EmbalagemSelector
+          produto={produto}
+          embalagens={embalagens}
+          onEmbalagemUpdate={onEmbalagemUpdate}
+          onNotify={onNotify}
+          onConfirmEmbalagemRemove={onConfirmEmbalagemRemove}
+        />
       </td>
       <td className="px-6 py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
