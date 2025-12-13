@@ -1,3 +1,29 @@
+# 2025-12-16 - Aplicação migration drop sync_produtos_from_tiny
+
+Executado `supabase db push --linked --include-all` com sucesso.
+Resultado: **Remote database is up to date** (migration já aplicada).
+
+Migration aplicada: `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`
+
+Para confirmar que o job cron e a função legacy foram removidos, rode **manualmente** no Supabase Studio:
+
+```sql
+-- Ver se ainda existe job de cron chamando a função
+SELECT jobid, jobname, schedule, command, active
+FROM cron.job
+WHERE command ILIKE '%sync_produtos_from_tiny%';
+
+-- Ver se a função ainda existe
+SELECT routine_name
+FROM information_schema.routines
+WHERE specific_schema = 'public'
+  AND routine_name ILIKE '%sync_produtos_from_tiny%';
+```
+
+Ambas as queries devem retornar **0 rows** se tudo foi removido corretamente.
+
+---
+
 # 2025-12-11 - Ajuste relatório vendas por kit
 
 O relatório de vendas agora agrupa corretamente vendas por kit usando os vínculos de marketplace_kit_components e marketplace_order_links:
@@ -14,7 +40,7 @@ Deploy: commit 5f6e78b
 
 # Migração supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql
 
-Registro 2025-12-14 ~XX:XX -03: `supabase db push --linked --include-all` executado.
+Registro 2025-12-16 ~15:00 -03: `supabase db push --linked --include-all` executado.
 Resultado: **Remote database is up to date** (migration já havia sido aplicada anteriormente).
 
 Para confirmar que o job cron e a função legacy foram removidos, rode manualmente no Supabase Studio:
