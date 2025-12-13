@@ -968,11 +968,8 @@ export default function ProdutosClient() {
     produtoMediaDiariaVendas > 0 ? Math.max(1, Math.round(estoqueParaRuptura / produtoMediaDiariaVendas)) : null;
   const rupturaCritica = produtoDiasParaZerar !== null && produtoDiasParaZerar <= 3;
   const rupturaAtencao = produtoDiasParaZerar !== null && produtoDiasParaZerar > 3 && produtoDiasParaZerar <= 7;
-  const estoqueFonteLabel = estoqueLive
-    ? estoqueLive.source === "live"
-      ? "Live Tiny"
-      : "Tiny + cache"
-    : "Snapshot";
+  // Only show a live label; remove 'Tiny + cache' and 'Snapshot'
+  const estoqueFonteLabel = estoqueLive && estoqueLive.source === "live" ? "Live Tiny" : "";
   const estoqueAtualizadoLabel = estoqueLive?.updatedAt ? formatRelativeTime(estoqueLive.updatedAt) : "em cache";
   const produtoAlertasInfo = useMemo(() => {
     const infos: string[] = [];
@@ -1979,22 +1976,16 @@ export default function ProdutosClient() {
                         {tipoProdutoEmFoco.label}
                       </span>
                     )}
-                    {produtoPercentualDesconto !== null && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2.5 py-1 text-[11px] font-semibold">
-                        {produtoPercentualDesconto}% off
-                      </span>
-                    )}
+                    {/* desconto exibido apenas na coluna de preço (direita) */}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
+                      Saldo {produtoEmFoco.saldo != null ? formatNumber(produtoEmFoco.saldo) : '—'} · Reservado {produtoEmFoco.reservado != null ? formatNumber(produtoEmFoco.reservado) : '—'} · Disponível {(produtoEmFoco.disponivel_total ?? produtoEmFoco.disponivel) != null ? formatNumber(produtoEmFoco.disponivel_total ?? produtoEmFoco.disponivel) : '—'}
+                    </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
-                      {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0)
-                        ? `${formatBRL(produtoEmFoco.preco_promocional)} promo`
-                        : `Preço ${formatBRL(produtoEmFoco.preco)}`}
-                    </span>
-                    {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) && (
-                      <span className="text-xs text-slate-500 dark:text-slate-300 line-through">{formatBRL(produtoEmFoco.preco)}</span>
-                    )}
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 px-3 py-1 font-semibold">
                       {produtoEmFoco.fornecedor_nome || "Fornecedor —"} · {produtoEmFoco.unidade || "Unid —"}
                     </span>
@@ -2081,16 +2072,28 @@ export default function ProdutosClient() {
                       <ExternalLink className="w-3 h-3" />
                       Ver no Tiny
                     </a>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 dark:bg-slate-800/70 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                      {estoqueFonteLabel} · {estoqueAtualizadoLabel}
-                    </span>
                   </div>
                 </div>
-                <div className="hidden sm:flex flex-col items-end gap-1 text-right text-xs text-slate-500 dark:text-slate-300">
-                  <span className="font-semibold text-slate-700 dark:text-slate-100">{estoqueFonteLabel}</span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/50 dark:border-white/10 bg-white/70 dark:bg-white/5 px-3 py-1">
-                    Snapshot · {estoqueAtualizadoLabel}
-                  </span>
+                <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
+                  <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
+                        {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
+                          <span className="text-sm font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produtoEmFoco.preco)}</span>
+                        ) : null}
+                      </div>
+                      {produtoPercentualDesconto !== null && produtoPercentualDesconto > 0 && (
+                        <span className="self-center inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2.5 py-1 text-sm font-semibold">
+                          -{produtoPercentualDesconto}%
+                        </span>
+                      )}
+                    </div>
+
+                  <div className="flex flex-col items-end gap-1">
+                    {estoqueFonteLabel ? (
+                      <span className="font-semibold text-slate-700 dark:text-slate-100">{estoqueFonteLabel}</span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
