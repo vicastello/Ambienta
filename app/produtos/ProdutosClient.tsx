@@ -588,18 +588,32 @@ export default function ProdutosClient() {
           body: JSON.stringify({ produtoId: produtoSelecionadoId, enrichEstoque: true }),
           signal: controller.signal,
         });
-        const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+        const payload = (await response.json().catch(() => null)) as
+          | { ok?: boolean; produto?: Produto; attempts429?: number }
+          | ProdutosErrorResponse
+          | null;
         if (!response.ok) {
           const message =
-            (payload?.message as string) ||
-            (payload?.error as string) ||
-            (payload?.details as string) ||
+            (payload as ProdutosErrorResponse | null)?.message ||
+            (payload as ProdutosErrorResponse | null)?.error ||
+            (payload as ProdutosErrorResponse | null)?.details ||
             "Erro ao atualizar produto";
           throw new Error(message);
         }
         if (cancelled || controller.signal.aborted) return;
-        clearCacheByPrefix("produtos:");
-        await fetchProdutosRef.current();
+
+        // Evita recarregar a lista inteira (que dá sensação de "reload").
+        // Atualiza somente o produto retornado pela API no state atual.
+        if (payload && (payload as { ok?: boolean }).ok && (payload as { produto?: Produto }).produto) {
+          const produtoAtualizado = (payload as { produto: Produto }).produto;
+          setProdutos((prev) =>
+            prev.map((item) =>
+              item.id_produto_tiny === produtoSelecionadoId
+                ? { ...item, ...produtoAtualizado }
+                : item
+            )
+          );
+        }
         const attempts =
           payload && typeof (payload as { attempts429?: unknown }).attempts429 === 'number'
             ? (payload as { attempts429: number }).attempts429
