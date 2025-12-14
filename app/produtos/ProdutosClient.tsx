@@ -2525,22 +2525,22 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
-                <div className="text-sm text-slate-500">
+              <div className="border-t border-white/20 dark:border-white/5 px-4 md:px-6 py-3 md:py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage(Math.max(0, page - 1))}
                     disabled={page === 0}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs md:text-sm font-medium disabled:opacity-50"
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                     disabled={page >= totalPages - 1}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs md:text-sm font-medium disabled:opacity-50"
                   >
                     Próxima
                   </button>
@@ -2613,7 +2613,7 @@ export default function ProdutosClient() {
       )}
 
       {/* FAB (Floating Action Button) - Mobile only */}
-      <div className="md:hidden fixed bottom-6 right-6 z-40">
+      <div className="md:hidden fixed bottom-4 right-4 z-40">
         {/* FAB backdrop when open */}
         {fabOpen && (
           <div 
@@ -2679,6 +2679,7 @@ export default function ProdutosClient() {
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className="absolute -left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
           aria-label="Voltar ao topo"
+          style={{ display: typeof window !== 'undefined' && window.scrollY > 200 ? 'flex' : 'none' }}
         >
           <ChevronUp className="w-5 h-5" />
         </button>
