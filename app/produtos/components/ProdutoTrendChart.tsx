@@ -1,8 +1,14 @@
 import React from "react";
 import { MicroTrendChart } from "../../dashboard/components/charts/MicroTrendChart";
 
+type ProdutoTrendDatum = {
+  label: string;
+  receita: number;
+  quantidade: number;
+};
+
 type Props = {
-  data: any;
+  data: ProdutoTrendDatum[];
   containerClassName?: string;
 };
 

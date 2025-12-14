@@ -14,7 +14,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
-import type { Produto } from "../types";
+import type { Produto, ProdutoSeriePreset, ProdutoSeriePresetOption } from "../types";
 import { calculateDiscount, formatBRL, formatDeltaPercent, formatNumber } from "../utils";
 import { ProdutoTrendChart } from "./ProdutoTrendChart";
 
@@ -28,13 +28,6 @@ type BadgeInfo = {
 
 type SituacaoInfo = BadgeInfo & {
   bg: string;
-};
-
-type ProdutoSeriePreset = "30d" | "month" | "year";
-
-type ProdutoSeriePresetOption = {
-  value: ProdutoSeriePreset;
-  label: string;
 };
 
 type ProdutoTrendDatum = {
