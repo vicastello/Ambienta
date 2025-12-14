@@ -148,6 +148,7 @@ type ProdutoDesempenhoResponse = {
 
 const PRODUTO_DESEMPENHO_CACHE_TTL_MS = 2 * 60_000;
 const PRODUTO_SELECIONADO_STORAGE_KEY = "produtos:last-selected-id";
+const PRODUTO_PADRAO_STORAGE_KEY = "produtos:default-selected-id";
 
 type ProdutoAtualizacaoMeta = {
   attempts429: number;
@@ -199,11 +200,21 @@ export default function ProdutosClient() {
   const [fornecedorInput, setFornecedorInput] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [page, setPage] = useState(0);
-  const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<number | null>(() => {
+  const [defaultProdutoId, setDefaultProdutoId] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
-    const storedValue = window.localStorage.getItem(PRODUTO_SELECIONADO_STORAGE_KEY);
+    const storedValue = window.localStorage.getItem(PRODUTO_PADRAO_STORAGE_KEY);
     if (!storedValue) return null;
     const parsed = Number(storedValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  });
+
+  const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const storedDefault = window.localStorage.getItem(PRODUTO_PADRAO_STORAGE_KEY);
+    const storedLast = window.localStorage.getItem(PRODUTO_SELECIONADO_STORAGE_KEY);
+    const pick = storedDefault || storedLast;
+    if (!pick) return null;
+    const parsed = Number(pick);
     return Number.isFinite(parsed) ? parsed : null;
   });
   const [produtoHeroPreset, setProdutoHeroPreset] = useState<ProdutoSeriePreset>("30d");
@@ -556,9 +567,12 @@ export default function ProdutosClient() {
       if (prev && produtos.some((produto) => produto.id_produto_tiny === prev)) {
         return prev;
       }
+      if (defaultProdutoId && produtos.some((produto) => produto.id_produto_tiny === defaultProdutoId)) {
+        return defaultProdutoId;
+      }
       return produtos[0].id_produto_tiny;
     });
-  }, [produtos]);
+  }, [produtos, defaultProdutoId]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -716,6 +730,24 @@ export default function ProdutosClient() {
     if (produtoSelecionadoId == null) return produtos[0];
     return produtos.find((produto) => produto.id_produto_tiny === produtoSelecionadoId) ?? produtos[0];
   }, [produtos, produtoSelecionadoId]);
+
+  const produtoEmFocoEhPadrao = Boolean(produtoEmFoco && defaultProdutoId === produtoEmFoco.id_produto_tiny);
+
+  const toggleProdutoPadrao = useCallback(() => {
+    if (typeof window === 'undefined' || !produtoEmFoco) return;
+    const id = produtoEmFoco.id_produto_tiny;
+
+    if (defaultProdutoId === id) {
+      window.localStorage.removeItem(PRODUTO_PADRAO_STORAGE_KEY);
+      setDefaultProdutoId(null);
+      setNotification({ type: 'info', message: 'Produto padrão removido.' });
+      return;
+    }
+
+    window.localStorage.setItem(PRODUTO_PADRAO_STORAGE_KEY, String(id));
+    setDefaultProdutoId(id);
+    setNotification({ type: 'success', message: 'Produto definido como padrão.' });
+  }, [defaultProdutoId, produtoEmFoco]);
 
   // Produtos filtrados por quick filter
   const produtosFiltrados = useMemo(() => {
@@ -1968,6 +2000,16 @@ export default function ProdutosClient() {
                         {tipoProdutoEmFoco.label}
                       </span>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={toggleProdutoPadrao}
+                      className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white bg-slate-100/60 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 transition"
+                      title={produtoEmFocoEhPadrao ? 'Clique para remover como padrão' : 'Definir este produto como padrão ao recarregar'}
+                      aria-label={produtoEmFocoEhPadrao ? 'Remover produto padrão' : 'Definir produto padrão'}
+                    >
+                      {produtoEmFocoEhPadrao ? 'Padrão' : 'Definir padrão'}
+                    </button>
                     {/* desconto exibido apenas na coluna de preço (direita) */}
                   </div>
 
