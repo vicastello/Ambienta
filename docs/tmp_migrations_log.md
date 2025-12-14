@@ -1,3 +1,44 @@
+# 20251206120000_drop_sync_produtos_from_tiny
+
+Rodar manualmente no Supabase Studio para confirmar que tudo foi aposentado:
+
+-- ver se ainda existe job de cron chamando a função
+select jobid, jobname, schedule, command, active
+from cron.job
+where command ilike '%sync_produtos_from_tiny%';
+
+-- ver se a função ainda existe
+select routine_name
+from information_schema.routines
+where specific_schema = 'public'
+and routine_name ilike '%sync_produtos_from_tiny%';
+
+---
+
+# 2025-12-14 - Aplicação migration drop sync_produtos_from_tiny
+
+Executado `supabase db push --linked --include-all` com sucesso.
+Resultado: **Remote database is up to date** (migration já aplicada).
+
+Migration aplicada: `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`
+
+Para confirmar que o job cron e a função legacy foram removidos, rode **manualmente** no Supabase Studio:
+
+```sql
+-- Ver se ainda existe job de cron chamando a função
+SELECT jobid, jobname, schedule, command, active
+FROM cron.job
+WHERE command ILIKE '%sync_produtos_from_tiny%';
+
+-- Ver se a função ainda existe
+SELECT routine_name
+FROM information_schema.routines
+WHERE specific_schema = 'public'
+  AND routine_name ILIKE '%sync_produtos_from_tiny%';
+```
+
+Ambas as queries devem retornar **0 rows** se tudo foi removido corretamente.
+
 # 2025-12-13 - Aplicação migration drop sync_produtos_from_tiny
 
 Executado `supabase db push --linked --include-all` com sucesso.
