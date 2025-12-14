@@ -2055,7 +2055,7 @@ export default function ProdutosClient() {
                         title="Copiar GTIN"
                         aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
                       >
-                        <span>GTIN {produtoEmFoco.gtin}</span>
+                        <span className="font-mono">{produtoEmFoco.gtin}</span>
                         {copiedField === 'gtin' ? (
                           <Check className="w-3 h-3 text-emerald-500" />
                         ) : (
@@ -3087,7 +3087,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · {produto.gtin || "—"}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
               <div className="font-extrabold text-base text-slate-900 dark:text-white">
@@ -3470,7 +3470,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
       </td>
       <td className="px-4 py-3 sm:px-6 sm:py-4">
         <div className="text-sm font-medium text-slate-900 dark:text-white">{produto.codigo || "—"}</div>
-        <div className="text-xs text-slate-500 dark:text-slate-300">GTIN {produto.gtin || "—"}</div>
+        <div className="text-xs text-slate-500 dark:text-slate-300">{produto.gtin || "—"}</div>
       </td>
       <td className="px-4 py-3 sm:px-6 sm:py-4 max-w-[320px]">
         <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
