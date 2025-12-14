@@ -1380,34 +1380,37 @@ export default function ProdutosClient() {
                 );
               })()}
             </div>
-            <p className="text-sm text-slate-500 dark:text-slate-300 mt-2 max-w-3xl">
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-300 mt-2 max-w-3xl">
               {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2 md:gap-3">
             <button
               onClick={exportarCSV}
               disabled={produtosFiltrados.length === 0}
-              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-400 disabled:opacity-50 text-white px-5 py-2.5 text-sm font-semibold transition-all"
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-400 disabled:opacity-50 text-white px-4 md:px-5 py-2 md:py-2.5 text-xs md:text-sm font-semibold transition-all"
               title={produtosFiltrados.length > 0 ? `Exportar ${produtosFiltrados.length} produtos para CSV` : 'Nenhum produto para exportar'}
             >
-              <Download className="w-4 h-4" />
-              Exportar CSV
+              <Download className="w-3 md:w-4 h-3 md:h-4" />
+              <span className="hidden sm:inline">Exportar CSV</span>
+              <span className="sm:hidden">Exportar</span>
             </button>
             <button
               onClick={syncProdutos}
               disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 disabled:bg-purple-400 text-white px-5 py-2.5 text-sm font-semibold"
+              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 disabled:bg-purple-400 text-white px-4 md:px-5 py-2 md:py-2.5 text-xs md:text-sm font-semibold"
             >
               {syncing ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Sincronizando...
+                  <Loader2 className="w-3 md:w-4 h-3 md:h-4 animate-spin" />
+                  <span className="hidden sm:inline">Sincronizando...</span>
+                  <span className="sm:hidden">Sync...</span>
                 </>
               ) : (
                 <>
-                  <RefreshCcw className="w-4 h-4" />
-                  Sincronizar
+                  <RefreshCcw className="w-3 md:w-4 h-3 md:h-4" />
+                  <span className="hidden sm:inline">Sincronizar</span>
+                  <span className="sm:hidden">Sync</span>
                 </>
               )}
             </button>
@@ -1434,7 +1437,7 @@ export default function ProdutosClient() {
         <p className="text-xs text-slate-500 dark:text-slate-300">
           Resumo desta página ({produtosFiltrados.length.toLocaleString("pt-BR")} itens visíveis)
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           <MetricCard
             icon={Package}
             label="Total Ativos"
@@ -1763,22 +1766,24 @@ export default function ProdutosClient() {
               className="absolute inset-0 bg-slate-900/40"
               onClick={() => setMobileFiltersOpen(false)}
             />
-            <div className="absolute inset-x-0 bottom-0 rounded-t-[32px] bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Filtros</p>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">Refine o catálogo</p>
+            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] rounded-t-3xl bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 shadow-[0_-20px_60px_rgba(15,23,42,0.35)] flex flex-col">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Filtros</p>
+                    <p className="text-base font-semibold text-slate-900 dark:text-white">Refine o catálogo</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileFiltersOpen(false)}
+                    className="text-sm font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-300 p-2"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileFiltersOpen(false)}
-                  className="text-sm font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-300"
-                >
-                  Fechar
-                </button>
               </div>
               <form
-                className="space-y-4"
+                className="flex-1 overflow-y-auto space-y-4 p-4 min-h-0"
                 onSubmit={(event) => {
                   event.preventDefault();
                   handleFiltersSubmit();
@@ -1892,24 +1897,27 @@ export default function ProdutosClient() {
                     />
                   </div>
                 </div>
+              </form>
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700 shrink-0">
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleFiltersSubmit}
                   className="w-full rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-3 text-sm font-semibold"
                 >
                   Aplicar filtros
                 </button>
-              </form>
+              </div>
             </div>
           </div>
         )}
       </section>
 
       {produtoEmFoco && (
-        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-6 md:p-7 space-y-6">
+        <section className="rounded-2xl md:rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-4 md:p-6 lg:p-7 space-y-4 md:space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <button
               type="button"
-              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all"
+              className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 shrink-0 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all"
               onClick={() =>
                 produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })
               }
@@ -1927,7 +1935,7 @@ export default function ProdutosClient() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+                    <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
                     <a
                       href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
                       target="_blank"
@@ -2008,9 +2016,9 @@ export default function ProdutosClient() {
                   </div>
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 md:gap-3">
                       <div className="flex flex-col items-end gap-1">
-                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
+                        <span className="text-xl md:text-2xl lg:text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
                         {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
                           <span className="text-sm font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produtoEmFoco.preco)}</span>
                         ) : null}
@@ -2036,8 +2044,8 @@ export default function ProdutosClient() {
 
           {/* metrics summary removed */}
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3 h-full flex flex-col min-h-0">
+          <div className="grid grid-cols-1 gap-3 md:gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 md:p-4 space-y-3 h-full flex flex-col min-h-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trend de vendas</p>
@@ -2080,8 +2088,8 @@ export default function ProdutosClient() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3 h-full">
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-1 gap-2 md:gap-3 h-full">
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-2 md:p-3 w-full min-h-0 flex flex-col justify-between h-full">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
                 <p className="text-[11px] text-slate-500 whitespace-normal break-words">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
@@ -2175,8 +2183,8 @@ export default function ProdutosClient() {
         </section>
       )}
 
-      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
-        <div className="hidden md:flex items-center justify-between gap-3 px-6 pt-5 pb-2">
+      <section className="glass-panel glass-tint rounded-2xl md:rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
+        <div className="hidden md:flex items-center justify-between gap-3 px-4 md:px-6 pt-4 md:pt-5 pb-2">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Catálogo</div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 dark:text-slate-300">Visualização</span>
@@ -2211,7 +2219,7 @@ export default function ProdutosClient() {
           </div>
         </div>
         {!loading && (
-          <div className="hidden md:flex items-center justify-between gap-3 px-6 pb-3">
+          <div className="hidden md:flex items-center justify-between gap-3 px-4 md:px-6 pb-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60 shadow-sm">
                 <span className="text-purple-600 dark:text-purple-300">{produtosFiltrados.length}</span> exibidos
@@ -2398,8 +2406,8 @@ export default function ProdutosClient() {
             )}
 
             {viewMode === 'table' ? (
-              <div className="hidden md:block overflow-x-auto max-h-[600px]">
-                <table className="w-full">
+              <div className="hidden md:block overflow-x-auto max-h-[600px] min-w-0">
+                <table className="w-full min-w-[800px]">
                   <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                     <tr>
                       <th className="px-4 py-4 text-center w-12">
@@ -2491,8 +2499,8 @@ export default function ProdutosClient() {
                 </table>
               </div>
             ) : (
-              <div className="hidden md:block px-4 pb-6">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="hidden md:block px-4 pb-4 md:pb-6">
+                <div className="grid gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {produtosFiltrados.map((produto) => (
                     <ProdutoCard
                       key={produto.id}
@@ -2514,22 +2522,22 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
-                <div className="text-sm text-slate-500">
+              <div className="border-t border-white/20 dark:border-white/5 px-4 md:px-6 py-3 md:py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs md:text-sm text-slate-500 text-center sm:text-left">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage(Math.max(0, page - 1))}
                     disabled={page === 0}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs md:text-sm font-medium disabled:opacity-50"
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                     disabled={page >= totalPages - 1}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs md:text-sm font-medium disabled:opacity-50"
                   >
                     Próxima
                   </button>
@@ -2602,7 +2610,7 @@ export default function ProdutosClient() {
       )}
 
       {/* FAB (Floating Action Button) - Mobile only */}
-      <div className="md:hidden fixed bottom-6 right-6 z-40">
+      <div className="md:hidden fixed bottom-4 right-4 z-40">
         {/* FAB backdrop when open */}
         {fabOpen && (
           <div 
@@ -2663,7 +2671,7 @@ export default function ProdutosClient() {
           )}
         </button>
 
-        {/* Scroll to top button */}
+        {/* Scroll to top button - always visible on mobile */}
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className="absolute -left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
