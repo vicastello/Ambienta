@@ -2249,7 +2249,7 @@ export default function ProdutosClient() {
         )}
       {loading ? (
         <>
-          <div className="hidden 2xl:block">
+          <div className="hidden md:block">
             {/* Skeleton da tabela (somente telas bem largas) */}
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -2416,7 +2416,7 @@ export default function ProdutosClient() {
 
             {/* Barra de ações em lote */}
             {selectedIds.size > 0 && viewMode === 'table' && (
-              <div className="hidden 2xl:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
+              <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={clearSelection}
@@ -2448,7 +2448,7 @@ export default function ProdutosClient() {
             {viewMode === 'table' ? (
               <>
                 {/* Em telas menores, tabela vira cards para evitar overflow horizontal */}
-                <div className="hidden md:block 2xl:hidden space-y-3 p-4">
+                <div className="md:hidden space-y-3 p-4">
                   {produtosFiltrados.map((produto) => (
                     <ProdutoCard
                       key={produto.id}
@@ -2462,7 +2462,7 @@ export default function ProdutosClient() {
                   ))}
                 </div>
 
-                <div className="hidden 2xl:block overflow-x-auto max-h-[600px]">
+                <div className="hidden md:block overflow-x-auto max-h-[600px]">
                   <table className="w-full">
                   <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                     <tr>
@@ -2926,6 +2926,40 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
   const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
   const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
   const isGrid = layout === 'grid';
+  const [shopeePrice, setShopeePrice] = useState<{ original: number | null; discounted: number | null } | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchShopeePrice = async () => {
+      try {
+        const params = new URLSearchParams({ tinyId: String(produto.id_produto_tiny) });
+        if (produto.codigo) params.set('sku', produto.codigo);
+        const res = await fetch(`/api/marketplaces/shopee/price?${params.toString()}`);
+        if (!res.ok) {
+          if (!cancelled) setShopeePrice(null);
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!json) {
+          setShopeePrice(null);
+          return;
+        }
+        if (json.ok) {
+          const original = typeof json.original === 'number' ? Number(json.original) : null;
+          const discounted = typeof json.discounted === 'number' ? Number(json.discounted) : null;
+          setShopeePrice({ original, discounted });
+        } else {
+          setShopeePrice(null);
+        }
+      } catch (err) {
+        if (!cancelled) setShopeePrice(null);
+      }
+    };
+
+    fetchShopeePrice();
+    return () => { cancelled = true; };
+  }, [produto.id_produto_tiny]);
 
   return (
     <article
@@ -2939,7 +2973,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           onSelect();
         }
       }}
-      className={`app-card p-4 ${isGrid ? 'w-full flex-col items-start gap-4' : 'gap-3 flex'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+      className={`app-card p-4 ${isGrid ? 'w-full flex-col items-start gap-6' : 'gap-3 flex'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
         selected
           ? "ring-2 ring-purple-500 shadow-lg shadow-purple-500/20 border-purple-500 bg-purple-50/80 dark:bg-purple-500/10"
           : ""
@@ -2956,39 +2990,71 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
         )}
       </div>
       <div className="flex-1 min-w-0 space-y-2">
-        <div className={`flex ${isGrid ? 'flex-col items-start gap-2' : 'items-start justify-between gap-2'}`}>
-          <div className={`min-w-0 ${isGrid ? 'space-y-1' : ''}`}> 
-            <div className="flex items-center gap-3 min-w-0">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-              {isGrid && (
-                <div className="ml-2 flex-shrink-0 text-right">
-                  <div className="font-extrabold text-lg text-slate-900 dark:text-white">{formatBRL(produto.preco)}</div>
+        {isGrid ? (
+          <div className="grid grid-cols-[1fr_auto] items-start gap-3">
+                <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.gtin || '—'}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}>{sitConfig.label}</span>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tipoConfig.color}`}>{tipoConfig.label}</span>
                 </div>
-              )}
-            </div>
-            {isGrid ? (
-              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.gtin || '—'}</p>
-            ) : (
+              </div>
+              <div className="text-right flex-shrink-0 self-start">
+                <div className="font-extrabold text-base text-slate-900 dark:text-white">
+                  {shopeePrice === undefined ? (
+                    formatBRL(produto.preco)
+                  ) : shopeePrice === null ? (
+                    '—'
+                  ) : (
+                    shopeePrice.discounted != null && shopeePrice.original != null && shopeePrice.discounted < shopeePrice.original ? (
+                      <>
+                        <span className="text-sky-600">{formatBRL(shopeePrice.discounted)}</span>
+                        <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(shopeePrice.original)}</span>
+                      </>
+                    ) : shopeePrice.discounted != null ? (
+                      formatBRL(shopeePrice.discounted)
+                    ) : shopeePrice.original != null ? (
+                      formatBRL(shopeePrice.original)
+                    ) : (
+                      '—'
+                    )
+                  )}
+                </div>
+              </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
               <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
-            )}
-          </div>
-          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
-            {sitConfig.label}
-          </span>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${tipoConfig.color} text-[12px]`}>{tipoConfig.label}</span>
-          </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="text-right">
-              <div className={`font-extrabold ${isGrid ? 'text-2xl' : 'text-base'} text-slate-900 dark:text-white`}>{formatBRL(produto.preco)}</div>
-              {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
-                <div className="text-xs text-emerald-700">Promo {formatBRL(produto.preco_promocional)}</div>
-              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <div className="font-extrabold text-base text-slate-900 dark:text-white">{
+                shopeePrice === undefined ? formatBRL(produto.preco) : shopeePrice === null ? '—' : (
+                  shopeePrice.discounted != null && shopeePrice.original != null && shopeePrice.discounted < shopeePrice.original ? (
+                    <>
+                      <span className="text-sky-600">{formatBRL(shopeePrice.discounted)}</span>
+                      <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(shopeePrice.original)}</span>
+                    </>
+                  ) : shopeePrice.discounted != null ? (
+                    formatBRL(shopeePrice.discounted)
+                  ) : shopeePrice.original != null ? (
+                    formatBRL(shopeePrice.original)
+                  ) : (
+                    '—'
+                  )
+                )
+              }</div>
             </div>
           </div>
-        </div>
+        )}
+        {!isGrid && (
+          <div className="flex items-center gap-2 mt-2">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}>{sitConfig.label}</span>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tipoConfig.color}`}>{tipoConfig.label}</span>
+          </div>
+        )}
 
         <div className={`grid ${isGrid ? 'grid-cols-3' : 'grid-cols-3'} gap-2 mt-2`}>
           <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
@@ -3005,7 +3071,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
               disponivelSnapshot <= 0 ? 'text-rose-600' : temEstoqueBaixo ? 'text-amber-600' : 'text-emerald-600'
             }`}>{formatNumber(disponivelSnapshot)}</p>
             {produto.disponivel_total != null && (
-              <p className="text-[10px] text-slate-400 mt-1">Pai + variações</p>
+              null
             )}
           </div>
         </div>
@@ -3385,9 +3451,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
             Disp. {formatNumber(disponivelSnapshot)}
           </span>
         </div>
-        {produto.disponivel_total != null && (
-          <div className="text-[10px] text-slate-400 mt-1">Pai + variações</div>
-        )}
+        {/* Removed 'Pai + variações' display per design */}
       </td>
       <td className="px-4 py-3 sm:px-6 sm:py-4">
         <EmbalagemSelector

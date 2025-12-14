@@ -17,6 +17,8 @@
     "generate:mapa-vendas": "tsx scripts/generateMapaVendas.ts",
     "cron:generate-mapa:recommendation": "# Suggestion: run 'npm run generate:mapa-vendas' periodically via cron or a scheduled job",
     "db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts"
+    ,
+    "backfill:shopee-precos": "tsx scripts/backfillShopeePrecos.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
