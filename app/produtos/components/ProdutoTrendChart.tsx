@@ -7,7 +7,11 @@ type Props = {
 };
 
 export const ProdutoTrendChart: React.FC<Props> = ({ data, containerClassName }) => {
-  return <MicroTrendChart data={data} containerClassName={containerClassName} />;
+  return (
+    <div className={containerClassName}>
+      <MicroTrendChart data={data} />
+    </div>
+  );
 };
 
 export default ProdutoTrendChart;

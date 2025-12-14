@@ -59,7 +59,10 @@ type ProdutoEmFocoCardProps = {
   estoqueParaRuptura: number;
   mediaDiariaVendas: number;
   estoqueLiveLoading: boolean;
-  // Removed stray JSX line
+  estoqueLiveError: string | null;
+  onRefreshEstoque: () => void;
+  trendPreset: ProdutoSeriePreset;
+  trendPresetOptions: ProdutoSeriePresetOption[];
   onTrendPresetChange: (preset: ProdutoSeriePreset) => void;
   trendLoading: boolean;
   trendError: string | null;
