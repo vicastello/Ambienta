@@ -1343,15 +1343,15 @@ export default function ProdutosClient() {
         </div>
       )}
 
-      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
+      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-4 sm:p-6 md:p-8 space-y-4 md:space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-3 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
               <Package className="w-4 h-4 text-purple-600" />
               Catálogo
             </div>
-              <div className="flex items-center gap-3 mt-4">
-                <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-4">
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
                 {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/25 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-100">
                   {produtosFiltrados.length} / {produtos.length} nesta página
@@ -1384,7 +1384,7 @@ export default function ProdutosClient() {
               {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="hidden md:flex flex-wrap gap-3">
             <button
               onClick={exportarCSV}
               disabled={produtosFiltrados.length === 0}
@@ -1434,7 +1434,7 @@ export default function ProdutosClient() {
         <p className="text-xs text-slate-500 dark:text-slate-300">
           Resumo desta página ({produtosFiltrados.length.toLocaleString("pt-BR")} itens visíveis)
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           <MetricCard
             icon={Package}
             label="Total Ativos"
@@ -1467,8 +1467,8 @@ export default function ProdutosClient() {
         </div>
 
         {/* Trilho de status à la Shopee */}
-        <div className="rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/50 dark:border-white/10 p-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">Status</span>
+        <div className="rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/50 dark:border-white/10 p-3 sm:p-4 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300 w-full sm:w-auto mb-1 sm:mb-0">Status</span>
           {[
             { value: "all", label: "Todos", color: "bg-gradient-to-r from-orange-500 to-orange-600", text: "text-white", count: total },
             { value: "A", label: "Ativos", color: "bg-gradient-to-r from-emerald-500 to-emerald-600", text: "text-white", count: metrics.totalAtivos },
@@ -1484,16 +1484,16 @@ export default function ProdutosClient() {
                   setSituacao(status.value);
                   setPage(0);
                 }}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
+                className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold shadow-sm transition ${
                   active
                     ? `${status.color} ${status.text}`
                     : "bg-white/80 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-white/60 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-700"
                 }`}
                 title={`Filtrar ${status.label.toLowerCase()}`}
               >
-                <span>{status.label}</span>
+                <span className="whitespace-nowrap">{status.label}</span>
                 <span
-                  className={`min-w-[38px] h-7 inline-flex items-center justify-center rounded-full text-xs font-bold ${
+                  className={`min-w-[28px] sm:min-w-[38px] h-5 sm:h-7 inline-flex items-center justify-center rounded-full text-[10px] sm:text-xs font-bold ${
                     active ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
                   }`}
                 >
@@ -1509,14 +1509,14 @@ export default function ProdutosClient() {
           <button
             type="button"
             onClick={() => setQuickFilter(quickFilter === 'estoque-critico' ? null : 'estoque-critico')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition-all ${
               quickFilter === 'estoque-critico'
                 ? 'bg-red-100 text-red-700 ring-2 ring-red-500 dark:bg-red-500/25 dark:text-red-100 dark:ring-red-400'
                 : 'bg-white/70 text-slate-600 hover:bg-red-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-red-500/15'
             }`}
           >
-            <AlertCircle className="w-4 h-4" />
-            Estoque crítico
+            <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="whitespace-nowrap">Estoque crítico</span>
             {metrics.estoqueCritico > 0 && (
               <span className="ml-1 rounded-full bg-red-500 text-white px-2 py-0.5 text-xs">
                 {metrics.estoqueCritico}
@@ -1527,14 +1527,14 @@ export default function ProdutosClient() {
           <button
             type="button"
             onClick={() => setQuickFilter(quickFilter === 'estoque-baixo' ? null : 'estoque-baixo')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition-all ${
               quickFilter === 'estoque-baixo'
                 ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-500/25 dark:text-amber-100 dark:ring-amber-400'
                 : 'bg-white/70 text-slate-600 hover:bg-amber-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-amber-500/15'
             }`}
           >
-            <TrendingDown className="w-4 h-4" />
-            Estoque baixo
+            <TrendingDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="whitespace-nowrap">Estoque baixo</span>
             {metrics.estoqueBaixo > 0 && (
               <span className="ml-1 rounded-full bg-amber-500 text-white px-2 py-0.5 text-xs">
                 {metrics.estoqueBaixo}
@@ -1546,14 +1546,14 @@ export default function ProdutosClient() {
           <button
             type="button"
             onClick={() => setQuickFilter(quickFilter === 'em-promocao' ? null : 'em-promocao')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition-all ${
               quickFilter === 'em-promocao'
                 ? 'bg-green-100 text-green-700 ring-2 ring-green-500 dark:bg-green-500/25 dark:text-green-100 dark:ring-green-400'
                 : 'bg-white/70 text-slate-600 hover:bg-green-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-green-500/15'
             }`}
           >
-            <DollarSign className="w-4 h-4" />
-            Em promoção
+            <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="whitespace-nowrap">Em promoção</span>
           </button>
 
           
@@ -1562,9 +1562,9 @@ export default function ProdutosClient() {
             <button
               type="button"
               onClick={() => setQuickFilter(null)}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700 transition-all"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700 transition-all"
             >
-              Limpar filtro
+              <span className="whitespace-nowrap">Limpar filtro</span>
             </button>
           )}
         </div>
@@ -1905,11 +1905,11 @@ export default function ProdutosClient() {
       </section>
 
       {produtoEmFoco && (
-        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-6 md:p-7 space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-4 sm:p-6 md:p-7 space-y-4 sm:space-y-6">
+          <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-start">
             <button
               type="button"
-              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all"
+              className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all shrink-0"
               onClick={() =>
                 produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })
               }
@@ -1923,11 +1923,11 @@ export default function ProdutosClient() {
               )}
             </button>
 
-            <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+            <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
+              <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-1.5 sm:space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
                     <a
                       href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
                       target="_blank"
@@ -1955,7 +1955,7 @@ export default function ProdutosClient() {
                     {/* desconto exibido apenas na coluna de preço (direita) */}
                   </div>
 
-                  <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                     {produtoEmFoco.codigo ? (
                       <button
                         type="button"
@@ -1966,11 +1966,11 @@ export default function ProdutosClient() {
                             setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
                           })
                         }
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm group"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs sm:text-sm group"
                         title="Copiar código"
                         aria-label={`Copiar código ${produtoEmFoco.codigo}`}
                       >
-                        <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
+                        <span className="font-mono font-semibold text-xs sm:text-sm text-slate-700 dark:text-slate-200 truncate max-w-[120px] sm:max-w-none">{produtoEmFoco.codigo}</span>
                         {copiedField === 'codigo' ? (
                           <Check className="w-3 h-3 text-emerald-500" />
                         ) : (
@@ -1979,8 +1979,8 @@ export default function ProdutosClient() {
                       </button>
                     ) : null}
 
-                    <div className="min-w-0 truncate">
-                      <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
+                    <div className="min-w-0 truncate max-w-[200px] sm:max-w-none">
+                      <span className="text-xs sm:text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
                     </div>
 
                     {produtoEmFoco.gtin && (
@@ -1993,11 +1993,11 @@ export default function ProdutosClient() {
                             setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
                           })
                         }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group ml-auto"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2 sm:px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
                         title="Copiar GTIN"
                         aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
                       >
-                        <span>GTIN {produtoEmFoco.gtin}</span>
+                        <span className="text-[10px] sm:text-xs truncate max-w-[100px] sm:max-w-none">GTIN {produtoEmFoco.gtin}</span>
                         {copiedField === 'gtin' ? (
                           <Check className="w-3 h-3 text-emerald-500" />
                         ) : (
@@ -2007,10 +2007,25 @@ export default function ProdutosClient() {
                     )}
                   </div>
                 </div>
+                <div className="flex sm:hidden flex-col items-start gap-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="text-xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
+                      {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
+                        <span className="text-xs font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produtoEmFoco.preco)}</span>
+                      ) : null}
+                    </div>
+                    {produtoPercentualDesconto !== null && produtoPercentualDesconto > 0 && (
+                      <span className="self-start inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2 py-0.5 text-xs font-semibold">
+                        -{produtoPercentualDesconto}%
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
                   <div className="flex items-center gap-3">
                       <div className="flex flex-col items-end gap-1">
-                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
+                        <span className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
                         {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
                           <span className="text-sm font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produtoEmFoco.preco)}</span>
                         ) : null}
@@ -2036,8 +2051,8 @@ export default function ProdutosClient() {
 
           {/* metrics summary removed */}
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3 h-full flex flex-col min-h-0">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
+            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 sm:p-4 space-y-2 sm:space-y-3 h-full flex flex-col min-h-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trend de vendas</p>
@@ -2086,10 +2101,10 @@ export default function ProdutosClient() {
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
                 <p className="text-[11px] text-slate-500 whitespace-normal break-words">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-2 sm:p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
                 <p
-                  className={`text-xl font-semibold ${
+                  className={`text-base sm:text-lg md:text-xl font-semibold ${
                     rupturaCritica
                       ? 'text-rose-700 dark:text-rose-200'
                       : rupturaAtencao
@@ -2101,33 +2116,33 @@ export default function ProdutosClient() {
                     ? `~${produtoDiasParaZerar} dia(s)`
                     : 'Sem giro'}
                 </p>
-                <p className="text-[11px] text-slate-500 whitespace-normal">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 whitespace-normal">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</span>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-2 sm:p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
+                <div className="flex items-center justify-between gap-1 sm:gap-2">
+                  <span className="text-sm sm:text-base md:text-lg font-semibold text-slate-900 dark:text-white truncate">{formatBRL(produtoTotalReceita)}</span>
                 </div>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
+              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-2 sm:p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
+                <div className="flex items-center justify-between gap-1 sm:gap-2">
+                  <span className="text-sm sm:text-base md:text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Embalagens</span>
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-slate-400">Embalagens</span>
             {produtoEmFoco.embalagens?.length ? (
               produtoEmFoco.embalagens.map((emb) => (
                 <div
                   key={emb.embalagem_id}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/80 dark:bg-slate-900/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-slate-700 dark:text-slate-200"
+                  className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-white/80 dark:bg-slate-900/50 border border-white/60 dark:border-white/10 px-2 sm:px-3 py-1 text-[11px] sm:text-[12px] text-slate-700 dark:text-slate-200"
                 >
-                  <span className="font-semibold truncate max-w-[160px]">{emb.embalagem?.nome || 'Embalagem'}</span>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">x{emb.quantidade}</span>
+                  <span className="font-semibold truncate max-w-[120px] sm:max-w-[160px]">{emb.embalagem?.nome || 'Embalagem'}</span>
+                  <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400">x{emb.quantidade}</span>
                   {emb.embalagem?.codigo && (
                     <button
                       type="button"
@@ -2176,7 +2191,7 @@ export default function ProdutosClient() {
       )}
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
-        <div className="hidden md:flex items-center justify-between gap-3 px-6 pt-5 pb-2">
+        <div className="hidden md:flex items-center justify-between gap-3 px-4 sm:px-6 pt-4 sm:pt-5 pb-2">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Catálogo</div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 dark:text-slate-300">Visualização</span>
@@ -2211,7 +2226,7 @@ export default function ProdutosClient() {
           </div>
         </div>
         {!loading && (
-          <div className="hidden md:flex items-center justify-between gap-3 px-6 pb-3">
+          <div className="hidden md:flex items-center justify-between gap-3 px-4 sm:px-6 pb-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60 shadow-sm">
                 <span className="text-purple-600 dark:text-purple-300">{produtosFiltrados.length}</span> exibidos
@@ -2399,7 +2414,7 @@ export default function ProdutosClient() {
 
             {viewMode === 'table' ? (
               <div className="hidden md:block overflow-x-auto max-h-[600px]">
-                <table className="w-full">
+                <table className="w-full min-w-[800px]">
                   <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                     <tr>
                       <th className="px-4 py-4 text-center w-12">
@@ -2514,22 +2529,22 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
-                <div className="text-sm text-slate-500">
+              <div className="border-t border-white/20 dark:border-white/5 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs sm:text-sm text-slate-500 text-center sm:text-left">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto">
                   <button
                     onClick={() => setPage(Math.max(0, page - 1))}
                     disabled={page === 0}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs sm:text-sm font-medium disabled:opacity-50"
                   >
                     Anterior
                   </button>
                   <button
                     onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                     disabled={page >= totalPages - 1}
-                    className="px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm font-medium disabled:opacity-50"
+                    className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border border-white/40 dark:border-white/10 bg-white/80 dark:bg-white/5 text-xs sm:text-sm font-medium disabled:opacity-50"
                   >
                     Próxima
                   </button>
@@ -2711,22 +2726,22 @@ const MetricCard = memo(function MetricCard({ icon: Icon, label, value, color, l
 
   if (loading) {
     return (
-      <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 animate-pulse">
-        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-20 mb-3"></div>
-        <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-32"></div>
+      <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3 sm:p-4 md:p-6 animate-pulse">
+        <div className="h-3 sm:h-4 bg-slate-200 dark:bg-slate-700 rounded w-16 sm:w-20 mb-2 sm:mb-3"></div>
+        <div className="h-6 sm:h-8 bg-slate-200 dark:bg-slate-700 rounded w-20 sm:w-32"></div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 hover:shadow-lg transition-all duration-300">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{label}</span>
-        <div className={`p-2.5 rounded-xl ${bgClasses[color]}`}>
-          <Icon className={`w-5 h-5 ${iconClasses[color]}`} />
+    <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-3 sm:p-4 md:p-6 hover:shadow-lg transition-all duration-300">
+      <div className="flex items-center justify-between mb-2 sm:mb-3">
+        <span className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 truncate pr-2">{label}</span>
+        <div className={`p-1.5 sm:p-2.5 rounded-xl ${bgClasses[color]} shrink-0`}>
+          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${iconClasses[color]}`} />
         </div>
       </div>
-      <div className={`text-2xl font-bold bg-gradient-to-r ${colorClasses[color]} bg-clip-text text-transparent`}>
+      <div className={`text-lg sm:text-xl md:text-2xl font-bold bg-gradient-to-r ${colorClasses[color]} bg-clip-text text-transparent truncate`}>
         {value}
       </div>
     </div>
