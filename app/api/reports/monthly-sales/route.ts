@@ -3,6 +3,32 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
+type Marketplace = 'magalu' | 'shopee' | 'mercado_livre' | 'all';
+
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toStringSafe(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : value == null ? fallback : String(value);
+}
+
+function normalizeMarketplace(value: string | null | undefined): Marketplace {
+  if (value === 'magalu' || value === 'shopee' || value === 'mercado_livre' || value === 'all') return value;
+  return 'all';
+}
+
 interface SalesReportItem {
   marketplace: string;
   marketplace_order_id: string;
@@ -41,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     const yearStr = searchParams.get('year');
     const monthStr = searchParams.get('month');
-    const marketplace = searchParams.get('marketplace') || 'all';
+    const marketplace = normalizeMarketplace(searchParams.get('marketplace'));
 
     if (!yearStr || !monthStr) {
       return NextResponse.json(
@@ -137,31 +163,31 @@ export async function GET(request: NextRequest) {
       return await generateReportFallback({
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
-        marketplace: marketplace as any,
+        marketplace,
       });
     }
 
     // Process the data to expand kits
     const reportItems: SalesReportItem[] = [];
 
-    for (const row of (data as any[]) || []) {
+    for (const row of asRecords(data)) {
       const item: SalesReportItem = {
-        marketplace: row.marketplace,
-        marketplace_order_id: row.marketplace_order_id,
-        marketplace_order_date: row.marketplace_order_date,
-        tiny_numero_pedido: row.tiny_numero_pedido,
-        tiny_product_id: row.tiny_product_id,
-        tiny_codigo: row.tiny_codigo,
-        tiny_nome: row.tiny_nome,
-        tiny_tipo: row.tiny_tipo,
-        quantity: parseFloat(row.quantity),
-        unit_price: parseFloat(row.unit_price),
-        total_price: parseFloat(row.total_price),
+        marketplace: toStringSafe(row['marketplace']),
+        marketplace_order_id: toStringSafe(row['marketplace_order_id']),
+        marketplace_order_date: toStringSafe(row['marketplace_order_date']),
+        tiny_numero_pedido: toNumber(row['tiny_numero_pedido']),
+        tiny_product_id: toNumber(row['tiny_product_id']),
+        tiny_codigo: toStringSafe(row['tiny_codigo']),
+        tiny_nome: toStringSafe(row['tiny_nome']),
+        tiny_tipo: toStringSafe(row['tiny_tipo']),
+        quantity: toNumber(row['quantity']),
+        unit_price: toNumber(row['unit_price']),
+        total_price: toNumber(row['total_price']),
       };
 
       // If it's a kit, we need to expand it to show components
-      if (row.tiny_tipo === 'K' && row.product_raw_payload) {
-        const components = extractKitComponents(row.product_raw_payload);
+      if (row['tiny_tipo'] === 'K' && row['product_raw_payload']) {
+        const components = extractKitComponents(row['product_raw_payload']);
 
         // Add the kit itself
         reportItems.push(item);
@@ -170,16 +196,16 @@ export async function GET(request: NextRequest) {
         for (const component of components) {
           reportItems.push({
             ...item,
-            tiny_product_id: component.id_produto_tiny || 0,
-            tiny_codigo: component.codigo || '',
-            tiny_nome: component.nome || '',
+            tiny_product_id: toNumber(component['id_produto_tiny']),
+            tiny_codigo: toStringSafe(component['codigo']),
+            tiny_nome: toStringSafe(component['nome']),
             tiny_tipo: 'S', // Components are usually simple products
-            quantity: parseFloat(row.quantity) * (component.quantidade || 1),
+            quantity: toNumber(row['quantity']) * (toNumber(component['quantidade'], 1) || 1),
             unit_price: 0, // Components don't have individual prices in kits
             total_price: 0,
-            parent_product_id: row.tiny_product_id,
-            parent_codigo: row.tiny_codigo,
-            parent_nome: row.tiny_nome,
+            parent_product_id: toNumber(row['tiny_product_id']),
+            parent_codigo: toStringSafe(row['tiny_codigo']),
+            parent_nome: toStringSafe(row['tiny_nome']),
             parent_tipo: 'K',
             is_component: true,
           });
@@ -190,7 +216,38 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate summary statistics
-    const summary = {
+    type MarketplaceBreakdownAccumulator = {
+      orders: Set<string>;
+      items: number;
+      revenue: number;
+    };
+
+    type MarketplaceBreakdown = {
+      orders: number;
+      items: number;
+      revenue: number;
+    };
+
+    type ProductTypeBreakdown = {
+      count: number;
+      quantity: number;
+      revenue: number;
+    };
+
+    const summary: {
+      period: {
+        year: number;
+        month: number;
+        startDate: string;
+        endDate: string;
+      };
+      marketplace: Marketplace;
+      total_orders: number;
+      total_items: number;
+      total_revenue: number;
+      breakdown_by_marketplace: Record<string, MarketplaceBreakdownAccumulator>;
+      breakdown_by_product_type: Record<string, ProductTypeBreakdown>;
+    } = {
       period: {
         year,
         month,
@@ -203,8 +260,8 @@ export async function GET(request: NextRequest) {
       total_revenue: reportItems
         .filter(i => !i.is_component)
         .reduce((sum, item) => sum + item.total_price, 0),
-      breakdown_by_marketplace: {} as Record<string, any>,
-      breakdown_by_product_type: {} as Record<string, any>,
+      breakdown_by_marketplace: {} as Record<string, MarketplaceBreakdownAccumulator>,
+      breakdown_by_product_type: {},
     };
 
     // Group by marketplace
@@ -221,11 +278,16 @@ export async function GET(request: NextRequest) {
       summary.breakdown_by_marketplace[item.marketplace].revenue += item.total_price;
     }
 
-    // Convert Sets to counts
-    for (const mkt in summary.breakdown_by_marketplace) {
-      summary.breakdown_by_marketplace[mkt].orders =
-        summary.breakdown_by_marketplace[mkt].orders.size;
-    }
+    const breakdownByMarketplaceForJson: Record<string, MarketplaceBreakdown> = Object.fromEntries(
+      Object.entries(summary.breakdown_by_marketplace).map(([mkt, breakdown]) => [
+        mkt,
+        {
+          orders: breakdown.orders.size,
+          items: breakdown.items,
+          revenue: breakdown.revenue,
+        },
+      ])
+    );
 
     // Group by product type
     for (const item of reportItems.filter(i => !i.is_component)) {
@@ -244,7 +306,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      summary,
+      summary: {
+        ...summary,
+        breakdown_by_marketplace: breakdownByMarketplaceForJson,
+      },
       items: reportItems,
       count: reportItems.length,
     });
@@ -261,7 +326,7 @@ export async function GET(request: NextRequest) {
 /**
  * Extract kit components from product raw_payload
  */
-function extractKitComponents(rawPayload: any): any[] {
+function extractKitComponents(rawPayload: unknown): JsonRecord[] {
   if (!rawPayload) return [];
 
   // Try different possible paths for kit components
@@ -275,9 +340,9 @@ function extractKitComponents(rawPayload: any): any[] {
   ];
 
   for (const path of paths) {
-    let current = rawPayload;
+    let current: unknown = rawPayload;
     for (const key of path) {
-      if (current && typeof current === 'object') {
+      if (isRecord(current)) {
         current = current[key];
       } else {
         current = null;
@@ -286,8 +351,8 @@ function extractKitComponents(rawPayload: any): any[] {
     }
 
     if (Array.isArray(current)) {
-      return current;
-    } else if (current && typeof current === 'object') {
+      return current.filter(isRecord);
+    } else if (isRecord(current)) {
       return [current];
     }
   }
@@ -301,7 +366,7 @@ function extractKitComponents(rawPayload: any): any[] {
 async function generateReportFallback(params: {
   startDate: string;
   endDate: string;
-  marketplace: 'magalu' | 'shopee' | 'mercado_livre' | 'all';
+  marketplace: Marketplace;
 }) {
   const { startDate, endDate, marketplace } = params;
 
@@ -323,7 +388,10 @@ async function generateReportFallback(params: {
   }
 
   // Get order items for each linked Tiny order
-  const tinyOrderIds = ((linkedOrders as any[]) || []).map((o: any) => o.tiny_order_id);
+  const linked = asRecords(linkedOrders);
+  const tinyOrderIds = linked
+    .map((o) => toNumber(o['tiny_order_id']))
+    .filter((id) => id > 0);
 
   if (tinyOrderIds.length === 0) {
     return NextResponse.json({
@@ -355,45 +423,48 @@ async function generateReportFallback(params: {
   // Combine data
   const reportItems: SalesReportItem[] = [];
 
-  for (const linkedOrder of ((linkedOrders as any[]) || [])) {
-    const items = ((orderItems as any[]) || []).filter((item: any) => item.id_pedido === linkedOrder.tiny_order_id);
+  const orderItemsRecords = asRecords(orderItems);
+  for (const linkedOrder of linked) {
+    const linkedTinyOrderId = toNumber(linkedOrder['tiny_order_id']);
+    const items = orderItemsRecords.filter((item) => toNumber(item['id_pedido']) === linkedTinyOrderId);
 
     for (const item of items) {
-      const produto = Array.isArray(item.produto) ? item.produto[0] : item.produto;
+      const produtoRaw = isRecord(item) ? item['produto'] : null;
+      const produtoFirst = Array.isArray(produtoRaw) ? (produtoRaw.find(isRecord) ?? null) : (isRecord(produtoRaw) ? produtoRaw : null);
 
       reportItems.push({
-        marketplace: linkedOrder.marketplace,
-        marketplace_order_id: linkedOrder.marketplace_order_id,
-        marketplace_order_date: linkedOrder.marketplace_order_date,
-        tiny_numero_pedido: linkedOrder.tiny_numero_pedido,
-        tiny_product_id: item.id_produto_tiny,
-        tiny_codigo: item.codigo_produto,
-        tiny_nome: item.nome_produto,
-        tiny_tipo: produto?.tipo || 'S',
-        quantity: parseFloat(item.quantidade),
-        unit_price: parseFloat(item.valor_unitario),
-        total_price: parseFloat(item.valor_total),
+        marketplace: toStringSafe(linkedOrder['marketplace']),
+        marketplace_order_id: toStringSafe(linkedOrder['marketplace_order_id']),
+        marketplace_order_date: toStringSafe(linkedOrder['marketplace_order_date']),
+        tiny_numero_pedido: toNumber(linkedOrder['tiny_numero_pedido']),
+        tiny_product_id: toNumber(item['id_produto_tiny']),
+        tiny_codigo: toStringSafe(item['codigo_produto']),
+        tiny_nome: toStringSafe(item['nome_produto']),
+        tiny_tipo: produtoFirst && typeof produtoFirst['tipo'] === 'string' ? (produtoFirst['tipo'] as string) : 'S',
+        quantity: toNumber(item['quantidade']),
+        unit_price: toNumber(item['valor_unitario']),
+        total_price: toNumber(item['valor_total']),
       });
 
       // Expand kits
-      if (produto?.tipo === 'K' && produto.raw_payload) {
-        const components = extractKitComponents(produto.raw_payload);
+      if (produtoFirst && produtoFirst['tipo'] === 'K' && produtoFirst['raw_payload']) {
+        const components = extractKitComponents(produtoFirst['raw_payload']);
         for (const component of components) {
           reportItems.push({
-            marketplace: linkedOrder.marketplace,
-            marketplace_order_id: linkedOrder.marketplace_order_id,
-            marketplace_order_date: linkedOrder.marketplace_order_date,
-            tiny_numero_pedido: linkedOrder.tiny_numero_pedido,
-            tiny_product_id: component.id_produto_tiny || 0,
-            tiny_codigo: component.codigo || '',
-            tiny_nome: component.nome || '',
+            marketplace: toStringSafe(linkedOrder['marketplace']),
+            marketplace_order_id: toStringSafe(linkedOrder['marketplace_order_id']),
+            marketplace_order_date: toStringSafe(linkedOrder['marketplace_order_date']),
+            tiny_numero_pedido: toNumber(linkedOrder['tiny_numero_pedido']),
+            tiny_product_id: toNumber(component['id_produto_tiny']),
+            tiny_codigo: toStringSafe(component['codigo']),
+            tiny_nome: toStringSafe(component['nome']),
             tiny_tipo: 'S',
-            quantity: parseFloat(item.quantidade) * (component.quantidade || 1),
+            quantity: toNumber(item['quantidade']) * (toNumber(component['quantidade'], 1) || 1),
             unit_price: 0,
             total_price: 0,
-            parent_product_id: item.id_produto_tiny,
-            parent_codigo: item.codigo_produto,
-            parent_nome: item.nome_produto,
+            parent_product_id: toNumber(item['id_produto_tiny']),
+            parent_codigo: toStringSafe(item['codigo_produto']),
+            parent_nome: toStringSafe(item['nome_produto']),
             parent_tipo: 'K',
             is_component: true,
           });

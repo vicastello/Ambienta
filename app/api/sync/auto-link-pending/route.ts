@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function getNumeroPedidoEcommerceFromRaw(raw: unknown): string | null {
+  if (!isRecord(raw)) return null;
+  const ecommerce = raw['ecommerce'];
+  if (!isRecord(ecommerce)) return null;
+  const numero = ecommerce['numeroPedidoEcommerce'];
+  return typeof numero === 'string' ? numero : null;
+}
+
 /**
  * API para vincular automaticamente pedidos pendentes
  * Verifica pedidos do Tiny que ainda não têm vínculo com marketplace
@@ -65,7 +79,7 @@ export async function POST(request: Request) {
       }
       // Se não tiver, tentar do raw_payload
       else if (tinyOrder.raw_payload) {
-        const numeroEcommerce = (tinyOrder.raw_payload as any)?.ecommerce?.numeroPedidoEcommerce;
+        const numeroEcommerce = getNumeroPedidoEcommerceFromRaw(tinyOrder.raw_payload as unknown);
         if (numeroEcommerce && typeof numeroEcommerce === 'string') {
           marketplaceOrderId = numeroEcommerce.trim();
         }
@@ -154,8 +168,9 @@ export async function POST(request: Request) {
     console.log(`  Erros: ${result.errors.length}`);
 
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido';
     console.error('[auto-link] Erro fatal:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

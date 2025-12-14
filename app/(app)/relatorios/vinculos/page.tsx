@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Link,
@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Package,
   ShoppingBag,
-  Calendar,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -78,11 +77,7 @@ export default function VinculosPage() {
   });
   const [autoLinking, setAutoLinking] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [marketplace, dateFrom, dateTo]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       // Load unlinked orders
@@ -121,7 +116,11 @@ export default function VinculosPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [marketplace, dateFrom, dateTo]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const handleLink = async () => {
     if (!selectedMarketplaceOrder || !selectedTinyOrder) {

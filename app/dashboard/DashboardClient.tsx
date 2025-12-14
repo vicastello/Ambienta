@@ -21,8 +21,6 @@ import {
   Sparkles,
   Target,
   TrendingUp,
-  ZoomIn,
-  ZoomOut,
   X,
 } from 'lucide-react';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
@@ -281,14 +279,6 @@ const MARKETPLACE_COLORS: Record<string, string> = {
   Tray: '#5f6bff',
   Tiny: AMBIENTA_PRIMARY,
   Outros: '#94a3b8',
-};
-const ZOOM_NIVEL_LABELS: Record<ProdutoZoomNivel, string> = {
-  pai: 'Kit pai',
-  variacao: 'Variação',
-  kit: 'Kit',
-  simples: 'Simples',
-  origem: 'Origem',
-  desconhecido: 'Outro',
 };
 
 const buildProdutoKey = (produto: ProdutoResumo): string => {
@@ -881,55 +871,58 @@ export default function DashboardClient() {
     }
   }, [filtersLoaded, preset, customStart, customEnd, canaisSelecionados, situacoesSelecionadas]);
 
-  function monthRange(referenceIso: string, startMonthOffset: number, lengthMonths: number) {
-    const base = new Date(`${referenceIso}T00:00:00`);
-    base.setMonth(base.getMonth() + startMonthOffset);
-    base.setDate(1);
-    const start = base.toISOString().slice(0, 10);
+  const resolverIntervalo = useCallback(
+    (): { inicio: string; fim: string; previousInicio?: string; previousFim?: string } => {
+      const monthRange = (referenceIso: string, startMonthOffset: number, lengthMonths: number) => {
+        const base = new Date(`${referenceIso}T00:00:00`);
+        base.setMonth(base.getMonth() + startMonthOffset);
+        base.setDate(1);
+        const start = base.toISOString().slice(0, 10);
 
-    const endDate = new Date(base.getTime());
-    endDate.setMonth(endDate.getMonth() + lengthMonths);
-    endDate.setDate(0);
-    const end = endDate.toISOString().slice(0, 10);
+        const endDate = new Date(base.getTime());
+        endDate.setMonth(endDate.getMonth() + lengthMonths);
+        endDate.setDate(0);
+        const end = endDate.toISOString().slice(0, 10);
 
-    return { start, end };
-  }
+        return { start, end };
+      };
 
-  function resolverIntervalo(): { inicio: string; fim: string; previousInicio?: string; previousFim?: string } {
-    const hojeIso = isoToday();
-    if (preset === 'today') return { inicio: hojeIso, fim: hojeIso };
-    if (preset === 'yesterday') {
-      const ontem = addDays(hojeIso, -1);
-      return { inicio: ontem, fim: ontem };
-    }
-    if (preset === '7d') {
+      const hojeIso = isoToday();
+      if (preset === 'today') return { inicio: hojeIso, fim: hojeIso };
+      if (preset === 'yesterday') {
+        const ontem = addDays(hojeIso, -1);
+        return { inicio: ontem, fim: ontem };
+      }
+      if (preset === '7d') {
+        const fim = hojeIso;
+        const inicio = addDays(fim, -6);
+        return { inicio, fim };
+      }
+      if (preset === 'month') {
+        // Últimos 2 meses completos (ex.: hoje=2025-12-09 => 2025-10-01 a 2025-11-30)
+        const { start: inicio, end: fim } = monthRange(hojeIso, -2, 2);
+        const { start: previousInicio, end: previousFim } = monthRange(hojeIso, -4, 2);
+        return { inicio, fim, previousInicio, previousFim };
+      }
+      if (preset === '3m') {
+        const fim = hojeIso;
+        const dFim = new Date(`${fim}T00:00:00`);
+        dFim.setMonth(dFim.getMonth() - 2);
+        const inicio = startOfMonthFrom(dFim.toISOString().slice(0, 10));
+        return { inicio, fim };
+      }
+      if (preset === 'year') {
+        const fim = hojeIso;
+        const inicio = startOfYearFrom(fim);
+        return { inicio, fim };
+      }
+      if (customStart && customEnd) return { inicio: customStart, fim: customEnd };
       const fim = hojeIso;
-      const inicio = addDays(fim, -6);
+      const inicio = addDays(fim, -29);
       return { inicio, fim };
-    }
-    if (preset === 'month') {
-      // Últimos 2 meses completos (ex.: hoje=2025-12-09 => 2025-10-01 a 2025-11-30)
-      const { start: inicio, end: fim } = monthRange(hojeIso, -2, 2);
-      const { start: previousInicio, end: previousFim } = monthRange(hojeIso, -4, 2);
-      return { inicio, fim, previousInicio, previousFim };
-    }
-    if (preset === '3m') {
-      const fim = hojeIso;
-      const dFim = new Date(`${fim}T00:00:00`);
-      dFim.setMonth(dFim.getMonth() - 2);
-      const inicio = startOfMonthFrom(dFim.toISOString().slice(0, 10));
-      return { inicio, fim };
-    }
-    if (preset === 'year') {
-      const fim = hojeIso;
-      const inicio = startOfYearFrom(fim);
-      return { inicio, fim };
-    }
-    if (customStart && customEnd) return { inicio: customStart, fim: customEnd };
-    const fim = hojeIso;
-    const inicio = addDays(fim, -29);
-    return { inicio, fim };
-  }
+    },
+    [preset, customStart, customEnd]
+  );
 
   const MICROTREND_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -1030,7 +1023,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         safeWriteCache(cacheKey, parsedResumo);
       }
       try {
-        const { inicio, fim, previousInicio, previousFim } = resolverIntervalo();
+        const { inicio, fim } = resolverIntervalo();
         const diasEsperados = 1 + diffDays(inicio, fim);
         const atualDias = parsedResumo.periodoAtual.vendasPorDia.length ?? 0;
         const key = `${inicio}_${fim}`;
@@ -1838,7 +1831,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       canais: canaisDoMes,
       dias: vendasDoMes.length,
     };
-  }, [resumoGlobalAtual, dashboardGlobalSource, preset, customStart, customEnd]);
+  }, [resumoGlobalAtual, dashboardGlobalSource, resolverIntervalo]);
 
   const trendingDias = useMemo(() => {
     if (!resumoMesAtual || !resumoMesAtual.vendasPorDia.length) return [];
@@ -1929,40 +1922,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     );
   }, [selectedZoomLevelKey, zoomLevelsDisponiveis]);
 
-  const zoomIndexAtual = zoomLevelAtual
-    ? zoomLevelsDisponiveis.findIndex((nivel) => nivel.key === zoomLevelAtual.key)
-    : zoomLevelsDisponiveis.length ? 0 : -1;
-  const podeDarZoomOut = zoomLevelsDisponiveis.length > 1 && zoomIndexAtual > 0;
-  const podeDarZoomIn =
-    zoomLevelsDisponiveis.length > 1 &&
-    zoomIndexAtual >= 0 &&
-    zoomIndexAtual < zoomLevelsDisponiveis.length - 1;
-
-  const alterarZoom = useCallback(
-    (direcao: 'in' | 'out') => {
-      if (!zoomLevelsDisponiveis.length) return;
-      const fallbackIndex = Math.max(0, zoomLevelsDisponiveis.findIndex((nivel) => nivel.key === (zoomLevelAtual?.key ?? selectedZoomLevelKey ?? '')));
-      const indexAtual = fallbackIndex >= 0 ? fallbackIndex : 0;
-      const delta = direcao === 'in' ? 1 : -1;
-      const proximoIndex = Math.min(
-        Math.max(0, indexAtual + delta),
-        zoomLevelsDisponiveis.length - 1
-      );
-      setSelectedZoomLevelKey(zoomLevelsDisponiveis[proximoIndex]?.key ?? null);
-    },
-    [zoomLevelAtual?.key, selectedZoomLevelKey, zoomLevelsDisponiveis]
-  );
-
-  const handleZoomIn = useCallback(() => alterarZoom('in'), [alterarZoom]);
-  const handleZoomOut = useCallback(() => alterarZoom('out'), [alterarZoom]);
-
   const produtoDisplayDescricao = normalizeProdutoNome(
     zoomLevelAtual?.descricao ?? produtoEmFoco?.descricao ?? 'Produto sem nome'
   );
   const produtoDisplaySku = zoomLevelAtual?.sku ?? produtoEmFoco?.sku ?? null;
-  const produtoDisplayQuantidade = zoomLevelAtual?.quantidade ?? produtoEmFoco?.quantidade ?? 0;
-  const produtoDisplayReceita = zoomLevelAtual?.receita ?? produtoEmFoco?.receita ?? 0;
-  const zoomNivelLabel = zoomLevelAtual ? ZOOM_NIVEL_LABELS[zoomLevelAtual.nivel] ?? 'Nível atual' : 'Resumo';
 
   // Buscar o produto correspondente no resumoGlobalAtual para ter a série completa (30 dias)
   const produtoGlobalCorrespondente = useMemo(() => {
@@ -1991,7 +1954,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       return parsed >= dataInicio && parsed <= dataFim;
     });
     return filtrada.sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
-  }, [produtoSerieBase, preset, customStart, customEnd]);
+  }, [produtoSerieBase, resolverIntervalo]);
 
   // Série filtrada pelo filtro PRÓPRIO do card (para o gráfico)
   const produtoSerieFiltrada = useMemo(() => {
@@ -2047,14 +2010,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     }));
   }, [produtoCardPreset, produtoSerieFiltrada]);
 
-  const produtoMelhorDia = useMemo(() => {
-    if (!produtoSerieFiltrada.length) return null;
-    return produtoSerieFiltrada.reduce((acc, dia) => {
-      if (!acc) return dia;
-      return dia.receita > acc.receita ? dia : acc;
-    }, produtoSerieFiltrada[0]);
-  }, [produtoSerieFiltrada]);
-
   // Valores baseados no filtro GLOBAL para os cards de estatísticas
   const produtoGlobalQuantidade = useMemo(() => {
     return produtoSerieGlobal.reduce((acc, dia) => acc + dia.quantidade, 0);
@@ -2074,10 +2029,6 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
 
   const produtoGlobalTicketMedio = produtoGlobalQuantidade > 0
     ? produtoGlobalReceita / produtoGlobalQuantidade
-    : 0;
-
-  const produtoTicketMedio = produtoDisplayQuantidade > 0
-    ? produtoDisplayReceita / produtoDisplayQuantidade
     : 0;
   const produtoEstoqueDisponivel = produtoEmFoco?.disponivel ?? produtoEmFoco?.saldo ?? null;
   return (

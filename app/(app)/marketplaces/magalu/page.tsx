@@ -1,19 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   Award,
   BarChart2,
-  CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Clock,
   HelpCircle,
-  Info,
   Lightbulb,
   MapPin,
   Package,
@@ -39,45 +35,11 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   AreaChart,
   Area,
 } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { MagaluOrder } from "@/src/types/magalu";
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// UTILIDADES DE ANIMAÇÃO
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Hook para animação de entrada staggered (escalonada)
-function useStaggeredAnimation(itemCount: number, baseDelay = 50) {
-  return (index: number): CSSProperties => ({
-    animationDelay: `${index * baseDelay}ms`,
-    animationFillMode: "backwards",
-  });
-}
-
-// Componente wrapper para animações de fade-in
-function FadeInUp({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
-  return (
-    <div
-      className={`animate-fade-in-up ${className}`}
-      style={{ animationDelay: `${delay}ms`, animationFillMode: "backwards" }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// Componente de pulse suave para elementos que precisam de atenção
-function PulseHighlight({ children, active = false, className = "" }: { children: React.ReactNode; active?: boolean; className?: string }) {
-  return (
-    <div className={`${active ? "animate-pulse-soft" : ""} ${className}`}>
-      {children}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTE DE TOOLTIP REUTILIZÁVEL
@@ -222,8 +184,6 @@ export default function MagaluPage() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
-  const [oauthSuccess, setOauthSuccess] = useState(false);
-  const [savingTokens, setSavingTokens] = useState(false);
   const requestIdRef = useRef(0);
 
   // Detectar callback OAuth
@@ -241,14 +201,12 @@ export default function MagaluPage() {
     }
 
     if (authSuccess === 'true' && accessToken && refreshToken) {
-      setOauthSuccess(true);
       // Salvar tokens automaticamente
       saveTokens(accessToken, refreshToken);
     }
   }, []);
 
   const saveTokens = async (accessToken: string, refreshToken: string) => {
-    setSavingTokens(true);
     try {
       const res = await fetch('/api/magalu/oauth/save-tokens', {
         method: 'POST',
@@ -264,13 +222,10 @@ export default function MagaluPage() {
 
       // Limpar URL
       window.history.replaceState({}, '', '/marketplaces/magalu');
-      setOauthSuccess(false);
-
     } catch (err) {
       console.error('Erro ao salvar tokens:', err);
       alert('❌ Erro ao salvar tokens. Veja o console para mais detalhes.');
     } finally {
-      setSavingTokens(false);
     }
   };
 
@@ -1812,7 +1767,7 @@ function MagaluOrdersSection({
             <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="search"
-              className="w-full rounded-2xl bg-white/90 dark:bg-slate-900/60 border border-white/60 dark:border-slate-700/60 pl-11 pr-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#009DA8]/30 focus:border-[#009DA8]/40 transition-all shadow-sm"
+              className="w-full rounded-2xl bg-white/60 dark:bg-slate-900/40 border border-white/20 dark:border-slate-700/30 pl-11 pr-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#009DA8]/30 focus:border-[#009DA8]/40 transition-all shadow-sm backdrop-blur-sm"
               placeholder="Buscar por número do pedido, cliente ou cidade..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

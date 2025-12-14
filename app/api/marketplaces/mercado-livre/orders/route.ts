@@ -8,10 +8,6 @@ const DEFAULT_PERIOD_DAYS = 3;
 const DEFAULT_PAGE_SIZE = 50;
 const MELI_MOCK_MODE = process.env.ML_MOCK_MODE === 'true';
 
-function buildIsoDate(timestampMs: number) {
-  return new Date(timestampMs).toISOString();
-}
-
 function getMockMeliOrders(params: {
   timeFrom: string;
   timeTo: string;

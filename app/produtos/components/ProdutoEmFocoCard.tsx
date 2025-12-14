@@ -9,13 +9,12 @@ import {
   Copy,
   ExternalLink,
   Loader2,
-  MoreVertical,
   Package,
   RefreshCcw,
 } from "lucide-react";
 
 import type { Produto } from "../types";
-import { calculateDiscount, formatBRL, formatDeltaPercent, formatNumber } from "../utils";
+import { calculateDiscount, formatBRL, formatNumber } from "../utils";
 import { ProdutoTrendChart } from "./ProdutoTrendChart";
 
 const RECEITA_COLOR = "rgb(168, 85, 247)";
@@ -83,23 +82,6 @@ type ProdutoEmFocoCardProps = {
   onNotify: (type: "success" | "error", message: string) => void;
 };
 
-const DeltaBadge = memo(function DeltaBadge({ value }: { value: number | null }) {
-  if (value === null || Number.isNaN(value)) return null;
-  const label = formatDeltaPercent(value);
-  const positive = value > 0;
-  const negative = value < 0;
-  const tone = positive
-    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100"
-    : negative
-      ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-100"
-      : "bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200";
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
-      {label}
-    </span>
-  );
-});
-
 const ProdutoEmFocoCardComponent = ({
   produto,
   situacaoInfo,
@@ -108,11 +90,9 @@ const ProdutoEmFocoCardComponent = ({
   estoqueFonteLabel,
   estoqueAtualizadoLabel,
   estoqueSku,
-  estoqueTotalPaiVariacoes,
   estoqueParaRuptura,
   mediaDiariaVendas,
   estoqueLiveLoading,
-  estoqueLiveError,
   onRefreshEstoque,
   trendPreset,
   trendPresetOptions,
@@ -122,8 +102,6 @@ const ProdutoEmFocoCardComponent = ({
   trendData,
   totalReceita,
   totalQuantidade,
-  deltaReceitaPercent,
-  deltaQuantidadePercent,
   melhorDiaLabel,
   melhorDiaReceita,
   melhorDiaQuantidade,
@@ -156,18 +134,6 @@ const ProdutoEmFocoCardComponent = ({
     if (!Number.isFinite(raw)) return null;
     return Math.max(0, Math.ceil(raw));
   }, [estoqueParaRuptura, mediaDiariaVendas]);
-  const rupturaCritica = produtoDiasParaZerar !== null && produtoDiasParaZerar <= 3;
-  const rupturaAtencao = produtoDiasParaZerar !== null && produtoDiasParaZerar > 3 && produtoDiasParaZerar <= 7;
-  const rupturaStatus = produtoDiasParaZerar === null
-    ? null
-    : produtoDiasParaZerar <= 3
-      ? { label: "Crítico", tone: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-100" }
-      : produtoDiasParaZerar <= 7
-        ? { label: "Atenção", tone: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-100" }
-        : { label: "Ok", tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100" };
-
-  const disponivelSku = estoqueSku.disponivel ?? 0;
-  const estoqueCriticoSku = disponivelSku > 0 && disponivelSku < 5;
   const embalagemCount = produto.embalagens?.length ?? 0;
 
   const melhorDiaResumo = useMemo(() => {

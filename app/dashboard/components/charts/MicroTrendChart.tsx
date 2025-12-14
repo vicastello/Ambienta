@@ -84,7 +84,7 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
     };
 
     return (
-      <div className="glass-tooltip text-[12px] p-3 min-w-[180px] rounded-xl bg-white/90 shadow-xl backdrop-blur-3xl border border-white/60">
+      <div className="glass-tooltip text-[12px] p-3 min-w-[180px] rounded-xl bg-white/60 shadow-md backdrop-blur-sm border border-white/20">
         <p className="m-0 mb-2 font-semibold text-slate-700">{label}</p>
         <div className="flex justify-between gap-3">
           <div className="flex flex-col gap-1">

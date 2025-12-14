@@ -4,6 +4,51 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
+type TinyOrderRowLite = {
+  id: number;
+  tiny_id?: number | null;
+  numero_pedido?: number | string | null;
+  data_criacao?: string | null;
+  canal?: string | null;
+  cliente_nome?: string | null;
+  situacao?: number | null;
+  valor?: number | null;
+  numero_pedido_ecommerce?: string | null;
+  valor_total_pedido?: number | null;
+  valor_total_produtos?: number | null;
+  valor_desconto?: number | null;
+  raw_payload?: unknown;
+};
+
+type TinyPedidoItemRowLite = {
+  id: number;
+  id_pedido: number;
+  id_produto_tiny: number | null;
+  codigo_produto: string | null;
+  nome_produto: string;
+  quantidade: number;
+  valor_unitario: number;
+  valor_total: number;
+  tiny_orders?: {
+    data_criacao?: string | null;
+    canal?: string | null;
+    situacao?: number | null;
+  };
+};
+
+type MarketplaceOrderLinkRowLite = {
+  marketplace: string;
+  marketplace_order_id: string;
+  tiny_order_id: number;
+};
+
+type MarketplaceKitComponentRowLite = {
+  marketplace: string;
+  marketplace_sku: string;
+  component_sku: string;
+  component_qty: number | string;
+};
+
 type GroupBy = 'pedido' | 'sku' | 'canal';
 type ViewMode = 'unitario' | 'kit';
 
@@ -75,7 +120,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
 
     // Buscar TODOS os pedidos usando paginação (Supabase limita em 1000 por query)
-    const allPedidos: any[] = [];
+    const allPedidos: TinyOrderRowLite[] = [];
     let currentPage = 0;
     const pageSize = 1000;
 
@@ -121,7 +166,7 @@ export async function GET(request: NextRequest) {
 
       if (!pedidosPage || pedidosPage.length === 0) break;
 
-      allPedidos.push(...pedidosPage);
+      allPedidos.push(...((pedidosPage as unknown as TinyOrderRowLite[]) || []));
 
       if (pedidosPage.length < pageSize) break; // Última página
       currentPage++;
@@ -130,7 +175,7 @@ export async function GET(request: NextRequest) {
     const pedidos = allPedidos;
 
     // Buscar itens dos pedidos com paginação usando join no intervalo (evita perder itens por chunking do .in)
-    const allItens: any[] = [];
+    const allItens: TinyPedidoItemRowLite[] = [];
     {
       const pageSizeItems = 1000;
       let from = 0;
@@ -171,7 +216,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ success: false, error: itensError.message }, { status: 500 });
         }
         if (!itensChunk || itensChunk.length === 0) break;
-        allItens.push(...itensChunk);
+        allItens.push(...((itensChunk as unknown as TinyPedidoItemRowLite[]) || []));
         if (itensChunk.length < pageSizeItems) break;
         from += pageSizeItems;
       }
@@ -179,7 +224,7 @@ export async function GET(request: NextRequest) {
 
     // Criar mapa de itens por pedido
     const itensMap = new Map<number, PedidoItem[]>();
-    (allItens || []).forEach((item: any) => {
+    allItens.forEach((item) => {
       if (!itensMap.has(item.id_pedido)) {
         itensMap.set(item.id_pedido, []);
       }
@@ -201,8 +246,8 @@ export async function GET(request: NextRequest) {
     const produtoMap = new Map(produtos?.map(p => [p.codigo, { nome: p.nome, tipo: p.tipo }]) || []);
 
     // Buscar vínculos de pedidos marketplace <-> tiny em chunks
-    const allOrderLinks: any[] = [];
-    const pedidoIds = (pedidos || []).map((p: any) => p.id);
+    const allOrderLinks: MarketplaceOrderLinkRowLite[] = [];
+    const pedidoIds = pedidos.map((p) => p.id);
     const chunkSize = 1000;
     for (let i = 0; i < pedidoIds.length; i += chunkSize) {
       const chunk = pedidoIds.slice(i, i + chunkSize);
@@ -221,19 +266,19 @@ export async function GET(request: NextRequest) {
         }
 
         if (!linksChunk || linksChunk.length === 0) break;
-        allOrderLinks.push(...linksChunk);
+        allOrderLinks.push(...((linksChunk as unknown as MarketplaceOrderLinkRowLite[]) || []));
         if (linksChunk.length < pageSizeLinks) break;
         from += pageSizeLinks;
       }
     }
 
-    const orderLinkMap = new Map();
-    allOrderLinks.forEach(link => {
+    const orderLinkMap = new Map<number, MarketplaceOrderLinkRowLite>();
+    allOrderLinks.forEach((link) => {
       orderLinkMap.set(link.tiny_order_id, link);
     });
 
     // Buscar vínculos de kits do marketplace (paginado)
-    const kitComponents: any[] = [];
+    const kitComponents: MarketplaceKitComponentRowLite[] = [];
     {
       const pageSizeKits = 1000;
       let from = 0;
@@ -247,17 +292,17 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ success: false, error: kitsError.message }, { status: 500 });
         }
         if (!kitsChunk || kitsChunk.length === 0) break;
-        kitComponents.push(...kitsChunk);
+        kitComponents.push(...((kitsChunk as unknown as MarketplaceKitComponentRowLite[]) || []));
         if (kitsChunk.length < pageSizeKits) break;
         from += pageSizeKits;
       }
     }
     // Agrupar por (marketplace, marketplace_sku)
-    const kitMap = new Map();
-    (kitComponents || []).forEach(row => {
+    const kitMap = new Map<string, Array<{ sku: string; qty: number }>>();
+    kitComponents.forEach((row) => {
       const key = `${row.marketplace}||${row.marketplace_sku}`;
       if (!kitMap.has(key)) kitMap.set(key, []);
-      kitMap.get(key).push({ sku: row.component_sku, qty: Number(row.component_qty) });
+      kitMap.get(key)!.push({ sku: row.component_sku, qty: Number(row.component_qty) });
     });
 
     // Buscar itens do marketplace (SKU original do pedido) para poder expandir kits a partir do SKU do marketplace
@@ -349,7 +394,7 @@ export async function GET(request: NextRequest) {
               if (!seen.has(key)) {
                 pushOrderItems(link.tiny_order_id, [{
                   sku,
-                  name: String((row as any).product_name ?? row.id_sku ?? ''),
+                  name: String((row as { product_name?: unknown }).product_name ?? row.id_sku ?? ''),
                   quantity: Number(row.quantity || 0),
                   price,
                 }]);
@@ -414,7 +459,7 @@ export async function GET(request: NextRequest) {
     const canaisMap = new Map<string, { pedidos: Set<string | number>; quantidade: number; faturamento: number }>();
     const skuMap = new Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number> }>();
 
-    for (const pedido of (pedidos || []) as any[]) {
+    for (const pedido of pedidos) {
       const pedidoItensRaw = itensMap.get(pedido.id) || [];
       // Mantemos os valores originais do Tiny (não normalizamos pelo total do pedido para não mascarar diferenças com o marketplace)
       const pedidoItensValorAjustado = pedidoItensRaw;
@@ -506,9 +551,9 @@ export async function GET(request: NextRequest) {
             items.push({
               id: `${pedido.id}-MP-${entry.sku}`,
               pedido_id: pedido.id,
-              numero_pedido: pedido.numero_pedido || pedido.tiny_id,
+              numero_pedido: pedido.numero_pedido ?? pedido.tiny_id ?? pedido.id,
               data: pedido.data_criacao || '',
-              canal: normalizeCanal(pedido.canal),
+              canal: normalizeCanal(pedido.canal ?? null),
               sku: entry.sku,
               nome_produto: entry.nome,
               quantidade: entry.qtd,
@@ -520,7 +565,7 @@ export async function GET(request: NextRequest) {
               situacao: pedido.situacao ?? undefined,
             });
             pedidosSet.add(pedido.id);
-            updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, entry.qtd, vt);
+            updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, entry.qtd, vt);
             updateSkuMap(skuMap, entry.sku, entry.nome, entry.qtd, vt, pedido.id);
           }
           // pula processamento baseado no Tiny (evita transformar unitário em kit)
@@ -703,9 +748,9 @@ export async function GET(request: NextRequest) {
             items.push({
               id: `${pedido.id}-KIT-${k.marketplace_sku}`,
               pedido_id: pedido.id,
-              numero_pedido: pedido.numero_pedido || pedido.tiny_id,
+              numero_pedido: pedido.numero_pedido ?? pedido.tiny_id ?? pedido.id,
               data: pedido.data_criacao || '',
-              canal: normalizeCanal(pedido.canal),
+              canal: normalizeCanal(pedido.canal ?? null),
               sku: k.marketplace_sku,
               nome_produto: k.nome,
               quantidade: kitQty,
@@ -717,7 +762,7 @@ export async function GET(request: NextRequest) {
               situacao: pedido.situacao ?? undefined,
             });
             pedidosSet.add(pedido.id);
-            updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, kitQty, vt);
+            updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, kitQty, vt);
             updateSkuMap(skuMap, k.marketplace_sku, k.nome, kitQty, vt, pedido.id);
 
             // consome quantidades restantes e marca componentes cobertos
@@ -812,9 +857,9 @@ export async function GET(request: NextRequest) {
         items.push({
           id: `${pedido.id}-${item.id}`,
           pedido_id: pedido.id,
-          numero_pedido: pedido.numero_pedido || pedido.tiny_id,
+          numero_pedido: pedido.numero_pedido ?? pedido.tiny_id ?? pedido.id,
           data: pedido.data_criacao || '',
-          canal: normalizeCanal(pedido.canal),
+          canal: normalizeCanal(pedido.canal ?? null),
           sku: skuOriginal,
           nome_produto: item.nome_produto,
           quantidade: item.quantidade,
@@ -826,7 +871,7 @@ export async function GET(request: NextRequest) {
           situacao: pedido.situacao ?? undefined,
         });
         pedidosSet.add(pedido.id);
-        updateCanalMap(canaisMap, normalizeCanal(pedido.canal), pedido.id, item.quantidade, item.valor_total);
+        updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, item.quantidade, item.valor_total);
         updateSkuMap(skuMap, skuOriginal, item.nome_produto, item.quantidade, item.valor_total, pedido.id);
       });
 
@@ -868,8 +913,7 @@ export async function GET(request: NextRequest) {
       .slice(0, 20);
 
     // Agrupar dados conforme groupBy
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let groupedData: any[] = [];
+    let groupedData: unknown[] = [];
     
     if (groupBy === 'pedido') {
       // Agrupar por pedido

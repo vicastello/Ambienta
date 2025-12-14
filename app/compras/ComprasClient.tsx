@@ -1349,13 +1349,15 @@ export default function ComprasClient() {
 
   useEffect(() => {
     abortRef.current = null;
+    const saveTimers = saveTimersRef.current;
+    const pendingSaves = pendingSavesRef.current;
     return () => {
       isMountedRef.current = false;
       abortRef.current?.abort();
-      Object.values(saveTimersRef.current).forEach((timeoutId) => {
+      Object.values(saveTimers).forEach((timeoutId) => {
         clearTimeout(timeoutId);
       });
-      const pendingIds = Object.keys(pendingSavesRef.current)
+      const pendingIds = Object.keys(pendingSaves)
         .map((id) => Number(id))
         .filter((id) => Number.isFinite(id));
       pendingIds.forEach((id) => {
@@ -2181,7 +2183,7 @@ export default function ComprasClient() {
       </section>
       {activeTab === 'current' && (
         <div className="lg:hidden fixed bottom-4 left-4 right-4 z-40">
-          <div className="rounded-[28px] border border-white/60 bg-white/90 dark:bg-slate-900/90 dark:border-white/10 backdrop-blur-xl shadow-xl p-4 space-y-3">
+          <div className="rounded-[28px] border border-white/20 bg-white/60 dark:bg-slate-900/40 dark:border-white/6 backdrop-blur-sm shadow-md p-4 space-y-3">
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
             </div>

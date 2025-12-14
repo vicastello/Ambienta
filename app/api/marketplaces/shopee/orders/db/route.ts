@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getShopeeOrderDetails } from '@/lib/shopeeClient';
-import type { ShopeeOrder, ShopeeOrderStatus, ShopeeOrderItem } from '@/src/types/shopee';
+import type { ShopeeOrder, ShopeeOrderStatus } from '@/src/types/shopee';
 import type { ShopeeOrdersRow, ShopeeOrderItemsRow } from '@/src/types/db-public';
 
 const DEFAULT_WINDOW_SECONDS = 90 * 24 * 60 * 60; // 90 dias
@@ -76,40 +76,61 @@ function dbRowToShopeeOrder(row: ShopeeOrdersRow, items: ShopeeOrderItemsRow[]):
   };
 }
 
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // Mapeia itens retornados pela Shopee (order_detail) para linhas do banco
-function mapShopeeItemsToDb(orderSn: string, items: any[]): ShopeeOrderItemsRow[] {
-  return items.map((item) => {
+function mapShopeeItemsToDb(orderSn: string, items: unknown[]): ShopeeOrderItemsRow[] {
+  const safeItems = items.filter(isRecord);
+  return safeItems.map((item) => {
     const quantity =
-      Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
-    const rawOriginal = Number(
-      item.variation_original_price ??
-      item.model_original_price ??
-      item.item_price ??
-      0
-    ) || 0;
-    const rawDiscounted = Number(
-      item.variation_discounted_price ??
-      item.model_discounted_price ??
-      item.item_price ??
-      item.variation_original_price ??
-      0
-    ) || 0;
+      toNumber(
+        item['model_quantity_purchased'] ??
+        item['order_quantity'] ??
+        item['quantity'] ??
+        item['model_quantity'] ??
+        1,
+        1
+      ) || 1;
+    const rawOriginal =
+      toNumber(item['variation_original_price'] ?? item['model_original_price'] ?? item['item_price'] ?? 0, 0) || 0;
+    const rawDiscounted =
+      toNumber(
+        item['variation_discounted_price'] ??
+        item['model_discounted_price'] ??
+        item['item_price'] ??
+        item['variation_original_price'] ??
+        0,
+        0
+      ) || 0;
     const originalPrice = rawOriginal > 0 ? rawOriginal : null;
     const discountedPrice = rawDiscounted > 0 ? rawDiscounted : null;
     return {
       // Campos obrigatórios
       order_sn: orderSn,
-      item_id: item.item_id,
-      model_id: item.model_id ?? null,
-      item_name: item.item_name,
-      model_name: item.model_name ?? null,
-      item_sku: item.item_sku ?? null,
-      model_sku: item.model_sku ?? null,
+      item_id: toNumber(item['item_id'] ?? 0, 0),
+      model_id: typeof item['model_id'] === 'number' ? item['model_id'] : null,
+      item_name: String(item['item_name'] ?? ''),
+      model_name: typeof item['model_name'] === 'string' ? item['model_name'] : null,
+      item_sku: typeof item['item_sku'] === 'string' ? item['item_sku'] : null,
+      model_sku: typeof item['model_sku'] === 'string' ? item['model_sku'] : null,
       quantity,
       original_price: originalPrice,
       discounted_price: discountedPrice,
-      is_wholesale: Boolean(item.is_wholesale),
-      raw_payload: item as unknown as Record<string, unknown>,
+      is_wholesale: Boolean(item['is_wholesale']),
+      raw_payload: item as Record<string, unknown>,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     } as unknown as ShopeeOrderItemsRow;
@@ -262,11 +283,8 @@ export async function GET(req: Request) {
           const itemsToUpsert: ShopeeOrderItemsRow[] = [];
 
           for (const order of details) {
-            const items = Array.isArray((order as any).order_items)
-              ? (order as any).order_items
-              : Array.isArray((order as any).item_list)
-                ? (order as any).item_list
-                : [];
+            const raw = order as unknown as { order_items?: unknown; item_list?: unknown };
+            const items = asArray(raw.order_items).length ? asArray(raw.order_items) : asArray(raw.item_list);
             if (items.length === 0) continue;
             const mapped = mapShopeeItemsToDb(order.order_sn, items);
             itemsToUpsert.push(...mapped);

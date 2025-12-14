@@ -212,7 +212,7 @@ export default function VendasMensaisPage() {
   // Carregar ao montar
   useEffect(() => {
     fetchReport();
-  }, []);
+  }, [fetchReport]);
 
   const handlePageChange = (newPage: number) => {
     fetchReport(newPage);

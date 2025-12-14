@@ -7,6 +7,27 @@ const DEFAULT_PERIOD_DAYS = 90; // Sync inicial: 90 dias
 const INCREMENTAL_PERIOD_DAYS = 3; // Sync incremental: 3 dias
 const STATUS_RESYNC_BATCH_SIZE = 50; // Máximo de pedidos por batch no get_order_detail
 
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getOrderItems(order: ShopeeOrder): JsonRecord[] {
+  const raw = order as unknown as { order_items?: unknown; item_list?: unknown };
+  const items = asArray(raw.order_items).length ? asArray(raw.order_items) : asArray(raw.item_list);
+  return items.filter(isRecord);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
 // Extrai cidade e UF do endereço completo
 function extractCityState(fullAddress: string | undefined): { city: string | null; state: string | null } {
   if (!fullAddress) return { city: null, state: null };
@@ -33,29 +54,23 @@ function extractCityState(fullAddress: string | undefined): { city: string | nul
 // Converte pedido Shopee para formato do banco
 function mapShopeeOrderToDb(order: ShopeeOrder, shopId: string) {
   const { city, state } = extractCityState(order.recipient_address?.full_address);
-  const items =
-    (order as any).order_items?.length
-      ? (order as any).order_items
-      : Array.isArray((order as any).item_list)
-        ? (order as any).item_list
-        : [];
+  const items = getOrderItems(order);
 
   // Se a Shopee não mandar total_amount, calcula a partir dos itens
-  const computedTotal = items.reduce((sum: number, item: any) => {
+  const computedTotal = items.reduce((sum, item) => {
     const quantity =
-      Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
-    const discounted = Number(
-      item.variation_discounted_price ??
-      item.model_discounted_price ??
-      item.item_price ??
-      0
-    ) || 0;
-    const original = Number(
-      item.variation_original_price ??
-      item.model_original_price ??
-      item.item_price ??
-      0
-    ) || 0;
+      toNumber(
+        item['model_quantity_purchased'] ??
+        item['order_quantity'] ??
+        item['quantity'] ??
+        item['model_quantity'] ??
+        1,
+        1
+      ) || 1;
+    const discounted =
+      toNumber(item['variation_discounted_price'] ?? item['model_discounted_price'] ?? item['item_price'] ?? 0, 0) || 0;
+    const original =
+      toNumber(item['variation_original_price'] ?? item['model_original_price'] ?? item['item_price'] ?? 0, 0) || 0;
     const price = discounted > 0 ? discounted : original;
     return sum + (price || 0) * quantity;
   }, 0);
@@ -83,55 +98,72 @@ function mapShopeeOrderToDb(order: ShopeeOrder, shopId: string) {
 
 // Converte itens do pedido para formato do banco
 function mapShopeeOrderItemsToDb(order: ShopeeOrder) {
-  const items =
-    (order as any).order_items?.length
-      ? (order as any).order_items
-      : Array.isArray((order as any).item_list)
-        ? (order as any).item_list
-        : [];
+  const items = getOrderItems(order);
 
   if (!items.length) return [];
   
-  const agg = new Map<string, any>();
+  const agg = new Map<
+    string,
+    {
+      order_sn: string;
+      item_id: number;
+      model_id: number;
+      item_name: string;
+      model_name: string | null;
+      item_sku: string | null;
+      model_sku: string | null;
+      quantity: number;
+      original_price: number | null;
+      discounted_price: number | null;
+      is_wholesale: boolean;
+      raw_payload: Record<string, unknown>;
+    }
+  >();
 
-  for (const item of items as any[]) {
+  for (const item of items) {
     const quantity =
-      Number(item.model_quantity_purchased ?? item.order_quantity ?? item.quantity ?? item.model_quantity ?? 1) || 1;
-    const rawOriginal = Number(
-      item.variation_original_price ??
-      item.model_original_price ??
-      item.item_price ??
-      0
-    ) || 0;
-    const rawDiscounted = Number(
-      item.variation_discounted_price ??
-      item.model_discounted_price ??
-      item.item_price ??
-      item.variation_original_price ??
-      0
-    ) || 0;
+      toNumber(
+        item['model_quantity_purchased'] ??
+        item['order_quantity'] ??
+        item['quantity'] ??
+        item['model_quantity'] ??
+        1,
+        1
+      ) || 1;
+    const rawOriginal =
+      toNumber(item['variation_original_price'] ?? item['model_original_price'] ?? item['item_price'] ?? 0, 0) || 0;
+    const rawDiscounted =
+      toNumber(
+        item['variation_discounted_price'] ??
+        item['model_discounted_price'] ??
+        item['item_price'] ??
+        item['variation_original_price'] ??
+        0,
+        0
+      ) || 0;
     const originalPrice = rawOriginal > 0 ? rawOriginal : null;
     const discountedPrice = rawDiscounted > 0 ? rawDiscounted : null;
 
-    const modelId = Number(item.model_id ?? 0) || 0;
-    const key = `${order.order_sn}|${item.item_id}|${modelId}`;
+    const modelId = toNumber(item['model_id'] ?? 0, 0) || 0;
+    const itemId = toNumber(item['item_id'] ?? 0, 0) || 0;
+    const key = `${order.order_sn}|${itemId}|${modelId}`;
     const curr = agg.get(key);
     if (curr) {
       curr.quantity += quantity;
     } else {
       agg.set(key, {
         order_sn: order.order_sn,
-        item_id: item.item_id,
+        item_id: itemId,
         model_id: modelId,
-        item_name: item.item_name,
-        model_name: item.model_name || null,
-        item_sku: item.item_sku || null,
-        model_sku: item.model_sku || null,
+        item_name: String(item['item_name'] ?? ''),
+        model_name: typeof item['model_name'] === 'string' && item['model_name'] ? item['model_name'] : null,
+        item_sku: typeof item['item_sku'] === 'string' && item['item_sku'] ? item['item_sku'] : null,
+        model_sku: typeof item['model_sku'] === 'string' && item['model_sku'] ? item['model_sku'] : null,
         quantity,
         original_price: originalPrice,
         discounted_price: discountedPrice,
-        is_wholesale: item.is_wholesale || false,
-        raw_payload: item as unknown as Record<string, unknown>,
+        is_wholesale: Boolean(item['is_wholesale']),
+        raw_payload: item as Record<string, unknown>,
       });
     }
   }

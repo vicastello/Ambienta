@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, ImageOff, LayoutGrid, Loader2, MoreVertical, Package, Plus, RefreshCcw, Rows, Search, Square, Trash2, TrendingDown, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, LayoutGrid, Loader2, MoreVertical, Package, Plus, RefreshCcw, Rows, Search, Square, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
@@ -78,33 +78,6 @@ const formatSerieDayLabel = (date: Date) => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}`;
-};
-
-const formatRelativeTime = (timestamp: number | null | undefined) => {
-  if (!timestamp) return "agora";
-  const diffSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (diffSeconds < 60) return "agora";
-  if (diffSeconds < 3600) return `${Math.round(diffSeconds / 60)} min`;
-  if (diffSeconds < 86400) return `${Math.round(diffSeconds / 3600)} h`;
-  return `${Math.round(diffSeconds / 86400)} d`;
-};
-
-const computeDeltaFromSerie = (
-  serie: ProdutoDesempenhoPoint[],
-  key: "receita" | "quantidade"
-) => {
-  if (!serie?.length) return null;
-  const janela = Math.min(7, Math.floor(serie.length / 2));
-  if (janela < 1 || serie.length < janela * 2) return null;
-
-  const tail = serie.slice(-janela);
-  const prev = serie.slice(-janela * 2, -janela);
-  const sum = (points: typeof serie) => points.reduce((acc, item) => acc + (item?.[key] ?? 0), 0);
-  const atual = sum(tail);
-  const anterior = sum(prev);
-  if (anterior === 0 && atual === 0) return { deltaPercent: 0, atual, anterior };
-  const deltaPercent = anterior === 0 ? 100 : ((atual - anterior) / anterior) * 100;
-  return { deltaPercent, atual, anterior };
 };
 
 const formatTooltipCurrency: CustomTooltipFormatter = (value) =>
@@ -232,8 +205,6 @@ export default function ProdutosClient() {
     source?: string | null;
     updatedAt: number;
   } | null>(null);
-  const [estoqueLiveLoading, setEstoqueLiveLoading] = useState(false);
-  const [estoqueLiveError, setEstoqueLiveError] = useState<string | null>(null);
   const [embalagens, setEmbalagens] = useState<Embalagem[]>([]);
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
@@ -252,7 +223,6 @@ export default function ProdutosClient() {
   
   // Seleção múltipla
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [showBatchActions, setShowBatchActions] = useState(false);
   
   // Filtros avançados de preço e estoque
   const [precoMin, setPrecoMin] = useState<string>('');
@@ -872,8 +842,6 @@ export default function ProdutosClient() {
   const carregarEstoqueLive = useCallback(
     async (mode: "hybrid" | "live" = "hybrid") => {
       if (!produtoSelecionadoId) return;
-      setEstoqueLiveLoading(true);
-      setEstoqueLiveError(null);
       try {
         const response = await fetch(
           `/api/tiny/produtos/${produtoSelecionadoId}/estoque?source=${mode}`,
@@ -900,9 +868,8 @@ export default function ProdutosClient() {
           updatedAt: Date.now(),
         });
       } catch (fetchError) {
-        setEstoqueLiveError(getErrorMessage(fetchError) || "Falha ao consultar estoque em tempo real");
-      } finally {
-        setEstoqueLiveLoading(false);
+        console.warn("Falha ao consultar estoque em tempo real", getErrorMessage(fetchError));
+        setEstoqueLive(null);
       }
     },
     [produtoSelecionadoId]
@@ -910,7 +877,6 @@ export default function ProdutosClient() {
 
   useEffect(() => {
     setEstoqueLive(null);
-    setEstoqueLiveError(null);
     if (!produtoSelecionadoId) return;
     carregarEstoqueLive("hybrid");
   }, [carregarEstoqueLive, produtoSelecionadoId]);
@@ -983,17 +949,6 @@ export default function ProdutosClient() {
   };
   const estoqueSkuExibido = estoqueLive ?? estoqueSkuSnapshot;
   const disponivelSku = estoqueSkuExibido.disponivel ?? 0;
-  const estoqueCriticoSku = disponivelSku > 0 && disponivelSku < 5;
-  const estoqueCriticoTotal =
-    estoqueTotalPaiVariacoes !== null && estoqueTotalPaiVariacoes > 0 && estoqueTotalPaiVariacoes < 5;
-  const desempenhoDeltaReceita = useMemo(
-    () => computeDeltaFromSerie(produtoDesempenho?.serie ?? [], "receita"),
-    [produtoDesempenho]
-  );
-  const desempenhoDeltaQuantidade = useMemo(
-    () => computeDeltaFromSerie(produtoDesempenho?.serie ?? [], "quantidade"),
-    [produtoDesempenho]
-  );
   const produtoDiasPeriodo = useMemo(() => {
     if (!produtoDesempenho) return null;
     if (produtoDesempenho.serie?.length) return produtoDesempenho.serie.length;
@@ -1016,44 +971,10 @@ export default function ProdutosClient() {
   const rupturaAtencao = produtoDiasParaZerar !== null && produtoDiasParaZerar > 3 && produtoDiasParaZerar <= 7;
   // Only show a live label; remove 'Tiny + cache' and 'Snapshot'
   const estoqueFonteLabel = estoqueLive && estoqueLive.source === "live" ? "Live Tiny" : "";
-  const estoqueAtualizadoLabel = estoqueLive?.updatedAt ? formatRelativeTime(estoqueLive.updatedAt) : "em cache";
-  const produtoAlertasInfo = useMemo(() => {
-    const infos: string[] = [];
-    if (!produtoEmFoco?.imagem_url) infos.push("Sem imagem");
-    if (!produtoEmFoco?.gtin) infos.push("Sem GTIN");
-    if (!produtoEmFoco?.embalagens?.length) infos.push("Sem embalagem");
-    return infos;
-  }, [produtoEmFoco]);
   const produtoPercentualDesconto =
     produtoEmFoco?.preco_promocional && produtoEmFoco.preco
       ? Math.max(0, Math.round((1 - produtoEmFoco.preco_promocional / produtoEmFoco.preco) * 100))
       : null;
-  const formatDeltaPercent = (delta?: number | null) => {
-    if (delta === null || delta === undefined || Number.isNaN(delta)) return "—";
-    return `${delta > 0 ? "▲" : delta < 0 ? "▼" : "—"} ${Math.abs(delta).toFixed(0)}%`;
-  };
-
-  const formatPercent = (value: number | null) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return null;
-    return `${Math.round(value)}%`;
-  };
-
-  const getProdutoMainImage = (produto: Produto | null) => {
-    if (!produto?.imagem_url) return null;
-    return produto.imagem_url;
-  };
-
-  const isPromoAtiva = (produto: Produto | null) => {
-    if (!produto) return false;
-    if (produto.preco == null || produto.preco_promocional == null) return false;
-    return produto.preco_promocional > 0 && produto.preco_promocional < produto.preco;
-  };
-
-  const getPrecoExibido = (produto: Produto | null) => {
-    if (!produto) return { atual: null as number | null, original: null as number | null };
-    if (isPromoAtiva(produto)) return { atual: produto.preco_promocional ?? null, original: produto.preco ?? null };
-    return { atual: produto.preco ?? null, original: null as number | null };
-  };
 
   // Métricas calculadas
   const metrics = useMemo(() => {
@@ -1953,11 +1874,11 @@ export default function ProdutosClient() {
       </section>
 
       {produtoEmFoco && (
-        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overflow-hidden">
+        <section className="rounded-3xl border border-white/10 dark:border-white/6 bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm shadow-md shadow-purple-500/3 p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overflow-hidden">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <button
               type="button"
-              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/50 transition-all"
+              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/40 dark:bg-slate-900/30 border border-white/20 dark:border-white/6 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all backdrop-blur-sm"
               onClick={() =>
                 produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })
               }
@@ -2311,8 +2232,8 @@ export default function ProdutosClient() {
         <>
           <div className="hidden md:block">
             {/* Skeleton da tabela (somente telas bem largas) */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-y-auto">
+              <table className="w-full table-fixed min-w-0">
                 <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
                   <tr>
                     <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Imagem</th>
@@ -2522,8 +2443,8 @@ export default function ProdutosClient() {
                   ))}
                 </div>
 
-                <div className="hidden md:block overflow-x-auto max-h-[600px]">
-                  <table className="w-full">
+                <div className="hidden md:block max-h-[600px] overflow-y-auto">
+                  <table className="w-full table-fixed min-w-0">
                   <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                     <tr>
                       <th className="px-4 py-4 text-center w-12">
@@ -2973,7 +2894,7 @@ type ProdutoRowProps = {
   layout?: 'list' | 'grid';
 };
 
-const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, embalagens, onEmbalagemUpdate, onNotify, layout = 'list' }: ProdutoRowProps) {
+const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, layout = 'list' }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
     color: "bg-slate-100 text-slate-600",
@@ -3015,14 +2936,14 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
         } else {
           setShopeePrice(null);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) setShopeePrice(null);
       }
     };
 
     fetchShopeePrice();
     return () => { cancelled = true; };
-  }, [produto.id_produto_tiny]);
+  }, [produto.id_produto_tiny, produto.codigo]);
 
   const shouldShowPromo =
     discountedPrice != null &&
@@ -3472,11 +3393,11 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           )}
         </div>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4">
-        <div className="text-sm font-medium text-slate-900 dark:text-white">{produto.codigo || "—"}</div>
-        <div className="text-xs text-slate-500 dark:text-slate-300">{produto.gtin || "—"}</div>
+      <td className="px-4 py-3 sm:px-6 sm:py-4 min-w-0">
+        <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{produto.codigo || "—"}</div>
+        <div className="text-xs text-slate-500 dark:text-slate-300 truncate">{produto.gtin || "—"}</div>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 max-w-[320px]">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 max-w-[320px] min-w-0">
         <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
           {produto.nome}
         </div>
@@ -3515,7 +3436,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
         </div>
         {/* Removed 'Pai + variações' display per design */}
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 min-w-0">
         <EmbalagemSelector
           produto={produto}
           embalagens={embalagens}

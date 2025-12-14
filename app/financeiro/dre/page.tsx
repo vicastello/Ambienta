@@ -111,29 +111,6 @@ type DreDetail = {
   channels: DreChannelSummary[];
 };
 
-type GroupKey =
-  | 'RECEITA'
-  | 'CUSTO_VARIAVEL'
-  | 'DESPESA_FIXA'
-  | 'DESPESA_OPERACIONAL'
-  | 'OUTROS';
-
-const GROUP_LABELS: Record<GroupKey, string> = {
-  RECEITA: 'Receita / Operação',
-  CUSTO_VARIAVEL: 'Custos Variáveis',
-  DESPESA_FIXA: 'Despesas Fixas',
-  DESPESA_OPERACIONAL: 'Despesas Operacionais',
-  OUTROS: 'Outros',
-};
-
-const GROUP_ORDER: GroupKey[] = [
-  'RECEITA',
-  'CUSTO_VARIAVEL',
-  'DESPESA_FIXA',
-  'DESPESA_OPERACIONAL',
-  'OUTROS',
-];
-
 const formatCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 

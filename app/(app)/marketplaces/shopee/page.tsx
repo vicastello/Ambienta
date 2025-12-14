@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
   AlertCircle,
   ArrowDownRight,
@@ -8,12 +8,9 @@ import {
   Award,
   BarChart2,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
-  ChevronUp,
   Clock,
   HelpCircle,
-  Info,
   Lightbulb,
   MapPin,
   Package,
@@ -39,45 +36,11 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   AreaChart,
   Area,
 } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { ShopeeOrder, ShopeeOrderStatus } from "@/src/types/shopee";
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// UTILIDADES DE ANIMAÇÃO
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Hook para animação de entrada staggered (escalonada)
-function useStaggeredAnimation(itemCount: number, baseDelay = 50) {
-  return (index: number): CSSProperties => ({
-    animationDelay: `${index * baseDelay}ms`,
-    animationFillMode: "backwards",
-  });
-}
-
-// Componente wrapper para animações de fade-in
-function FadeInUp({ children, delay = 0, className = "" }: { children: React.ReactNode; delay?: number; className?: string }) {
-  return (
-    <div
-      className={`animate-fade-in-up ${className}`}
-      style={{ animationDelay: `${delay}ms`, animationFillMode: "backwards" }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// Componente de pulse suave para elementos que precisam de atenção
-function PulseHighlight({ children, active = false, className = "" }: { children: React.ReactNode; active?: boolean; className?: string }) {
-  return (
-    <div className={`${active ? "animate-pulse-soft" : ""} ${className}`}>
-      {children}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTE DE TOOLTIP REUTILIZÁVEL
@@ -212,8 +175,6 @@ const formatDate = (unixSeconds: number) =>
     minute: "2-digit",
   });
 
-const getStatusStyle = (status: ShopeeOrderStatus) => STATUS_STYLES[status] ?? STATUS_STYLES.PROCESSED;
-
 type Metrics = ReturnType<typeof buildMetricsFromOrders>;
 
 export default function ShopeePage() {
@@ -278,36 +239,6 @@ export default function ShopeePage() {
         }
       })
       .catch(() => {});
-  }, []);
-
-  // Função para executar sync inicial
-  const runInitialSync = useCallback(async () => {
-    setSyncing(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/marketplaces/shopee/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initial: true, periodDays: 90 }),
-      });
-      const json = await res.json();
-      if (!json.ok) {
-        throw new Error(json.error?.message || 'Erro ao sincronizar');
-      }
-      // Atualizar status e recarregar pedidos
-      setSyncStatus({
-        lastSync: new Date().toISOString(),
-        totalInDb: json.data?.ordersProcessed || 0,
-      });
-      setNeedsInitialSync(false);
-      // Recarregar pedidos
-      fetchOrders();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao sincronizar';
-      setError(message);
-    } finally {
-      setSyncing(false);
-    }
   }, []);
 
   const fetchOrders = useCallback(
@@ -391,6 +322,36 @@ export default function ShopeePage() {
     [statusFilter, timeFrom, timeTo, searchDebounced]
   );
 
+  // Função para executar sync inicial
+  const runInitialSync = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/marketplaces/shopee/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initial: true, periodDays: 90 }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error?.message || 'Erro ao sincronizar');
+      }
+      // Atualizar status e recarregar pedidos
+      setSyncStatus({
+        lastSync: new Date().toISOString(),
+        totalInDb: json.data?.ordersProcessed || 0,
+      });
+      setNeedsInitialSync(false);
+      // Recarregar pedidos
+      fetchOrders();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao sincronizar';
+      setError(message);
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchOrders]);
+
   useEffect(() => {
     setOrders([]);
     setNextOffset(undefined);
@@ -414,10 +375,6 @@ export default function ShopeePage() {
           totalOrders={orders.length}
           totalCount={totalCount}
           metrics={metrics}
-          syncing={syncing}
-          needsInitialSync={needsInitialSync}
-          onSync={runInitialSync}
-          syncStatus={syncStatus}
         />
 
         {/* Banner de Sync Inicial */}
@@ -471,6 +428,10 @@ export default function ShopeePage() {
           isMockMode={isMockMode}
           onRetry={() => fetchOrders()}
           onLoadMore={() => typeof nextOffset === "number" && fetchOrders({ offset: nextOffset, append: true })}
+          syncing={syncing}
+          needsInitialSync={needsInitialSync}
+          onSync={runInitialSync}
+          syncStatus={syncStatus}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           sortBy={sortBy}
@@ -778,17 +739,9 @@ function ShopeeHeaderSection({
   totalOrders,
   totalCount,
   metrics,
-  syncing,
-  needsInitialSync,
-  onSync,
-  syncStatus,
 }: ShopeeHeaderProps & { 
   metrics?: Metrics;
   totalCount?: number;
-  syncing?: boolean;
-  needsInitialSync?: boolean;
-  onSync?: () => void;
-  syncStatus?: { lastSync: string | null; totalInDb: number } | null;
 }) {
   const periodLabel = PERIOD_OPTIONS.find((p) => p.days === periodDays)?.label ?? `${periodDays} dias`;
 
@@ -1910,6 +1863,10 @@ type OrdersSectionProps = {
   isMockMode: boolean;
   onRetry: () => void;
   onLoadMore: () => void;
+  syncing?: boolean;
+  needsInitialSync?: boolean;
+  onSync?: () => void;
+  syncStatus?: { lastSync: string | null; totalInDb: number } | null;
   searchTerm: string;
   setSearchTerm: (value: string) => void;
   sortBy: "date" | "value";
@@ -2066,7 +2023,7 @@ function ShopeeOrdersSection({
               id="orders-search"
               type="search"
               aria-label="Buscar por número do pedido ou cliente"
-              className="w-full rounded-2xl bg-white/90 dark:bg-slate-900/60 border border-white/60 dark:border-slate-700/60 pl-11 pr-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]/40 transition-all shadow-sm"
+              className="w-full rounded-2xl bg-white/60 dark:bg-slate-900/40 border border-white/20 dark:border-slate-700/30 pl-11 pr-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]/40 transition-all shadow-sm backdrop-blur-sm"
               placeholder="Buscar por número do pedido ou cliente..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

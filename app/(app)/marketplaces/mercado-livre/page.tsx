@@ -21,7 +21,6 @@ import {
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { MeliOrder } from "@/src/types/mercadoLivre";
-import { chartColors, chartDefaults } from "@/components/charts/chartTheme";
 
 type MeliOrderDb = MeliOrder & {
   buyer_full_name?: string | null;
@@ -95,16 +94,29 @@ const formatDate = (dateStr: string) =>
     minute: "2-digit",
   });
 
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function getPackIdFromOrder(order: MeliOrder): string | number | null {
+  const raw = (order as unknown as { raw_payload?: unknown }).raw_payload;
+  if (!isRecord(raw)) return null;
+  const packId = raw['pack_id'];
+  if (typeof packId === 'string' || typeof packId === 'number') return packId;
+  return null;
+}
+
 // Extract pack_id from raw_payload (ID que o Tiny usa)
 const getDisplayOrderId = (order: MeliOrder): string | number => {
   try {
-    const raw = (order as any).raw_payload;
-    const packId = raw?.pack_id;
+    const packId = getPackIdFromOrder(order);
     // Se tiver pack_id, retorna ele (é o que o Tiny usa)
     if (packId) {
       return packId;
     }
-  } catch (e) {
+  } catch {
     // Ignore errors, fallback to order.id
   }
   return order.id;
@@ -137,7 +149,7 @@ export default function MercadoLivrePage() {
     return orders.filter(
       (o) => {
         const displayId = String(getDisplayOrderId(o));
-        const packId = (o as any).raw_payload?.pack_id;
+        const packId = getPackIdFromOrder(o);
         return (
           String(o.id).toLowerCase().includes(term) ||
           displayId.toLowerCase().includes(term) ||
@@ -1087,7 +1099,7 @@ function MeliOrdersTable({
               </td>
               <td className="py-3 pr-4 font-semibold">
                 {getDisplayOrderId(order) ?? `#${idx + 1}`}
-                {(order as any).raw_payload?.pack_id && (order as any).raw_payload.pack_id !== order.id && (
+                {getPackIdFromOrder(order) && getPackIdFromOrder(order) !== order.id && (
                   <span className="block text-xs text-slate-500 font-normal">
                     ID individual: {order.id}
                   </span>
@@ -1177,7 +1189,6 @@ function MeliOrdersCardsMobile({
           "—";
         const coverAlt =
           clientName && clientName !== "—" ? `Pedido de ${clientName}` : `Pedido ${order.id ?? `#${idx + 1}`}`;
-        const carrier = order.shipping?.shipping_mode || order.shipping?.id || "—";
         const expanded = expandedOrders[String(order.id)];
         return (
           <div
@@ -1190,7 +1201,7 @@ function MeliOrdersCardsMobile({
                 <p className="text-lg font-semibold text-slate-900 dark:text-white">
                   {getDisplayOrderId(order)}
                 </p>
-                {(order as any).raw_payload?.pack_id && (order as any).raw_payload.pack_id !== order.id && (
+                {getPackIdFromOrder(order) && getPackIdFromOrder(order) !== order.id && (
                   <p className="text-xs text-slate-500">
                     ID individual: {order.id}
                   </p>
