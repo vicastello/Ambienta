@@ -7,23 +7,25 @@ export async function GET(req: Request) {
   const skuParam = url.searchParams.get('sku');
 
   try {
-    // Determine marketplace SKU either from provided sku or from mapping table
-    let marketplaceSku: string | null = skuParam;
+    // Determina o SKU da Shopee priorizando o mapping (tinyId -> marketplace_sku).
+    // O `sku` na query é apenas fallback (muitas vezes é o `produto.codigo` do Tiny e não o SKU da Shopee).
+    let marketplaceSku: string | null = null;
     let mappingUsed = false;
 
-    if (!marketplaceSku && tinyIdParam) {
+    if (tinyIdParam) {
       const tinyId = Number(tinyIdParam);
       if (!Number.isFinite(tinyId)) {
         return NextResponse.json({ ok: false, error: 'invalid_tinyId' }, { status: 400 });
       }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: mapping } = await (supabaseAdmin as any)
         .from('marketplace_sku_mapping')
-        .select('marketplace,marketplace_sku')
+        .select('marketplace_sku')
         .eq('marketplace', 'shopee')
         .eq('tiny_product_id', tinyId)
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (mapping?.marketplace_sku) {
         marketplaceSku = mapping.marketplace_sku;
@@ -31,8 +33,12 @@ export async function GET(req: Request) {
       }
     }
 
+    if (!marketplaceSku && skuParam) {
+      marketplaceSku = skuParam;
+    }
+
     if (!marketplaceSku) {
-      return NextResponse.json({ ok: true, price: null, meta: { skuUsed: null, mappingUsed } });
+      return NextResponse.json({ ok: true, original: null, discounted: null, meta: { skuUsed: null, mappingUsed } });
     }
 
     // Query recent shopee order items matching the SKU (model_sku or item_sku)
