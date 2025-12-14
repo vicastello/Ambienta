@@ -1901,10 +1901,7 @@ export default function ProdutosClient() {
               <div className="p-4 border-t border-slate-200 dark:border-slate-700 shrink-0">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleFiltersSubmit();
-                  }}
+                  onClick={handleFiltersSubmit}
                   className="w-full rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-3 text-sm font-semibold"
                 >
                   Aplicar filtros
@@ -2674,12 +2671,11 @@ export default function ProdutosClient() {
           )}
         </button>
 
-        {/* Scroll to top button */}
+        {/* Scroll to top button - always visible on mobile */}
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className="absolute -left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
           aria-label="Voltar ao topo"
-          style={{ display: typeof window !== 'undefined' && window.scrollY > 200 ? 'flex' : 'none' }}
         >
           <ChevronUp className="w-5 h-5" />
         </button>
