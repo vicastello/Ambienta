@@ -2015,28 +2015,6 @@ export default function ProdutosClient() {
 
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300 min-w-0">
                     {produtoEmFoco.codigo ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(produtoEmFoco.codigo!, () => {
-                            setCopiedField('codigo');
-                            setTimeout(() => setCopiedField(null), 2000);
-                            setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
-                          })
-                        }
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm group"
-                        title="Copiar código"
-                        aria-label={`Copiar código ${produtoEmFoco.codigo}`}
-                      >
-                        <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
-                        {copiedField === 'codigo' ? (
-                          <Check className="w-3 h-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                        )}
-                      </button>
-                    ) : null}
-                    {produtoEmFoco.codigo ? (
                       <div className="inline-flex items-center gap-2">
                         <button
                           type="button"
