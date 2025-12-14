@@ -20,6 +20,7 @@ type SparkDatum = {
 type MicroTrendChartProps = {
   data: SparkDatum[];
   formatter?: CustomTooltipFormatter;
+  containerClassName?: string;
 };
 
 type MicroTooltipProps = {
@@ -27,7 +28,7 @@ type MicroTooltipProps = {
   payload?: ReadonlyArray<{ payload?: SparkDatum; value?: ChartTooltipValue; dataKey?: string }>;
 };
 
-const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => {
+const MicroTrendChartComponent = ({ data, formatter, containerClassName }: MicroTrendChartProps) => {
   const gradientId = 'microTrendFill';
   const gradientPrevId = 'microTrendPrevFill';
   const chartData = useMemo(() => data, [data]);
@@ -107,7 +108,7 @@ const MicroTrendChartComponent = ({ data, formatter }: MicroTrendChartProps) => 
   };
 
   return (
-    <div className="h-32 sm:h-36 w-full">
+    <div className={containerClassName ?? 'h-32 sm:h-36 w-full'}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={processedData}

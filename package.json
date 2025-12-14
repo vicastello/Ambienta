@@ -46,6 +46,7 @@
     "baseline-browser-mapping": "^2.8.32",
     "eslint": "^9",
     "eslint-config-next": "16.0.5",
+    "playwright": "^1.57.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.1",
     "tsx": "^4.20.6",

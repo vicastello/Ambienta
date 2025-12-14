@@ -1322,7 +1322,7 @@ export default function ProdutosClient() {
 
   return (
     <div 
-      className="space-y-6"
+      className="space-y-6 min-w-0 overflow-x-hidden"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1350,8 +1350,10 @@ export default function ProdutosClient() {
               <Package className="w-4 h-4 text-purple-600" />
               Catálogo
             </div>
-              <div className="flex items-center gap-3 mt-4">
-                <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">Inventário Tiny sincronizado</h1>
+              <div className="flex flex-col gap-2 mt-4 sm:flex-row sm:items-center sm:gap-3 min-w-0">
+                <h1 className="text-3xl font-semibold text-slate-900 dark:text-white break-words min-w-0">
+                  Inventário Tiny sincronizado
+                </h1>
                 {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/25 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-100">
                   {produtosFiltrados.length} / {produtos.length} nesta página
@@ -1763,7 +1765,7 @@ export default function ProdutosClient() {
               className="absolute inset-0 bg-slate-900/40"
               onClick={() => setMobileFiltersOpen(false)}
             />
-            <div className="absolute inset-x-0 bottom-0 rounded-t-[32px] bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
+            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[32px] bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Filtros</p>
@@ -1905,7 +1907,7 @@ export default function ProdutosClient() {
       </section>
 
       {produtoEmFoco && (
-        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-6 md:p-7 space-y-6">
+        <section className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/90 dark:bg-slate-900/70 shadow-lg shadow-purple-500/5 p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overflow-hidden">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <button
               type="button"
@@ -1927,13 +1929,13 @@ export default function ProdutosClient() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug">{produtoEmFoco.nome}</h2>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug break-words min-w-0 flex-1">{produtoEmFoco.nome}</h2>
                     <a
                       href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       title="Ver produto no Tiny"
-                      className="text-slate-400 hover:text-slate-600 dark:text-slate-300 ml-1"
+                      className="text-slate-400 hover:text-slate-600 dark:text-slate-300 ml-1 shrink-0"
                       aria-label="Abrir no Tiny"
                     >
                       <ExternalLink className="w-4 h-4 inline-block" />
@@ -1955,7 +1957,7 @@ export default function ProdutosClient() {
                     {/* desconto exibido apenas na coluna de preço (direita) */}
                   </div>
 
-                  <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300 min-w-0">
                     {produtoEmFoco.codigo ? (
                       <button
                         type="button"
@@ -1979,7 +1981,7 @@ export default function ProdutosClient() {
                       </button>
                     ) : null}
 
-                    <div className="min-w-0 truncate">
+                    <div className="min-w-0 truncate flex-1">
                       <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
                     </div>
 
@@ -1993,7 +1995,7 @@ export default function ProdutosClient() {
                             setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
                           })
                         }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group ml-auto"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group sm:ml-auto"
                         title="Copiar GTIN"
                         aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
                       >
@@ -2176,7 +2178,7 @@ export default function ProdutosClient() {
       )}
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
-        <div className="hidden md:flex items-center justify-between gap-3 px-6 pt-5 pb-2">
+        <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Catálogo</div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 dark:text-slate-300">Visualização</span>
@@ -2184,7 +2186,7 @@ export default function ProdutosClient() {
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
                   viewMode === 'table'
                     ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
@@ -2197,7 +2199,7 @@ export default function ProdutosClient() {
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
                   viewMode === 'grid'
                     ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
@@ -2246,56 +2248,58 @@ export default function ProdutosClient() {
           </div>
         )}
       {loading ? (
-        <div className="hidden md:block">
-          {/* Skeleton da tabela */}
+        <>
+          <div className="hidden 2xl:block">
+            {/* Skeleton da tabela (somente telas bem largas) */}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
                   <tr>
-                    <th className="px-6 py-4 text-left">Imagem</th>
-                    <th className="px-6 py-4 text-left">Código</th>
-                    <th className="px-6 py-4 text-left">Produto</th>
-                    <th className="px-6 py-4 text-left">Tipo</th>
-                    <th className="px-6 py-4 text-right">Preço</th>
-                    <th className="px-6 py-4 text-left">Estoque</th>
-                    <th className="px-6 py-4 text-left">Embalagem</th>
-                    <th className="px-6 py-4 text-center">Status</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Imagem</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Código</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Produto</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Tipo</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-right">Preço</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Estoque</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Embalagem</th>
+                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Array.from({ length: 8 }).map((_, i) => (
                     <tr key={i} className="border-b border-white/10 animate-pulse">
-                      <td className="px-6 py-4"><div className="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4 text-right"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
-                      <td className="px-6 py-4"><div className="h-5 w-32 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-right"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-5 w-32 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
+                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto" /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-        ) : loading ? (
-          <div className="md:hidden p-4 space-y-3">
-            {/* Skeleton mobile */}
-            {Array.from({ length: 5 }).map((_, i) => (
+
+          <div className="2xl:hidden p-4 space-y-3">
+            {/* Skeleton cards (mobile/tablet/notebooks menores) */}
+            {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="app-card p-4 animate-pulse">
                 <div className="flex gap-3">
                   <div className="w-16 h-16 rounded-2xl bg-slate-200 dark:bg-slate-700" />
                   <div className="flex-1 space-y-2">
                     <div className="h-4 w-3/4 rounded bg-slate-200 dark:bg-slate-700" />
                     <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-slate-700" />
-                    <div className="h-6 w-20 rounded-full bg-slate-200 dark:bg-slate-700" />
+                    <div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" />
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        ) : !produtos.length ? (
+        </>
+      ) : !produtos.length ? (
           <div className="px-8 py-16 text-center">
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-100 to-slate-100 dark:from-purple-500/20 dark:to-slate-500/20 flex items-center justify-center">
               <Package className="w-10 h-10 text-purple-400" />
@@ -2336,39 +2340,83 @@ export default function ProdutosClient() {
           </div>
         ) : (
           <>
-            {/* Mobile - Infinite Scroll */}
-            <div className="md:hidden space-y-3 p-4">
-              {mobileProducts.map((produto) => (
-                <ProdutoCard
-                  key={produto.id}
-                  produto={produto}
-                  selected={produtoSelecionadoId === produto.id_produto_tiny}
-                  onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
-                  embalagens={embalagens}
-                  onEmbalagemUpdate={handleEmbalagemUpdate}
-                  onNotify={(type, message) => setNotification({ type, message })}
-                />
-              ))}
-              
-              {/* Infinite scroll loader */}
-              <div ref={mobileLoaderRef} className="py-4 flex justify-center">
-                {mobileHasMore && (
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Carregando mais...</span>
+            {/* Mobile - mostra cards ou infinite-scroll conforme viewMode */}
+            {viewMode === 'grid' ? (
+              <div>
+                <div className="md:hidden px-4 pb-2 flex items-center gap-2">
+                  <div className="text-xs text-slate-500 dark:text-slate-300">Visualização</div>
+                  <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800/70 p-1 border border-white/40 dark:border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('table')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                        viewMode !== 'grid'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                      }`}
+                    >
+                      <Rows className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('grid')}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
+                        viewMode === 'grid'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                      }`}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
                   </div>
-                )}
-                {!mobileHasMore && mobileProducts.length > 0 && (
-                  <p className="text-sm text-slate-400">
-                    Mostrando todos os {mobileProducts.length} produtos
-                  </p>
-                )}
+                </div>
+                <div className="md:hidden grid grid-cols-2 gap-3 p-4">
+                {produtosFiltrados.map((produto) => (
+                  <ProdutoCard
+                    key={produto.id}
+                    produto={produto}
+                    selected={produtoSelecionadoId === produto.id_produto_tiny}
+                    onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                    embalagens={embalagens}
+                    onEmbalagemUpdate={handleEmbalagemUpdate}
+                    onNotify={(type, message) => setNotification({ type, message })}
+                    layout="grid"
+                  />
+                ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="md:hidden space-y-3 p-4">
+                {mobileProducts.map((produto) => (
+                  <ProdutoCard
+                    key={produto.id}
+                    produto={produto}
+                    selected={produtoSelecionadoId === produto.id_produto_tiny}
+                    onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                    embalagens={embalagens}
+                    onEmbalagemUpdate={handleEmbalagemUpdate}
+                    onNotify={(type, message) => setNotification({ type, message })}
+                  />
+                ))}
+
+                {/* Infinite scroll loader */}
+                <div ref={mobileLoaderRef} className="py-4 flex justify-center">
+                  {mobileHasMore && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Carregando mais...</span>
+                    </div>
+                  )}
+                  {!mobileHasMore && mobileProducts.length > 0 && (
+                    <p className="text-sm text-slate-400">Mostrando todos os {mobileProducts.length} produtos</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Barra de ações em lote */}
             {selectedIds.size > 0 && viewMode === 'table' && (
-              <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
+              <div className="hidden 2xl:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={clearSelection}
@@ -2398,8 +2446,24 @@ export default function ProdutosClient() {
             )}
 
             {viewMode === 'table' ? (
-              <div className="hidden md:block overflow-x-auto max-h-[600px]">
-                <table className="w-full">
+              <>
+                {/* Em telas menores, tabela vira cards para evitar overflow horizontal */}
+                <div className="hidden md:block 2xl:hidden space-y-3 p-4">
+                  {produtosFiltrados.map((produto) => (
+                    <ProdutoCard
+                      key={produto.id}
+                      produto={produto}
+                      selected={produtoSelecionadoId === produto.id_produto_tiny}
+                      onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                      embalagens={embalagens}
+                      onEmbalagemUpdate={handleEmbalagemUpdate}
+                      onNotify={(type, message) => setNotification({ type, message })}
+                    />
+                  ))}
+                </div>
+
+                <div className="hidden 2xl:block overflow-x-auto max-h-[600px]">
+                  <table className="w-full">
                   <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
                     <tr>
                       <th className="px-4 py-4 text-center w-12">
@@ -2422,8 +2486,8 @@ export default function ProdutosClient() {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4 text-left">Imagem</th>
-                      <th className="px-6 py-4 text-left">
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Imagem</th>
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
                         <button
                           onClick={() => handleSort('codigo')}
                           className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
@@ -2434,7 +2498,7 @@ export default function ProdutosClient() {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4 text-left">
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
                         <button
                           onClick={() => handleSort('nome')}
                           className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
@@ -2445,8 +2509,8 @@ export default function ProdutosClient() {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4 text-left">Tipo</th>
-                      <th className="px-6 py-4 text-right">
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Tipo</th>
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-right">
                         <button
                           onClick={() => handleSort('preco')}
                           className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
@@ -2457,7 +2521,7 @@ export default function ProdutosClient() {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4 text-left">
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
                         <button
                           onClick={() => handleSort('disponivel')}
                           className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
@@ -2468,8 +2532,8 @@ export default function ProdutosClient() {
                           )}
                         </button>
                       </th>
-                      <th className="px-6 py-4 text-left">Embalagem</th>
-                      <th className="px-6 py-4 text-center">Status</th>
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Embalagem</th>
+                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-center">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2488,8 +2552,9 @@ export default function ProdutosClient() {
                       />
                     ))}
                   </tbody>
-                </table>
-              </div>
+                  </table>
+                </div>
+              </>
             ) : (
               <div className="hidden md:block px-4 pb-6">
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -2514,7 +2579,7 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-white/20 dark:border-white/5 px-6 py-4 flex items-center justify-between">
+              <div className="border-t border-white/20 dark:border-white/5 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between">
                 <div className="text-sm text-slate-500">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
@@ -2666,7 +2731,7 @@ export default function ProdutosClient() {
         {/* Scroll to top button */}
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="absolute -left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          className="absolute left-4 sm:-left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
           aria-label="Voltar ao topo"
         >
           <ChevronUp className="w-5 h-5" />
@@ -2874,65 +2939,73 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
           onSelect();
         }
       }}
-      className={`app-card p-4 flex ${isGrid ? 'flex-col items-start gap-4' : 'gap-3'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
+      className={`app-card p-4 ${isGrid ? 'w-full flex-col items-start gap-4' : 'gap-3 flex'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
         selected
           ? "ring-2 ring-purple-500 shadow-lg shadow-purple-500/20 border-purple-500 bg-purple-50/80 dark:bg-purple-500/10"
           : ""
       }`}
     >
-      <div className={`${isGrid ? 'w-full h-44 sm:h-52 rounded-3xl' : 'w-16 h-16 rounded-2xl shrink-0'} bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60`}>
+      <div className={`${isGrid ? 'w-full aspect-square rounded-3xl' : 'w-16 h-16 rounded-2xl shrink-0'} bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60`}>
         {produto.imagem_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />
+          <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover block" />
         ) : (
-          <Package className="w-5 h-5 text-slate-400" />
+          <div className="w-10 h-10 flex items-center justify-center">
+            <Package className="w-5 h-5 text-slate-400" />
+          </div>
         )}
       </div>
       <div className="flex-1 min-w-0 space-y-2">
         <div className={`flex ${isGrid ? 'flex-col items-start gap-2' : 'items-start justify-between gap-2'}`}>
-          <div className={`min-w-0 ${isGrid ? 'space-y-1' : ''}`}>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
+          <div className={`min-w-0 ${isGrid ? 'space-y-1' : ''}`}> 
+            <div className="flex items-center gap-3 min-w-0">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
+              {isGrid && (
+                <div className="ml-2 flex-shrink-0 text-right">
+                  <div className="font-extrabold text-lg text-slate-900 dark:text-white">{formatBRL(produto.preco)}</div>
+                </div>
+              )}
+            </div>
+            {isGrid ? (
+              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.gtin || '—'}</p>
+            ) : (
+              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
+            )}
           </div>
           <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
             {sitConfig.label}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${tipoConfig.color}`}>
-            {tipoConfig.label}
-          </span>
-          <span className={`font-semibold text-slate-900 dark:text-white ${isGrid ? 'text-lg' : ''}`}>{formatBRL(produto.preco)}</span>
-          {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
-            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-100">
-              Promo {formatBRL(produto.preco_promocional)}
-            </span>
-          )}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${tipoConfig.color} text-[12px]`}>{tipoConfig.label}</span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="text-right">
+              <div className={`font-extrabold ${isGrid ? 'text-2xl' : 'text-base'} text-slate-900 dark:text-white`}>{formatBRL(produto.preco)}</div>
+              {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
+                <div className="text-xs text-emerald-700">Promo {formatBRL(produto.preco_promocional)}</div>
+              )}
+            </div>
+          </div>
         </div>
-        <div className={`grid text-xs ${isGrid ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-3'} gap-2`}>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500 dark:text-slate-300">Estoque</p>
-            <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.saldo)}</p>
+
+        <div className={`grid ${isGrid ? 'grid-cols-3' : 'grid-cols-3'} gap-2 mt-2`}>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-slate-500 dark:text-slate-300">Estoque</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-slate-900 dark:text-white`}>{formatNumber(produto.saldo)}</p>
           </div>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500 dark:text-slate-300">Reservado</p>
-            <p className="font-semibold text-slate-900 dark:text-white">{formatNumber(produto.reservado)}</p>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-slate-500 dark:text-slate-300">Reservado</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-slate-900 dark:text-white`}>{formatNumber(produto.reservado)}</p>
           </div>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-1.5 text-center">
-            <p className="text-[10px] text-slate-500 dark:text-slate-300">Disponível total</p>
-            <p
-              className={`font-semibold ${
-                disponivelSnapshot <= 0
-                  ? "text-rose-600"
-                  : temEstoqueBaixo
-                  ? "text-amber-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {formatNumber(disponivelSnapshot)}
-            </p>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-slate-500 dark:text-slate-300">Disponível</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} ${
+              disponivelSnapshot <= 0 ? 'text-rose-600' : temEstoqueBaixo ? 'text-amber-600' : 'text-emerald-600'
+            }`}>{formatNumber(disponivelSnapshot)}</p>
             {produto.disponivel_total != null && (
-              <p className="text-[10px] text-slate-400">Pai + variações</p>
+              <p className="text-[10px] text-slate-400 mt-1">Pai + variações</p>
             )}
           </div>
         </div>
@@ -3246,7 +3319,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
       tabIndex={0}
       aria-pressed={Boolean(selected)}
     >
-      <td className="px-4 py-4 text-center">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -3261,7 +3334,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           )}
         </button>
       </td>
-      <td className="px-6 py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4">
         <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 group-hover:ring-2 group-hover:ring-purple-200 dark:group-hover:ring-purple-500/30 transition-all">
           {produto.imagem_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -3271,27 +3344,27 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           )}
         </div>
       </td>
-      <td className="px-6 py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4">
         <div className="text-sm font-medium text-slate-900 dark:text-white">{produto.codigo || "—"}</div>
         <div className="text-xs text-slate-500 dark:text-slate-300">GTIN {produto.gtin || "—"}</div>
       </td>
-      <td className="px-6 py-4 max-w-[320px]">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 max-w-[320px]">
         <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
           {produto.nome}
         </div>
       </td>
-      <td className="px-6 py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4">
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoConfig.color}`}>
           {tipoConfig.label}
         </span>
       </td>
-      <td className="px-6 py-4 text-right">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
         <div className="text-sm font-semibold text-slate-900 dark:text-white">{formatBRL(produto.preco)}</div>
         {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
           <div className="text-xs text-emerald-600">Promo {formatBRL(produto.preco_promocional)}</div>
         )}
       </td>
-      <td className="px-6 py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
             Saldo {formatNumber(produto.saldo)}
@@ -3316,7 +3389,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           <div className="text-[10px] text-slate-400 mt-1">Pai + variações</div>
         )}
       </td>
-      <td className="px-6 py-4">
+      <td className="px-4 py-3 sm:px-6 sm:py-4">
         <EmbalagemSelector
           produto={produto}
           embalagens={embalagens}
@@ -3325,7 +3398,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           onConfirmEmbalagemRemove={onConfirmEmbalagemRemove}
         />
       </td>
-      <td className="px-6 py-4 text-center">
+      <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
           {sitConfig.label}
         </span>

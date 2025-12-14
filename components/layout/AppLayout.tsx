@@ -401,7 +401,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 transition-all duration-300 ml-0 lg:ml-[4.5rem]">
+      <main className="flex-1 min-w-0 transition-all duration-300 ml-0 lg:ml-[4.5rem]">
         <div className="w-full max-w-[1600px] mx-auto relative z-10">
           <div className="relative min-h-screen px-4 sm:px-6 lg:px-12 pt-20 pb-28 lg:pt-8 lg:pb-10">
             <div className="pointer-events-none fixed inset-0 overflow-hidden flex justify-center">
