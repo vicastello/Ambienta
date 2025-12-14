@@ -3003,7 +3003,11 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
                   ) : originalPrice != null ? (
                     formatBRL(originalPrice)
                   ) : (
-                    shopeePrice === undefined ? formatBRL(produto.preco) : '—'
+                    shopeePrice === undefined
+                      ? (produto.preco_promocional && produto.preco_promocional < (produto.preco || 0)
+                          ? formatBRL(produto.preco_promocional)
+                          : formatBRL(produto.preco))
+                      : '—'
                   )}
                 </div>
               </div>
@@ -3026,7 +3030,11 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
                 ) : originalPrice != null ? (
                   formatBRL(originalPrice)
                 ) : (
-                  shopeePrice === undefined ? formatBRL(produto.preco) : '—'
+                  shopeePrice === undefined
+                    ? (produto.preco_promocional && produto.preco_promocional < (produto.preco || 0)
+                        ? formatBRL(produto.preco_promocional)
+                        : formatBRL(produto.preco))
+                    : '—'
                 )}
               </div>
             </div>
