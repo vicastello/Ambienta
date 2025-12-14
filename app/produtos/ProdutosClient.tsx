@@ -2066,28 +2066,7 @@ export default function ProdutosClient() {
                       <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
                     </div>
 
-                    {produtoEmFoco.gtin && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(produtoEmFoco.gtin!, () => {
-                            setCopiedField('gtin');
-                            setTimeout(() => setCopiedField(null), 2000);
-                            setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group sm:ml-auto"
-                        title="Copiar GTIN"
-                        aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
-                      >
-                        <span className="font-mono">{produtoEmFoco.gtin}</span>
-                        {copiedField === 'gtin' ? (
-                          <Check className="w-3 h-3 text-emerald-500" />
-                        ) : (
-                          <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
-                        )}
-                      </button>
-                    )}
+                    {/* Removed duplicate GTIN button (now shown inline with SKU above) */}
                   </div>
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
