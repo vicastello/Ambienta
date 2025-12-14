@@ -2036,6 +2036,53 @@ export default function ProdutosClient() {
                         )}
                       </button>
                     ) : null}
+                    {produtoEmFoco.codigo ? (
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyToClipboard(produtoEmFoco.codigo!, () => {
+                              setCopiedField('codigo');
+                              setTimeout(() => setCopiedField(null), 2000);
+                              setNotification({ type: 'success', message: `${produtoEmFoco.codigo} copiado!` });
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm group"
+                          title="Copiar código"
+                          aria-label={`Copiar código ${produtoEmFoco.codigo}`}
+                        >
+                          <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
+                          {copiedField === 'codigo' ? (
+                            <Check className="w-3 h-3 text-emerald-500" />
+                          ) : (
+                            <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
+                          )}
+                        </button>
+                        {produtoEmFoco.gtin ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyToClipboard(produtoEmFoco.gtin!, () => {
+                                setCopiedField('gtin');
+                                setTimeout(() => setCopiedField(null), 2000);
+                                setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                            title="Copiar GTIN"
+                            aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
+                          >
+                            <span className="font-mono text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.gtin}</span>
+                            {copiedField === 'gtin' ? (
+                              <Check className="w-3 h-3 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-3 h-3 opacity-50 hover:opacity-100 dark:opacity-70 transition-opacity" />
+                            )}
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {/* GTIN agora mostrado ao lado do SKU (acima) */}
 
                     <div className="min-w-0 truncate flex-1">
                       <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
