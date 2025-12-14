@@ -59,7 +59,10 @@ type ProdutoEmFocoCardProps = {
   estoqueParaRuptura: number;
   mediaDiariaVendas: number;
   estoqueLiveLoading: boolean;
-  // Removed stray JSX line
+  estoqueLiveError: string | null;
+  onRefreshEstoque: () => void;
+  trendPreset: ProdutoSeriePreset;
+  trendPresetOptions: ProdutoSeriePresetOption[];
   onTrendPresetChange: (preset: ProdutoSeriePreset) => void;
   trendLoading: boolean;
   trendError: string | null;
@@ -138,9 +141,12 @@ const ProdutoEmFocoCardComponent = ({
     () => calculateDiscount(produto.preco, produto.preco_promocional),
     [produto.preco, produto.preco_promocional]
   );
-  const temPromo = desconto.percent > 0;
-  const produtoPercentualDesconto = desconto.percent;
+  const temPromo = desconto !== null && desconto > 0;
+  const produtoPercentualDesconto = desconto ?? 0;
   const precoAtual = temPromo ? produto.preco_promocional : produto.preco;
+  const descontoValor = temPromo && produto.preco && produto.preco_promocional 
+    ? produto.preco - produto.preco_promocional 
+    : null;
 
   const produtoDiasParaZerar = useMemo(() => {
     if (!mediaDiariaVendas || mediaDiariaVendas <= 0) return null;
@@ -321,7 +327,7 @@ const ProdutoEmFocoCardComponent = ({
                     ) : null}
                     {temPromo && (
                       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
-                        Economia de <span className="font-semibold">{formatBRL(desconto.value)}</span>
+                        Economia de <span className="font-semibold">{formatBRL(descontoValor)}</span>
                       </p>
                     )}
                   </div>
