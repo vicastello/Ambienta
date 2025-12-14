@@ -2928,6 +2928,9 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
   const isGrid = layout === 'grid';
   const [shopeePrice, setShopeePrice] = useState<{ original: number | null; discounted: number | null } | null | undefined>(undefined);
 
+  const originalPrice = shopeePrice?.original ?? produto.preco ?? null;
+  const discountedPrice = shopeePrice?.discounted ?? produto.preco_promocional ?? null;
+
   useEffect(() => {
     let cancelled = false;
     const fetchShopeePrice = async () => {
@@ -2960,6 +2963,13 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
     fetchShopeePrice();
     return () => { cancelled = true; };
   }, [produto.id_produto_tiny]);
+
+  const shouldShowPromo =
+    discountedPrice != null &&
+    originalPrice != null &&
+    Number.isFinite(discountedPrice) &&
+    Number.isFinite(originalPrice) &&
+    discountedPrice < originalPrice;
 
   return (
     <article
@@ -3002,23 +3012,17 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
               </div>
               <div className="text-right flex-shrink-0 self-start">
                 <div className="font-extrabold text-base text-slate-900 dark:text-white">
-                  {shopeePrice === undefined ? (
-                    formatBRL(produto.preco)
-                  ) : shopeePrice === null ? (
-                    '—'
+                  {shouldShowPromo ? (
+                    <>
+                      <span className="text-sky-600">{formatBRL(discountedPrice)}</span>
+                      <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(originalPrice)}</span>
+                    </>
+                  ) : discountedPrice != null ? (
+                    formatBRL(discountedPrice)
+                  ) : originalPrice != null ? (
+                    formatBRL(originalPrice)
                   ) : (
-                    shopeePrice.discounted != null && shopeePrice.original != null && shopeePrice.discounted < shopeePrice.original ? (
-                      <>
-                        <span className="text-sky-600">{formatBRL(shopeePrice.discounted)}</span>
-                        <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(shopeePrice.original)}</span>
-                      </>
-                    ) : shopeePrice.discounted != null ? (
-                      formatBRL(shopeePrice.discounted)
-                    ) : shopeePrice.original != null ? (
-                      formatBRL(shopeePrice.original)
-                    ) : (
-                      '—'
-                    )
+                    shopeePrice === undefined ? formatBRL(produto.preco) : '—'
                   )}
                 </div>
               </div>
@@ -3030,22 +3034,20 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, emb
               <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · GTIN {produto.gtin || "—"}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <div className="font-extrabold text-base text-slate-900 dark:text-white">{
-                shopeePrice === undefined ? formatBRL(produto.preco) : shopeePrice === null ? '—' : (
-                  shopeePrice.discounted != null && shopeePrice.original != null && shopeePrice.discounted < shopeePrice.original ? (
-                    <>
-                      <span className="text-sky-600">{formatBRL(shopeePrice.discounted)}</span>
-                      <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(shopeePrice.original)}</span>
-                    </>
-                  ) : shopeePrice.discounted != null ? (
-                    formatBRL(shopeePrice.discounted)
-                  ) : shopeePrice.original != null ? (
-                    formatBRL(shopeePrice.original)
-                  ) : (
-                    '—'
-                  )
-                )
-              }</div>
+              <div className="font-extrabold text-base text-slate-900 dark:text-white">
+                {shouldShowPromo ? (
+                  <>
+                    <span className="text-sky-600">{formatBRL(discountedPrice)}</span>
+                    <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(originalPrice)}</span>
+                  </>
+                ) : discountedPrice != null ? (
+                  formatBRL(discountedPrice)
+                ) : originalPrice != null ? (
+                  formatBRL(originalPrice)
+                ) : (
+                  shopeePrice === undefined ? formatBRL(produto.preco) : '—'
+                )}
+              </div>
             </div>
           </div>
         )}
