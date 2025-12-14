@@ -14,7 +14,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
-import type { Produto } from "../types";
+import type { Produto, ProdutoSeriePreset, ProdutoSeriePresetOption, ProdutoTrendDatum } from "../types";
 import { calculateDiscount, formatBRL, formatDeltaPercent, formatNumber } from "../utils";
 import { ProdutoTrendChart } from "./ProdutoTrendChart";
 
@@ -28,19 +28,6 @@ type BadgeInfo = {
 
 type SituacaoInfo = BadgeInfo & {
   bg: string;
-};
-
-type ProdutoSeriePreset = "30d" | "month" | "year";
-
-type ProdutoSeriePresetOption = {
-  value: ProdutoSeriePreset;
-  label: string;
-};
-
-type ProdutoTrendDatum = {
-  label: string;
-  receita: number;
-  quantidade: number;
 };
 
 type ProdutoEmFocoCardProps = {
@@ -59,7 +46,10 @@ type ProdutoEmFocoCardProps = {
   estoqueParaRuptura: number;
   mediaDiariaVendas: number;
   estoqueLiveLoading: boolean;
-  // Removed stray JSX line
+  estoqueLiveError: string | null;
+  onRefreshEstoque: () => void;
+  trendPreset: ProdutoSeriePreset;
+  trendPresetOptions: ProdutoSeriePresetOption[];
   onTrendPresetChange: (preset: ProdutoSeriePreset) => void;
   trendLoading: boolean;
   trendError: string | null;

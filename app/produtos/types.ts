@@ -28,6 +28,17 @@ export type Produto = {
 
 export type ProdutoSeriePreset = "30d" | "month" | "year";
 
+export type ProdutoSeriePresetOption = {
+  value: ProdutoSeriePreset;
+  label: string;
+};
+
+export type ProdutoTrendDatum = {
+  label: string;
+  receita: number;
+  quantidade: number;
+};
+
 export type ProdutoDesempenhoPoint = {
   data: string;
   quantidade: number;
