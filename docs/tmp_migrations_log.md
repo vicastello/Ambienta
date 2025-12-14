@@ -1,3 +1,17 @@
+# 2025-12-14 - Tentativa de aplicação migration drop sync_produtos_from_tiny
+
+⚠️ **BLOQUEIO**: Não foi possível executar `supabase db push --linked --include-all` localmente porque:
+- O projeto Supabase não está linkado (`.supabase/` não existe)
+- Não há credenciais configuradas no ambiente de CI
+
+**Observação**: De acordo com registros anteriores neste arquivo, a migration já foi aplicada múltiplas vezes com sucesso ("Remote database is up to date").
+
+Migration em questão: `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql`
+
+Para confirmar que o job cron e a função legacy foram removidos, rode **manualmente** no Supabase Studio:
+
+---
+
 # 2025-12-13 - Aplicação migration drop sync_produtos_from_tiny
 
 Executado `supabase db push --linked --include-all` com sucesso.
