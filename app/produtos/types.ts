@@ -33,6 +33,12 @@ export type ProdutoSeriePresetOption = {
   label: string;
 };
 
+export type ProdutoTrendDatum = {
+  label: string;
+  receita: number;
+  quantidade: number;
+};
+
 export type ProdutoDesempenhoPoint = {
   data: string;
   quantidade: number;
