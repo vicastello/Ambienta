@@ -1,16 +1,18 @@
 // @ts-nocheck
-import { listarPedidosTiny, listarPedidosTinyPorPeriodo, TinyApiError, TinyPedidoListaItem } from './tinyApi';
+import { listarPedidosTiny, listarPedidosTinyPorPeriodo, obterPedidoDetalhado, TinyApiError, TinyPedidoListaItem } from './tinyApi';
 import { supabaseAdmin } from './supabaseAdmin';
 import { getAccessTokenFromDbOrRefresh } from './tinyAuth';
 import { filtrarEMapearPedidos, mapPedidoToOrderRow, extrairFreteFromRaw } from './tinyMapping';
 import { runFreteEnrichment } from './freteEnricher';
 import { normalizeMissingOrderChannels } from './channelNormalizer';
 import { enrichOrdersBatch } from './orderEnricher';
-import { sincronizarItensAutomaticamente, sincronizarItensPorPedidos } from './pedidoItensHelper';
+import { salvarItensPedidoDetalhe, sincronizarItensAutomaticamente, sincronizarItensPorPedidos } from './pedidoItensHelper';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FRETE_MAX_PASSES = Number(process.env.FRETE_ENRICH_MAX_PASSES ?? '5');
 const ENABLE_INLINE_FRETE_ENRICHMENT = process.env.ENABLE_INLINE_FRETE_ENRICHMENT === 'true'; // Desabilitado por padrão devido a rate limits
+const RECENT_BACKLOG_DAYS = Number(process.env.RECENT_BACKLOG_DAYS ?? '7') || 7;
+const RECENT_ENRICH_DELAY_MS = Number(process.env.RECENT_ENRICH_DELAY_MS ?? '750') || 750;
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -23,21 +25,45 @@ async function sleep(ms: number) {
 export async function upsertOrdersPreservingEnriched(rows: any[]) {
   if (!rows.length) return { error: null };
 
+  const payloadHasItens = (payload: any): boolean => {
+    if (!payload || typeof payload !== 'object') return false;
+    const itens = (payload as any).itens;
+    const itensPedido = (payload as any).itensPedido;
+    const nestedItens = (payload as any).pedido?.itens;
+    const nestedItensPedido = (payload as any).pedido?.itensPedido;
+    return (
+      Array.isArray(itens) ||
+      Array.isArray(itensPedido) ||
+      Array.isArray(nestedItens) ||
+      Array.isArray(nestedItensPedido)
+    );
+  };
+
   // Buscar pedidos existentes
   const tinyIds = rows.map(r => r.tiny_id);
   const { data: existing } = await supabaseAdmin
     .from('tiny_orders')
-    .select('tiny_id, valor_frete, canal, cidade, uf')
+    .select('tiny_id, valor_frete, canal, cidade, uf, raw_payload, is_enriched')
     .in('tiny_id', tinyIds);
 
   const existingMap = new Map(
-    (existing || []).map(e => [e.tiny_id, { valor_frete: e.valor_frete, canal: e.canal, cidade: (e as any).cidade, uf: (e as any).uf }])
+    (existing || []).map(e => [e.tiny_id, { 
+      valor_frete: e.valor_frete, 
+      canal: e.canal, 
+      cidade: (e as any).cidade, 
+      uf: (e as any).uf,
+      raw_payload: (e as any).raw_payload,
+      is_enriched: (e as any).is_enriched,
+    }])
   );
 
   // Mesclar: preservar valor_frete e canal enriquecidos
   const mergedRows = rows.map(row => {
     const exists = existingMap.get(row.tiny_id);
     if (!exists) return row; // Novo pedido, usar como está
+
+    const keepDetalhe = payloadHasItens(exists.raw_payload);
+    const mergedIsEnriched = (exists.is_enriched === true) ? true : (row.is_enriched ?? exists.is_enriched ?? null);
 
     return {
       ...row,
@@ -52,6 +78,15 @@ export async function upsertOrdersPreservingEnriched(rows: any[]) {
       // Preservar cidade/uf já enriquecidos (não sobrescrever por nulo)
       cidade: exists.cidade ?? row.cidade,
       uf: exists.uf ?? row.uf,
+
+      // Nunca sobrescrever detalhe (raw_payload com itens) por payload lite.
+      // Se já existe detalhe, mantém.
+      raw_payload: keepDetalhe
+        ? exists.raw_payload
+        : (row.raw_payload ?? exists.raw_payload ?? null),
+
+      // Se já foi enriquecido, preserva.
+      is_enriched: mergedIsEnriched,
     };
   });
 
@@ -155,6 +190,159 @@ export async function processJob(jobId: string) {
     const MAX_REQUESTS = envMax > 0 ? envMax : defaultMax;
 
     const accessToken = await getAccessTokenFromDbOrRefresh();
+
+    const payloadHasItens = (payload: any): boolean => {
+      if (!payload || typeof payload !== 'object') return false;
+      return (
+        Array.isArray((payload as any).itens) ||
+        Array.isArray((payload as any).itensPedido) ||
+        Array.isArray((payload as any).pedido?.itens) ||
+        Array.isArray((payload as any).pedido?.itensPedido)
+      );
+    };
+
+    const normalizePedidoDetalhadoPayload = (payload: any): any => {
+      if (!payload || typeof payload !== 'object') return payload;
+      if (!Array.isArray((payload as any).itens) && Array.isArray((payload as any).pedido?.itens)) {
+        return { ...(payload as any), itens: (payload as any).pedido.itens };
+      }
+      if (!Array.isArray((payload as any).itensPedido) && Array.isArray((payload as any).pedido?.itensPedido)) {
+        return { ...(payload as any), itensPedido: (payload as any).pedido.itensPedido };
+      }
+      return payload;
+    };
+
+    const enrichPedidosFromTinyIds = async (
+      tinyIds: number[],
+      opts: { context: string; reason: string; criteria?: 'full' | 'missing_items_only' }
+    ) => {
+      const uniqueTinyIds = Array.from(new Set(tinyIds.filter((id) => Number.isFinite(id))));
+      if (!uniqueTinyIds.length) return;
+
+      const { data: orders } = await supabaseAdmin
+        .from('tiny_orders')
+        .select('id, tiny_id, is_enriched, raw_payload')
+        .in('tiny_id', uniqueTinyIds);
+
+      if (!orders?.length) return;
+
+      const orderIds = orders.map((o: any) => o.id);
+      const { data: itensRows } = await supabaseAdmin
+        .from('tiny_pedido_itens')
+        .select('id_pedido')
+        .in('id_pedido', orderIds);
+      const idsComItens = new Set((itensRows ?? []).map((r: any) => r.id_pedido));
+
+      const candidatos = orders.filter((o: any) => {
+        const precisaPorFlag = o.is_enriched === null || o.is_enriched === false;
+        const semItens = !idsComItens.has(o.id);
+        const semItensNoPayload = !payloadHasItens(o.raw_payload);
+        if (opts.criteria === 'missing_items_only') {
+          return semItens;
+        }
+        return precisaPorFlag || semItens || semItensNoPayload;
+      });
+
+      if (!candidatos.length) return;
+
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'info',
+        message: 'Fase B (recent): enriquecendo pedidos via detalhe + itens',
+        meta: { reason: opts.reason, candidatos: candidatos.length, total: orders.length },
+      });
+
+      for (const pedido of candidatos) {
+        if (totalRequests >= MAX_REQUESTS) {
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'warn',
+            message: 'Limite de requisições atingido; interrompendo Fase B',
+            meta: { totalRequests, MAX_REQUESTS, reason: opts.reason },
+          });
+          break;
+        }
+
+        const tinyId = Number(pedido.tiny_id);
+        if (!Number.isFinite(tinyId)) continue;
+
+        let detalhe: any = null;
+        let attempt429 = 0;
+        const MAX_429_ATTEMPTS = 8;
+
+        while (detalhe === null && attempt429 <= MAX_429_ATTEMPTS) {
+          try {
+            detalhe = await obterPedidoDetalhado(accessToken!, tinyId, opts.context);
+            totalRequests++;
+          } catch (err: any) {
+            if (err instanceof TinyApiError && err.status === 429) {
+              attempt429 += 1;
+              if (attempt429 > MAX_429_ATTEMPTS) {
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'error',
+                  message: 'Muitas respostas 429 ao obter detalhe do pedido; pulando pedido',
+                  meta: { tinyId, localId: pedido.id, attempts: attempt429, reason: opts.reason },
+                });
+                detalhe = undefined;
+                break;
+              }
+              const backoff = Math.min(15000 * Math.pow(2, attempt429 - 1), 60000);
+              await supabaseAdmin.from('sync_logs').insert({
+                job_id: jobId,
+                level: 'warn',
+                message: `429 do Tiny em pedido.obter — aguardando ${backoff}ms`,
+                meta: { tinyId, localId: pedido.id, attempt: attempt429, reason: opts.reason },
+              });
+              await sleep(backoff);
+              continue;
+            }
+
+            await supabaseAdmin.from('sync_logs').insert({
+              job_id: jobId,
+              level: 'warn',
+              message: 'Falha ao obter detalhe do pedido (pedido.obter)',
+              meta: { tinyId, localId: pedido.id, error: err?.message ?? String(err), reason: opts.reason },
+            });
+            detalhe = undefined;
+            break;
+          }
+        }
+
+        if (!detalhe) {
+          await supabaseAdmin.from('tiny_orders').update({ is_enriched: false }).eq('id', pedido.id);
+          await sleep(RECENT_ENRICH_DELAY_MS);
+          continue;
+        }
+
+        const normalized = normalizePedidoDetalhadoPayload(detalhe);
+        try {
+          const result = await salvarItensPedidoDetalhe(accessToken!, tinyId, pedido.id, normalized, { context: opts.context });
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: result.itensSalvos === null ? 'warn' : 'info',
+            message: 'Pedido enriquecido (detalhe + itens)',
+            meta: {
+              tinyId,
+              localId: pedido.id,
+              itensSalvos: result.itensSalvos,
+              jaTinhaItens: result.jaTinhaItens,
+              reason: opts.reason,
+            },
+          });
+        } catch (err: any) {
+          await supabaseAdmin.from('tiny_orders').update({ is_enriched: false }).eq('id', pedido.id);
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'error',
+            message: 'Erro ao persistir itens do pedido após obter detalhe',
+            meta: { tinyId, localId: pedido.id, error: err?.message ?? String(err), reason: opts.reason },
+          });
+        }
+
+        await sleep(RECENT_ENRICH_DELAY_MS);
+      }
+    };
 
     await supabaseAdmin
       .from('sync_jobs')
@@ -331,6 +519,21 @@ export async function processJob(jobId: string) {
               message: `Janela: salvos ${validRows.length} pedidos`, 
               meta: { janela: `${janelaIniStr}/${janelaFimStr}`, salvos: validRows.length, descartados, totalOrders, freteEnriquecidos } 
             });
+
+            // Fase B (apenas para recent/repair): buscar detalhe + itens/produtos imediatamente.
+            if ((mode === 'recent' || mode === 'repair') && accessToken) {
+              try {
+                const tinyIdsJanela = validRows.map((r: any) => Number(r.tiny_id)).filter((n: any) => Number.isFinite(n));
+                await enrichPedidosFromTinyIds(tinyIdsJanela, { context: 'cron_pedidos', reason: `janela:${janelaIniStr}/${janelaFimStr}` });
+              } catch (err: any) {
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'warn',
+                  message: 'Falha na Fase B (recent): enriquecimento por janela',
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: err?.message ?? String(err) },
+                });
+              }
+            }
           } else {
             await supabaseAdmin.from('sync_logs').insert({ 
               job_id: jobId, 
@@ -364,6 +567,47 @@ export async function processJob(jobId: string) {
       });
 
       await normalizeChannels(jobId, 'range-sync');
+
+      // Backlog recente: reenriquece pedidos sem itens na janela de RECENT_BACKLOG_DAYS
+      if ((mode === 'recent' || mode === 'repair') && accessToken) {
+        try {
+          const dataMinima = new Date();
+          dataMinima.setDate(dataMinima.getDate() - RECENT_BACKLOG_DAYS);
+          const dataMinimaStr = dataMinima.toISOString().slice(0, 10);
+
+          const { data: recentes } = await supabaseAdmin
+            .from('tiny_orders')
+            .select('id, tiny_id')
+            .gte('data_criacao', dataMinimaStr)
+            .order('data_criacao', { ascending: false })
+            .limit(500);
+
+          const orderIds = (recentes ?? []).map((r: any) => r.id);
+          const { data: itensRows } = await supabaseAdmin
+            .from('tiny_pedido_itens')
+            .select('id_pedido')
+            .in('id_pedido', orderIds);
+          const idsComItens = new Set((itensRows ?? []).map((r: any) => r.id_pedido));
+          const missing = (recentes ?? []).filter((r: any) => !idsComItens.has(r.id));
+
+          const tinyIdsBacklog = (missing ?? [])
+            .map((r: any) => Number(r.tiny_id))
+            .filter((n: any) => Number.isFinite(n));
+
+          await enrichPedidosFromTinyIds(tinyIdsBacklog, {
+            context: 'cron_pedidos',
+            reason: `backlog_sem_itens:${RECENT_BACKLOG_DAYS}d`,
+            criteria: 'missing_items_only',
+          });
+        } catch (err: any) {
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'warn',
+            message: 'Falha ao reenriquecer backlog recente',
+            meta: { backlogDays: RECENT_BACKLOG_DAYS, error: err?.message ?? String(err) },
+          });
+        }
+      }
 
       await supabaseAdmin.from('sync_jobs').update({ 
         status: 'finished', 

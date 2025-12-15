@@ -9,6 +9,10 @@ import type { Database, Json } from '@/src/types/db-public';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Em ambiente serverless (Vercel), "background" não é confiável.
+// Permitimos até 5 minutos para rodar sync recent/repair inline.
+export const maxDuration = 300;
+
 type SyncMode = 'full' | 'range' | 'recent' | 'repair' | 'incremental' | 'orders';
 
 type SyncRequestBody = {
@@ -197,7 +201,11 @@ export async function POST(req: NextRequest) {
     });
 
     const processInApp = process.env.PROCESS_IN_APP === 'true';
-    const shouldAwait = processInApp || !background;
+    const shouldAwait =
+      processInApp ||
+      !background ||
+      mode === 'recent' ||
+      mode === 'repair';
 
     if (shouldAwait) {
       await logJob(jobId, 'info', 'Processando job inline', { processInApp, background });

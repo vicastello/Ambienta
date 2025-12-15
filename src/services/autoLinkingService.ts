@@ -90,10 +90,10 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
     while (true) {
       const { data: tinyOrders, error: tinyError } = await supabaseAdmin
         .from('tiny_orders')
-        .select('id, numero_pedido, canal, data_criacao, raw_payload, numero_pedido_ecommerce')
+        .select('id, numero_pedido, canal, data_criacao, raw_payload, raw, numero_pedido_ecommerce')
         .gte('data_criacao', startDateISO)
         .in('canal', ['Shopee', 'Mercado Livre', 'Magalu'])
-        .or('raw_payload.not.is.null,numero_pedido_ecommerce.not.is.null')
+        .or('raw_payload.not.is.null,raw.not.is.null,numero_pedido_ecommerce.not.is.null')
         .order('data_criacao', { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -112,9 +112,9 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
       for (const tinyOrder of current) {
         result.total_processed++;
 
-        // Extrair ID do marketplace do raw_payload/coluna
+        // Extrair ID do marketplace do raw_payload (detalhe) com fallback para raw (listagem)
         const marketplaceOrderId = extractMarketplaceOrderId(
-          tinyOrder.raw_payload,
+          (tinyOrder.raw_payload ?? (tinyOrder as any).raw) as any,
           (tinyOrder as any).numero_pedido_ecommerce
         );
         if (!marketplaceOrderId) {
@@ -314,10 +314,10 @@ export async function autoLinkMarketplace(
     while (true) {
       const { data: tinyOrders, error: tinyError } = await supabaseAdmin
         .from('tiny_orders')
-        .select('id, numero_pedido, canal, data_criacao, raw_payload, numero_pedido_ecommerce')
+        .select('id, numero_pedido, canal, data_criacao, raw_payload, raw, numero_pedido_ecommerce')
         .gte('data_criacao', startDateISO)
         .eq('canal', canalFilter)
-        .or('raw_payload.not.is.null,numero_pedido_ecommerce.not.is.null')
+        .or('raw_payload.not.is.null,raw.not.is.null,numero_pedido_ecommerce.not.is.null')
         .order('data_criacao', { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -335,7 +335,7 @@ export async function autoLinkMarketplace(
         result.total_processed++;
 
         const marketplaceOrderId = extractMarketplaceOrderId(
-          tinyOrder.raw_payload,
+          (tinyOrder.raw_payload ?? (tinyOrder as any).raw) as any,
           (tinyOrder as any).numero_pedido_ecommerce
         );
         if (!marketplaceOrderId) {

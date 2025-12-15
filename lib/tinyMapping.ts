@@ -219,9 +219,11 @@ export function mapPedidoToOrderRow(p: TinyPedidoListaItem) {
     uf: uf ?? null,
     forma_pagamento,
     transportador_nome: (p as any).transportador?.nome ?? null,
-    // Armazena o payload completo tanto no campo legada `raw` quanto no novo `raw_payload`
+    // `raw` guarda o payload da LISTAGEM.
+    // `raw_payload` é reservado para o DETALHE (pedido.obter / /pedidos/:id) para não sobrescrever itens.
     raw: p,
-    raw_payload: p,
+    raw_payload: null,
+    is_enriched: false,
   } as const;
 }
 

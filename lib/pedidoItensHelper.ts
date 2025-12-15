@@ -146,16 +146,61 @@ interface PedidoItemData {
   info_adicional: string | null;
 }
 
-/**
- * Busca detalhes do pedido e salva os itens no banco
- * Retorna número de itens salvos ou null se erro
- */
-export async function salvarItensPedido(
+const extractItensFromPedidoPayload = (payload: any): any[] => {
+  if (!payload || typeof payload !== 'object') return [];
+  if (Array.isArray(payload.itens)) return payload.itens;
+  if (Array.isArray(payload.itensPedido)) return payload.itensPedido;
+  if (Array.isArray(payload.pedido?.itens)) return payload.pedido.itens;
+  if (Array.isArray(payload.pedido?.itensPedido)) return payload.pedido.itensPedido;
+  return [];
+};
+
+const normalizePedidoDetalhadoPayload = (payload: any): any => {
+  if (!payload || typeof payload !== 'object') return payload;
+  // Garante chaves top-level para facilitar auditoria/SQL (raw_payload ? 'itens')
+  if (!Array.isArray(payload.itens)) {
+    const nested = payload.pedido?.itens;
+    if (Array.isArray(nested)) {
+      return { ...payload, itens: nested };
+    }
+  }
+  if (!Array.isArray(payload.itensPedido)) {
+    const nested = payload.pedido?.itensPedido;
+    if (Array.isArray(nested)) {
+      return { ...payload, itensPedido: nested };
+    }
+  }
+  return payload;
+};
+
+async function marcarPedidoEnriched(idPedidoLocal: number, enriched: boolean) {
+  await supabaseAdmin
+    .from('tiny_orders')
+    .update({
+      is_enriched: enriched,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', idPedidoLocal);
+}
+
+async function persistirDetalhePedido(idPedidoLocal: number, payloadDetalhado: any) {
+  const normalized = normalizePedidoDetalhadoPayload(payloadDetalhado);
+  await supabaseAdmin
+    .from('tiny_orders')
+    .update({
+      raw_payload: normalized,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', idPedidoLocal);
+}
+
+export async function salvarItensPedidoDetalhe(
   accessToken: string,
   idPedidoTiny: number,
   idPedidoLocal: number,
+  pedidoDetalhado: any,
   options?: { context?: string }
-): Promise<number | null> {
+): Promise<{ itensSalvos: number | null; jaTinhaItens: boolean }> {
   const fallbackFromRaw = async (): Promise<number | null> => {
     try {
       const { data: pedidoLocal, error: rawErr } = await supabaseAdmin
@@ -167,18 +212,10 @@ export async function salvarItensPedido(
         console.error(`[Itens Pedido] Falha ao buscar raw do pedido ${idPedidoTiny}`, rawErr);
         return null;
       }
-      const raw = (pedidoLocal?.raw ?? pedidoLocal?.raw_payload) as any;
+      const raw = (pedidoLocal?.raw_payload ?? pedidoLocal?.raw) as any;
       if (!raw || typeof raw !== 'object') return null;
 
-      const itensRaw =
-        (Array.isArray((raw as any).itens)
-          ? (raw as any).itens
-          : Array.isArray((raw as any).pedido?.itens)
-            ? (raw as any).pedido.itens
-            : Array.isArray((raw as any).pedido?.itensPedido)
-              ? (raw as any).pedido.itensPedido
-              : []) as any[];
-
+      const itensRaw = extractItensFromPedidoPayload(raw);
       if (!itensRaw.length) return null;
 
       const itensParaSalvar = itensRaw.map((item) => {
@@ -198,7 +235,6 @@ export async function salvarItensPedido(
         };
       });
 
-      // Zera id_produto_tiny se produto não existe no catálogo para evitar violar FK
       const idsTiny = itensParaSalvar
         .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
         .filter((v): v is number => !!v);
@@ -207,7 +243,6 @@ export async function salvarItensPedido(
         await atualizarEstoqueProdutos(accessToken, idsTiny);
       }
 
-      // Preencher código faltante a partir do catálogo
       if (idsTiny.length) {
         const { data: catalog } = await supabaseAdmin
           .from('tiny_produtos')
@@ -236,100 +271,113 @@ export async function salvarItensPedido(
     }
   };
 
-  try {
-    // Verificar se já tem itens
-    const { count: existentes } = await supabaseAdmin
-      .from('tiny_pedido_itens')
-      .select('*', { count: 'exact', head: true })
-      .eq('id_pedido', idPedidoLocal);
+  // Verificar se já tem itens
+  const { count: existentes } = await supabaseAdmin
+    .from('tiny_pedido_itens')
+    .select('*', { count: 'exact', head: true })
+    .eq('id_pedido', idPedidoLocal);
 
-    if (existentes && existentes > 0) {
-      return existentes; // Já sincronizado
+  if (existentes && existentes > 0) {
+    await persistirDetalhePedido(idPedidoLocal, pedidoDetalhado);
+    await marcarPedidoEnriched(idPedidoLocal, true);
+    return { itensSalvos: existentes, jaTinhaItens: true };
+  }
+
+  // Persistir detalhe antes de extrair itens (ajuda no fallback e auditoria)
+  await persistirDetalhePedido(idPedidoLocal, pedidoDetalhado);
+
+  const itens = extractItensFromPedidoPayload(pedidoDetalhado);
+  if (itens.length === 0) {
+    console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`, {
+      keys: Object.keys(pedidoDetalhado || {}),
+    });
+    const fallbackCount = await fallbackFromRaw();
+    if (fallbackCount !== null) {
+      await marcarPedidoEnriched(idPedidoLocal, true);
+    } else {
+      await marcarPedidoEnriched(idPedidoLocal, false);
     }
+    return { itensSalvos: fallbackCount, jaTinhaItens: false };
+  }
 
+  const itensParaSalvar: any[] = itens.map((item) => {
+    const produto = (item as any).produto || item;
+    const qtd = toNumberOrNull(item.quantidade) ?? 0;
+    const valorUnit = toNumberOrNull(item.valorUnitario) ?? 0;
+    const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
+    return {
+      id_pedido: idPedidoLocal,
+      id_produto_tiny: normalizeProdutoId(produto.id ?? item.idProduto),
+      codigo_produto: produto.codigo || item.codigo || null,
+      nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
+      quantidade: qtd,
+      valor_unitario: valorUnit,
+      valor_total: valorTot,
+      info_adicional: item.informacoesAdicionais || null,
+    };
+  });
+
+  const idsTiny = itensParaSalvar
+    .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
+    .filter((v): v is number => v !== null);
+  if (idsTiny.length) {
+    await ensureProdutosNoCatalog(accessToken, idsTiny);
+    await atualizarEstoqueProdutos(accessToken, idsTiny);
+    const { data: existentesProdutos } = await supabaseAdmin
+      .from('tiny_produtos')
+      .select('id_produto_tiny, codigo')
+      .in('id_produto_tiny', idsTiny);
+    const setExistentes = new Set((existentesProdutos ?? []).map((r: any) => r.id_produto_tiny));
+    const mapCodigos = new Map<number, string>();
+    (existentesProdutos ?? []).forEach((p: any) => {
+      if (p.codigo) mapCodigos.set(p.id_produto_tiny, p.codigo);
+    });
+    for (const row of itensParaSalvar) {
+      if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
+        row.id_produto_tiny = null;
+      } else if (!row.codigo_produto && row.id_produto_tiny && mapCodigos.has(row.id_produto_tiny)) {
+        row.codigo_produto = mapCodigos.get(row.id_produto_tiny)!;
+      }
+    }
+  }
+
+  const { error } = await supabaseAdmin
+    .from('tiny_pedido_itens')
+    .insert(itensParaSalvar);
+
+  if (error) {
+    console.error(`[Itens Pedido] Erro ao salvar itens do pedido ${idPedidoTiny}:`, error);
+    await marcarPedidoEnriched(idPedidoLocal, false);
+    return { itensSalvos: null, jaTinhaItens: false };
+  }
+
+  await marcarPedidoEnriched(idPedidoLocal, true);
+  return { itensSalvos: itensParaSalvar.length, jaTinhaItens: false };
+}
+
+/**
+ * Busca detalhes do pedido e salva os itens no banco
+ * Retorna número de itens salvos ou null se erro
+ */
+export async function salvarItensPedido(
+  accessToken: string,
+  idPedidoTiny: number,
+  idPedidoLocal: number,
+  options?: { context?: string }
+): Promise<number | null> {
+  try {
     // Buscar detalhes do pedido
     const context = options?.context ?? 'pedido_helper';
     const pedidoDetalhado = await obterPedidoDetalhado(accessToken, idPedidoTiny, context);
-
-    // Extrair itens do formato da API do Tiny (v3 pode devolver em níveis diferentes)
-    const itens =
-      (Array.isArray((pedidoDetalhado as any).itens)
-        ? (pedidoDetalhado as any).itens
-        : Array.isArray((pedidoDetalhado as any).pedido?.itens)
-          ? (pedidoDetalhado as any).pedido.itens
-          : Array.isArray((pedidoDetalhado as any).pedido?.itensPedido)
-            ? (pedidoDetalhado as any).pedido.itensPedido
-            : []) as any[];
-
-    if (itens.length === 0) {
-      console.warn(`[Itens Pedido] Pedido ${idPedidoTiny} sem itens retornados pelo Tiny`, {
-        keys: Object.keys(pedidoDetalhado || {}),
-      });
-      const fallbackCount = await fallbackFromRaw();
-      return fallbackCount;
-    }
-
-    // Preparar dados - API retorna produto.id, produto.codigo, etc
-    const itensParaSalvar: any[] = itens.map((item) => {
-      const produto = (item as any).produto || item;
-      const qtd = toNumberOrNull(item.quantidade) ?? 0;
-      const valorUnit = toNumberOrNull(item.valorUnitario) ?? 0;
-      const valorTot = toNumberOrNull(item.valorTotal) ?? valorUnit * qtd;
-      return {
-        id_pedido: idPedidoLocal,
-        id_produto_tiny: normalizeProdutoId(produto.id ?? item.idProduto),
-        codigo_produto: produto.codigo || item.codigo || null,
-        nome_produto: produto.descricao || produto.nome || item.descricao || 'Sem descrição',
-        quantidade: qtd,
-        valor_unitario: valorUnit,
-        valor_total: valorTot,
-        info_adicional: item.informacoesAdicionais || null,
-      };
-    });
-
-    // Zera id_produto_tiny se produto não existe no catálogo para evitar violar FK
-    const idsTiny = itensParaSalvar
-      .map((p) => (typeof p.id_produto_tiny === 'number' ? p.id_produto_tiny : null))
-      .filter((v): v is number => v !== null);
-    if (idsTiny.length) {
-      await ensureProdutosNoCatalog(accessToken, idsTiny);
-      await atualizarEstoqueProdutos(accessToken, idsTiny);
-      const { data: existentes } = await supabaseAdmin
-        .from('tiny_produtos')
-        .select('id_produto_tiny, codigo')
-        .in('id_produto_tiny', idsTiny);
-      const setExistentes = new Set((existentes ?? []).map((r: any) => r.id_produto_tiny));
-      const mapCodigos = new Map<number, string>();
-      (existentes ?? []).forEach((p: any) => {
-        if (p.codigo) mapCodigos.set(p.id_produto_tiny, p.codigo);
-      });
-      for (const row of itensParaSalvar) {
-        if (row.id_produto_tiny && !setExistentes.has(row.id_produto_tiny)) {
-          row.id_produto_tiny = null;
-        } else if (!row.codigo_produto && row.id_produto_tiny && mapCodigos.has(row.id_produto_tiny)) {
-          row.codigo_produto = mapCodigos.get(row.id_produto_tiny)!;
-        }
-      }
-    }
-
-    // Inserir no banco (já verificamos que não existe)
-    const { error } = await supabaseAdmin
-      .from('tiny_pedido_itens')
-      .insert(itensParaSalvar);
-
-    if (error) {
-      console.error(`[Itens Pedido] Erro ao salvar itens do pedido ${idPedidoTiny}:`, error);
-      return null;
-    }
-
-    return itens.length;
+    const result = await salvarItensPedidoDetalhe(accessToken, idPedidoTiny, idPedidoLocal, pedidoDetalhado, options);
+    return result.itensSalvos;
   } catch (error: any) {
     console.error(
       `[Itens Pedido] Erro ao processar pedido ${idPedidoTiny}:`,
       error?.message || error
     );
-    const fallbackCount = await fallbackFromRaw();
-    return fallbackCount;
+    await marcarPedidoEnriched(idPedidoLocal, false);
+    return null;
   }
 }
 
