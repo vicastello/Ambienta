@@ -21,6 +21,7 @@ type MicroTrendChartProps = {
   data: SparkDatum[];
   formatter?: CustomTooltipFormatter;
   containerClassName?: string;
+  visibleUntilIndex?: number;
 };
 
 type MicroTooltipProps = {
@@ -28,11 +29,16 @@ type MicroTooltipProps = {
   payload?: ReadonlyArray<{ payload?: SparkDatum; value?: ChartTooltipValue; dataKey?: string }>;
 };
 
-const MicroTrendChartComponent = ({ data, formatter, containerClassName }: MicroTrendChartProps) => {
+const MicroTrendChartComponent = ({ data, formatter, containerClassName, visibleUntilIndex }: MicroTrendChartProps) => {
   const gradientId = 'microTrendFill';
   const gradientPrevId = 'microTrendPrevFill';
   const chartData = useMemo(() => data, [data]);
   const processedData = useMemo(() => {
+    const normalizedVisibleUntil =
+      typeof visibleUntilIndex === 'number' && Number.isFinite(visibleUntilIndex)
+        ? Math.min(chartData.length - 1, Math.max(0, Math.floor(visibleUntilIndex)))
+        : null;
+
     const lastHojeIdx = [...chartData]
       .map((p, idx) => ({ idx, hasValue: (p.hoje ?? 0) > 0 || (p.quantidade ?? 0) > 0 }))
       .filter((x) => x.hasValue)
@@ -46,7 +52,10 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
       .reduce((acc, curr) => Math.max(acc, curr), -1);
 
     return chartData.map((point, idx) => {
-      const withinHoje = idx <= lastHojeIdx || lastHojeIdx === -1;
+      const withinHoje =
+        normalizedVisibleUntil !== null
+          ? idx <= normalizedVisibleUntil
+          : idx <= lastHojeIdx || lastHojeIdx === -1;
       const withinOntem = idx <= lastOntemIdx || lastOntemIdx === -1;
       return {
         ...point,
@@ -54,10 +63,13 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
         ontemDisplay: withinOntem ? point.ontem : undefined,
         quantidadeDisplay: withinHoje ? point.quantidade : undefined,
         quantidadeOntemDisplay: withinOntem ? point.quantidadeOntem : undefined,
-        isLastActive: lastHojeIdx >= 0 && idx === lastHojeIdx,
+        isLastActive:
+          normalizedVisibleUntil !== null
+            ? idx === normalizedVisibleUntil
+            : lastHojeIdx >= 0 && idx === lastHojeIdx,
       };
     });
-  }, [chartData]);
+  }, [chartData, visibleUntilIndex]);
   const hasComparison = useMemo(() => chartData.some((item) => item.ontem !== undefined), [chartData]);
 
   const renderTooltip = (props: MicroTooltipProps) => {
@@ -68,7 +80,7 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
     const point = (payloadArr[0]?.payload as SparkDatum | undefined) ?? null;
     if (!point) return null;
 
-    const label = typeof point.horaIndex === 'number' ? `${point.horaIndex}h` : point.label ?? 'Hora';
+    const label = point.label ?? (typeof point.horaIndex === 'number' ? `${point.horaIndex}h` : 'Hora');
     const formatValue = (raw: ChartTooltipValue | undefined, key: string) => {
       const entry: ChartTooltipPayload = {
         value: raw,
@@ -96,8 +108,8 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
           </div>
           <div className="w-px bg-slate-200" />
           <div className="flex flex-col gap-1 items-end">
-            <span className="text-xs uppercase text-purple-600">Hoje</span>
-            <span className="font-semibold text-purple-700">{formatValue(point.hoje ?? 0, 'hoje')}</span>
+            <span className="text-xs uppercase text-accent">Hoje</span>
+            <span className="font-semibold text-accent">{formatValue(point.hoje ?? 0, 'hoje')}</span>
             {typeof point.quantidade === 'number' ? (
               <span className="text-xs text-slate-500">{point.quantidade.toLocaleString('pt-BR')} pedidos</span>
             ) : null}
@@ -108,11 +120,11 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
   };
 
   return (
-    <div className={containerClassName ?? 'h-32 sm:h-36 w-full'}>
+    <div className={containerClassName ?? 'min-h-[120px] h-full w-full overflow-hidden'}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={processedData}
-          margin={{ top: 1, right: 6, bottom: 1, left: 6 }}
+          margin={{ top: 8, right: 6, bottom: 8, left: 6 }}
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -125,7 +137,7 @@ const MicroTrendChartComponent = ({ data, formatter, containerClassName }: Micro
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="2 6" vertical={false} stroke="rgba(148,163,184,0.15)" />
-          <XAxis dataKey="horaIndex" height={0} tick={false} tickLine={false} axisLine={false} />
+          <XAxis dataKey="label" height={0} tick={false} tickLine={false} axisLine={false} />
           <YAxis hide />
           <Tooltip content={renderTooltip} />
           {hasComparison && (

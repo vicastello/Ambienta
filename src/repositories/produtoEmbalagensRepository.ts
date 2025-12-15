@@ -20,6 +20,25 @@ export async function listEmbalagensByProdutoId(produtoId: number) {
 }
 
 /**
+ * Lista todas as embalagens vinculadas a vários produtos (batch)
+ */
+export async function listEmbalagensByProdutoIds(produtoIds: number[]) {
+  const ids = Array.from(new Set(produtoIds.filter((id) => Number.isFinite(id)))) as number[];
+  if (ids.length === 0) return [] as Array<ProdutoEmbalagem & { embalagem: any }>;
+
+  const { data, error } = await supabaseAdmin
+    .from(TABLE_NAME)
+    .select(`
+      *,
+      embalagem:embalagens(*)
+    `)
+    .in('produto_id', ids);
+
+  if (error) throw error;
+  return data as Array<ProdutoEmbalagem & { embalagem: any }>;
+}
+
+/**
  * Vincula uma embalagem a um produto
  */
 export async function vincularEmbalagem(input: ProdutoEmbalagemInput) {

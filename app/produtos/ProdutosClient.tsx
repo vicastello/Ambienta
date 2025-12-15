@@ -1611,7 +1611,7 @@ export default function ProdutosClient() {
               setSituacao(event.target.value);
               setPage(0);
             }}
-            className="app-input w-full min-w-[160px]"
+            className="app-input w-full min-w-[160px] px-8"
           >
             <option value="all">Todas</option>
             <option value="A">Ativo</option>
@@ -1624,7 +1624,7 @@ export default function ProdutosClient() {
               setTipo(event.target.value);
               setPage(0);
             }}
-            className="app-input w-full min-w-[160px]"
+            className="app-input w-full min-w-[160px] px-8"
           >
             <option value="all">Todos os tipos</option>
             <option value="S">Simples</option>

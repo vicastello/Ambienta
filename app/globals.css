@@ -10,11 +10,11 @@
     --glass-blur-1: 200px;
     --glass-blur-2: 200px;
     --glass-blur-3: 200px;
-    --card-blur: 200px;
+    --card-blur: 100px;
     --card-sat: 1.1;
-    --panel-blur: 200px;
+    --panel-blur: 100px;
     --panel-sat: 1.1;
-    --row-blur: 12px;
+    --row-blur: 100px;
     --row-sat: 1.05;
     /* Cores base – modo claro */
     --bg-body: #ffffff;
@@ -29,10 +29,11 @@
     --surface-border-strong: rgba(255, 255, 255, 0.78);
     --surface-border-soft: rgba(255, 255, 255, 0.5);
 
-    --accent: #009DA8;
+    /* Acento (Ambienta) – modo claro */
+    --accent: #009CA6;
     --accent-light: #00B5C3;
-    --accent-dark: #006E76;
-    --accent-soft: rgba(0, 157, 168, 0.2);
+    --accent-dark: #007982;
+    --accent-soft: rgba(0, 156, 166, 0.2);
     --positive: #22c55e;
     --negative: #e11d48;
 
@@ -76,10 +77,11 @@
     --text-main: #f5f6ff;
     --text-muted: #a3b4e2;
     --text-soft: #90a0cc;
-    --accent: #b69bff;
-    --accent-light: #d6c7ff;
-    --accent-dark: #7a63d8;
-    --accent-soft: rgba(183, 162, 255, 0.22);
+    /* Acento (Ambienta) – modo dark (mais claro para contraste) */
+    --accent: #00C2CD;
+    --accent-light: #42D6DE;
+    --accent-dark: #009CA6;
+    --accent-soft: rgba(0, 194, 205, 0.22);
     --positive: #4df5c2;
     --positive-strong: #33d4a4;
     --negative: #ff7390;
@@ -91,17 +93,17 @@
     --surface-border-soft: rgba(255, 255, 255, 0.06);
     --surface-card-border: rgba(255, 255, 255, 0.02);
     --surface-card-shadow: none;
-    --card-blur: 26px;
+    --card-blur: 100px;
     --card-sat: 1.08;
     --surface-panel-bg: linear-gradient(165deg, rgba(28, 31, 42, 0.9), rgba(16, 18, 26, 0.92));
     --surface-panel-border: rgba(255, 255, 255, 0.04);
     --surface-panel-shadow: none;
-    --panel-blur: 24px;
+    --panel-blur: 100px;
     --panel-sat: 1.08;
     --surface-row-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.82), rgba(10, 12, 20, 0.86));
     --surface-row-border: rgba(255, 255, 255, 0.01);
     --surface-row-shadow: none;
-    --row-blur: 22px;
+    --row-blur: 100px;
     --row-sat: 1.04;
     --surface-sheen-start: rgba(0, 0, 0, 0);
     --surface-sheen-end: rgba(0, 0, 0, 0);
@@ -113,11 +115,11 @@
     --btn-border-hover: rgba(255, 255, 255, 0.32);
     --btn-text: #f8fbff;
     --btn-shadow: 0 14px 36px rgba(0, 5, 18, 0.65);
-    --dark-card-border: rgba(255, 255, 255, 0.02);
+    --dark-card-border: rgba(255, 255, 255, 0.05);
     --dark-card-shadow: inset 0 1px rgba(255, 255, 255, 0.02),
       inset 0 -1px rgba(0, 0, 0, 0.12),
       0 4px 16px rgba(0, 0, 0, 0.24);
-    --dark-card-blur-strength: 24px;
+    --dark-card-blur-strength: 100px;
     --dark-card-sat-strength: 1.08;
   }
 
@@ -332,6 +334,23 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
    ========================= */
 
 @layer components {
+  /* Tokens de texto (evita espalhar text-slate-* e hex no JSX) */
+  .text-main {
+    color: var(--text-main);
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  .text-soft {
+    color: var(--text-soft);
+  }
+
+  .text-accent {
+    color: var(--accent);
+  }
+
   /* layout principal da página */
   .app-card {
     border-radius: 2rem;
@@ -713,6 +732,27 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
     border-color: var(--accent-light);
   }
 
+  /* Estilos específicos para <select> com .app-input
+     Removemos a appearance nativa e desenhamos uma seta SVG posicionada
+     a 1rem da borda para evitar que a seta fique colada na borda.
+  */
+  select.app-input {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    padding-right: 2.5rem; /* espaço para a seta desenhada */
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem 1rem;
+    /* seta SVG que usa currentColor para herdar cor do texto */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  }
+
+  /* Ajuste para dark mode: mantém herança de cor via currentColor */
+  :root.dark select.app-input {
+    /* sem mudanças específicas necessárias; currentColor resolve */
+  }
+
   /* Esconde barras de rolagem visíveis no mobile, mantendo o scroll */
   @media (max-width: 768px) {
     * {
@@ -1043,16 +1083,6 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   box-shadow: 0 0 20px rgba(0, 157, 168, 0.3);
 }
 
-/* Scrollbar hide utility */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
 /* Focus ring para acessibilidade */
 .focus-ring {
   transition: outline-offset 0.2s ease, outline-color 0.2s ease;
@@ -1062,3 +1092,4 @@ radial-gradient(circle at 18% 18%, #f3f3f3, rgb(176 185 208 / 40%) 36%, transpar
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+

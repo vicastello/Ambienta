@@ -78,6 +78,7 @@ interface Summary {
   ticket_medio: number;
   pedidos_nao_vinculados: number;
   pedidos_com_problema: number;
+  custo_embalagens_total?: number;
 }
 
 interface ByChannel {
@@ -88,11 +89,13 @@ interface ByChannel {
 }
 
 interface TopProduct {
+  produto_id?: number;
   sku: string;
   nome: string;
   quantidade: number;
   faturamento: number;
   pedidos: number;
+  custo_embalagens?: number;
 }
 
 interface PedidoItem {
@@ -117,7 +120,9 @@ export async function GET(request: NextRequest) {
     const groupBy = (searchParams.get('groupBy') || 'sku') as GroupBy;
     const viewMode = (searchParams.get('viewMode') || 'unitario') as ViewMode;
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limitRaw = searchParams.get('limit');
+    const limit = parseInt(limitRaw || '50');
+    const noPagination = !limitRaw || limit <= 0;
 
     // Buscar TODOS os pedidos usando paginação (Supabase limita em 1000 por query)
     const allPedidos: TinyOrderRowLite[] = [];
@@ -239,11 +244,45 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Buscar info de produtos (tipo)
-    const { data: produtos } = await supabaseAdmin
-      .from('tiny_produtos')
-      .select('codigo, nome, tipo');
-    const produtoMap = new Map(produtos?.map(p => [p.codigo, { nome: p.nome, tipo: p.tipo }]) || []);
+    // Buscar info de produtos (tipo) apenas para SKUs presentes nos itens do período
+    const usedSkus = Array.from(
+      new Set(
+        allItens
+          .map((i) => i.codigo_produto)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      )
+    );
+
+    type TinyProdutoLite = {
+      id: number;
+      codigo: string | null;
+      nome: string;
+      tipo: string | null;
+    };
+
+    const produtos: TinyProdutoLite[] = [];
+    {
+      const chunkSize = 1000;
+      for (let i = 0; i < usedSkus.length; i += chunkSize) {
+        const chunk = usedSkus.slice(i, i + chunkSize);
+        const { data, error } = await supabaseAdmin
+          .from('tiny_produtos')
+          .select('id, codigo, nome, tipo')
+          .in('codigo', chunk);
+        if (error) {
+          console.error('Erro ao buscar produtos:', error);
+          return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        }
+        if (data?.length) produtos.push(...(data as unknown as TinyProdutoLite[]));
+      }
+    }
+
+    const produtoMap = new Map(
+      produtos
+        .filter((p) => !!p.codigo)
+        .map((p) => [p.codigo as string, { id: p.id, nome: p.nome, tipo: p.tipo }])
+    );
+
 
     // Buscar vínculos de pedidos marketplace <-> tiny em chunks
     const allOrderLinks: MarketplaceOrderLinkRowLite[] = [];
@@ -451,13 +490,107 @@ export async function GET(request: NextRequest) {
     if (magaluOrders.length) await fetchMagalu(magaluOrders);
     if (meliOrders.length) await fetchMeli(meliOrders);
 
+    // Carregar produtos adicionais (SKUs vindos do marketplace) para permitir:
+    // - identificar tipo/nome
+    // - obter produto_id para editar embalagens
+    // - calcular custo de embalagens do kit pelo SKU do kit
+    {
+      const marketplaceSkus = Array.from(
+        new Set(
+          Array.from(orderItemsMap.values())
+            .flat()
+            .map((it) => it.sku)
+            .filter((v): v is string => typeof v === 'string' && v.length > 0)
+        )
+      );
+      const missingSkus = marketplaceSkus.filter((s) => !produtoMap.has(s));
+      if (missingSkus.length > 0) {
+        const chunkSize = 1000;
+        for (let i = 0; i < missingSkus.length; i += chunkSize) {
+          const chunk = missingSkus.slice(i, i + chunkSize);
+          const { data, error } = await supabaseAdmin
+            .from('tiny_produtos')
+            .select('id, codigo, nome, tipo')
+            .in('codigo', chunk);
+          if (error) {
+            console.error('Erro ao buscar produtos (marketplace SKUs):', error);
+            return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+          }
+          const extra = (data || []) as unknown as TinyProdutoLite[];
+          if (extra.length) {
+            produtos.push(...extra);
+            extra.forEach((p) => {
+              if (p.codigo) {
+                produtoMap.set(p.codigo, { id: p.id, nome: p.nome, tipo: p.tipo });
+              }
+            });
+          }
+        }
+      }
+    }
+
+    // Calcular custo de embalagens por SKU (custo por unidade vendida)
+    // Fonte: produto_embalagens.quantidade × embalagens.preco_unitario
+    const embalagemCostBySku = new Map<string, number>();
+    {
+      const produtoIds = Array.from(new Set(produtos.map((p) => p.id)));
+      if (produtoIds.length > 0) {
+        type ProdutoEmbalagemRow = {
+          produto_id: number;
+          quantidade: number | string;
+          embalagem: { preco_unitario: number | string } | null;
+        };
+
+        const baseCostByProdutoId = new Map<number, number>();
+        const chunkSize = 1000;
+        for (let i = 0; i < produtoIds.length; i += chunkSize) {
+          const chunk = produtoIds.slice(i, i + chunkSize);
+          const { data, error } = await supabaseAdmin
+            .from('produto_embalagens')
+            .select('produto_id, quantidade, embalagem:embalagens(preco_unitario)')
+            .in('produto_id', chunk);
+          if (error) {
+            console.error('Erro ao buscar vínculos de embalagens:', error);
+            return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+          }
+
+          for (const row of (data || []) as unknown as ProdutoEmbalagemRow[]) {
+            const qty = typeof row.quantidade === 'number' ? row.quantidade : Number(row.quantidade) || 0;
+            const unit = row.embalagem
+              ? (typeof row.embalagem.preco_unitario === 'number'
+                ? row.embalagem.preco_unitario
+                : Number(row.embalagem.preco_unitario) || 0)
+              : 0;
+            const current = baseCostByProdutoId.get(row.produto_id) || 0;
+            baseCostByProdutoId.set(row.produto_id, current + qty * unit);
+          }
+        }
+
+        const produtoIdToSku = new Map<number, string>();
+        for (const p of produtos) {
+          if (!p.codigo) continue;
+          produtoIdToSku.set(p.id, p.codigo);
+        }
+
+        for (const [produtoId, baseCost] of baseCostByProdutoId.entries()) {
+          const sku = produtoIdToSku.get(produtoId);
+          if (!sku) continue;
+          const rounded = Math.round((baseCost + Number.EPSILON) * 100) / 100;
+          embalagemCostBySku.set(sku, rounded);
+        }
+      }
+    }
+
     // Processar itens
     const items: SalesItem[] = [];
     let pedidosNaoVinculados = 0;
     let pedidosComProblema = 0;
     const pedidosSet = new Set<string | number>();
     const canaisMap = new Map<string, { pedidos: Set<string | number>; quantidade: number; faturamento: number }>();
-    const skuMap = new Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number> }>();
+    const skuMap = new Map<
+      string,
+      { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number>; custo_embalagens: number }
+    >();
 
     for (const pedido of pedidos) {
       const pedidoItensRaw = itensMap.get(pedido.id) || [];
@@ -566,7 +699,11 @@ export async function GET(request: NextRequest) {
             });
             pedidosSet.add(pedido.id);
             updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, entry.qtd, vt);
-            updateSkuMap(skuMap, entry.sku, entry.nome, entry.qtd, vt, pedido.id);
+            // Em modo kit: custo de embalagem do kit deve ser o custo cadastrado NO SKU DO KIT.
+            // (Não soma embalagens dos componentes.)
+            let custoEmbalagens = (embalagemCostBySku.get(entry.sku) || 0) * entry.qtd;
+            custoEmbalagens = Math.round((custoEmbalagens + Number.EPSILON) * 100) / 100;
+            updateSkuMap(skuMap, entry.sku, entry.nome, entry.qtd, vt, pedido.id, custoEmbalagens);
           }
           // pula processamento baseado no Tiny (evita transformar unitário em kit)
           continue;
@@ -763,7 +900,11 @@ export async function GET(request: NextRequest) {
             });
             pedidosSet.add(pedido.id);
             updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, kitQty, vt);
-            updateSkuMap(skuMap, k.marketplace_sku, k.nome, kitQty, vt, pedido.id);
+            // Em modo kit: custo de embalagem do kit vem do SKU do kit.
+            const custoEmbalagens = Math.round(
+              (((embalagemCostBySku.get(k.marketplace_sku) || 0) * kitQty) + Number.EPSILON) * 100
+            ) / 100;
+            updateSkuMap(skuMap, k.marketplace_sku, k.nome, kitQty, vt, pedido.id, custoEmbalagens);
 
             // consome quantidades restantes e marca componentes cobertos
             k.components.forEach(comp => {
@@ -872,7 +1013,10 @@ export async function GET(request: NextRequest) {
         });
         pedidosSet.add(pedido.id);
         updateCanalMap(canaisMap, normalizeCanal(pedido.canal ?? null), pedido.id, item.quantidade, item.valor_total);
-        updateSkuMap(skuMap, skuOriginal, item.nome_produto, item.quantidade, item.valor_total, pedido.id);
+        const custoEmbalagens = Math.round(
+          (((embalagemCostBySku.get(skuOriginal) || 0) * Number(item.quantidade || 0)) + Number.EPSILON) * 100
+        ) / 100;
+        updateSkuMap(skuMap, skuOriginal, item.nome_produto, item.quantidade, item.valor_total, pedido.id, custoEmbalagens);
       });
 
     }
@@ -900,17 +1044,26 @@ export async function GET(request: NextRequest) {
       faturamento: data.faturamento,
     })).sort((a, b) => b.faturamento - a.faturamento);
 
-    // Top produtos
-    const topProducts: TopProduct[] = Array.from(skuMap.entries())
+    // Produtos agregados por SKU (lista completa) + top 20
+    const allProducts: TopProduct[] = Array.from(skuMap.entries())
       .map(([sku, data]) => ({
+        produto_id: produtoMap.get(sku)?.id,
         sku,
         nome: data.nome,
         quantidade: data.quantidade,
         faturamento: data.faturamento,
         pedidos: data.pedidos.size,
+        custo_embalagens: data.custo_embalagens,
       }))
-      .sort((a, b) => b.quantidade - a.quantidade)
-      .slice(0, 20);
+      .sort((a, b) => b.quantidade - a.quantidade);
+
+    const topProducts: TopProduct[] = allProducts.slice(0, 20);
+
+    // Total de embalagens (para rodapé/total no front)
+    summary.custo_embalagens_total =
+      Math.round(
+        ((allProducts.reduce((s, p) => s + Number(p.custo_embalagens || 0), 0)) + Number.EPSILON) * 100
+      ) / 100;
 
     // Agrupar dados conforme groupBy
     let groupedData: unknown[] = [];
@@ -948,14 +1101,16 @@ export async function GET(request: NextRequest) {
       }));
     } else {
       // groupBy === 'sku'
-      groupedData = topProducts;
+      groupedData = allProducts;
     }
 
-    // Paginação
+    // Paginação (opcional). Quando limit=0 (ou ausente), retorna tudo em uma página.
     const totalItems = groupedData.length;
-    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
-    const safePage = Math.min(Math.max(page, 1), totalPages);
-    const paginatedData = groupedData.slice((safePage - 1) * limit, safePage * limit);
+    const totalPages = noPagination ? 1 : Math.max(1, Math.ceil(totalItems / limit));
+    const safePage = noPagination ? 1 : Math.min(Math.max(page, 1), totalPages);
+    const paginatedData = noPagination
+      ? groupedData
+      : groupedData.slice((safePage - 1) * limit, safePage * limit);
 
     return NextResponse.json({
       success: true,
@@ -965,8 +1120,8 @@ export async function GET(request: NextRequest) {
       data: paginatedData,
       items: items.slice(0, 1000), // Limitar items raw para exportação
       pagination: {
-        page: currentPage,
-        limit,
+        page: safePage,
+        limit: noPagination ? totalItems : limit,
         totalItems,
         totalPages,
       },
@@ -1016,20 +1171,22 @@ function updateCanalMap(
 }
 
 function updateSkuMap(
-  map: Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number> }>,
+  map: Map<string, { nome: string; quantidade: number; faturamento: number; pedidos: Set<string | number>; custo_embalagens: number }>,
   sku: string,
   nome: string,
   quantidade: number,
   valor: number,
-  pedidoId: string | number
+  pedidoId: string | number,
+  custoEmbalagens: number
 ) {
   if (!map.has(sku)) {
-    map.set(sku, { nome, quantidade: 0, faturamento: 0, pedidos: new Set() });
+    map.set(sku, { nome, quantidade: 0, faturamento: 0, pedidos: new Set(), custo_embalagens: 0 });
   }
   const data = map.get(sku)!;
   data.quantidade += quantidade;
   data.faturamento += valor;
   data.pedidos.add(pedidoId);
+  data.custo_embalagens += custoEmbalagens;
 }
 
 // Deduplica itens de um pedido quando agrupados por pedido na resposta:

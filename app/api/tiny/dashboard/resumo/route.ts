@@ -1282,18 +1282,19 @@ const buildMicroTrend24h = async (
     ? overrides.previousEnd
     : defaultPreviousEnd;
 
-  // Para filtrar, usamos o range de dias (data_criacao é YYYY-MM-DD sem hora)
-  // Precisamos apenas dos pedidos de "ontem" e "hoje" no calendário local.
   const previousLabel = formatDateInTimeZone(previousStart, timeZone);
   const currentLabel = formatDateInTimeZone(currentStart, timeZone);
+
   const startDate = previousLabel;
   const endDate = shiftIsoDate(currentLabel, 1); // exclusivo: amanhã
 
   let query = supabaseAdmin
     .from('tiny_orders')
-    .select('id,numero_pedido,valor,data_criacao,raw,canal,situacao')
+    .select('id,numero_pedido,valor,data_criacao,raw,inserted_at,canal,situacao')
     .gte('data_criacao', startDate)
     .lt('data_criacao', endDate)
+    .order('data_criacao', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
     .limit(SUPABASE_MAX_ROWS);
 
   if (canaisFiltro?.length) {
@@ -1318,17 +1319,24 @@ const buildMicroTrend24h = async (
         valor: (row as any).valor,
         canal: (row as any).canal,
         situacao: (row as any).situacao,
+        inserted_at: (row as any).inserted_at,
       })),
-      window: { startDate, endDate },
+      window: {
+        startDate,
+        endDate,
+        currentStart: currentStart.toISOString(),
+        currentEnd: currentEnd.toISOString(),
+        previousStart: previousStart.toISOString(),
+        previousEnd: previousEnd.toISOString(),
+      },
     });
   }
 
-  // Função helper para extrair timestamp completo do raw (dataPedido tem hora)
-  const getFullTimestamp = (row: Record<string, unknown>): Date | null => {
+  // Hora de venda: preferir raw.dataPedido (Tiny) e fazer fallback para inserted_at.
+  // Não usamos new Date('YYYY-MM-DDTHH:mm:ss') sem timezone para evitar deslocamento em UTC.
+  const getHourFromRaw = (row: Record<string, unknown>): number | null => {
     const rawObj = asTinyOrderRaw((row as any).raw ?? null);
     const pedido = rawObj?.pedido as Record<string, unknown> | undefined;
-    
-    // Tenta extrair dataPedido do raw (formato DD/MM/YYYY HH:mm:ss ou YYYY-MM-DD HH:mm:ss)
     const candidates: Array<string | undefined> = [
       pedido?.dataPedido as string | undefined,
       (rawObj as any)?.dataPedido as string | undefined,
@@ -1337,66 +1345,51 @@ const buildMicroTrend24h = async (
     for (const candidate of candidates) {
       if (!candidate) continue;
       const trimmed = candidate.trim();
-      
-      // Formato BR: DD/MM/YYYY HH:mm:ss
-      const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+
+      const brMatch = trimmed.match(/^\d{2}\/\d{2}\/\d{4}\s+(\d{2}):\d{2}/);
       if (brMatch) {
-        const [, dd, mm, yyyy, hh, min, ss = '00'] = brMatch;
-        const isoStr = `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
-        const parsed = new Date(isoStr);
-        if (!Number.isNaN(parsed.getTime())) return parsed;
+        const hour = Number(brMatch[1]);
+        if (Number.isFinite(hour) && hour >= 0 && hour <= 23) return hour;
       }
 
-      // Formato ISO: YYYY-MM-DD HH:mm:ss ou YYYY-MM-DDTHH:mm:ss
-      const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
+      const isoMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}[T\s](\d{2}):\d{2}/);
       if (isoMatch) {
-        const [, datePart, hh, min, ss = '00'] = isoMatch;
-        const isoStr = `${datePart}T${hh}:${min}:${ss}`;
-        const parsed = new Date(isoStr);
-        if (!Number.isNaN(parsed.getTime())) return parsed;
+        const hour = Number(isoMatch[1]);
+        if (Number.isFinite(hour) && hour >= 0 && hour <= 23) return hour;
       }
-    }
-
-    // Fallback: distribuir pedidos uniformemente pelo dia (0-23h) baseado em hash do numero_pedido
-    // Isso cria uma distribuição visual razoável quando não temos hora real
-    const dataCriacao = (row as any).data_criacao as string | null;
-    const numeroPedido = (row as any).numero_pedido ?? (row as any).id ?? 0;
-    if (dataCriacao && /^\d{4}-\d{2}-\d{2}/.test(dataCriacao)) {
-      // Usa hash do numero_pedido para distribuir entre 0-23h de forma determinística
-      const hash = typeof numeroPedido === 'number' ? numeroPedido : String(numeroPedido).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const fakeHour = hash % 24;
-      const parsed = new Date(`${dataCriacao.slice(0, 10)}T${String(fakeHour).padStart(2, '0')}:00:00`);
-      if (!Number.isNaN(parsed.getTime())) return parsed;
     }
 
     return null;
+  };
+
+  const getHourFromInsertedAt = (row: Record<string, unknown>): number | null => {
+    const insertedAt = (row as any).inserted_at as string | null | undefined;
+    if (!insertedAt) return null;
+    const minutes = minutesOfDayInTimeZone(insertedAt, timeZone);
+    if (minutes === null) return null;
+    return Math.min(23, Math.max(0, Math.floor(minutes / 60)));
   };
 
   const currentBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
   const previousBuckets = Array.from({ length: hoursCount }, () => ({ valor: 0, pedidos: 0 }));
 
   for (const row of data ?? []) {
-    // Microtrend usa dataPedido do raw (com hora) para distribuição por hora.
-    // data_criacao é apenas YYYY-MM-DD, então precisamos do raw para a hora.
-    const ts = getFullTimestamp(row as Record<string, unknown>);
-    if (!ts) continue;
+    const dataCriacao = (row as any).data_criacao as string | null | undefined;
+    if (!dataCriacao) continue;
+    if (dataCriacao !== currentLabel && dataCriacao !== previousLabel) continue;
 
-    if (ts >= currentStart && ts < currentEnd) {
-      const idx = Math.floor((ts.getTime() - currentStart.getTime()) / hourMs);
-      if (idx >= 0 && idx < hoursCount) {
-        currentBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-        currentBuckets[idx].pedidos += 1;
-      }
+    const record = row as Record<string, unknown>;
+    const hour = getHourFromRaw(record) ?? getHourFromInsertedAt(record);
+    if (hour === null) continue;
+
+    if (dataCriacao === currentLabel) {
+      currentBuckets[hour].valor += toNumberSafe((row as any).valor ?? 0);
+      currentBuckets[hour].pedidos += 1;
       continue;
     }
 
-    if (ts >= previousStart && ts < previousEnd) {
-      const idx = Math.floor((ts.getTime() - previousStart.getTime()) / hourMs);
-      if (idx >= 0 && idx < hoursCount) {
-        previousBuckets[idx].valor += toNumberSafe((row as any).valor ?? 0);
-        previousBuckets[idx].pedidos += 1;
-      }
-    }
+    previousBuckets[hour].valor += toNumberSafe((row as any).valor ?? 0);
+    previousBuckets[hour].pedidos += 1;
   }
 
   const buildSeries = (buckets: Array<{ valor: number; pedidos: number }>): MicroTrendHora[] =>
@@ -1441,7 +1434,7 @@ const buildMicroTrend24h = async (
   console.log('[dashboard-debug] microtrend_24h', {
     currentWindow: microTrend24h.currentWindow,
     previousWindow: microTrend24h.previousWindow,
-    baseTimestamp: 'raw.dataPedido',
+    baseTimestamp: 'raw.dataPedido (fallback inserted_at)',
   });
 
   return microTrend24h;
@@ -2021,28 +2014,12 @@ export async function GET(req: NextRequest) {
     const canaisParam = searchParams.get('canais');
     const situacoesParam = searchParams.get('situacoes');
     const noCutoff = searchParams.get('noCutoff') === '1';
-    const microCurrentStartParam = searchParams.get('microCurrentStart');
-    const microCurrentEndParam = searchParams.get('microCurrentEnd');
-    const microPrevStartParam = searchParams.get('microPrevStart');
-    const microPrevEndParam = searchParams.get('microPrevEnd');
     const previousStartParam = searchParams.get('previousStart');
     const previousEndParam = searchParams.get('previousEnd');
     const contextParam = searchParams.get('context') ?? 'dashboard';
     const debugPedidos = searchParams.get('debugPedidos') === '1';
     const agora = new Date();
     const aplicarCutoff = !noCutoff;
-    const parseDateParam = (value: string | null): Date | null => {
-      if (!value) return null;
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    };
-
-    const microtrendOverrides = {
-      currentStart: parseDateParam(microCurrentStartParam),
-      currentEnd: parseDateParam(microCurrentEndParam),
-      previousStart: parseDateParam(microPrevStartParam),
-      previousEnd: parseDateParam(microPrevEndParam),
-    } satisfies MicroTrendWindowOverride;
     const { current, previous: previousBase, meta } = buildAlignedRanges({
       dataInicialParam,
       dataFinalParam,
@@ -2248,8 +2225,7 @@ export async function GET(req: NextRequest) {
     const microTrend24h = await buildMicroTrend24h(
       DEFAULT_REPORT_TIMEZONE,
       canaisFiltro,
-      situacoesAplicadasArray,
-      microtrendOverrides
+      situacoesAplicadasArray
     );
 
     const lastUpdatedAt = new Date().toISOString();
