@@ -143,7 +143,7 @@ const ProdutoEmFocoCardComponent = ({
     saldo: estoqueSku?.saldo ?? 0,
   };
 
-  const disponivelSku = safeEstoqueSku.disponivel;
+
   const embalagemCount = produto.embalagens?.length ?? 0;
 
   // safe trend fallbacks
