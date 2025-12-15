@@ -104,7 +104,7 @@ export async function POST() {
 
         // Tenta com exec_sql
         const { error } = await supabase.rpc("exec_sql" as any, {
-          query: statement.endsWith(";") ? statement : `${statement};`,
+          sql_query: statement.endsWith(";") ? statement : `${statement};`,
         });
 
         if (error) {
