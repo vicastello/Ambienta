@@ -134,15 +134,7 @@ const ProdutoEmFocoCardComponent = ({
     if (!Number.isFinite(raw)) return null;
     return Math.max(0, Math.ceil(raw));
   }, [estoqueParaRuptura, mediaDiariaVendas]);
-  const rupturaCritica = produtoDiasParaZerar !== null && produtoDiasParaZerar <= 3;
-  const rupturaAtencao = produtoDiasParaZerar !== null && produtoDiasParaZerar > 3 && produtoDiasParaZerar <= 7;
-  const rupturaStatus = produtoDiasParaZerar === null
-    ? null
-    : produtoDiasParaZerar <= 3
-      ? { label: "Crítico", tone: "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-100" }
-      : produtoDiasParaZerar <= 7
-        ? { label: "Atenção", tone: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-100" }
-        : { label: "Ok", tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100" };
+
 
   // safe fallbacks to avoid undefined rendering in snapshots
   const safeEstoqueSku = {
@@ -152,12 +144,11 @@ const ProdutoEmFocoCardComponent = ({
   };
 
   const disponivelSku = safeEstoqueSku.disponivel;
-  const estoqueCriticoSku = disponivelSku > 0 && disponivelSku < 5;
   const embalagemCount = produto.embalagens?.length ?? 0;
 
   // safe trend fallbacks
   const safeTrendData = Array.isArray(trendData) ? trendData : [];
-  const safeTrendPresetOptions = Array.isArray((trendPresetOptions as any) || []) ? (trendPresetOptions as any) : [];
+  const safeTrendPresetOptions = Array.isArray(trendPresetOptions) ? trendPresetOptions : [];
 
   const melhorDiaResumo = useMemo(() => {
     if (!melhorDiaLabel || melhorDiaReceita == null) return "Sem melhor dia";
@@ -394,7 +385,7 @@ const ProdutoEmFocoCardComponent = ({
                   </div>
 
                   <div className="inline-flex rounded-full bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-1 shadow-none shrink-0">
-                    {safeTrendPresetOptions.map((opt: any) => {
+                    {safeTrendPresetOptions.map((opt) => {
                       const active = trendPreset === opt.value;
                       return (
                         <button
