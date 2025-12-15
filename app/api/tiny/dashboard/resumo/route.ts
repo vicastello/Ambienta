@@ -5,6 +5,10 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { getErrorMessage } from '@/lib/errors';
 import { descricaoSituacao, parseValorTiny, TODAS_SITUACOES } from '@/lib/tinyMapping';
 import { resolveParentChain } from '@/lib/productRelationships';
+import {
+  getDashboardResumoCacheDecision,
+  upsertDashboardResumoCache,
+} from '@/src/repositories/dashboardCacheRepository';
 import type {
   ProdutoParentInfo,
   ProdutoParentMapping,
@@ -2006,6 +2010,19 @@ const buildAlignedRanges = (params: {
 export async function GET(req: NextRequest) {
   const handlerTimer = '[dashboard] handler';
   console.time(handlerTimer);
+
+  const jsonWithCacheHeaders = <T>(
+    body: T,
+    init: ResponseInit | undefined,
+    cache: 'HIT' | 'MISS',
+    reason: string
+  ) => {
+    const res = NextResponse.json(body, init);
+    res.headers.set('X-Dashboard-Cache', cache);
+    res.headers.set('X-Dashboard-Cache-Reason', reason);
+    return res;
+  };
+
   try {
     const { searchParams } = new URL(req.url);
     const dataInicialParam = searchParams.get('dataInicial');
@@ -2095,6 +2112,45 @@ export async function GET(req: NextRequest) {
       situacoesCancelamento: situacoesCancelamentoSet,
     };
 
+    const hasPreviousOverride = Boolean(previousStartOverride || previousEndOverride);
+    const cacheEligible = !meta.incluiHoje && !debugPedidos && !debugResumo && !hasPreviousOverride;
+
+    const bypassReason = meta.incluiHoje
+      ? 'bypass_inclui_hoje'
+      : debugPedidos || debugResumo
+        ? 'bypass_debug'
+        : hasPreviousOverride
+          ? 'bypass_previous_override'
+          : 'bypass_other';
+
+    const cacheDecision = cacheEligible
+      ? await getDashboardResumoCacheDecision<DashboardResposta>({
+          ranges: {
+            current: { start: current.start, end: current.displayEnd },
+            previous: { start: previous.start, end: previous.displayEnd },
+          },
+          filters: { canais: canaisFiltro, situacoes: situacoesFiltro },
+        })
+      : null;
+
+    if (cacheEligible && cacheDecision?.hit) {
+      console.log('[dashboard-cache] cache_hit', {
+        periodo: { inicio: current.start, fim: current.displayEnd },
+        canaisKey: cacheDecision.canaisKey,
+        situacoesKey: cacheDecision.situacoesKey,
+      });
+      return jsonWithCacheHeaders(cacheDecision.payload, undefined, 'HIT', 'hit');
+    }
+
+    if (cacheEligible && cacheDecision && !cacheDecision.hit) {
+      console.log('[dashboard-cache] cache_miss', {
+        reason: cacheDecision.reason,
+        periodo: { inicio: current.start, fim: current.displayEnd },
+        canaisKey: cacheDecision.canaisKey,
+        situacoesKey: cacheDecision.situacoesKey,
+      });
+    }
+
     const debugCollector = debugPedidos ? { included: [] as DebugOrderEntry[], excluded: [] as DebugOrderEntry[] } : undefined;
 
     const [periodoAtualResult, periodoAnteriorResult] = await Promise.all([
@@ -2125,7 +2181,8 @@ export async function GET(req: NextRequest) {
           .values()
       );
 
-      return NextResponse.json({
+      return jsonWithCacheHeaders(
+        {
         debug: true,
         dataInicial: current.start,
         dataFinal: current.displayEnd,
@@ -2139,7 +2196,11 @@ export async function GET(req: NextRequest) {
         totalPorCanal,
         totalPedidosIncluidos: debugCollector.included.length,
         totalPedidosExcluidos: debugCollector.excluded.length,
-      });
+        },
+        undefined,
+        'MISS',
+        bypassReason
+      );
     }
 
     const ordersAtualFacts = periodoAtualResult.orderFacts;
@@ -2205,7 +2266,8 @@ export async function GET(req: NextRequest) {
     const diffs = computeDiffs(periodoAtual, periodoAnterior);
 
     if (debugResumo) {
-      return NextResponse.json({
+      return jsonWithCacheHeaders(
+        {
         debugResumo: true,
         dataInicial: current.start,
         dataFinal: current.displayEnd,
@@ -2219,7 +2281,11 @@ export async function GET(req: NextRequest) {
         meta: {
           ordersLength: periodoAtualResult.pedidos.length,
         },
-      });
+        },
+        undefined,
+        'MISS',
+        bypassReason
+      );
     }
 
     const microTrend24h = await buildMicroTrend24h(
@@ -2343,15 +2409,41 @@ export async function GET(req: NextRequest) {
       lastUpdatedAt,
     };
 
-    return NextResponse.json(resposta);
+    if (
+      cacheEligible &&
+      cacheDecision &&
+      !cacheDecision.hit &&
+      cacheDecision.reason !== 'watermark_unavailable' &&
+      cacheDecision.reason !== 'schema_mismatch'
+    ) {
+      try {
+        await upsertDashboardResumoCache({
+          periodoInicio: current.start,
+          periodoFim: current.displayEnd,
+          canais: canaisFiltro,
+          situacoes: situacoesFiltro,
+          payload: resposta,
+          sourceMaxUpdatedAt: cacheDecision.currentSourceMaxUpdatedAt,
+        });
+      } catch (e) {
+        console.warn('[dashboard-cache] cache_write_failed', { message: getErrorMessage(e) });
+      }
+    }
+
+    const finalCacheReason = cacheEligible
+      ? (cacheDecision?.hit ? 'hit' : (cacheDecision?.reason ?? 'miss'))
+      : bypassReason;
+    return jsonWithCacheHeaders(resposta, undefined, 'MISS', finalCacheReason);
   } catch (error) {
     console.error('[dashboard] Erro em /api/tiny/dashboard/resumo', error);
-    return NextResponse.json(
+    return jsonWithCacheHeaders(
       {
         message: 'Erro ao montar resumo do dashboard',
         details: getErrorMessage(error) ?? 'Erro desconhecido',
       },
-      { status: 500 }
+      { status: 500 },
+      'MISS',
+      'error'
     );
   } finally {
     console.timeEnd(handlerTimer);

@@ -62,6 +62,13 @@ export async function POST() {
 
     const supabase = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
+    type RpcErrorShape = { message?: string };
+    type RpcResult<T> = { data: T | null; error: RpcErrorShape | null };
+    type RpcClient = {
+      rpc: <T = unknown>(fn: string, args?: Record<string, unknown>) => Promise<RpcResult<T>>;
+    };
+    const rpcClient = supabase as unknown as RpcClient;
+
     const migrationPath = path.join(
       process.cwd(),
       "supabase",
@@ -82,7 +89,7 @@ export async function POST() {
     const results: StatementResult[] = [];
 
     // Tenta executar o arquivo inteiro via RPC conhecida
-    const wholeTry = await supabase.rpc("exec_sql" as any, { sql_query: sql });
+    const wholeTry = await rpcClient.rpc("exec_sql", { sql_query: sql });
     if (!wholeTry.error) {
       return NextResponse.json({
         success: true,
@@ -103,15 +110,15 @@ export async function POST() {
         }
 
         // Tenta com exec_sql
-        const { error } = await supabase.rpc("exec_sql" as any, {
+        const { error } = await rpcClient.rpc("exec_sql", {
           sql_query: statement.endsWith(";") ? statement : `${statement};`,
         });
 
         if (error) {
           // Tenta fallback com 'exec'
-          const fb = await supabase.rpc("exec" as any, { sql: statement });
+          const fb = await rpcClient.rpc("exec", { sql: statement });
           if (fb.error) {
-            const msg = fb.error.message || error.message;
+            const msg = fb.error.message ?? error.message ?? "";
             // Se já existir, considera success idempotente
             if (/already exists|duplicate key|already.*extension|relation .* exists/i.test(msg)) {
               results.push({ statement: statement.slice(0, 80) + "...", status: "success" });

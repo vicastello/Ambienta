@@ -68,6 +68,7 @@
 - info_adicional (text, null)
 - created_at (timestamptz, null)
 - Papel: itens de cada pedido (liga pedido ↔ produto).
+- Regra: qualquer INSERT/UPDATE/DELETE aqui deve atualizar `tiny_orders.updated_at = now()` do pedido afetado (via trigger), para garantir que watermarks/caches baseados em `tiny_orders.updated_at` invalidem corretamente.
 - Índices: por id_pedido, id_produto_tiny, codigo_produto.
 
 ### tiny_produtos
@@ -116,6 +117,7 @@
 - **set_updated_at**: trigger genérico para carimbar `updated_at = now()` antes de UPDATE.
 - **update_tiny_produtos_updated_at**: mesma lógica, específica para `tiny_produtos`.
 - **tiny_orders_auto_sync_itens**: trigger AFTER INSERT em `tiny_orders` que chama `net.http_post` para `/api/tiny/sync/itens` com o `tiny_id` recém-inserido (pg_net).
+- **touch_tiny_order_updated_at / trg_touch_tiny_orders_updated_at_from_itens**: função + trigger em `tiny_pedido_itens` que tocam `tiny_orders.updated_at` quando itens mudam (hardening para invalidação de cache por watermark).
 - **orders_metrics**: função SQL estável que calcula totais de pedidos, frete, líquido e contagem por situação, com filtros por datas/canais/situações/search.
 
 ## Segurança (RLS / Policies / Grants)
