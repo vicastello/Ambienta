@@ -1412,31 +1412,17 @@ export default function ComprasClient() {
       const lightGray: [number, number, number] = [248, 250, 252]; // slate-50
       const textDark: [number, number, number] = [51, 65, 85]; // slate-700
 
-      // Logo (converter SVG para PNG via canvas com maior resolução)
+      // Logo (carregar PNG diretamente)
       try {
-        const logoResp = await fetch('/logos/Logo Vertical.svg');
-        const svgText = await logoResp.text();
-        // Criar data URL do SVG diretamente
-        const svgBase64 = btoa(unescape(encodeURIComponent(svgText)));
-        const svgDataUrl = `data:image/svg+xml;base64,${svgBase64}`;
-        const img = new Image();
-        img.src = svgDataUrl;
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error('Falha ao carregar logo'));
+        const logoResp = await fetch('/logos/Logo Vertical.png');
+        const blob = await logoResp.blob();
+        const reader = new FileReader();
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Falha ao ler logo'));
+          reader.readAsDataURL(blob);
         });
-        // Desenhar em canvas com alta resolução
-        const scale = 4; // Escala para melhor qualidade
-        const canvas = document.createElement('canvas');
-        canvas.width = 150 * scale;
-        canvas.height = 200 * scale;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.scale(scale, scale);
-          ctx.drawImage(img, 0, 0, 150, 200);
-          const dataUrl = canvas.toDataURL('image/png');
-          doc.addImage(dataUrl, 'PNG', 14, 8, 22, 30);
-        }
+        doc.addImage(dataUrl, 'PNG', 14, 8, 22, 30);
       } catch { } // Continua sem logo se falhar
 
       // Cabeçalho - Título (menor)
