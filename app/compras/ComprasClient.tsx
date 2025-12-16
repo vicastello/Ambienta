@@ -1681,16 +1681,16 @@ export default function ComprasClient() {
                         {new Date(new Date().setDate(new Date().getDate() + targetDays)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                       </span>
                     </div>
-                    <div className="relative flex items-center">
+                    <div className="relative flex items-stretch">
                       <input
                         type="number"
                         min={15}
                         max={180}
-                        className="app-input w-full h-10 text-sm text-center font-semibold pr-10"
+                        className="app-input w-full h-10 text-sm text-center font-semibold pr-9"
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="absolute right-0 top-0 h-10 w-10 flex items-center justify-center pointer-events-auto z-[60]">
+                      <div className="absolute inset-y-0 right-0 flex items-center justify-center pointer-events-auto z-[60]">
                         <AppDatePicker
                           align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
