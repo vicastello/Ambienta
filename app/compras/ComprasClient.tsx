@@ -1446,7 +1446,7 @@ export default function ComprasClient() {
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Central de Compras</h1>
             {/* Badge de Estado do Pedido */}
-            {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) ? (
+            {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0 || Object.keys(selectedIds).length > 0) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                 Rascunho em andamento
@@ -1506,7 +1506,7 @@ export default function ComprasClient() {
           className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''} flex items-center gap-2`}
         >
           Pedido
-          {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) && (
+          {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0 || Object.keys(selectedIds).length > 0) && (
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Rascunho em andamento (alterações não salvas)" />
           )}
         </button>
