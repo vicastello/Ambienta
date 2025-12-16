@@ -1768,7 +1768,7 @@ export default function ComprasClient() {
                   type="text"
                   value={manualEntry.nome}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, nome: e.target.value }))}
-                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
                   placeholder="Produto não cadastrado..."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
@@ -1786,7 +1786,7 @@ export default function ComprasClient() {
                   type="text"
                   value={manualEntry.fornecedor_codigo}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
-                  className="w-16 px-2 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="w-16 px-2 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
                   placeholder="Cód."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
@@ -1804,7 +1804,7 @@ export default function ComprasClient() {
                   type="number"
                   value={manualEntry.quantidade}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, quantidade: e.target.value }))}
-                  className="w-14 px-2 py-1.5 text-xs text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="w-14 px-2 py-1.5 text-xs text-right rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
                   placeholder="Qtd"
                   min="1"
                   onKeyDown={(e) => {
@@ -1832,7 +1832,7 @@ export default function ComprasClient() {
                     setManualEntry(createManualEntry());
                   }}
                   disabled={!manualEntry.nome.trim() || !manualEntry.quantidade || parseInt(manualEntry.quantidade, 10) <= 0}
-                  className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
+                  className="p-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
                   title="Adicionar item manual"
                 >
                   <Plus className="w-4 h-4" />
