@@ -10,6 +10,7 @@ import {
   Trash2,
   Save,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { getErrorMessage } from '@/lib/errors';
 import { formatFornecedorNome } from '@/lib/fornecedorFormatter';
@@ -1280,8 +1281,8 @@ export default function ComprasClient() {
           {/* Ações */}
           <div className="flex items-center gap-2">
             <button onClick={load} className="app-btn-primary" disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-              Recalcular
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Novo Pedido
             </button>
             <button onClick={handleSaveCurrentOrder} className="app-btn-primary" disabled={savingOrder}>
               {savingOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
