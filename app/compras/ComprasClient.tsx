@@ -634,7 +634,8 @@ export default function ComprasClient() {
   const fetchEstoqueLive = useCallback(async (id_produto_tiny: number) => {
     setEstoqueLoading((prev) => ({ ...prev, [id_produto_tiny]: true }));
     try {
-      const res = await fetch(`/ api / tiny / produtos / ${id_produto_tiny}/estoque?source=hybrid`, {
+      // source=live garante que buscaremos o dado fresco no Tiny (prioridade máxima), ignorando cache recente
+      const res = await fetch(`/api/tiny/produtos/${id_produto_tiny}/estoque?source=live`, {
         cache: 'no-store',
       });
       const json = await res.json().catch(() => null);
