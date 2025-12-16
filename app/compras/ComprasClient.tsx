@@ -35,7 +35,6 @@ import { OrderHistoryTab } from './components/OrderHistoryTab';
 import { AlertsPanel } from './components/AlertsPanel';
 import { SupplierGroupView } from './components/SupplierGroupView';
 import { StickyTotalsBar } from './components/StickyTotalsBar';
-import { useComprasSugestoes } from './hooks/useComprasSugestoes';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { useToast } from '../components/ui/Toast';
 import { AppDatePicker } from './components/AppDatePicker';
