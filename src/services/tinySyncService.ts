@@ -58,4 +58,15 @@ export async function runTinyOrdersIncrementalSync() {
   }
 
   // 3. Atualizar checkpoint se houve pedidos
+  if (maxUpdatedAt) {
+    await updateTinyOrdersIncrementalCheckpoint(maxUpdatedAt);
+  }
+
+  return {
+    success: true,
+    totalRequests,
+    totalOrders,
+    fromCheckpoint,
+    toCheckpoint: maxUpdatedAt || fromCheckpoint,
+  };
 }
