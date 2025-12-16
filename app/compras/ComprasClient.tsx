@@ -1527,8 +1527,8 @@ export default function ComprasClient() {
 
       {/* Conteúdo da aba ativa */}
       {activeTab === 'current' && (
-        <div className="flex flex-col flex-1 min-h-0 space-y-2">
-          <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 flex flex-col h-full">
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Toolbar de Controle Unificada */}
             <div className="flex flex-col gap-3 shrink-0 mb-3">
               <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/5 shadow-sm backdrop-blur-md">
@@ -1712,8 +1712,8 @@ export default function ComprasClient() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-white/50 dark:border-white/10 relative flex-1 min-h-[400px]">
-              <div className="h-full absolute inset-0">
+            <div className="overflow-hidden rounded-[24px] border border-white/50 dark:border-white/10 relative flex-1 min-h-0">
+              <div className="h-full absolute inset-0 overflow-auto">
                 <ProductTable
                   products={filteredSortedProdutos}
                   manualItems={manualItemsFiltered}
@@ -1744,21 +1744,16 @@ export default function ComprasClient() {
                 />
               </div>
             </div>
-            {/* Toolbar inferior fixa - Sticky no bottom */}
-            <div className="sticky bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] rounded-b-xl shrink-0">
-              {/* Info de seleção */}
-              <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap font-medium">
-                {selectionCount} sel. · {selectionTotalQuantidade.toLocaleString('pt-BR')} un.
-              </div>
-
-              {/* Input inline para item manual (minimalista) */}
-              <div className="flex items-center gap-2 flex-1 max-w-xl">
+            {/* Toolbar inferior fixa - Sempre visível no final */}
+            <div className="flex items-center justify-between gap-4 p-3 mt-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm rounded-xl shrink-0">
+              {/* Input inline para item manual (minimalista) - ESQUERDA */}
+              <div className="flex items-center gap-2 flex-1 max-w-md">
                 <input
                   type="text"
                   value={manualEntry.nome}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, nome: e.target.value }))}
                   className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                  placeholder="Nome do produto"
+                  placeholder="Produto não cadastrado..."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
                       handleAddManualItem({
@@ -1775,7 +1770,7 @@ export default function ComprasClient() {
                   type="text"
                   value={manualEntry.fornecedor_codigo}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
-                  className="w-20 px-2 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="w-16 px-2 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                   placeholder="Cód."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
@@ -1793,7 +1788,7 @@ export default function ComprasClient() {
                   type="number"
                   value={manualEntry.quantidade}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, quantidade: e.target.value }))}
-                  className="w-16 px-2 py-1.5 text-xs text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="w-14 px-2 py-1.5 text-xs text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                   placeholder="Qtd"
                   min="1"
                   onKeyDown={(e) => {
@@ -1828,29 +1823,34 @@ export default function ComprasClient() {
                 </button>
               </div>
 
-              {/* Ações de seleção */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-medium transition-colors"
-                  onClick={() => setSelectedIds({})}
-                >
-                  Limpar
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-xs font-medium transition-colors"
-                  onClick={() => {
-                    const suggestionsToSelect = filteredSortedProdutos
-                      .filter(d => d.sugestao_ajustada > 0)
-                      .map(d => d.id_produto_tiny);
-                    if (suggestionsToSelect.length > 0) {
-                      setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
-                    }
-                  }}
-                >
-                  Sel. c/ ped.
-                </button>
+              {/* Info de seleção e Ações - DIREITA */}
+              <div className="flex items-center gap-4">
+                <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap font-medium">
+                  {selectionCount} sel. · {selectionTotalQuantidade.toLocaleString('pt-BR')} un.
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-medium transition-colors"
+                    onClick={() => setSelectedIds({})}
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-xs font-medium transition-colors"
+                    onClick={() => {
+                      const suggestionsToSelect = filteredSortedProdutos
+                        .filter(d => d.sugestao_ajustada > 0)
+                        .map(d => d.id_produto_tiny);
+                      if (suggestionsToSelect.length > 0) {
+                        setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+                      }
+                    }}
+                  >
+                    Sel. c/ ped.
+                  </button>
+                </div>
               </div>
             </div>
           </div>
