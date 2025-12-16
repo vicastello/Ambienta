@@ -1422,7 +1422,7 @@ export default function ComprasClient() {
           reader.onerror = () => reject(new Error('Falha ao ler logo'));
           reader.readAsDataURL(blob);
         });
-        doc.addImage(dataUrl, 'PNG', 14, 8, 22, 30);
+        doc.addImage(dataUrl, 'PNG', 14, 10, 29, 25);
       } catch { } // Continua sem logo se falhar
 
       // Cabeçalho - Título (menor)
