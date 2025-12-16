@@ -115,11 +115,20 @@ export function AppDatePicker({
     const weekDays = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
     return (
-        <div className="relative w-full h-full" ref={containerRef}>
+        <div className="relative w-full h-full flex items-center justify-center" ref={containerRef}>
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full h-full flex items-center justify-center rounded-full text-[var(--color-neutral-500)] hover:text-[var(--color-primary)] transition-colors"
+                className="flex items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-600 hover:text-[var(--color-primary)] hover:bg-slate-300 dark:hover:bg-slate-600 transition-all shadow-sm"
+                style={{
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    minWidth: '32px',
+                    minHeight: '32px',
+                    padding: 0,
+                    flexShrink: 0
+                }}
                 title="Selecionar data alvo"
             >
                 <CalendarIcon className="w-4 h-4" />
