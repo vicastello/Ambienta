@@ -1404,33 +1404,81 @@ export default function ComprasClient() {
         import('jspdf-autotable'),
       ]);
       const doc = new JsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // Cores Ambienta (verde esmeralda)
+      const primaryColor: [number, number, number] = [16, 185, 129]; // emerald-500
+      const darkColor: [number, number, number] = [6, 78, 59]; // emerald-900
+      const lightGray: [number, number, number] = [248, 250, 252]; // slate-50
+      const textDark: [number, number, number] = [30, 41, 59]; // slate-800
+
+      // Logo (tenta carregar SVG como PNG via fetch)
       try {
-        const logoResp = await fetch('/brand/logo-vertical.png');
-        const blob = await logoResp.blob();
-        const reader = new FileReader();
-        const dataUrl: string = await new Promise((resolve) => {
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
+        const logoResp = await fetch('/logos/Logo Vertical.svg');
+        const svgText = await logoResp.text();
+        // Converter SVG para data URL
+        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.src = url;
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Falha ao carregar logo'));
         });
-        doc.addImage(dataUrl, 'PNG', 14, 12, 18, 24);
-      } catch { } // prossegue sem logo
+        // Desenhar em canvas para converter para PNG
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 133; // Proporção aproximada do logo vertical
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 100, 133);
+          const dataUrl = canvas.toDataURL('image/png');
+          doc.addImage(dataUrl, 'PNG', 14, 10, 25, 33);
+        }
+        URL.revokeObjectURL(url);
+      } catch { } // Continua sem logo se falhar
 
-      doc.setFontSize(16);
-      doc.text('Pedido de Compras', 36, 18);
-      doc.setFontSize(9);
-      doc.setTextColor(90);
-      doc.text(`Data do pedido: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 36, 24);
-      doc.text(`Qtd de itens: ${produtosSnapshot.length + manualSnapshot.length}`, 36, 29);
-      doc.setTextColor(0);
-      doc.setFontSize(11);
-      doc.text(`Pedido: ${orderTitle}`, 36, 35);
+      // Cabeçalho - Título
+      doc.setFontSize(20);
+      doc.setTextColor(...darkColor);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PEDIDO DE COMPRAS', 45, 18);
 
+      // Linha decorativa verde
+      doc.setDrawColor(...primaryColor);
+      doc.setLineWidth(2);
+      doc.line(45, 22, pageWidth - 14, 22);
+
+      // Dados do pedido
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100);
+      doc.text(`Pedido: ${orderTitle}`, 45, 30);
+      doc.text(`Data: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 45, 36);
+      doc.text(`Itens: ${produtosSnapshot.length + manualSnapshot.length}`, 45, 42);
+
+      // Dados da empresa (lado direito)
+      doc.setFontSize(8);
+      doc.setTextColor(80);
+      const companyX = pageWidth - 14;
+      doc.text('Ambienta Utilidades', companyX, 30, { align: 'right' });
+      doc.text('CNPJ: 47.176.585/0001-69', companyX, 35, { align: 'right' });
+      doc.text('Rua Candido Portinari, 285 – Morumbi', companyX, 40, { align: 'right' });
+      doc.text('Pedreira/SP – CEP 13920-224', companyX, 45, { align: 'right' });
+      doc.text('(19) 99336-0379 | vitor@ambientautilidades.com.br', companyX, 50, { align: 'right' });
+
+      // Separador
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.3);
+      doc.line(14, 55, pageWidth - 14, 55);
+
+      // Tabela de produtos
       const rows = produtosSnapshot.map((p) => [
         p.fornecedor_codigo || '-',
         p.gtin || '-',
         p.nome || '',
         p.quantidade.toLocaleString('pt-BR'),
-        (p.observacao || '').slice(0, 120),
+        (p.observacao || '').slice(0, 100),
       ]);
       manualSnapshot.forEach((item) => {
         rows.push([
@@ -1438,18 +1486,60 @@ export default function ComprasClient() {
           '-',
           item.nome || 'Produto manual',
           item.quantidade.toLocaleString('pt-BR'),
-          item.observacao.slice(0, 120) || '',
+          item.observacao.slice(0, 100) || '',
         ]);
       });
+
       autoTable(doc, {
-        head: [['Código', 'EAN', 'Produto', 'Qtd Pedido', 'Observações']],
+        head: [['Código Forn.', 'EAN/GTIN', 'Produto', 'Qtd', 'Observações']],
         body: rows,
-        startY: 42,
-        styles: { fontSize: 9, cellPadding: 4, fillColor: [249, 250, 251], textColor: [38, 38, 38], lineColor: [236, 239, 241], lineWidth: 0.2 },
-        headStyles: { fillColor: [32, 51, 84], textColor: 255, lineWidth: 0 },
-        alternateRowStyles: { fillColor: [255, 255, 255] },
+        startY: 60,
+        margin: { left: 14, right: 14 },
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+          fillColor: [255, 255, 255],
+          textColor: textDark,
+          lineColor: [230, 230, 230],
+          lineWidth: 0.1,
+          overflow: 'linebreak',
+        },
+        headStyles: {
+          fillColor: darkColor,
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          lineWidth: 0,
+        },
+        alternateRowStyles: {
+          fillColor: lightGray,
+        },
+        columnStyles: {
+          0: { cellWidth: 22 }, // Código
+          1: { cellWidth: 32 }, // EAN
+          2: { cellWidth: 'auto' }, // Produto - expande
+          3: { cellWidth: 15, halign: 'center' }, // Qtd
+          4: { cellWidth: 45 }, // Observações
+        },
         theme: 'plain',
+        didDrawPage: (data) => {
+          // Rodapé em cada página
+          const pageCount = doc.getNumberOfPages();
+          const pageNumber = data.pageNumber;
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text(
+            `Página ${pageNumber} de ${pageCount}`,
+            pageWidth / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
+          // Linha verde no rodapé
+          doc.setDrawColor(...primaryColor);
+          doc.setLineWidth(1);
+          doc.line(14, doc.internal.pageSize.getHeight() - 15, pageWidth - 14, doc.internal.pageSize.getHeight() - 15);
+        },
       });
+
       doc.save(`${toSafeFileName(orderTitle)}.pdf`);
       toast({ type: 'success', message: 'PDF gerado com sucesso!', duration: 5000 });
     } catch (error) {
