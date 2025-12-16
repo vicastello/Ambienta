@@ -29,6 +29,7 @@ export async function PUT(req: NextRequest) {
             pedidoOverrides: body.pedidoOverrides ?? {},
             manualItems: Array.isArray(body.manualItems) ? body.manualItems : [],
             currentOrderName: typeof body.currentOrderName === 'string' ? body.currentOrderName : '',
+            selectedIds: body.selectedIds ?? {},
             periodDays: body.periodDays,
             targetDays: body.targetDays,
         };
