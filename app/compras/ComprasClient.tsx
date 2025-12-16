@@ -1429,20 +1429,20 @@ export default function ComprasClient() {
       doc.setFontSize(16);
       doc.setTextColor(...darkColor);
       doc.setFont('helvetica', 'bold');
-      doc.text('PEDIDO DE COMPRAS', 40, 16);
+      doc.text('PEDIDO DE COMPRAS', 48, 16);
 
       // Linha decorativa Teal
       doc.setDrawColor(...primaryColor);
       doc.setLineWidth(1.5);
-      doc.line(40, 19, pageWidth - 14, 19);
+      doc.line(48, 19, pageWidth - 14, 19);
 
       // Dados do pedido (menores)
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100);
-      doc.text(`Pedido: ${orderTitle}`, 40, 25);
-      doc.text(`Data: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 40, 30);
-      doc.text(`Itens: ${produtosSnapshot.length + manualSnapshot.length}`, 40, 35);
+      doc.text(`Pedido: ${orderTitle}`, 48, 25);
+      doc.text(`Data: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 48, 30);
+      doc.text(`Itens: ${produtosSnapshot.length + manualSnapshot.length}`, 48, 35);
 
       // Dados da empresa (lado direito, menores)
       doc.setFontSize(7);
