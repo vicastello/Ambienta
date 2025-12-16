@@ -1744,10 +1744,10 @@ export default function ComprasClient() {
                 />
               </div>
             </div>
-            {/* Toolbar inferior fixa */}
-            <div className="flex items-center justify-between gap-4 p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 rounded-b-[24px] -mx-4 -mb-4 mt-4">
+            {/* Toolbar inferior fixa - Sticky no bottom */}
+            <div className="sticky bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] rounded-b-xl shrink-0">
               {/* Info de seleção */}
-              <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+              <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap font-medium">
                 {selectionCount} sel. · {selectionTotalQuantidade.toLocaleString('pt-BR')} un.
               </div>
 
