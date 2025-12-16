@@ -124,6 +124,23 @@ export async function tinyGet<T>(
     };
 
     if (!res.ok) {
+      // Lógica de Retry para Rate Limit (429) ou Gateway Timeout (504)
+      const isRetryable = res.status === 429 || res.status === 504;
+      const currentRetry = (options as any)._retryCount || 0;
+      const maxRetries = 3;
+
+      if (isRetryable && currentRetry < maxRetries) {
+        const delay = 1000 * Math.pow(2, currentRetry); // 1s, 2s, 4s...
+        console.warn(`[TinyApi] Rate Limit ${res.status} detectado. Retrying em ${delay}ms... (Tentativa ${currentRetry + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        // Chamada recursiva com contador incrementado
+        return tinyGet<T>(path, accessToken, params, {
+          ...options,
+          _retryCount: currentRetry + 1,
+        } as any);
+      }
+
       try {
         const json = JSON.parse(text);
         logPayload.errorCode = (json?.error as string) ?? (json?.code as string) ?? null;
@@ -133,7 +150,7 @@ export async function tinyGet<T>(
       }
       // Fire and forget logging
       import('@/src/lib/tinyUsageLogger').then(({ logTinyUsage }) =>
-        logTinyUsage(logPayload).catch(() => {})
+        logTinyUsage(logPayload).catch(() => { })
       );
 
       throw new TinyApiError(
@@ -145,7 +162,7 @@ export async function tinyGet<T>(
 
     // Log sucesso
     import('@/src/lib/tinyUsageLogger').then(({ logTinyUsage }) =>
-      logTinyUsage(logPayload).catch(() => {})
+      logTinyUsage(logPayload).catch(() => { })
     );
 
     try {
@@ -166,7 +183,7 @@ export async function tinyGet<T>(
           success: false,
           errorCode: 'NETWORK_ERROR',
           errorMessage: error?.message ?? String(error),
-        }).catch(() => {})
+        }).catch(() => { })
       );
     }
     throw error;
