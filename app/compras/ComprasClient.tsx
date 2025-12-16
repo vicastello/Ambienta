@@ -50,7 +50,7 @@ const MIN_COBERTURA_DIAS = 15;
 const MAX_COBERTURA_DIAS = 180;
 const SEM_FORNECEDOR_KEY = '__SEM_FORNECEDOR__';
 const MANUAL_ITEM_ID_SEED = -1;
-const DEFAULT_LEAD_TIME = 7; // Valor padrão caso não venha da API
+const DEFAULT_LEAD_TIME = 5; // Valor padrão caso não venha da API
 
 const buildDefaultOrderName = (dateInput?: string | Date) => {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -1322,24 +1322,25 @@ export default function ComprasClient() {
                       />
                     </div>
                   </div>
-                  <div className="w-[130px]">
+                  <div className="w-[100px]">
                     <div className="flex items-center justify-between mb-1.5 ml-1 mr-1">
                       <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Cobertura</label>
                       <span className="text-[9px] text-[var(--color-primary)] font-medium">
                         {new Date(new Date().setDate(new Date().getDate() + targetDays)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                       </span>
                     </div>
-                    <div className="relative flex items-center gap-1">
+                    <div className="relative flex items-center">
                       <input
                         type="number"
                         min={15}
                         max={180}
-                        className="app-input w-full h-10 text-sm text-center font-semibold"
+                        className="app-input w-full h-10 text-sm text-center font-semibold pr-10"
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="absolute right-1 top-0 bottom-0 flex items-center">
+                      <div className="absolute right-[2px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center pointer-events-auto z-10">
                         <AppDatePicker
+                          align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
                           onSelect={(date) => {
                             const today = new Date();
@@ -1348,15 +1349,12 @@ export default function ComprasClient() {
                             target.setHours(0, 0, 0, 0);
                             const diffTime = target.getTime() - today.getTime();
                             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                            if (diffDays >= 1) { // Permitir seleção livre, o input manual já tem clamp.
-                              // Mas se definirmos state direto, precisamos respeitar limites do app? 
-                              // O input manual tem clamp. Vou aplicar clamp para consistência.
+                            if (diffDays >= 1) {
                               const clamped = Math.max(diffDays, 1);
                               setTargetDays(clamped);
                             }
                           }}
                           minDate={new Date()}
-                          align="right"
                         />
                       </div>
                     </div>
