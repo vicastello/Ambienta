@@ -262,13 +262,13 @@ export function ProductTable({
                             rowClass = 'align-middle transition-all duration-200 table-row-selected';
                         } else if (isWarning) {
                             // Gradiente vermelho para Curva A com risco de ruptura
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-100 dark:border-rose-500/20';
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-50 dark:border-rose-500/20';
                         } else if (isUrgent) {
                             // Gradiente vermelho para ruptura iminente (geral)
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-100 dark:border-rose-500/20';
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-50 dark:border-rose-500/20';
                         } else if (p.alerta_embalagem) {
                             // Gradiente amarelo para alerta de embalagem
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-500/10 dark:to-transparent border-b border-amber-100 dark:border-amber-500/20';
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-500/10 dark:to-transparent border-b border-amber-50 dark:border-amber-500/20';
                         } else if (virtualRow.index % 2 === 0) {
                             rowClass = 'align-middle transition-all duration-200 table-row-even dark:bg-white/[0.02] border-b border-slate-100 dark:border-slate-800';
                         } else {
@@ -278,12 +278,12 @@ export function ProductTable({
 
                         // Definir background específico para células sticky em linhas de alerta
                         // Isso garante que elas tenham a cor correta (e não branco) mas continuem opacas/blur
-                        // Intensificando para 100 para criar o efeito de "Início do Gradiente" mais forte que o resto da linha
+                        // Suavizando para 50 para atender pedido de "cores mais suaves"
                         let stickyDataClass = 'sticky-cell';
                         if (isWarning || isUrgent) {
-                            stickyDataClass = 'bg-rose-100 dark:bg-rose-900/40';
+                            stickyDataClass = 'bg-rose-50 dark:bg-rose-950/20';
                         } else if (p.alerta_embalagem) {
-                            stickyDataClass = 'bg-amber-100 dark:bg-amber-900/40';
+                            stickyDataClass = 'bg-amber-50 dark:bg-amber-950/20';
                         }
 
                         return (
