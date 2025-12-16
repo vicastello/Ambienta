@@ -4,7 +4,7 @@ import { memo, useMemo } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ChartTooltipPayload, ChartTooltipValue, CustomTooltipFormatter } from './ChartTooltips';
 
-const PRIMARY_COLOR = 'rgb(168, 85, 247)';
+const PRIMARY_COLOR = 'rgb(168, 85, 247)'; // purple for charts
 const SECONDARY_COLOR = '#E4E4E9';
 
 type SparkDatum = {

@@ -1,0 +1,1495 @@
+/* ============================================================================
+   DESIGN TOKENS - Gestor Tiny
+   Sistema centralizado de tokens de design para garantir consistência visual
+   ============================================================================ */
+
+@layer base {
+
+    /* ==========================================================================
+     PALETA DE CORES COMPLETA
+     Primária: #009CA6 (Teal Ambienta)
+     Secundária: #A855F7 (Roxo Charts)
+     ========================================================================== */
+
+    :root {
+        /* ===== CORES PRIMÁRIAS ===== */
+        /* Teal Ambienta - Identidade da marca */
+        --color-primary: #009CA6;
+        --color-primary-light: #00B5C3;
+        --color-primary-dark: #007982;
+        --color-primary-soft: rgba(0, 156, 166, 0.15);
+        --color-primary-subtle: rgba(0, 156, 166, 0.08);
+
+        /* Roxo - Gráficos e destaques */
+        --color-secondary: #A855F7;
+        --color-secondary-light: #C084FC;
+        --color-secondary-dark: #9333EA;
+        --color-secondary-soft: rgba(168, 85, 247, 0.15);
+        --color-secondary-subtle: rgba(168, 85, 247, 0.08);
+
+        /* ===== CORES SEMÂNTICAS ===== */
+        /* Success - Verde vibrante complementar ao teal */
+        --color-success: #00D4AA;
+        --color-success-light: #00F5C5;
+        --color-success-dark: #00A88A;
+        --color-success-soft: rgba(0, 212, 170, 0.18);
+
+        /* Error - Coral vibrante para alertas */
+        --color-error: #FF4D6A;
+        --color-error-light: #FF7088;
+        --color-error-dark: #E63950;
+        --color-error-soft: rgba(255, 77, 106, 0.18);
+
+        /* Warning - Laranja vibrante */
+        --color-warning: #FF9500;
+        --color-warning-light: #FFB340;
+        --color-warning-dark: #E68600;
+        --color-warning-soft: rgba(255, 149, 0, 0.18);
+
+        /* Info - Azul cyan vibrante complementar */
+        --color-info: #00B8FF;
+        --color-info-light: #40CAFF;
+        --color-info-dark: #0095D1;
+        --color-info-soft: rgba(0, 184, 255, 0.18);
+
+        /* ===== CORES NEUTRAS ===== */
+        --color-neutral-50: #F8FAFC;
+        --color-neutral-100: #F1F5F9;
+        --color-neutral-200: #E2E8F0;
+        --color-neutral-300: #CBD5E1;
+        --color-neutral-400: #94A3B8;
+        --color-neutral-500: #64748B;
+        --color-neutral-600: #475569;
+        --color-neutral-700: #334155;
+        --color-neutral-800: #1E293B;
+        --color-neutral-900: #0F172A;
+        --color-neutral-950: #020617;
+
+        /* ===== ALIASES DE TEXTO ===== */
+        --text-primary: var(--text-main);
+        --text-secondary: var(--text-muted);
+        --text-tertiary: var(--text-soft);
+
+        /* ===== ALIASES DE MARCA (RETROCOMPAT) ===== */
+        --color-brand-primary: var(--color-primary);
+        --color-brand-light: var(--color-primary-light);
+        --color-brand-dark: var(--color-primary-dark);
+        --color-brand-soft: var(--color-primary-soft);
+    }
+
+    :root.dark {
+        /* ===== CORES SEMÂNTICAS - MODO ESCURO ===== */
+        --color-success: #00F5C5;
+        --color-success-light: #3BFFD8;
+        --color-success-dark: #00D4AA;
+        --color-success-soft: rgba(0, 245, 197, 0.22);
+
+        --color-error: #FF7088;
+        --color-error-light: #FF9AAB;
+        --color-error-dark: #FF4D6A;
+        --color-error-soft: rgba(255, 112, 136, 0.22);
+
+        --color-warning: #FFB340;
+        --color-warning-light: #FFCC70;
+        --color-warning-dark: #FF9500;
+        --color-warning-soft: rgba(255, 179, 64, 0.22);
+
+        --color-info: #40CAFF;
+        --color-info-light: #70D9FF;
+        --color-info-dark: #00B8FF;
+        --color-info-soft: rgba(64, 202, 255, 0.22);
+    }
+
+    /* ==========================================================================
+     ESPAÇAMENTO
+     Complementa a escala padrão do Tailwind
+     ========================================================================== */
+
+    :root {
+        --spacing-xs: 0.5rem;
+        /* 8px */
+        --spacing-sm: 0.75rem;
+        /* 12px */
+        --spacing-md: 1rem;
+        /* 16px */
+        --spacing-lg: 1.5rem;
+        /* 24px */
+        --spacing-xl: 2rem;
+        /* 32px */
+        --spacing-2xl: 3rem;
+        /* 48px */
+        --spacing-3xl: 4rem;
+        /* 64px */
+
+        /* Espaçamento específico de componentes */
+        --spacing-card-sm: 1rem;
+        --spacing-card-md: 1.5rem;
+        --spacing-card-lg: 2rem;
+
+        --spacing-panel-sm: 1.5rem;
+        --spacing-panel-md: 2rem;
+        --spacing-panel-lg: 2.5rem;
+    }
+
+    /* ==========================================================================
+     BORDER RADIUS
+     ========================================================================== */
+
+    :root {
+        --radius-xs: 0.375rem;
+        /* 6px */
+        --radius-sm: 0.5rem;
+        /* 8px */
+        --radius-md: 0.75rem;
+        /* 12px */
+        --radius-lg: 1rem;
+        /* 16px */
+        --radius-xl: 1.5rem;
+        /* 24px */
+        --radius-2xl: 2rem;
+        /* 32px */
+        --radius-full: 9999px;
+
+        /* Radius específico de componentes */
+        --radius-input: 1.5rem;
+        --radius-button: 9999px;
+        --radius-card: 2rem;
+        --radius-badge: 0.5rem;
+        --radius-chip: 9999px;
+    }
+
+    /* ==========================================================================
+     SHADOWS
+     ========================================================================== */
+
+    :root {
+        /* Modo Claro */
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+        --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.16);
+
+        /* Sombras específicas de componentes */
+        --shadow-card: var(--shadow-md);
+        --shadow-elevated: var(--shadow-lg);
+        --shadow-floating: var(--shadow-xl);
+        --shadow-button: 0 10px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    :root.dark {
+        /* Modo Escuro - sombras mais pronunciadas */
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.24);
+        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.32);
+        --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.48);
+
+        --shadow-button: 0 14px 36px rgba(0, 5, 18, 0.65);
+    }
+
+    /* ==========================================================================
+     TRANSIÇÕES
+     ========================================================================== */
+
+    :root {
+        --transition-fast: 150ms ease;
+        --transition-base: 200ms ease;
+        --transition-slow: 300ms ease;
+        --transition-slower: 500ms ease;
+
+        /* Transições específicas */
+        --transition-color: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+        --transition-transform: transform 200ms ease;
+        --transition-all: all 200ms ease;
+    }
+
+    /* ==========================================================================
+     TIPOGRAFIA
+     ========================================================================== */
+
+    :root {
+        /* Tamanhos de fonte */
+        --font-size-xs: 0.75rem;
+        /* 12px */
+        --font-size-sm: 0.875rem;
+        /* 14px */
+        --font-size-base: 1rem;
+        /* 16px */
+        --font-size-lg: 1.125rem;
+        /* 18px */
+        --font-size-xl: 1.25rem;
+        /* 20px */
+        --font-size-2xl: 1.5rem;
+        /* 24px */
+        --font-size-3xl: 1.875rem;
+        /* 30px */
+        --font-size-4xl: 2.25rem;
+        /* 36px */
+
+        /* Line heights */
+        --leading-tight: 1.25;
+        --leading-normal: 1.5;
+        --leading-relaxed: 1.75;
+
+        /* Font weights */
+        --font-weight-normal: 400;
+        --font-weight-medium: 500;
+        --font-weight-semibold: 600;
+        --font-weight-bold: 700;
+    }
+
+    /* ==========================================================================
+     Z-INDEX SCALE
+     ========================================================================== */
+
+    :root {
+        --z-base: 0;
+        --z-dropdown: 1000;
+        --z-sticky: 1100;
+        --z-fixed: 1200;
+        --z-modal-backdrop: 1300;
+        --z-modal: 1400;
+        --z-popover: 1500;
+        --z-tooltip: 1600;
+        --z-notification: 1700;
+    }
+
+    /* ==========================================================================
+     BACKDROP FILTERS
+     ========================================================================== */
+
+    :root {
+        /* Blur strengths */
+        --blur-sm: 8px;
+        --blur-md: 16px;
+        --blur-lg: 24px;
+        --blur-xl: 32px;
+
+        /* Saturation multipliers */
+        --saturate-normal: 1;
+        --saturate-enhanced: 1.1;
+        --saturate-strong: 1.2;
+
+        /* Backdrop filters compostos */
+        --backdrop-glass: blur(100px) saturate(1.1);
+        --backdrop-glass-strong: blur(120px) saturate(1.2);
+        --backdrop-panel: blur(var(--panel-blur)) saturate(var(--panel-sat));
+        --backdrop-card: blur(var(--card-blur)) saturate(var(--card-sat));
+    }
+
+    /* ==========================================================================
+     ANIMAÇÕES
+     ========================================================================== */
+
+    @keyframes fade-in {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    @keyframes fade-out {
+        from {
+            opacity: 1;
+        }
+
+        to {
+            opacity: 0;
+        }
+    }
+
+    @keyframes slide-in-up {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes slide-in-down {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes scale-in {
+        from {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    @keyframes shimmer {
+        0% {
+            background-position: -1000px 0;
+        }
+
+        100% {
+            background-position: 1000px 0;
+        }
+    }
+
+    /* ==========================================================================
+     BREAKPOINTS (para referência, usados via Tailwind)
+     ========================================================================== */
+
+    /* 
+    sm: 640px
+    md: 768px
+    lg: 1024px
+    xl: 1280px
+    2xl: 1536px
+  */
+
+    /* ==========================================================================
+     CLASSES UTILITÁRIAS - GLASSMORPHISM MINIMALISTA
+     ========================================================================== */
+
+    /* ----- STATUS BADGES ----- */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.625rem;
+        border-radius: 9999px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .status-badge-primary {
+        background: var(--color-primary-soft);
+        color: var(--color-primary-dark);
+    }
+
+    .status-badge-secondary {
+        background: var(--color-secondary-soft);
+        color: var(--color-secondary-dark);
+    }
+
+    .status-badge-success {
+        background: var(--color-success-soft);
+        color: var(--color-success-dark);
+    }
+
+    .status-badge-error {
+        background: var(--color-error-soft);
+        color: var(--color-error-dark);
+    }
+
+    .status-badge-warning {
+        background: var(--color-warning-soft);
+        color: var(--color-warning-dark);
+    }
+
+    .status-badge-neutral {
+        background: rgba(100, 116, 139, 0.1);
+        color: var(--color-neutral-600);
+    }
+
+    :root.dark .status-badge-neutral {
+        background: rgba(148, 163, 184, 0.15);
+        color: var(--color-neutral-300);
+    }
+
+    /* ----- SEGMENTED CONTROL (View Mode Toggle) ----- */
+    .segmented-control {
+        display: inline-flex;
+        padding: 0.25rem;
+        border-radius: 9999px;
+        background: rgba(241, 245, 249, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(8px);
+    }
+
+    :root.dark .segmented-control {
+        background: rgba(30, 41, 59, 0.7);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .segmented-control-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-neutral-500);
+        transition: all 150ms ease;
+    }
+
+    .segmented-control-item:hover {
+        color: var(--color-neutral-700);
+    }
+
+    .segmented-control-item.active {
+        background: white;
+        color: var(--color-neutral-900);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    :root.dark .segmented-control-item {
+        color: var(--color-neutral-400);
+    }
+
+    :root.dark .segmented-control-item:hover {
+        color: var(--color-neutral-200);
+    }
+
+    :root.dark .segmented-control-item.active {
+        background: var(--color-neutral-800);
+        color: white;
+    }
+
+    /* ----- GLASS INPUT ----- */
+    .glass-input {
+        width: 100%;
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        font-size: 0.875rem;
+        color: var(--color-neutral-900);
+        outline: none;
+        transition: all 150ms ease;
+        backdrop-filter: blur(8px);
+    }
+
+    .glass-input::placeholder {
+        color: var(--color-neutral-400);
+    }
+
+    .glass-input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-subtle);
+    }
+
+    :root.dark .glass-input {
+        background: rgba(30, 41, 59, 0.6);
+        border-color: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+
+    :root.dark .glass-input:focus {
+        border-color: var(--color-primary);
+    }
+
+    /* ----- SKELETON LOADING ----- */
+    .skeleton {
+        background: linear-gradient(90deg,
+                var(--color-neutral-200) 0%,
+                var(--color-neutral-100) 50%,
+                var(--color-neutral-200) 100%);
+        background-size: 1000px 100%;
+        animation: shimmer 2s infinite linear;
+        border-radius: 0.5rem;
+    }
+
+    :root.dark .skeleton {
+        background: linear-gradient(90deg,
+                var(--color-neutral-800) 0%,
+                var(--color-neutral-700) 50%,
+                var(--color-neutral-800) 100%);
+        background-size: 1000px 100%;
+    }
+
+    /* ----- FLOATING ACTION BUTTON ----- */
+    .fab {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: white;
+        transition: all 200ms ease;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .fab-primary {
+        background: var(--color-primary);
+    }
+
+    .fab-primary:hover {
+        background: var(--color-primary-dark);
+        box-shadow: 0 12px 32px rgba(0, 156, 166, 0.3);
+    }
+
+    .fab-secondary {
+        background: var(--color-secondary);
+    }
+
+    .fab-secondary:hover {
+        background: var(--color-secondary-dark);
+        box-shadow: 0 12px 32px rgba(168, 85, 247, 0.3);
+    }
+
+    .fab-neutral {
+        background: var(--color-neutral-700);
+    }
+
+    .fab-neutral:hover {
+        background: var(--color-neutral-600);
+    }
+
+    /* ----- METRIC CARD (Mini) ----- */
+    .metric-card {
+        padding: 0.75rem;
+        border-radius: 0.75rem;
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        text-align: center;
+        backdrop-filter: blur(8px);
+    }
+
+    :root.dark .metric-card {
+        background: rgba(30, 41, 59, 0.6);
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    /* ==========================================================================
+     TABELA - ESTILOS PADRÃO (baseado em compras/ProductTable)
+     ========================================================================== */
+
+    /* ----- TABLE HEADER ----- */
+    .app-table-header {
+        font-size: 0.625rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-neutral-500);
+        background: var(--color-neutral-50);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+    }
+
+    :root.dark .app-table-header {
+        background: var(--color-neutral-900);
+        color: var(--color-neutral-400);
+    }
+
+    .app-table-header th {
+        padding: 0.5rem 0.75rem;
+        font-weight: 600;
+        border-bottom: 1px solid var(--color-neutral-200);
+        vertical-align: bottom;
+    }
+
+    :root.dark .app-table-header th {
+        border-bottom-color: var(--color-neutral-800);
+    }
+
+    /* ----- TABLE ROWS ----- */
+    .app-table-row {
+        transition: background-color 150ms ease;
+    }
+
+    .app-table-row:nth-child(even) {
+        background: rgba(255, 255, 255, 0.4);
+    }
+
+    .app-table-row:nth-child(odd) {
+        background: var(--color-neutral-50);
+    }
+
+    :root.dark .app-table-row:nth-child(even) {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    :root.dark .app-table-row:nth-child(odd) {
+        background: rgba(30, 41, 59, 0.2);
+    }
+
+    .app-table-row:hover {
+        background: rgba(255, 255, 255, 0.6);
+    }
+
+    :root.dark .app-table-row:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* Row States */
+    .table-row-selected {
+        background: var(--color-primary-subtle) !important;
+        border-left: 3px solid var(--color-primary);
+    }
+
+    .table-row-urgent {
+        background: var(--color-error-soft) !important;
+    }
+
+    .table-row-warning {
+        background: var(--color-warning-soft) !important;
+    }
+
+    /* ----- TABLE CELLS ----- */
+    .app-table-cell {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        color: var(--color-neutral-700);
+        vertical-align: middle;
+    }
+
+    :root.dark .app-table-cell {
+        color: var(--color-neutral-200);
+    }
+
+    .app-table-cell-sticky {
+        position: sticky;
+        z-index: 10;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(8px);
+    }
+
+    :root.dark .app-table-cell-sticky {
+        background: rgba(15, 23, 42, 0.95);
+    }
+
+    /* ----- TABLE INPUTS ----- */
+    .app-input {
+        width: 100%;
+        padding: 0.375rem 0.5rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--color-neutral-200);
+        background: white;
+        font-size: 0.75rem;
+        color: var(--color-neutral-900);
+        transition: all 150ms ease;
+    }
+
+    .app-input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 2px var(--color-primary-subtle);
+    }
+
+    :root.dark .app-input {
+        background: var(--color-neutral-800);
+        border-color: var(--color-neutral-700);
+        color: white;
+    }
+
+    .app-input-editable {
+        background: transparent;
+        border-style: dashed;
+    }
+
+    .app-input-editable:focus {
+        background: white;
+        border-style: solid;
+    }
+
+    :root.dark .app-input-editable:focus {
+        background: var(--color-neutral-800);
+    }
+
+    /* ----- TABLE CHECKBOXES ----- */
+    .checkbox-btn {
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+        transition: background-color 150ms ease;
+    }
+
+    .checkbox-btn:hover {
+        background: var(--color-neutral-100);
+    }
+
+    :root.dark .checkbox-btn:hover {
+        background: var(--color-neutral-800);
+    }
+
+    .app-checkbox {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 0.375rem;
+        border: 2px solid var(--color-neutral-300);
+        background: white;
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+
+    .app-checkbox:hover {
+        border-color: var(--color-primary);
+    }
+
+    .app-checkbox.checked {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+    }
+
+    .app-checkbox-indicator {
+        display: none;
+    }
+
+    .app-checkbox.checked .app-checkbox-indicator {
+        display: block;
+        width: 0.5rem;
+        height: 0.5rem;
+        background: white;
+        border-radius: 0.125rem;
+    }
+
+    :root.dark .app-checkbox {
+        background: var(--color-neutral-800);
+        border-color: var(--color-neutral-600);
+    }
+
+    /* ----- ABC CURVE BADGES ----- */
+    .abc-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 9999px;
+        font-size: 0.625rem;
+        font-weight: 700;
+    }
+
+    .abc-badge-a {
+        background: var(--color-secondary-soft);
+        color: var(--color-secondary-dark);
+    }
+
+    .abc-badge-b {
+        background: var(--color-info-soft);
+        color: var(--color-info-dark);
+    }
+
+    .abc-badge-c {
+        background: var(--color-neutral-100);
+        color: var(--color-neutral-500);
+    }
+
+    :root.dark .abc-badge-c {
+        background: var(--color-neutral-700);
+        color: var(--color-neutral-400);
+    }
+
+    /* ----- RUPTURA BADGES (Dias até estoque zerado) ----- */
+    .ruptura-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .ruptura-badge-critical {
+        background: var(--color-error-soft);
+        color: var(--color-error-dark);
+    }
+
+    .ruptura-badge-warning {
+        background: var(--color-warning-soft);
+        color: var(--color-warning-dark);
+    }
+
+    .ruptura-badge-healthy {
+        background: var(--color-success-soft);
+        color: var(--color-success-dark);
+    }
+
+    /* ----- SYNC STATUS INDICATORS ----- */
+    .sync-status {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.625rem;
+    }
+
+    .sync-status-saving {
+        color: var(--color-neutral-500);
+    }
+
+    .sync-status-saved {
+        color: var(--color-success);
+    }
+
+    .sync-status-error {
+        color: var(--color-error);
+    }
+
+    /* ----- PRODUCT THUMBNAIL ----- */
+    .product-thumbnail {
+        position: relative;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.5rem;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        overflow: hidden;
+        flex-shrink: 0;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    :root.dark .product-thumbnail {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .product-thumbnail img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .product-thumbnail-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        font-size: 0.5rem;
+        color: var(--color-neutral-500);
+    }
+
+    /* ----- TABLE TEXT STYLES ----- */
+    .table-text-primary {
+        font-weight: 600;
+        color: var(--color-neutral-900);
+    }
+
+    :root.dark .table-text-primary {
+        color: white;
+    }
+
+    .table-text-secondary {
+        color: var(--color-neutral-600);
+    }
+
+    :root.dark .table-text-secondary {
+        color: var(--color-neutral-300);
+    }
+
+    .table-text-muted {
+        font-size: 0.6875rem;
+        color: var(--color-neutral-500);
+    }
+
+    .table-text-success {
+        font-weight: 600;
+        color: var(--color-success);
+    }
+
+    .table-text-error {
+        font-weight: 600;
+        color: var(--color-error);
+    }
+
+    .table-text-warning {
+        font-weight: 600;
+        color: var(--color-warning);
+    }
+
+    /* ----- SORTABLE HEADER ----- */
+    .sortable-header {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        cursor: pointer;
+        transition: color 150ms ease;
+    }
+
+    .sortable-header:hover {
+        color: var(--color-primary);
+    }
+
+    .sortable-header-active {
+        color: var(--color-primary);
+    }
+
+    .sortable-header-icon {
+        width: 0.875rem;
+        height: 0.875rem;
+        flex-shrink: 0;
+    }
+
+    .sortable-header-icon-inactive {
+        opacity: 0.4;
+    }
+
+    /* ----- STOCK BADGES (Saldo, Reservado, Disponível) ----- */
+    .stock-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.625rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .stock-badge-neutral {
+        background: var(--color-neutral-100);
+        color: var(--color-neutral-700);
+    }
+
+    :root.dark .stock-badge-neutral {
+        background: rgba(30, 41, 59, 0.8);
+        color: var(--color-neutral-200);
+    }
+
+    .stock-badge-warning {
+        background: var(--color-warning-soft);
+        color: var(--color-warning-dark);
+    }
+
+    .stock-badge-error {
+        background: var(--color-error-soft);
+        color: var(--color-error-dark);
+    }
+
+    .stock-badge-success {
+        background: var(--color-primary-soft);
+        color: var(--color-primary-dark);
+    }
+
+    :root.dark .stock-badge-success {
+        background: rgba(0, 156, 166, 0.15);
+        color: var(--color-primary-light);
+    }
+
+    /* ----- PRODUCT THUMBNAIL LARGE ----- */
+    .product-thumbnail-lg {
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: 1rem;
+        background: var(--color-neutral-100);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        overflow: hidden;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 150ms ease;
+    }
+
+    :root.dark .product-thumbnail-lg {
+        background: var(--color-neutral-800);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .product-thumbnail-lg:hover,
+    .group:hover .product-thumbnail-lg {
+        box-shadow: 0 0 0 2px rgba(0, 156, 166, 0.3);
+    }
+
+    .product-thumbnail-lg img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 150ms ease;
+    }
+
+    .group:hover .product-thumbnail-lg img {
+        transform: scale(1.05);
+    }
+
+    /* ----- TABLE CELL TEXT ----- */
+    .cell-text-code {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-neutral-900);
+    }
+
+    :root.dark .cell-text-code {
+        color: white;
+    }
+
+    .cell-text-subcode {
+        font-size: 0.75rem;
+        color: var(--color-neutral-500);
+    }
+
+    :root.dark .cell-text-subcode {
+        color: var(--color-neutral-300);
+    }
+
+    .cell-text-name {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-neutral-900);
+    }
+
+    :root.dark .cell-text-name {
+        color: white;
+    }
+
+    .cell-text-price {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-neutral-900);
+    }
+
+    :root.dark .cell-text-price {
+        color: white;
+    }
+
+    .cell-text-promo {
+        font-size: 0.75rem;
+        color: var(--color-primary);
+    }
+
+    /* ==========================================================================
+     STICKY CELLS - Para colunas fixas em tabelas com scroll
+     ========================================================================== */
+
+    .sticky-cell {
+        position: sticky;
+        z-index: 10;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(8px);
+    }
+
+    :root.dark .sticky-cell {
+        background: rgba(15, 23, 42, 0.95);
+    }
+
+    .sticky-cell-urgent {
+        background: rgba(255, 241, 242, 0.95) !important;
+    }
+
+    :root.dark .sticky-cell-urgent {
+        background: rgba(127, 29, 29, 0.95) !important;
+    }
+
+    .sticky-cell-warning {
+        background: rgba(255, 251, 235, 0.95) !important;
+    }
+
+    :root.dark .sticky-cell-warning {
+        background: rgba(120, 53, 15, 0.95) !important;
+    }
+
+    /* ==========================================================================
+     TABLE ROW ZEBRA - Para alternância de cores
+     ========================================================================== */
+
+    .table-row-even {
+        background: rgba(255, 255, 255, 0.4);
+    }
+
+    :root.dark .table-row-even {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .table-row-odd {
+        background: rgba(248, 250, 252, 0.4);
+    }
+
+    :root.dark .table-row-odd {
+        background: rgba(30, 41, 59, 0.2);
+    }
+
+    .table-row-even:hover,
+    .table-row-odd:hover {
+        background: rgba(255, 255, 255, 0.6);
+    }
+
+    :root.dark .table-row-even:hover,
+    :root.dark .table-row-odd:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* ==========================================================================
+     PRODUCT THUMBNAIL SMALL (usado em compras)
+     ========================================================================== */
+
+    .product-thumbnail-sm {
+        position: relative;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.5rem;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        overflow: hidden;
+        flex-shrink: 0;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    :root.dark .product-thumbnail-sm {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .product-thumbnail-sm img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* ==========================================================================
+     TABLE CONTAINER - Wrapper da tabela
+     ========================================================================== */
+
+    .table-container {
+        overflow: auto;
+        position: relative;
+    }
+
+    .table-container::-webkit-scrollbar {
+        display: none;
+    }
+
+    .table-base {
+        width: 100%;
+        font-size: 0.875rem;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+    }
+
+    .tbody-divider {
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    :root.dark .tbody-divider {
+        border-top-color: rgba(255, 255, 255, 0.05);
+    }
+
+    /* ==========================================================================
+     HEADER TH - Células do cabeçalho
+     ========================================================================== */
+
+    .th-base {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        vertical-align: bottom;
+        border-bottom: 1px solid var(--color-neutral-200);
+    }
+
+    :root.dark .th-base {
+        border-bottom-color: var(--color-neutral-800);
+    }
+
+    .th-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--color-neutral-50);
+    }
+
+    :root.dark .th-sticky {
+        background: var(--color-neutral-900);
+    }
+
+    .th-frozen {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        background: var(--color-neutral-50);
+    }
+
+    :root.dark .th-frozen {
+        background: var(--color-neutral-900);
+    }
+
+    /* ==========================================================================
+     TD CELLS - Células do corpo
+     ========================================================================== */
+
+    .td-base {
+        padding: 0.5rem 0.75rem;
+        vertical-align: middle;
+    }
+
+    .td-center {
+        text-align: center;
+    }
+
+    .td-right {
+        text-align: right;
+    }
+
+    .td-frozen {
+        position: sticky;
+        z-index: 10;
+        backdrop-filter: blur(8px);
+    }
+
+    /* ==========================================================================
+     PLACEHOLDER TEXT - Para células vazias
+     ========================================================================== */
+
+    .placeholder-text {
+        color: var(--color-neutral-300);
+    }
+
+    :root.dark .placeholder-text {
+        color: var(--color-neutral-600);
+    }
+
+    /* ==========================================================================
+     MANUAL ROW - Linha de item manual
+     ========================================================================== */
+
+    .manual-row {
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    :root.dark .manual-row {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* ==========================================================================
+     TEXT UTILITIES - Para eliminar estilos inline de texto
+     ========================================================================== */
+
+    .text-table-xs {
+        font-size: 0.75rem;
+    }
+
+    .text-table-xxs {
+        font-size: 0.6875rem;
+    }
+
+    .text-table-micro {
+        font-size: 0.625rem;
+    }
+
+    .text-table-nano {
+        font-size: 0.5rem;
+    }
+
+    .text-table-primary {
+        color: var(--color-neutral-900);
+    }
+
+    :root.dark .text-table-primary {
+        color: white;
+    }
+
+    .text-table-secondary {
+        color: var(--color-neutral-600);
+    }
+
+    :root.dark .text-table-secondary {
+        color: var(--color-neutral-300);
+    }
+
+    .text-table-muted {
+        color: var(--color-neutral-500);
+    }
+
+    :root.dark .text-table-muted {
+        color: var(--color-neutral-400);
+    }
+
+    .text-table-placeholder {
+        color: var(--color-neutral-300);
+    }
+
+    :root.dark .text-table-placeholder {
+        color: var(--color-neutral-600);
+    }
+
+    .text-table-success {
+        color: var(--color-success);
+    }
+
+    :root.dark .text-table-success {
+        color: var(--color-success-light);
+    }
+
+    .text-table-error {
+        color: var(--color-error);
+    }
+
+    .text-table-warning {
+        color: var(--color-warning);
+    }
+
+    /* ==========================================================================
+     FONT UTILITIES
+     ========================================================================== */
+
+    .font-table-semibold {
+        font-weight: 600;
+    }
+
+    .font-table-medium {
+        font-weight: 500;
+    }
+
+    .font-table-bold {
+        font-weight: 700;
+    }
+
+    /* ==========================================================================
+     ABC BADGE INLINE - Para curva ABC
+     ========================================================================== */
+
+    .abc-badge-inline {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 9999px;
+        font-size: 0.625rem;
+        font-weight: 700;
+    }
+
+    .abc-badge-a-inline {
+        background: rgba(139, 92, 246, 0.1);
+        color: rgb(139, 92, 246);
+    }
+
+    :root.dark .abc-badge-a-inline {
+        background: rgba(139, 92, 246, 0.2);
+        color: rgb(167, 139, 250);
+    }
+
+    .abc-badge-b-inline {
+        background: rgba(14, 165, 233, 0.1);
+        color: rgb(14, 165, 233);
+    }
+
+    :root.dark .abc-badge-b-inline {
+        background: rgba(14, 165, 233, 0.2);
+        color: rgb(56, 189, 248);
+    }
+
+    .abc-badge-c-inline {
+        background: var(--color-neutral-100);
+        color: var(--color-neutral-500);
+    }
+
+    :root.dark .abc-badge-c-inline {
+        background: var(--color-neutral-700);
+        color: var(--color-neutral-400);
+    }
+
+    /* ==========================================================================
+     DIAS ATE RUPTURA BADGES
+     ========================================================================== */
+
+    .dias-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .dias-badge-critical {
+        background: rgba(251, 113, 133, 0.1);
+        color: rgb(244, 63, 94);
+    }
+
+    :root.dark .dias-badge-critical {
+        background: rgba(244, 63, 94, 0.2);
+        color: rgb(251, 113, 133);
+    }
+
+    .dias-badge-warning {
+        background: rgba(251, 191, 36, 0.1);
+        color: rgb(217, 119, 6);
+    }
+
+    :root.dark .dias-badge-warning {
+        background: rgba(245, 158, 11, 0.2);
+        color: rgb(251, 191, 36);
+    }
+
+    .dias-badge-healthy {
+        background: rgba(16, 185, 129, 0.1);
+        color: rgb(4, 120, 87);
+    }
+
+    :root.dark .dias-badge-healthy {
+        background: rgba(16, 185, 129, 0.2);
+        color: rgb(52, 211, 153);
+    }
+
+    /* ==========================================================================
+     INPUT SIZES
+     ========================================================================== */
+
+    .app-input-sm {
+        height: 1.75rem;
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+
+    .app-input-xs {
+        height: 1.5rem;
+        font-size: 0.6875rem;
+        padding: 0.125rem 0.375rem;
+    }
+
+    /* ==========================================================================
+     SYNC STATUS
+     ========================================================================== */
+
+    .sync-indicator {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.625rem;
+    }
+
+    .sync-indicator-saving {
+        color: var(--color-neutral-500);
+    }
+
+    .sync-indicator-saved {
+        color: var(--color-success);
+    }
+
+    .sync-indicator-error {
+        color: var(--color-error);
+    }
+
+    /* ==========================================================================
+     REFRESH BUTTON
+     ========================================================================== */
+
+    .refresh-btn {
+        padding: 0.25rem;
+        border-radius: 9999px;
+        color: var(--color-neutral-400);
+        transition: all 150ms ease;
+    }
+
+    .refresh-btn:hover {
+        background: var(--color-neutral-100);
+        color: var(--color-success);
+    }
+
+    :root.dark .refresh-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+}

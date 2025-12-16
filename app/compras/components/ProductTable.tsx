@@ -138,9 +138,9 @@ export function ProductTable({
         };
 
         // Ensure solid background with !important (using !) and high opacity
-        const baseBg = '!bg-slate-50 dark:!bg-slate-900';
-        const stickyBg = stickyLeft ? '!bg-slate-50 dark:!bg-slate-900 shadow-[1px_0_0_0_rgba(0,0,0,0.05)]' : baseBg;
-        const stickyClass = `${stickyBg} border-b border-slate-200 dark:border-slate-800`;
+        const baseBg = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
+        const stickyBg = stickyLeft ? '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] shadow-[1px_0_0_0_rgba(0,0,0,0.05)]' : baseBg;
+        const stickyClass = `${stickyBg} border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]`;
 
         return (
             <th className={`px-3 py-2 text-${align} ${stickyClass} align-bottom`} style={style} aria-sort={getAriaSort(key)}>
@@ -148,7 +148,7 @@ export function ProductTable({
                     role="button"
                     tabIndex={0}
                     onClick={() => onToggleSort(key)}
-                    className={`flex items-end gap-1 text-inherit uppercase tracking-[0.05em] font-semibold cursor-pointer focus:outline-none group ${align === 'right' ? 'justify-end text-right' : 'text-left'}`}
+                    className={`sortable-header ${align === 'right' ? 'justify-end text-right' : 'text-left'}`}
                     aria-label={`Ordenar coluna ${label}`}
                 >
                     <span className="whitespace-normal leading-tight">{label}</span>
@@ -164,34 +164,34 @@ export function ProductTable({
     const paddingBottom = virtualItems.length > 0 ? totalSize - virtualItems[virtualItems.length - 1].end : 0;
 
     return (
-        <div ref={parentRef} className="overflow-auto scrollbar-hide h-full relative">
-            <table className="w-full text-sm border-separate border-spacing-0 table-fixed">
-                <thead className="app-table-header text-[10px] uppercase tracking-[0.05em] text-slate-500 bg-slate-50 dark:bg-slate-900 shadow-sm relative z-50">
+        <div ref={parentRef} className="table-container h-full">
+            <table className="table-base">
+                <thead className="app-table-header text-[10px] uppercase tracking-[0.05em] text-[var(--color-neutral-500)] bg-[var(--color-neutral-50)] dark:bg-[var(--color-neutral-900)] shadow-sm relative z-50">
                     <tr>
-                        <th className="px-3 py-2 text-left w-[50px] sticky top-0 left-0 z-30 !bg-slate-50 dark:!bg-slate-900 align-bottom border-b border-slate-200 dark:border-slate-800">
+                        <th className="px-3 py-2 text-left w-[50px] sticky top-0 left-0 z-30 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
                             <span className="sr-only">Selecionar</span>
                         </th>
                         {/* Frozen Columns */}
-                        {renderSortableHeader('Produto', 'nome', '360px', 'left', '50px')}
-                        {renderSortableHeader('SKU', 'codigo', '110px', 'left', '410px')}
-                        {renderSortableHeader('Código fornecedor', 'fornecedor_codigo', '130px', 'left', '520px')}
-                        {renderSortableHeader('Emb.', 'embalagem_qtd', '70px', 'right', '650px')}
+                        {renderSortableHeader('Produto', 'nome', '280px', 'left', '50px')}
+                        {renderSortableHeader('SKU', 'codigo', '90px', 'left', '330px')}
+                        {renderSortableHeader('Cód. Forn.', 'fornecedor_codigo', '110px', 'left', '420px')}
+                        {renderSortableHeader('Emb.', 'embalagem_qtd', '60px', 'right', '530px')}
 
                         {/* Scrolling Columns */}
-                        <th className="px-3 py-2 text-right min-w-[70px] w-[70px] align-bottom sticky top-0 z-20 !bg-slate-50 dark:!bg-slate-900 border-b border-slate-200 dark:border-slate-800" title="Lead Time (dias de entrega do fornecedor)">LT</th>
-                        {renderSortableHeader('Estoque disp.', 'disponivel', '100px', 'right')}
-                        {renderSortableHeader('Dias Rupt.', 'diasAteRuptura', '80px', 'right')}
-                        {renderSortableHeader('Consumo período', 'consumo_periodo', '100px', 'right')}
-                        {renderSortableHeader('Consumo mensal', 'consumo_mensal', '100px', 'right')}
-                        {renderSortableHeader('Pedido (sugestão)', 'sugestao_base', '100px', 'right')}
-                        {renderSortableHeader('Pedido final', 'sugestao_ajustada', '110px', 'right')}
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[120px] w-[120px] align-bottom !bg-slate-50 dark:!bg-slate-900 border-b border-slate-200 dark:border-slate-800">Custo Unit.</th>
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[120px] w-[120px] align-bottom !bg-slate-50 dark:!bg-slate-900 border-b border-slate-200 dark:border-slate-800">Total</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[220px] w-[220px] align-bottom !bg-slate-50 dark:!bg-slate-900 border-b border-slate-200 dark:border-slate-800">Observações (PDF)</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[140px] w-[140px] align-bottom !bg-slate-50 dark:!bg-slate-900 border-b border-slate-200 dark:border-slate-800">Status</th>
+                        <th className="px-3 py-2 text-right min-w-[70px] w-[70px] align-bottom sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]" title="Lead Time (dias de entrega do fornecedor)">LT</th>
+                        {renderSortableHeader('Estoque', 'disponivel', '85px', 'right')}
+                        {renderSortableHeader('Rupt.', 'diasAteRuptura', '70px', 'right')}
+                        {renderSortableHeader('Cons. Per.', 'consumo_periodo', '85px', 'right')}
+                        {renderSortableHeader('Cons. Mês', 'consumo_mensal', '85px', 'right')}
+                        {renderSortableHeader('Sugestão', 'sugestao_base', '85px', 'right')}
+                        {renderSortableHeader('Pedido', 'sugestao_ajustada', '90px', 'right')}
+                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Custo</th>
+                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Total</th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[180px] w-[180px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Obs. (PDF)</th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[100px] w-[100px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-white/30 dark:divide-white/5">
+                <tbody className="tbody-divider">
                     {paddingTop > 0 && <tr><td colSpan={16} style={{ height: `${paddingTop}px` }} /></tr>}
 
                     {virtualItems.map((virtualRow) => {
@@ -200,8 +200,8 @@ export function ProductTable({
                         if (item.type === 'manual') {
                             const m = item.data;
                             return (
-                                <tr key={`manual-item-${m.id}`} className="align-middle bg-white/50 dark:bg-white/10">
-                                    <td className="px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm">
+                                <tr key={`manual-item-${m.id}`} className="align-middle manual-row ">
+                                    <td className="px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm">
                                         <button
                                             type="button"
                                             role="checkbox"
@@ -213,23 +213,23 @@ export function ProductTable({
                                             <span className="sr-only">{selectedIds[m.id] ? 'Desmarcar' : 'Selecionar'} item manual</span>
                                         </button>
                                     </td>
-                                    <td className="px-3 py-2 sticky left-[50px] z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm" style={{ width: '360px', minWidth: '360px', maxWidth: '360px' }}>
+                                    <td className="px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '360px', minWidth: '360px', maxWidth: '360px' }}>
                                         <div>
-                                            <div className="font-semibold text-slate-900 dark:text-white truncate">{m.nome}</div>
-                                            <p className="text-[11px] text-slate-500">Cadastro manual</p>
+                                            <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{m.nome}</div>
+                                            <p className="text-[11px] text-[var(--color-neutral-500)]">Cadastro manual</p>
                                         </div>
                                     </td>
-                                    <td className="px-3 py-2 text-center text-slate-500 dark:text-slate-400 sticky left-[410px] z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>—</td>
-                                    <td className="px-3 py-2 sticky left-[520px] z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
-                                        <div className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate" title={m.fornecedor_codigo}>{m.fornecedor_codigo}</div>
+                                    <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[410px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>—</td>
+                                    <td className="px-3 py-2 sticky left-[520px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
+                                        <div className="text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)] truncate" title={m.fornecedor_codigo}>{m.fornecedor_codigo}</div>
                                     </td>
-                                    <td colSpan={7} className="text-center text-slate-300 dark:text-slate-600">—</td>
-                                    <td className="px-3 py-2 font-semibold text-emerald-600 dark:text-emerald-400 text-right sticky left-[650px] z-10 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
+                                    <td colSpan={7} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">—</td>
+                                    <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[650px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
                                         {m.quantidade}
                                     </td>
-                                    <td colSpan={2} className="text-center text-slate-300 dark:text-slate-600 sticky min-w-[120px]">—</td>
+                                    <td colSpan={2} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)] sticky min-w-[120px]">—</td>
                                     <td className="px-3 py-2 min-w-[120px]">
-                                        <span className="text-sm text-slate-600 dark:text-slate-300 truncate block" title={m.observacao}>{m.observacao}</span>
+                                        <span className="text-sm text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] truncate block" title={m.observacao}>{m.observacao}</span>
                                     </td>
                                     <td className="px-3 py-2 min-w-[140px]" />
                                 </tr>
@@ -260,17 +260,17 @@ export function ProductTable({
                         const rowClasses = [
                             'align-middle transition-all duration-200',
                             isSelected ? 'table-row-selected' :
-                                isUrgent ? 'bg-red-50/80 dark:bg-red-950/30 hover:bg-red-100/80 dark:hover:bg-red-900/40' :
-                                    isWarning ? 'bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 dark:hover:bg-amber-900/30' :
-                                        isEven ? 'bg-white/40 dark:bg-white/[0.02] hover:bg-white/60 dark:hover:bg-white/5' :
-                                            'bg-slate-50/40 dark:bg-slate-800/20 hover:bg-slate-100/40 dark:hover:bg-slate-700/20',
+                                isUrgent ? 'table-row-urgent   ' :
+                                    isWarning ? 'table-row-warning   ' :
+                                        isEven ? 'table-row-even dark:bg-white/[0.02]  ' :
+                                            'bg-[var(--color-neutral-50)]/40 dark:bg-[var(--color-neutral-800)]/20 hover:bg-[var(--color-neutral-100)]/40 dark:hover:bg-slate-700/20',
                         ].join(' ');
 
                         return (
                             <tr key={p.id_produto_tiny} className={rowClasses}>
-                                <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 backdrop-blur-sm ${isUrgent ? 'bg-red-50/95 dark:bg-red-950/95' :
-                                    isWarning ? 'bg-amber-50/95 dark:bg-amber-950/95' :
-                                        'bg-white/95 dark:bg-gray-900/95'
+                                <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 backdrop-blur-sm ${isUrgent ? 'sticky-cell-urgent ' :
+                                    isWarning ? 'sticky-cell-warning ' :
+                                        'sticky-cell '
                                     }`}>
                                     <button
                                         type="button"
@@ -285,9 +285,9 @@ export function ProductTable({
                                         </span>
                                     </button>
                                 </td>
-                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${isUrgent ? 'bg-red-50/95 dark:bg-red-950/95' :
-                                    isWarning ? 'bg-amber-50/95 dark:bg-amber-950/95' :
-                                        'bg-white/95 dark:bg-gray-900/95'
+                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${isUrgent ? 'sticky-cell-urgent ' :
+                                    isWarning ? 'sticky-cell-warning ' :
+                                        'sticky-cell '
                                     }`} style={{ width: '360px', minWidth: '360px', maxWidth: '360px' }}>
                                     <div className="flex items-center gap-2">
                                         <div className="relative w-10 h-10 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
@@ -295,25 +295,25 @@ export function ProductTable({
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img src={p.imagem_url} alt={p.nome ?? 'Produto'} className="w-full h-full object-cover" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">Sem img</div>
+                                                <div className="w-full h-full flex items-center justify-center text-[8px] text-[var(--color-neutral-500)]">Sem img</div>
                                             )}
                                         </div>
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-semibold text-slate-900 dark:text-white select-text font-display truncate text-xs" title={p.nome || ''}>{p.nome || 'Sem nome'}</span>
-                                                <span className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${p.curvaABC === 'A'
-                                                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400'
+                                                <span className="font-semibold text-[var(--color-neutral-900)] dark:text-white select-text font-display truncate text-xs" title={p.nome || ''}>{p.nome || 'Sem nome'}</span>
+                                                <span className={`abc-badge-inline ${p.curvaABC === 'A'
+                                                    ? 'abc-badge-a-inline'
                                                     : p.curvaABC === 'B'
-                                                        ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
-                                                        : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                                        ? 'abc-badge-b-inline'
+                                                        : 'abc-badge-c-inline'
                                                     }`} title={`Curva ${p.curvaABC}`}>{p.curvaABC}</span>
                                             </div>
-                                            <p className="text-[10px] text-slate-500 truncate">EAN {p.gtin || '-'}</p>
+                                            <p className="text-[10px] text-[var(--color-neutral-500)] truncate">EAN {p.gtin || '-'}</p>
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 text-xs select-all truncate sticky left-[410px] z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm" title={p.codigo ?? ''} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>{p.codigo || '-'}</td>
-                                <td className="px-3 py-2 sticky left-[520px] z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
+                                <td className="px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[410px] z-10 sticky-cell  backdrop-blur-sm" title={p.codigo ?? ''} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>{p.codigo || '-'}</td>
+                                <td className="px-3 py-2 sticky left-[520px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
                                     <div className="flex flex-col gap-0.5 w-full min-w-0">
                                         <input
                                             className="app-input h-7 text-xs px-2"
@@ -322,14 +322,14 @@ export function ProductTable({
                                             placeholder="Cód."
                                         />
                                         <p
-                                            className={`text-[9px] leading-tight truncate ${fornecedorNomeFormatado ? 'text-slate-500' : 'text-slate-400 italic'}`}
+                                            className={`text-[9px] leading-tight truncate ${fornecedorNomeFormatado ? 'text-[var(--color-neutral-500)]' : 'text-[var(--color-neutral-400)] italic'}`}
                                             title={fornecedorNomeFormatado || undefined}
                                         >
                                             {fornecedorNomeFormatado || 'N/D'}
                                         </p>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right sticky left-[650px] z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
+                                <td className="px-3 py-2 text-right sticky left-[650px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
                                     <input
                                         type="number"
                                         min={1}
@@ -352,12 +352,12 @@ export function ProductTable({
                                 </td>
                                 <td className="px-3 py-2 text-right" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
                                     <div className="flex items-center justify-end gap-2">
-                                        <div className="text-slate-900 dark:text-white font-semibold text-xs">
+                                        <div className="text-[var(--color-neutral-900)] dark:text-white font-semibold text-xs">
                                             {disponivel.toLocaleString('pt-BR')}
                                         </div>
                                         <button
                                             type="button"
-                                            className="text-[9px] p-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-emerald-500 transition shrink-0"
+                                            className="text-[9px] p-1 rounded-full hover:bg-[var(--color-neutral-100)] dark:hover:bg-white/10 text-[var(--color-neutral-400)] hover:text-table-success transition shrink-0"
                                             onClick={() => onRefreshEstoque(p.id_produto_tiny)}
                                             disabled={loadingLive}
                                             title={`Atualizar estoque ${source ? `(${source})` : ''}`}
@@ -370,26 +370,26 @@ export function ProductTable({
                                     {(() => {
                                         const dias = p.diasAteRuptura;
                                         if (dias === null) {
-                                            return <span className="text-slate-400 text-xs">∞</span>;
+                                            return <span className="text-table-muted text-table-xs">∞</span>;
                                         }
                                         const colorClass = dias <= 7
-                                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+                                            ? 'dias-badge-critical'
                                             : dias <= 14
-                                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
-                                                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400';
+                                                ? 'dias-badge-warning'
+                                                : 'dias-badge-healthy';
                                         return (
-                                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-semibold ${colorClass}`}>
+                                            <span className={`dias-badge ${colorClass}`}>
                                                 {dias}d
                                             </span>
                                         );
                                     })()}
                                 </td>
-                                <td className="px-3 py-2 text-slate-900 dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_periodo.toLocaleString('pt-BR')}</td>
-                                <td className="px-3 py-2 text-slate-900 dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_mensal.toFixed(0)}</td>
+                                <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_periodo.toLocaleString('pt-BR')}</td>
+                                <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_mensal.toFixed(0)}</td>
                                 <td className="px-3 py-2 text-right" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
-                                    <div className="font-semibold text-slate-900 dark:text-white text-xs">{p.sugestao_base.toFixed(0)}</div>
+                                    <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white text-xs">{p.sugestao_base.toFixed(0)}</div>
                                     {p.alerta_embalagem && p.precisaRepor && (
-                                        <div className="text-[9px] text-amber-600 leading-none mt-0.5" title="Abaixo do lote">Lote</div>
+                                        <div className="text-[9px] text-table-warning leading-none mt-0.5" title="Abaixo do lote">Lote</div>
                                     )}
                                 </td>
                                 <td className="px-3 py-2 text-right" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
@@ -399,24 +399,24 @@ export function ProductTable({
                                             min={0}
                                             step={Math.max(1, p.embalagem_qtd)}
                                             className={`app-input w-full h-8 text-right font-semibold text-sm px-2 ${p.precisaRepor
-                                                ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/20'
-                                                : 'text-slate-500 dark:text-slate-400 opacity-80'
+                                                ? 'text-[var(--color-success)] dark:text-[var(--color-success-light)] bg-[var(--color-success-soft)] '
+                                                : 'text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] opacity-80'
                                                 }`}
                                             value={pedidoInputValue}
                                             onChange={(event) => onPedidoChange(p.id_produto_tiny, event.target.value, p.sugestao_calculada)}
                                             onBlur={() => onPedidoBlur(p.id_produto_tiny)}
                                         />
                                         {!p.precisaRepor && p.sugestao_base > 0 && (
-                                            <span className="text-xs text-amber-600 font-bold" title="Recomendação ignorada">*</span>
+                                            <span className="text-xs text-table-warning font-bold" title="Recomendação ignorada">*</span>
                                         )}
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right font-medium text-slate-600 dark:text-slate-400 text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                <td className="px-3 py-2 text-right font-medium text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-400)] text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
                                     {p.preco_custo > 0
                                         ? p.preco_custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                         : '-'}
                                 </td>
-                                <td className="px-3 py-2 text-right font-bold text-emerald-600 dark:text-emerald-400 text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                <td className="px-3 py-2 text-right font-bold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
                                     {p.total_valor_calculado > 0
                                         ? p.total_valor_calculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                         : '-'}
@@ -429,14 +429,14 @@ export function ProductTable({
                                         placeholder="Obs..."
                                     />
                                 </td>
-                                <td className="px-3 py-2" style={{ width: '140px', minWidth: '140px', maxWidth: '140px' }}>
+                                <td className="px-3 py-2 text-left" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
                                     {syncStatus[p.id_produto_tiny] === 'saving' && (
-                                        <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                                        <span className="sync-indicator sync-indicator-saving">
                                             <Loader2 className="w-3 h-3 animate-spin" /> Salvando
                                         </span>
                                     )}
                                     {syncStatus[p.id_produto_tiny] === 'saved' && (
-                                        <span className="flex items-center gap-1 text-[10px] text-emerald-600 truncate">
+                                        <span className="sync-indicator sync-indicator-saved">
                                             <CheckCircle2 className="w-3 h-3" /> Salvo
                                         </span>
                                     )}
@@ -444,7 +444,7 @@ export function ProductTable({
                                         <button
                                             type="button"
                                             onClick={() => onRetrySave(p.id_produto_tiny)}
-                                            className="inline-flex items-center gap-1 text-[10px] text-rose-600 truncate"
+                                            className="sync-indicator sync-indicator-error"
                                         >
                                             <AlertCircle className="w-3 h-3" /> Erro
                                         </button>

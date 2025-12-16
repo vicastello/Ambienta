@@ -17,6 +17,8 @@ import {
   Store,
   FileText,
   Box,
+  Wallet,
+  TrendingUp,
 } from 'lucide-react';
 import { GlassHorizontalNav, GlassVerticalNav } from '@/src/components/navigation/GlassVerticalNav';
 
@@ -41,11 +43,23 @@ const NAV_ITEMS = [
 const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) =>
   ['/dashboard', '/pedidos', '/produtos', '/financeiro', '/compras', '/marketplaces'].includes(item.href)
 );
-const GLASS_NAV_ITEMS = NAV_ITEMS.map(({ label, icon }) => ({
+
+// Desktop menu - apenas seções principais
+const DESKTOP_NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/vendas', label: 'Vendas', icon: TrendingUp }, // Irá abrir popup
+  { href: '/financeiro', label: 'Financeiro', icon: DollarSign }, // Popup existente
+  { href: '/operacoes', label: 'Operações', icon: Package }, // Irá abrir popup
+  { href: '/marketplaces', label: 'Marketplaces', icon: Store }, // Popup existente
+  { href: '/relatorios', label: 'Relatórios', icon: FileText }, // Popup existente
+  { href: '/configuracoes', label: 'Configurações', icon: Settings },
+];
+
+const GLASS_NAV_ITEMS = DESKTOP_NAV_ITEMS.map(({ label, icon }) => ({
   id: label,
   label,
   icon,
-  disableTooltip: label === 'Marketplaces' || label === 'Relatórios',
+  disableTooltip: ['Vendas', 'Financeiro', 'Operações', 'Marketplaces', 'Relatórios'].includes(label),
 }));
 const MOBILE_GLASS_ITEMS = MOBILE_NAV_ITEMS.map(({ label, icon }) => ({
   id: label,
@@ -59,10 +73,13 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   const router = useRouter();
   const [showMarketplaceMenu, setShowMarketplaceMenu] = useState(false);
   const [showRelatoriosMenu, setShowRelatoriosMenu] = useState(false);
+  const [showFinanceiroMenu, setShowFinanceiroMenu] = useState(false);
+  const [showVendasMenu, setShowVendasMenu] = useState(false);
+  const [showOperacoesMenu, setShowOperacoesMenu] = useState(false);
   const computeNavIndex = useCallback(
     (path?: string | null) => {
       if (!path) return 0;
-      const foundIndex = NAV_ITEMS.findIndex((item) =>
+      const foundIndex = DESKTOP_NAV_ITEMS.findIndex((item) =>
         path === '/' ? item.href === '/dashboard' : path.startsWith(item.href)
       );
       return foundIndex >= 0 ? foundIndex : 0;
@@ -92,7 +109,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
   useEffect(() => {
     // Prefetch main routes to smooth navigation and avoid visible stalls
-    NAV_ITEMS.forEach((item) => {
+    DESKTOP_NAV_ITEMS.forEach((item) => {
       router.prefetch?.(item.href);
     });
   }, [router]);
@@ -109,6 +126,9 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowMarketplaceMenu(false);
     setShowRelatoriosMenu(false);
+    setShowFinanceiroMenu(false);
+    setShowVendasMenu(false);
+    setShowOperacoesMenu(false);
   }, [pathname]);
 
   const activeNavIndex = useMemo(() => computeNavIndex(pathname), [computeNavIndex, pathname]);
@@ -119,14 +139,26 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
   const handleNavChange = useCallback(
     (index: number) => {
-      const target = NAV_ITEMS[index];
+      const target = DESKTOP_NAV_ITEMS[index];
       if (!target || pathname === target.href) return;
+      if (target.href === '/vendas') {
+        setShowVendasMenu(true);
+        return;
+      }
+      if (target.href === '/operacoes') {
+        setShowOperacoesMenu(true);
+        return;
+      }
       if (target.href === '/marketplaces') {
         setShowMarketplaceMenu(true);
         return;
       }
       if (target.href === '/relatorios') {
         setShowRelatoriosMenu(true);
+        return;
+      }
+      if (target.href === '/financeiro') {
+        setShowFinanceiroMenu(true);
         return;
       }
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -145,6 +177,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       if (!target || pathname === target.href) return;
       if (target.href === '/marketplaces') {
         setShowMarketplaceMenu(true);
+        return;
+      }
+      if (target.href === '/financeiro') {
+        setShowFinanceiroMenu(true);
         return;
       }
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
@@ -207,9 +243,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
       {/* Mobile backdrop */}
       <div
-        className={`lg:hidden fixed inset-0 z-40 bg-slate-900/60 transition-opacity duration-300 ${
-          isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`lg:hidden fixed inset-0 z-40 bg-slate-900/60 transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
         onClick={() => setIsMobileMenuOpen(false)}
       />
 
@@ -218,14 +253,14 @@ export function AppLayout({ title, children }: AppLayoutProps) {
         <div className="relative h-full flex flex-col">
           <div className="flex flex-col items-center gap-6 w-full pt-8">
             <div className="flex w-10 justify-center">{logoIcon}</div>
-          <GlassVerticalNav
-            activeIndex={activeNavIndex}
-            onChange={handleNavChange}
-            onItemHover={handleNavHover}
-            onMarketplaceHover={() => setShowMarketplaceMenu(true)}
-            items={GLASS_NAV_ITEMS}
-            className="w-10"
-          />
+            <GlassVerticalNav
+              activeIndex={activeNavIndex}
+              onChange={handleNavChange}
+              onItemHover={handleNavHover}
+              onMarketplaceHover={() => setShowMarketplaceMenu(true)}
+              items={GLASS_NAV_ITEMS}
+              className="w-10"
+            />
           </div>
           <div className="pb-6 pt-6">
             <div className="text-[10px] text-center text-slate-500 dark:text-slate-600 font-mono uppercase tracking-wider opacity-70">
@@ -237,7 +272,13 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {showMarketplaceMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowMarketplaceMenu(false)} />
-          <div className="fixed z-50 left-12 top-24">
+          <div
+            className="fixed z-50 left-20"
+            style={{
+              top: `calc(8rem + ${DESKTOP_NAV_ITEMS.findIndex(i => i.href === '/marketplaces') * (22 + 36)}px + 11px)`,
+              transform: 'translateY(-50%)'
+            }}
+          >
             <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
                 Escolha o marketplace
@@ -278,7 +319,13 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {showRelatoriosMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowRelatoriosMenu(false)} />
-          <div className="fixed z-50 left-12 top-24">
+          <div
+            className="fixed z-50 left-20"
+            style={{
+              top: `calc(8rem + ${DESKTOP_NAV_ITEMS.findIndex(i => i.href === '/relatorios') * (22 + 36)}px + 11px)`,
+              transform: 'translateY(-50%)'
+            }}
+          >
             <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
                 Escolha o relatório
@@ -307,12 +354,140 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           </div>
         </>
       )}
+      {showVendasMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowVendasMenu(false)} />
+          <div
+            className="fixed z-50 left-20"
+            style={{
+              top: `calc(8rem + ${DESKTOP_NAV_ITEMS.findIndex(i => i.href === '/vendas') * (22 + 36)}px + 11px)`,
+              transform: 'translateY(-50%)'
+            }}
+          >
+            <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark dark:text-slate-300 mb-2">
+                Vendas
+              </p>
+              <div className="space-y-2">
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowVendasMenu(false);
+                    router.push('/pedidos');
+                  }}
+                >
+                  Pedidos
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowVendasMenu(false);
+                    router.push('/produtos');
+                  }}
+                >
+                  Produtos
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowVendasMenu(false);
+                    router.push('/clientes');
+                  }}
+                >
+                  Clientes
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showOperacoesMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowOperacoesMenu(false)} />
+          <div
+            className="fixed z-50 left-20"
+            style={{
+              top: `calc(8rem + ${DESKTOP_NAV_ITEMS.findIndex(i => i.href === '/operacoes') * (22 + 36)}px + 11px)`,
+              transform: 'translateY(-50%)'
+            }}
+          >
+            <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
+                Operações
+              </p>
+              <div className="space-y-2">
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowOperacoesMenu(false);
+                    router.push('/compras');
+                  }}
+                >
+                  Compras
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowOperacoesMenu(false);
+                    router.push('/embalagens');
+                  }}
+                >
+                  Embalagens
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      {showFinanceiroMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowFinanceiroMenu(false)} />
+          <div
+            className="fixed z-50 left-20"
+            style={{
+              top: `calc(8rem + ${DESKTOP_NAV_ITEMS.findIndex(i => i.href === '/financeiro') * (22 + 36)}px + 11px)`,
+              transform: 'translateY(-50%)'
+            }}
+          >
+            <div className="rounded-2xl glass-panel glass-tint border border-white/60 dark:border-slate-800/60 shadow-2xl p-3 w-64">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-300 mb-2">
+                Escolha a opção
+              </p>
+              <div className="space-y-2">
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowFinanceiroMenu(false);
+                    router.push('/financeiro/fluxo-caixa');
+                  }}
+                >
+                  <span className="flex items-center justify-between">
+                    Fluxo de Caixa
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                      Novo
+                    </span>
+                  </span>
+                </button>
+                <button
+                  className="w-full text-left rounded-xl bg-white/70 dark:bg-slate-900/70 border border-white/60 dark:border-slate-800/60 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-[#009DA8]/60 hover:text-[#009DA8]"
+                  onClick={() => {
+                    setShowFinanceiroMenu(false);
+                    router.push('/financeiro/dre');
+                  }}
+                >
+                  DRE
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
 
       {/* Mobile drawer */}
       <aside
-        className={`lg:hidden fixed left-0 top-0 h-full z-50 w-[86vw] max-w-sm transition-all duration-300 ease-out ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`lg:hidden fixed left-0 top-0 h-full z-50 w-[86vw] max-w-sm transition-all duration-300 ease-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="absolute inset-0 glass-panel glass-tint border-r border-white/50 dark:border-slate-800/50" />
         <div className="relative h-full flex flex-col">
@@ -331,30 +506,131 @@ export function AppLayout({ title, children }: AppLayoutProps) {
 
           <nav className="flex-1 px-3 py-6 overflow-y-auto">
             <div className="space-y-1">
-              {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href;
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`group relative flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200 ${
-                      active
-                        ? 'bg-gradient-to-r from-[#009DA8]/15 via-[#00B5C3]/10 to-transparent text-[#009DA8] dark:text-[#00B5C3]'
-                        : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 hover:text-slate-900 dark:hover:bg-slate-800/60'
-                    }`}
-                  >
-                    {active && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[#009DA8] to-[#00B5C3] rounded-r-full" />
-                    )}
-                    <Icon
-                      className={`w-5 h-5 flex-shrink-0 ${active ? 'scale-110' : 'group-hover:scale-110'} transition-transform duration-200`}
-                    />
-                    <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>
+              {/* Dashboard - link direto */}
+              <Link
+                href="/dashboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`group relative flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200 ${pathname === '/dashboard'
+                  ? 'bg-gradient-to-r from-[#009DA8]/15 via-[#00B5C3]/10 to-transparent text-[#009DA8] dark:text-[#00B5C3]'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 hover:text-slate-900 dark:hover:bg-slate-800/60'
+                  }`}
+              >
+                {pathname === '/dashboard' && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[#009DA8] to-[#00B5C3] rounded-r-full" />
+                )}
+                <LayoutDashboard className={`w-5 h-5 flex-shrink-0 ${pathname === '/dashboard' ? 'scale-110' : 'group-hover:scale-110'} transition-transform duration-200`} />
+                <span className="font-medium text-sm whitespace-nowrap">Dashboard</span>
+              </Link>
+
+              {/* Vendas - seção */}
+              <div>
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Vendas
+                </div>
+                <div className="space-y-1 ml-4">
+                  <Link href="/pedidos" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/pedidos') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <ShoppingBag className="w-4 h-4" />
+                    Pedidos
                   </Link>
-                );
-              })}
+                  <Link href="/produtos" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/produtos') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Package className="w-4 h-4" />
+                    Produtos
+                  </Link>
+                  <Link href="/clientes" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/clientes') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Users className="w-4 h-4" />
+                    Clientes
+                  </Link>
+                </div>
+              </div>
+
+              {/* Financeiro - seção */}
+              <div>
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Financeiro
+                </div>
+                <div className="space-y-1 ml-4">
+                  <Link href="/financeiro/fluxo-caixa" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/financeiro/fluxo-caixa') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Wallet className="w-4 h-4" />
+                    <span className="flex-1">Fluxo de Caixa</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Novo</span>
+                  </Link>
+                  <Link href="/financeiro/dre" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/financeiro/dre') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <FileText className="w-4 h-4" />
+                    DRE
+                  </Link>
+                </div>
+              </div>
+
+              {/* Operações - seção */}
+              <div>
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Operações
+                </div>
+                <div className="space-y-1 ml-4">
+                  <Link href="/compras" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/compras') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <ShoppingCart className="w-4 h-4" />
+                    Compras
+                  </Link>
+                  <Link href="/embalagens" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/embalagens') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Box className="w-4 h-4" />
+                    Embalagens
+                  </Link>
+                </div>
+              </div>
+
+              {/* Marketplaces - seção */}
+              <div>
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Marketplaces
+                </div>
+                <div className="space-y-1 ml-4">
+                  <Link href="/marketplaces/mercado-livre" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/marketplaces/mercado-livre') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Store className="w-4 h-4" />
+                    Mercado Livre
+                  </Link>
+                  <Link href="/marketplaces/shopee" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/marketplaces/shopee') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Store className="w-4 h-4" />
+                    Shopee
+                  </Link>
+                  <Link href="/marketplaces/magalu" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/marketplaces/magalu') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <Store className="w-4 h-4" />
+                    Magalu
+                  </Link>
+                </div>
+              </div>
+
+              {/* Relatórios - seção */}
+              <div>
+                <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Relatórios
+                </div>
+                <div className="space-y-1 ml-4">
+                  <Link href="/relatorios/vendas-mensais" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/relatorios/vendas-mensais') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <FileText className="w-4 h-4" />
+                    Vendas Mensais
+                  </Link>
+                  <Link href="/relatorios/vinculos" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${pathname.startsWith('/relatorios/vinculos') ? 'bg-accent/10 text-accent font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50'}`}>
+                    <FileText className="w-4 h-4" />
+                    Vínculos
+                  </Link>
+                </div>
+              </div>
+
+              {/* Configurações - link direto */}
+              <Link
+                href="/configuracoes"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`group relative flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200 ${pathname.startsWith('/configuracoes')
+                  ? 'bg-gradient-to-r from-[#009DA8]/15 via-[#00B5C3]/10 to-transparent text-[#009DA8] dark:text-[#00B5C3]'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 hover:text-slate-900 dark:hover:bg-slate-800/60'
+                  }`}
+              >
+                {pathname.startsWith('/configuracoes') && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-[#009DA8] to-[#00B5C3] rounded-r-full" />
+                )}
+                <Settings className={`w-5 h-5 flex-shrink-0 ${pathname.startsWith('/configuracoes') ? 'scale-110' : 'group-hover:scale-110'} transition-transform duration-200`} />
+                <span className="font-medium text-sm whitespace-nowrap">Configurações</span>
+              </Link>
             </div>
           </nav>
 
@@ -422,7 +698,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
                 {children}
               </div>
             </div>
-        </div>
+          </div>
         </div>
       </main>
 

@@ -13,6 +13,8 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
+import { Badge } from "@/components/ui/Badge";
+import { Chip } from "@/components/ui/Chip";
 import type { Produto } from "../types";
 import { calculateDiscount, formatBRL, formatNumber } from "../utils";
 import { ProdutoTrendChart } from "./ProdutoTrendChart";
@@ -165,7 +167,7 @@ const ProdutoEmFocoCardComponent = ({
   };
 
   return (
-    <section className="glass-panel glass-tint product-hero rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden shadow-lg shadow-purple-500/5 min-w-0 relative">
+    <section className="glass-panel glass-tint product-hero rounded-[36px] border border-white/60 dark:border-white/10 overflow-hidden shadow-lg shadow-[#009CA6]/5 min-w-0 relative">
       <div className="p-4 md:p-6 space-y-5 min-w-0">
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 lg:gap-6 items-stretch min-w-0">
           {/* Coluna esquerda: Identidade do produto */}
@@ -173,7 +175,7 @@ const ProdutoEmFocoCardComponent = ({
             <div className="flex items-start gap-3">
               <button
                 type="button"
-                className="w-16 h-16 rounded-3xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/40 transition-all disabled:opacity-60 disabled:hover:ring-0 p-0 shadow-none shrink-0"
+                className="w-16 h-16 rounded-3xl bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-[#009CA6]/40 transition-all disabled:opacity-60 disabled:hover:ring-0 p-0 shadow-none shrink-0"
                 onClick={() => produto.imagem_url && onZoomImagem({ url: produto.imagem_url, alt: produto.nome })}
                 title={produto.imagem_url ? "Clique para ampliar" : "Sem imagem"}
                 aria-label={produto.imagem_url ? "Ampliar imagem do produto" : "Produto sem imagem"}
@@ -189,22 +191,18 @@ const ProdutoEmFocoCardComponent = ({
 
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-300">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted">
                     Produto em foco
                   </span>
                   {situacaoInfo && (
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${situacaoInfo.bg} ${situacaoInfo.color}`}
-                    >
+                    <Badge variant="brand" size="sm" className={`${situacaoInfo.bg} ${situacaoInfo.color}`}>
                       {situacaoInfo.label}
-                    </span>
+                    </Badge>
                   )}
                   {tipoInfo && (
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold ${tipoInfo.color}`}
-                    >
+                    <Badge variant="neutral" size="sm" className={tipoInfo.color}>
                       {tipoInfo.label}
-                    </span>
+                    </Badge>
                   )}
                 </div>
 
@@ -222,7 +220,7 @@ const ProdutoEmFocoCardComponent = ({
                     </a>
                   </h2>
                   <div className="mt-1 flex flex-col gap-2">
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
+                    <div className="flex items-center gap-2 text-[11px] text-muted">
                       {produto.fornecedor_nome ? (
                         <span className="truncate max-w-[240px]">{produto.fornecedor_nome}</span>
                       ) : (
@@ -242,7 +240,7 @@ const ProdutoEmFocoCardComponent = ({
                         >
                           <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produto.codigo}</span>
                           {copiedField === "codigo" ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <Check className="w-3.5 h-3.5 text-[#009CA6]" />
                           ) : (
                             <Copy className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
                           )}
@@ -265,7 +263,7 @@ const ProdutoEmFocoCardComponent = ({
                 >
                   <span className="font-semibold">GTIN {produto.gtin}</span>
                   {copiedField === "gtin" ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    <Check className="w-3.5 h-3.5 text-[#009CA6]" />
                   ) : (
                     <Copy className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
                   )}
@@ -276,13 +274,9 @@ const ProdutoEmFocoCardComponent = ({
             {alertas.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-amber-800 dark:text-amber-200">
                 {alertas.map((info) => (
-                  <span
-                    key={info}
-                    className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-500/15 px-2.5 py-1 font-semibold border border-amber-200/80 dark:border-amber-500/25"
-                  >
-                    <AlertCircle className="w-3 h-3" />
+                  <Badge key={info} variant="warning" size="sm" icon={<AlertCircle className="w-3 h-3" />}>
                     {info}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             )}
@@ -292,13 +286,13 @@ const ProdutoEmFocoCardComponent = ({
           <div className="min-w-0 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-300">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted">
                   Preço
                 </p>
                 <div className="mt-1 flex items-center gap-3 min-w-0">
                   <div className="flex flex-col items-end gap-1">
                     <span
-                      className={`text-2xl sm:text-3xl font-bold truncate ${temPromo ? "text-emerald-700 dark:text-emerald-200" : "text-slate-900 dark:text-white"
+                      className={`text-2xl sm:text-3xl font-bold truncate ${temPromo ? "text-[#007982] dark:text-[#00B5C3]" : "text-slate-900 dark:text-white"
                         }`}
                     >
                       {formatBRL(precoAtual)}
@@ -307,16 +301,16 @@ const ProdutoEmFocoCardComponent = ({
                       <span className="text-sm font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produto.preco)}</span>
                     ) : null}
                     {temPromo && (
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
+                      <p className="mt-1 text-[11px] text-muted">
                         Economia de <span className="font-semibold">{formatBRL(economiaPromo)}</span>
                       </p>
                     )}
                   </div>
 
-                  {temPromo && (
-                    <span className="self-center inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2.5 py-1 text-sm font-semibold">
-                      -{produtoPercentualDesconto}%
-                    </span>
+                  {produto.preco_promocional && (
+                    <Badge variant="brand" size="md">
+                      Em promoção
+                    </Badge>
                   )}
                 </div>
               </div>
@@ -342,7 +336,7 @@ const ProdutoEmFocoCardComponent = ({
                   disabled={!produto.codigo}
                 >
                   {copiedField === "codigo" ? (
-                    <Check className="w-4 h-4 text-emerald-500" />
+                    <Check className="w-4 h-4 text-[#009CA6]" />
                   ) : (
                     <Copy className="w-4 h-4" />
                   )}
@@ -352,7 +346,7 @@ const ProdutoEmFocoCardComponent = ({
                   href={`https://erp.tiny.com.br/produto/${produto.id_produto_tiny}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-full w-9 h-9 p-0 bg-purple-100 dark:bg-purple-500/20 border border-purple-200/80 dark:border-purple-500/30 text-purple-700 dark:text-purple-200 hover:bg-purple-200/80 dark:hover:bg-purple-500/30 transition shadow-none"
+                  className="inline-flex items-center justify-center rounded-full w-9 h-9 p-0 bg-[#009CA6]/10 dark:bg-[#007982]/20 border border-[#009CA6]/20/80 dark:border-[#009CA6]/30 text-[#007982] dark:text-[#00B5C3] hover:bg-[#009CA6]/20/80 dark:hover:bg-[#007982]/30 transition shadow-none"
                   title="Abrir no Tiny"
                   aria-label="Abrir no Tiny"
                 >
@@ -371,8 +365,8 @@ const ProdutoEmFocoCardComponent = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">Trend de vendas</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{melhorDiaResumo}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-300">
+                    <p className="text-[11px] text-muted truncate">{melhorDiaResumo}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
                       <span className="inline-flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: RECEITA_COLOR }} />
                         Receita
@@ -385,22 +379,16 @@ const ProdutoEmFocoCardComponent = ({
                   </div>
 
                   <div className="inline-flex rounded-full bg-white/80 dark:bg-white/5 border border-white/70 dark:border-white/10 p-1 shadow-none shrink-0">
-                    {safeTrendPresetOptions.map((opt) => {
-                      const active = trendPreset === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => onTrendPresetChange(opt.value)}
-                          className={`px-3 py-1.5 text-xs font-semibold rounded-full transition shadow-none ${active
-                            ? "bg-purple-600 text-white"
-                            : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-white/70 dark:text-slate-200 dark:hover:bg-white/10"
-                            }`}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
+                    {safeTrendPresetOptions.map((opt) => (
+                      <Chip
+                        key={opt.value}
+                        active={trendPreset === opt.value}
+                        onClick={() => onTrendPresetChange(opt.value)}
+                        size="sm"
+                      >
+                        {opt.label}
+                      </Chip>
+                    ))}
                   </div>
                 </div>
 
@@ -412,7 +400,7 @@ const ProdutoEmFocoCardComponent = ({
                   ) : safeTrendData.length ? (
                     <ProdutoTrendChart data={safeTrendData} containerClassName="h-48 sm:h-64 lg:h-full min-w-0" />
                   ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
+                    <p className="text-xs text-muted">Sem vendas registradas.</p>
                   )}
                 </div>
               </div>
@@ -426,7 +414,7 @@ const ProdutoEmFocoCardComponent = ({
                   </div>
                   <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
-                    <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-200">{produtoDiasParaZerar === null ? 'Sem giro' : produtoDiasParaZerar}</p>
+                    <p className="text-xl font-semibold text-[#007982] dark:text-[#00B5C3]">{produtoDiasParaZerar === null ? 'Sem giro' : produtoDiasParaZerar}</p>
                     <p className="text-[11px] text-slate-500">Média {formatNumber(mediaDiariaVendas)} un/dia</p>
                   </div>
                   <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 min-h-0 flex flex-col justify-between h-full">
@@ -503,7 +491,7 @@ const ProdutoEmFocoCardComponent = ({
                 {/* Ações removidas per request: Editar / Pedidos / Movimentações */}
               </div>
 
-              <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-300">
+              <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
                 <div className="flex flex-wrap items-center gap-2">
                   {consolidacaoMensagem && <span className="font-semibold">{consolidacaoMensagem}</span>}
                   {atualizacaoErro && <span className="font-semibold text-rose-600 dark:text-rose-200">{atualizacaoErro}</span>}
@@ -513,7 +501,7 @@ const ProdutoEmFocoCardComponent = ({
                 <div className="flex items-center gap-2">
                   {atualizando ? (
                     <span className="inline-flex items-center gap-2 font-semibold">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600 dark:text-purple-300" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#009CA6] dark:text-[#00B5C3]" />
                       Atualizando...
                     </span>
                   ) : atualizadoAgoraLabel ? (

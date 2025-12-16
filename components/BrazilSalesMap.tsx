@@ -131,7 +131,7 @@ function idToUF(id?: string | null): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-export function BrazilSalesMap({
+const BrazilSalesMapComponent = ({
   dataUF,
   topCidades,
   className,
@@ -139,7 +139,7 @@ export function BrazilSalesMap({
   dataUF?: VendasUF[] | null;
   topCidades?: VendasCidade[] | null;
   className?: string;
-}) {
+}) => {
   const [hoverInfo, setHoverInfo] = useState<{ uf: string; name?: string } | null>(null);
   const [tooltipTarget, setTooltipTarget] = useState<TooltipPoint | null>(null);
   const tooltipPosRef = React.useRef<TooltipPoint | null>(null);
@@ -329,7 +329,7 @@ export function BrazilSalesMap({
                   try {
                     const r = currentTarget.getBoundingClientRect();
                     pos = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-                  } catch {}
+                  } catch { }
                 }
                 if (pos) {
                   setTooltipTarget(pos);
@@ -349,7 +349,7 @@ export function BrazilSalesMap({
                 try {
                   const r = currentTarget.getBoundingClientRect();
                   pos = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-                } catch {}
+                } catch { }
               }
               if (pos) {
                 setTooltipTarget(pos);
@@ -448,7 +448,7 @@ export function BrazilSalesMap({
                   try {
                     const r = el.getBoundingClientRect();
                     setTooltipTarget({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
-                  } catch {}
+                  } catch { }
                 }
                 if (showTimerRef.current) window.clearTimeout(showTimerRef.current);
                 showTimerRef.current = window.setTimeout(() => {
@@ -536,24 +536,24 @@ export function BrazilSalesMap({
           const tooltipStyle: CSSProperties = { position: 'fixed', zIndex: 11000, pointerEvents: 'none', left, top, transition: 'left 0.08s linear, top 0.08s linear' };
           return createPortal(
             <div style={tooltipStyle}>
-            <div className="rounded-md px-3 py-2 text-xs" style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.28))',
-              // no solid border around the tooltip itself to keep glassy feel
-              border: '1px solid rgba(255,255,255,0.06)',
-              backdropFilter: 'blur(8px) saturate(110%)',
-              WebkitBackdropFilter: 'blur(8px) saturate(110%)',
-            }}>
-              <div className="font-semibold text-slate-900 dark:text-white">{hoverInfo.name || hoverInfo.uf}</div>
-              <div className="text-slate-600 dark:text-slate-300">
-                {(() => {
-                  const d = mapaUF.get(hoverInfo.uf);
-                  if (!d) return 'Sem vendas';
-                  const valor = (d.totalValor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                  const pedidos = (d.totalPedidos || 0).toLocaleString('pt-BR');
-                  return `${valor} • ${pedidos} pedidos`;
-                })()}
+              <div className="rounded-md px-3 py-2 text-xs" style={{
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.28))',
+                // no solid border around the tooltip itself to keep glassy feel
+                border: '1px solid rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(8px) saturate(110%)',
+                WebkitBackdropFilter: 'blur(8px) saturate(110%)',
+              }}>
+                <div className="font-semibold text-slate-900 dark:text-white">{hoverInfo.name || hoverInfo.uf}</div>
+                <div className="text-slate-600 dark:text-slate-300">
+                  {(() => {
+                    const d = mapaUF.get(hoverInfo.uf);
+                    if (!d) return 'Sem vendas';
+                    const valor = (d.totalValor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    const pedidos = (d.totalPedidos || 0).toLocaleString('pt-BR');
+                    return `${valor} • ${pedidos} pedidos`;
+                  })()}
+                </div>
               </div>
-            </div>
             </div>, document.body
           );
         })()}
@@ -601,3 +601,5 @@ export function BrazilSalesMap({
     </div>
   );
 }
+
+export const BrazilSalesMap = React.memo(BrazilSalesMapComponent);

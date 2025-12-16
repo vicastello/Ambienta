@@ -4,6 +4,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AlertCircle, ArrowDown, ArrowUp, Box, Check, CheckSquare, ChevronUp, Copy, DollarSign, Download, ExternalLink, LayoutGrid, Loader2, MoreVertical, Package, Plus, RefreshCcw, Rows, Search, Square, TrendingDown, X } from "lucide-react";
 import { clearCacheByPrefix, staleWhileRevalidate } from "@/lib/staleCache";
+import { Badge } from "@/components/ui/Badge";
+import { Chip } from "@/components/ui/Chip";
+import { Button } from "@/components/ui/Button";
 import { formatFornecedorNome } from "@/lib/fornecedorFormatter";
 import { MicroTrendChart } from "@/app/dashboard/components/charts/MicroTrendChart";
 import type { CustomTooltipFormatter } from "@/app/dashboard/components/charts/ChartTooltips";
@@ -51,16 +54,16 @@ const PRODUTOS_AUTO_REFRESH_MS = 180_000;
 const PRODUTOS_PAGE_SIZE = 25;
 
 const TIPO_CONFIG: Record<string, { label: string; color: string }> = {
-  K: { label: "Kit", color: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-600/20 dark:text-fuchsia-100" },
-  V: { label: "Variação", color: "bg-blue-100 text-blue-700 dark:bg-blue-600/20 dark:text-blue-100" },
-  S: { label: "Simples", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-600/20 dark:text-emerald-100" },
-  P: { label: "Produto", color: "bg-purple-100 text-purple-700 dark:bg-purple-600/20 dark:text-purple-100" },
+  K: { label: "Kit", color: "status-badge status-badge-secondary" },
+  V: { label: "Variação", color: "status-badge status-badge-primary" },
+  S: { label: "Simples", color: "status-badge status-badge-success" },
+  P: { label: "Produto", color: "status-badge status-badge-neutral" },
 };
 
 const SITUACAO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  A: { label: "Ativo", color: "text-emerald-700 dark:text-emerald-100", bg: "bg-emerald-100 dark:bg-emerald-600/20" },
-  I: { label: "Inativo", color: "text-amber-700 dark:text-amber-100", bg: "bg-amber-100 dark:bg-amber-600/20" },
-  E: { label: "Excluído", color: "text-rose-700 dark:text-rose-100", bg: "bg-rose-100 dark:bg-rose-500/20" },
+  A: { label: "Ativo", color: "text-[var(--color-primary-dark)]", bg: "bg-[var(--color-primary-soft)]" },
+  I: { label: "Inativo", color: "text-[var(--color-warning-dark)]", bg: "bg-[var(--color-warning-soft)]" },
+  E: { label: "Excluído", color: "text-[var(--color-error-dark)]", bg: "bg-[var(--color-error-soft)]" },
 };
 
 const formatBRL = (value: number | null) => {
@@ -220,16 +223,16 @@ export default function ProdutosClient() {
     produtoId: number;
   } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  
+
   // Seleção múltipla
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  
+
   // Filtros avançados de preço e estoque
   const [precoMin, setPrecoMin] = useState<string>('');
   const [precoMax, setPrecoMax] = useState<string>('');
   const [estoqueMin, setEstoqueMin] = useState<string>('');
   const [estoqueMax, setEstoqueMax] = useState<string>('');
-  
+
   // Progresso de sincronização
   const [syncProgress, setSyncProgress] = useState<{
     current: number;
@@ -413,7 +416,7 @@ export default function ProdutosClient() {
     const urlTipo = searchParams.get('tipo') || 'all';
     const urlFornecedor = searchParams.get('fornecedor') || '';
     const urlPage = parseInt(searchParams.get('page') || '0', 10);
-    
+
     setSearchInput(urlSearch);
     setSearch(urlSearch);
     setSituacao(urlSituacao);
@@ -440,7 +443,7 @@ export default function ProdutosClient() {
     if (tipo !== 'all') params.set('tipo', tipo);
     if (fornecedor) params.set('fornecedor', fornecedor);
     if (page > 0) params.set('page', String(page));
-    
+
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     router.replace(newUrl, { scroll: false });
   }, [search, situacao, tipo, fornecedor, page, router]);
@@ -448,7 +451,7 @@ export default function ProdutosClient() {
   // Pull-to-refresh handler
   const handlePullToRefresh = useCallback(async () => {
     if (pullToRefresh.isRefreshing) return;
-    
+
     setPullToRefresh((prev) => ({ ...prev, isRefreshing: true }));
     try {
       clearCacheByPrefix("produtos:");
@@ -470,10 +473,10 @@ export default function ProdutosClient() {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (window.scrollY > 0 || pullToRefresh.isRefreshing) return;
-    
+
     const currentY = e.touches[0].clientY;
     const diff = currentY - touchStartY.current;
-    
+
     if (diff > 0 && diff < 150) {
       setPullToRefresh((prev) => ({
         ...prev,
@@ -724,23 +727,23 @@ export default function ProdutosClient() {
     // Primeiro filtra
     let filtered = quickFilter
       ? produtos.filter((produto) => {
-          const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
+        const disponivel = produto.disponivel_total ?? produto.disponivel ?? 0;
 
-          switch (quickFilter) {
-            case 'estoque-critico':
-              return disponivel <= 0;
-            case 'estoque-baixo':
-              return disponivel > 0 && disponivel < 5;
-            case 'sem-imagem':
-              return !produto.imagem_url;
-            case 'em-promocao':
-              return produto.preco_promocional != null && produto.preco_promocional < (produto.preco || 0);
-            case 'sem-embalagem':
-              return !produto.embalagens || produto.embalagens.length === 0;
-            default:
-              return true;
-          }
-        })
+        switch (quickFilter) {
+          case 'estoque-critico':
+            return disponivel <= 0;
+          case 'estoque-baixo':
+            return disponivel > 0 && disponivel < 5;
+          case 'sem-imagem':
+            return !produto.imagem_url;
+          case 'em-promocao':
+            return produto.preco_promocional != null && produto.preco_promocional < (produto.preco || 0);
+          case 'sem-embalagem':
+            return !produto.embalagens || produto.embalagens.length === 0;
+          default:
+            return true;
+        }
+      })
       : produtos;
 
     // Aplicar filtros de preço
@@ -928,16 +931,16 @@ export default function ProdutosClient() {
   }, [produtoDesempenho?.meta]);
   const tipoProdutoEmFoco = produtoEmFoco
     ? TIPO_CONFIG[produtoEmFoco.tipo] ?? {
-        label: produtoEmFoco.tipo,
-        color: "bg-slate-100 text-slate-600",
-      }
+      label: produtoEmFoco.tipo,
+      color: "bg-[var(--color-neutral-100)] text-[var(--color-neutral-600)]",
+    }
     : null;
   const situacaoProdutoEmFoco = produtoEmFoco
     ? SITUACAO_CONFIG[produtoEmFoco.situacao] ?? {
-        label: produtoEmFoco.situacao,
-        color: "text-slate-600",
-        bg: "bg-slate-100",
-      }
+      label: produtoEmFoco.situacao,
+      color: "text-[var(--color-neutral-600)]",
+      bg: "bg-[var(--color-neutral-100)]",
+    }
     : null;
   const estoqueTotalPaiVariacoes = produtoEmFoco?.disponivel_total ?? produtoEmFoco?.disponivel ?? null;
   const estoqueSkuSnapshot = {
@@ -1031,7 +1034,7 @@ export default function ProdutosClient() {
 
     try {
       setSyncProgress({ current: 10, total: 100, message: 'Conectando ao Tiny ERP...' });
-      
+
       const response = await fetch("/api/produtos/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1047,7 +1050,7 @@ export default function ProdutosClient() {
       if (data.success) {
         setSyncProgress({ current: 90, total: 100, message: 'Atualizando cache...' });
         clearCacheByPrefix("produtos:");
-        
+
         setSyncProgress({ current: 100, total: 100, message: 'Concluído!' });
         setNotification({
           type: 'success',
@@ -1288,7 +1291,7 @@ export default function ProdutosClient() {
   }, [fetchProdutos]);
 
   return (
-    <div 
+    <div
       className="space-y-6 min-w-0 overflow-x-hidden"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -1296,589 +1299,274 @@ export default function ProdutosClient() {
     >
       {/* Pull-to-refresh indicator */}
       {(pullToRefresh.isPulling || pullToRefresh.isRefreshing) && (
-        <div 
+        <div
           className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center transition-all duration-200 md:hidden"
-          style={{ 
+          style={{
             height: pullToRefresh.isRefreshing ? 60 : pullToRefresh.pullDistance,
             opacity: pullToRefresh.isRefreshing ? 1 : Math.min(pullToRefresh.pullDistance / 80, 1)
           }}
         >
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600 text-white text-sm font-medium shadow-lg ${pullToRefresh.isRefreshing ? 'animate-pulse' : ''}`}>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-primary)] text-white text-sm font-medium shadow-lg ${pullToRefresh.isRefreshing ? 'animate-pulse' : ''}`}>
             <RefreshCcw className={`w-4 h-4 ${pullToRefresh.isRefreshing ? 'animate-spin' : ''}`} />
             <span>{pullToRefresh.isRefreshing ? 'Atualizando...' : pullToRefresh.pullDistance >= 80 ? 'Solte para atualizar' : 'Puxe para atualizar'}</span>
           </div>
         </div>
       )}
 
-      <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8 space-y-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      {/* ==================== HERO CARD ==================== */}
+      <section className="glass-panel glass-tint rounded-[28px] border border-white/60 dark:border-white/10 p-5 md:p-6">
+        {/* Header: Título + Ações */}
+        <div className="flex items-center justify-between">
           <div>
-            <div className="inline-flex items-center gap-3 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
-              <Package className="w-4 h-4 text-purple-600" />
-              Catálogo
-            </div>
-              <div className="flex flex-col gap-2 mt-4 sm:flex-row sm:items-center sm:gap-3 min-w-0">
-                <h1 className="text-3xl font-semibold text-slate-900 dark:text-white break-words min-w-0">
-                  Inventário Tiny sincronizado
-                </h1>
-                {(quickFilter || precoMin || precoMax || estoqueMin || estoqueMax) && produtosFiltrados.length !== produtos.length && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 dark:bg-purple-500/25 px-3 py-1 text-sm font-semibold text-purple-700 dark:text-purple-100">
-                  {produtosFiltrados.length} / {produtos.length} nesta página
-                  </span>
-                )}
-              {/* Contador de filtros ativos */}
-              {(() => {
-                const activeFilters = [
-                  search && 'busca',
-                  situacao !== 'all' && 'situação',
-                  tipo !== 'all' && 'tipo',
-                  fornecedor && 'fornecedor',
-                  precoMin && 'preço min',
-                  precoMax && 'preço max',
-                  estoqueMin && 'estoque min',
-                  estoqueMax && 'estoque max',
-                  quickFilter && 'filtro rápido'
-                ].filter(Boolean);
-                
-                if (activeFilters.length === 0) return null;
-                
-                return (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-700 px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-                    {activeFilters.length} filtro{activeFilters.length > 1 ? 's' : ''} ativo{activeFilters.length > 1 ? 's' : ''}
-                  </span>
-                );
-              })()}
-            </div>
-            <p className="text-sm text-slate-500 dark:text-slate-300 mt-2 max-w-3xl">
-              {(total || 0).toLocaleString("pt-BR")} itens ativos/variantes com filtros e busca seguindo o mesmo visual translúcido do dashboard.
-            </p>
+            <h1 className="text-xl sm:text-2xl font-semibold text-main">Produtos</h1>
+            <p className="text-sm text-muted">{(total || 0).toLocaleString("pt-BR")} itens</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={exportarCSV}
-              disabled={produtosFiltrados.length === 0}
-              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-400 disabled:opacity-50 text-white px-5 py-2.5 text-sm font-semibold transition-all"
-              title={produtosFiltrados.length > 0 ? `Exportar ${produtosFiltrados.length} produtos para CSV` : 'Nenhum produto para exportar'}
-            >
-              <Download className="w-4 h-4" />
-              Exportar CSV
-            </button>
-            <button
-              onClick={syncProdutos}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 disabled:bg-purple-400 text-white px-5 py-2.5 text-sm font-semibold"
-            >
-              {syncing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <RefreshCcw className="w-4 h-4" />
-                  Sincronizar
-                </>
-              )}
-            </button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={exportarCSV} disabled={produtosFiltrados.length === 0} icon={<Download className="w-4 h-4" />}>
+              Exportar
+            </Button>
+            <Button variant="primary" size="sm" onClick={syncProdutos} loading={syncing} icon={syncing ? undefined : <RefreshCcw className="w-4 h-4" />}>
+              {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            </Button>
           </div>
         </div>
 
-        {/* Barra de progresso da sincronização */}
+        {/* Progresso Sync */}
         {syncProgress && (
-          <div className="rounded-2xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 p-4 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-purple-700 dark:text-purple-400">{syncProgress.message}</span>
-              <span className="text-purple-600 dark:text-purple-300">{syncProgress.current}%</span>
+          <div className="mt-4 rounded-xl bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/20 p-3">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="font-medium text-[var(--color-primary-dark)]">{syncProgress.message}</span>
+              <span className="text-[var(--color-primary)]">{syncProgress.current}%</span>
             </div>
-            <div className="h-2 bg-purple-100 dark:bg-purple-900/50 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${syncProgress.current}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Cards de Métricas */}
-        <p className="text-xs text-slate-500 dark:text-slate-300">
-          Resumo desta página ({produtosFiltrados.length.toLocaleString("pt-BR")} itens visíveis)
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          <MetricCard
-            icon={Package}
-            label="Total Ativos"
-            value={metrics.totalAtivos.toLocaleString("pt-BR")}
-            color="blue"
-            loading={loading}
-          />
-          <MetricCard
-            icon={AlertCircle}
-            label="Estoque Crítico"
-            value={metrics.estoqueCritico.toLocaleString("pt-BR")}
-            color="red"
-            loading={loading}
-          />
-          <MetricCard
-            icon={TrendingDown}
-            label="Estoque Baixo"
-            value={metrics.estoqueBaixo.toLocaleString("pt-BR")}
-            color="amber"
-            loading={loading}
-          />
-          
-          <MetricCard
-            icon={DollarSign}
-            label="Valor Total"
-            value={formatBRL(metrics.valorTotal)}
-            color="green"
-            loading={loading}
-          />
-        </div>
-
-        {/* Trilho de status à la Shopee */}
-        <div className="rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-white/50 dark:border-white/10 p-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">Status</span>
-          {[
-            { value: "all", label: "Todos", color: "bg-gradient-to-r from-orange-500 to-orange-600", text: "text-white", count: total },
-            { value: "A", label: "Ativos", color: "bg-gradient-to-r from-emerald-500 to-emerald-600", text: "text-white", count: metrics.totalAtivos },
-            { value: "I", label: "Inativos", color: "bg-gradient-to-r from-amber-500 to-amber-600", text: "text-white", count: metrics.totalInativos },
-            { value: "E", label: "Excluídos", color: "bg-gradient-to-r from-rose-500 to-rose-600", text: "text-white", count: metrics.totalExcluidos },
-          ].map((status) => {
-            const active = situacao === status.value;
-            return (
-              <button
-                key={status.value}
-                type="button"
-                onClick={() => {
-                  setSituacao(status.value);
-                  setPage(0);
-                }}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition ${
-                  active
-                    ? `${status.color} ${status.text}`
-                    : "bg-white/80 dark:bg-slate-800/70 text-slate-700 dark:text-slate-200 border border-white/60 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-700"
-                }`}
-                title={`Filtrar ${status.label.toLowerCase()}`}
-              >
-                <span>{status.label}</span>
-                <span
-                  className={`min-w-[38px] h-7 inline-flex items-center justify-center rounded-full text-xs font-bold ${
-                    active ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  {status.count.toLocaleString("pt-BR")}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Filtros Rápidos com Chips */}
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setQuickFilter(quickFilter === 'estoque-critico' ? null : 'estoque-critico')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-              quickFilter === 'estoque-critico'
-                ? 'bg-red-100 text-red-700 ring-2 ring-red-500 dark:bg-red-500/25 dark:text-red-100 dark:ring-red-400'
-                : 'bg-white/70 text-slate-600 hover:bg-red-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-red-500/15'
-            }`}
-          >
-            <AlertCircle className="w-4 h-4" />
-            Estoque crítico
-            {metrics.estoqueCritico > 0 && (
-              <span className="ml-1 rounded-full bg-red-500 text-white px-2 py-0.5 text-xs">
-                {metrics.estoqueCritico}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setQuickFilter(quickFilter === 'estoque-baixo' ? null : 'estoque-baixo')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-              quickFilter === 'estoque-baixo'
-                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500 dark:bg-amber-500/25 dark:text-amber-100 dark:ring-amber-400'
-                : 'bg-white/70 text-slate-600 hover:bg-amber-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-amber-500/15'
-            }`}
-          >
-            <TrendingDown className="w-4 h-4" />
-            Estoque baixo
-            {metrics.estoqueBaixo > 0 && (
-              <span className="ml-1 rounded-full bg-amber-500 text-white px-2 py-0.5 text-xs">
-                {metrics.estoqueBaixo}
-              </span>
-            )}
-          </button>
-
-
-          <button
-            type="button"
-            onClick={() => setQuickFilter(quickFilter === 'em-promocao' ? null : 'em-promocao')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-              quickFilter === 'em-promocao'
-                ? 'bg-green-100 text-green-700 ring-2 ring-green-500 dark:bg-green-500/25 dark:text-green-100 dark:ring-green-400'
-                : 'bg-white/70 text-slate-600 hover:bg-green-50 dark:bg-slate-800/60 dark:text-slate-200 dark:hover:bg-green-500/15'
-            }`}
-          >
-            <DollarSign className="w-4 h-4" />
-            Em promoção
-          </button>
-
-          
-
-          {quickFilter && (
-            <button
-              type="button"
-              onClick={() => setQuickFilter(null)}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700 transition-all"
-            >
-              Limpar filtro
-            </button>
-          )}
-        </div>
-
-        {quickFilter && (
-          <div className="flex items-center justify-center py-2">
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Mostrando <span className="font-semibold text-purple-600 dark:text-purple-400">{produtosFiltrados.length}</span> de{" "}
-              <span className="font-semibold">{produtos.length}</span> produtos desta página
-            </p>
-          </div>
-        )}
-
-        <div className="md:hidden space-y-3">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por nome, código ou GTIN..."
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleFiltersSubmit();
-                }
-              }}
-              className="app-input w-full pl-11"
-            />
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setMobileFiltersOpen(true)}
-              className="flex-1 rounded-full border border-white/40 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-200"
-            >
-              Ajustar filtros
-            </button>
-            <button
-              type="button"
-              onClick={handleFiltersSubmit}
-              className="flex-1 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 text-sm font-semibold"
-            >
-              Aplicar
-            </button>
-          </div>
-        </div>
-
-        <form
-          className="hidden md:grid gap-4 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            handleFiltersSubmit();
-          }}
-        >
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por nome, código ou GTIN..."
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleFiltersSubmit();
-                }
-              }}
-              className="app-input w-full pl-11"
-            />
-          </div>
-          <select
-            value={situacao}
-            onChange={(event) => {
-              setSituacao(event.target.value);
-              setPage(0);
-            }}
-            className="app-input w-full min-w-[160px] px-8"
-          >
-            <option value="all">Todas</option>
-            <option value="A">Ativo</option>
-            <option value="I">Inativo</option>
-            <option value="E">Excluído</option>
-          </select>
-          <select
-            value={tipo}
-            onChange={(event) => {
-              setTipo(event.target.value);
-              setPage(0);
-            }}
-            className="app-input w-full min-w-[160px] px-8"
-          >
-            <option value="all">Todos os tipos</option>
-            <option value="S">Simples</option>
-            <option value="V">Variação</option>
-            <option value="K">Kit</option>
-          </select>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Filtrar por fornecedor"
-              value={fornecedorInput}
-              onChange={(event) => setFornecedorInput(formatFornecedorNome(event.target.value))}
-              className="app-input w-full pr-10"
-            />
-            {(fornecedorInput || fornecedor) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFornecedorInput("");
-                  setFornecedor("");
-                  setPage(0);
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-                aria-label="Limpar filtro de fornecedor"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center justify-end col-span-full">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 text-sm font-semibold"
-            >
-              Aplicar filtros
-            </button>
-          </div>
-        </form>
-
-        {/* Filtros avançados de preço e estoque */}
-        <div className="hidden md:flex flex-wrap gap-3 items-end">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Preço:</span>
-            <input
-              type="number"
-              placeholder="Min"
-              value={precoMin}
-              onChange={(e) => setPrecoMin(e.target.value)}
-              className="app-input w-24 text-sm"
-              min={0}
-              step={0.01}
-            />
-            <span className="text-slate-400">–</span>
-            <input
-              type="number"
-              placeholder="Max"
-              value={precoMax}
-              onChange={(e) => setPrecoMax(e.target.value)}
-              className="app-input w-24 text-sm"
-              min={0}
-              step={0.01}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500">Estoque:</span>
-            <input
-              type="number"
-              placeholder="Min"
-              value={estoqueMin}
-              onChange={(e) => setEstoqueMin(e.target.value)}
-              className="app-input w-20 text-sm"
-              min={0}
-            />
-            <span className="text-slate-400">–</span>
-            <input
-              type="number"
-              placeholder="Max"
-              value={estoqueMax}
-              onChange={(e) => setEstoqueMax(e.target.value)}
-              className="app-input w-20 text-sm"
-              min={0}
-            />
-          </div>
-          {(precoMin || precoMax || estoqueMin || estoqueMax) && (
-            <button
-              type="button"
-              onClick={() => {
-                setPrecoMin('');
-                setPrecoMax('');
-                setEstoqueMin('');
-                setEstoqueMax('');
-              }}
-              className="text-xs text-slate-500 hover:text-purple-600 font-medium"
-            >
-              Limpar faixas
-            </button>
-          )}
-        </div>
-
-        {mobileFiltersOpen && (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <button
-              type="button"
-              aria-label="Fechar filtros"
-              className="absolute inset-0 bg-slate-900/40"
-              onClick={() => setMobileFiltersOpen(false)}
-            />
-            <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[32px] bg-white dark:bg-slate-900 border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Filtros</p>
-                  <p className="text-base font-semibold text-slate-900 dark:text-white">Refine o catálogo</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileFiltersOpen(false)}
-                  className="text-sm font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-300"
-                >
-                  Fechar
-                </button>
-              </div>
-              <form
-                className="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleFiltersSubmit();
-                }}
-              >
-                <div className="relative">
-                  <label className="text-xs font-semibold text-slate-500 mb-1 block">Situação</label>
-                  <select
-                    value={situacao}
-                    onChange={(event) => {
-                      setSituacao(event.target.value);
-                      setPage(0);
-                    }}
-                    className="app-input w-full"
-                  >
-                    <option value="all">Todas</option>
-                    <option value="A">Ativo</option>
-                    <option value="I">Inativo</option>
-                    <option value="E">Excluído</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 mb-1 block">Tipo</label>
-                  <select
-                    value={tipo}
-                    onChange={(event) => {
-                      setTipo(event.target.value);
-                      setPage(0);
-                    }}
-                    className="app-input w-full"
-                  >
-                    <option value="all">Todos os tipos</option>
-                    <option value="S">Simples</option>
-                    <option value="V">Variação</option>
-                    <option value="K">Kit</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-500">Fornecedor</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Ex.: AMBIENTA"
-                      value={fornecedorInput}
-                      onChange={(event) => setFornecedorInput(formatFornecedorNome(event.target.value))}
-                      className="app-input w-full pr-10"
-                    />
-                    {(fornecedorInput || fornecedor) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFornecedorInput("");
-                          setFornecedor("");
-                          setPage(0);
-                        }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-                        aria-label="Limpar filtro de fornecedor"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Preço mínimo</label>
-                    <input
-                      type="number"
-                      placeholder="R$ 0"
-                      value={precoMin}
-                      onChange={(e) => setPrecoMin(e.target.value)}
-                      className="app-input w-full"
-                      min={0}
-                      step={0.01}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Preço máximo</label>
-                    <input
-                      type="number"
-                      placeholder="R$ ∞"
-                      value={precoMax}
-                      onChange={(e) => setPrecoMax(e.target.value)}
-                      className="app-input w-full"
-                      min={0}
-                      step={0.01}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Estoque mínimo</label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      value={estoqueMin}
-                      onChange={(e) => setEstoqueMin(e.target.value)}
-                      className="app-input w-full"
-                      min={0}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1 block">Estoque máximo</label>
-                    <input
-                      type="number"
-                      placeholder="∞"
-                      value={estoqueMax}
-                      onChange={(e) => setEstoqueMax(e.target.value)}
-                      className="app-input w-full"
-                      min={0}
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  className="w-full rounded-full bg-purple-600 hover:bg-purple-500 text-white px-4 py-3 text-sm font-semibold"
-                >
-                  Aplicar filtros
-                </button>
-              </form>
+            <div className="h-1 bg-[var(--color-primary)]/10 rounded-full overflow-hidden">
+              <div className="h-full bg-[var(--color-primary)] rounded-full transition-all" style={{ width: `${syncProgress.current}%` }} />
             </div>
           </div>
         )}
       </section>
 
+      {/* ==================== BARRA DE FILTROS ==================== */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Busca */}
+        <div className="relative flex-1 min-w-[200px] max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-neutral-400)]" />
+          <input
+            type="text"
+            placeholder="Buscar..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleFiltersSubmit(); } }}
+            className="w-full pl-10 pr-4 py-2 rounded-full bg-white/70 dark:bg-[var(--color-neutral-800)]/60 border border-white/60 dark:border-[var(--color-neutral-700)] text-sm focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] outline-none transition"
+          />
+        </div>
+
+        {/* Chips de Status */}
+        <div className="flex gap-1.5">
+          {[
+            { value: "all", label: "Todos" },
+            { value: "A", label: "Ativos" },
+            { value: "I", label: "Inativos" },
+          ].map((s) => (
+            <Chip key={s.value} active={situacao === s.value} size="sm" onClick={() => { setSituacao(s.value); setPage(0); }}>
+              {s.label}
+            </Chip>
+          ))}
+        </div>
+
+        <span className="text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">|</span>
+
+        {/* Chips de Tipo */}
+        <div className="flex gap-1.5">
+          {[
+            { value: "all", label: "Todos" },
+            { value: "S", label: "Simples" },
+            { value: "V", label: "Variação" },
+            { value: "K", label: "Kit" },
+          ].map((t) => (
+            <Chip key={t.value} active={tipo === t.value} size="sm" onClick={() => { setTipo(t.value); setPage(0); }}>
+              {t.label}
+            </Chip>
+          ))}
+        </div>
+
+        {/* Alertas */}
+        {metrics.estoqueCritico > 0 && (
+          <Chip
+            active={quickFilter === 'estoque-critico'}
+            size="sm"
+            onClick={() => setQuickFilter(quickFilter === 'estoque-critico' ? null : 'estoque-critico')}
+            icon={<AlertCircle className="w-3.5 h-3.5" />}
+          >
+            Crítico ({metrics.estoqueCritico})
+          </Chip>
+        )}
+
+        {/* Limpar */}
+        {(search || quickFilter || situacao !== 'all' || tipo !== 'all') && (
+          <button
+            onClick={() => { setSearch(''); setSearchInput(''); setQuickFilter(null); setSituacao('all'); setTipo('all'); setPage(0); }}
+            className="text-xs text-muted hover:text-main transition"
+          >
+            Limpar
+          </button>
+        )}
+      </div>
+
+      {/* Mobile Filters Modal */}
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <button
+            type="button"
+            aria-label="Fechar filtros"
+            className="absolute inset-0 bg-[var(--color-neutral-900)]/40"
+            onClick={() => setMobileFiltersOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[32px] bg-white dark:bg-[var(--color-neutral-900)] border-t border-white/40 dark:border-white/10 p-6 space-y-4 shadow-[0_-20px_60px_rgba(15,23,42,0.35)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-[var(--color-neutral-400)]">Filtros</p>
+                <p className="text-base font-semibold text-[var(--color-neutral-900)] dark:text-white">Refine o catálogo</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(false)}
+                className="text-sm font-semibold text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-800)] dark:text-[var(--color-neutral-300)]"
+              >
+                Fechar
+              </button>
+            </div>
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleFiltersSubmit();
+              }}
+            >
+              <div className="relative">
+                <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Situação</label>
+                <select
+                  value={situacao}
+                  onChange={(event) => {
+                    setSituacao(event.target.value);
+                    setPage(0);
+                  }}
+                  className="app-input w-full"
+                >
+                  <option value="all">Todas</option>
+                  <option value="A">Ativo</option>
+                  <option value="I">Inativo</option>
+                  <option value="E">Excluído</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Tipo</label>
+                <select
+                  value={tipo}
+                  onChange={(event) => {
+                    setTipo(event.target.value);
+                    setPage(0);
+                  }}
+                  className="app-input w-full"
+                >
+                  <option value="all">Todos os tipos</option>
+                  <option value="S">Simples</option>
+                  <option value="V">Variação</option>
+                  <option value="K">Kit</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[var(--color-neutral-500)]">Fornecedor</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Ex.: AMBIENTA"
+                    value={fornecedorInput}
+                    onChange={(event) => setFornecedorInput(formatFornecedorNome(event.target.value))}
+                    className="app-input w-full pr-10"
+                  />
+                  {(fornecedorInput || fornecedor) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFornecedorInput("");
+                        setFornecedor("");
+                        setPage(0);
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-600)]"
+                      aria-label="Limpar filtro de fornecedor"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Preço mínimo</label>
+                  <input
+                    type="number"
+                    placeholder="R$ 0"
+                    value={precoMin}
+                    onChange={(e) => setPrecoMin(e.target.value)}
+                    className="app-input w-full"
+                    min={0}
+                    step={0.01}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Preço máximo</label>
+                  <input
+                    type="number"
+                    placeholder="R$ ∞"
+                    value={precoMax}
+                    onChange={(e) => setPrecoMax(e.target.value)}
+                    className="app-input w-full"
+                    min={0}
+                    step={0.01}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Estoque mínimo</label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={estoqueMin}
+                    onChange={(e) => setEstoqueMin(e.target.value)}
+                    className="app-input w-full"
+                    min={0}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--color-neutral-500)] mb-1 block">Estoque máximo</label>
+                  <input
+                    type="number"
+                    placeholder="∞"
+                    value={estoqueMax}
+                    onChange={(e) => setEstoqueMax(e.target.value)}
+                    className="app-input w-full"
+                    min={0}
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] text-white px-3 py-2 text-sm font-semibold"
+              >
+                Aplicar filtros
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {produtoEmFoco && (
-        <section className="rounded-3xl border border-white/10 dark:border-white/6 bg-white/60 dark:bg-slate-900/40 backdrop-blur-sm shadow-md shadow-purple-500/3 p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overflow-hidden">
+        <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 shadow-lg shadow-[var(--color-primary)]/5 p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overflow-hidden">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <button
               type="button"
-              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/40 dark:bg-slate-900/30 border border-white/20 dark:border-white/6 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-purple-500/30 transition-all backdrop-blur-sm"
+              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-white/40 dark:bg-[var(--color-neutral-900)]/30 border border-white/20 dark:border-white/6 flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-[var(--color-primary)]/30 transition-all backdrop-blur-sm"
               onClick={() =>
                 produtoEmFoco.imagem_url && setImageZoom({ url: produtoEmFoco.imagem_url, alt: produtoEmFoco.nome })
               }
@@ -1888,7 +1576,7 @@ export default function ProdutosClient() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={produtoEmFoco.imagem_url} alt={produtoEmFoco.nome} className="w-full h-full object-cover" />
               ) : (
-                <Package className="w-7 h-7 text-slate-400" />
+                <Package className="w-7 h-7 text-[var(--color-neutral-400)]" />
               )}
             </button>
 
@@ -1896,13 +1584,13 @@ export default function ProdutosClient() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-snug break-words min-w-0 flex-1">{produtoEmFoco.nome}</h2>
+                    <h2 className="text-2xl font-bold text-[var(--color-neutral-900)] dark:text-white leading-snug break-words min-w-0 flex-1">{produtoEmFoco.nome}</h2>
                     <a
                       href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       title="Ver produto no Tiny"
-                      className="text-slate-400 hover:text-slate-600 dark:text-slate-300 ml-1 shrink-0"
+                      className="text-[var(--color-neutral-400)] hover:text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] ml-1 shrink-0"
                       aria-label="Abrir no Tiny"
                     >
                       <ExternalLink className="w-4 h-4 inline-block" />
@@ -1925,7 +1613,7 @@ export default function ProdutosClient() {
                     <button
                       type="button"
                       onClick={toggleProdutoPadrao}
-                      className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white bg-slate-100/60 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 transition"
+                      className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-300)] dark:hover:text-white bg-[var(--color-neutral-100)]/60 hover:bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-800)]/60 dark:hover:bg-[var(--color-neutral-800)] transition"
                       title={produtoEmFocoEhPadrao ? 'Clique para remover como padrão' : 'Definir este produto como padrão ao recarregar'}
                       aria-label={produtoEmFocoEhPadrao ? 'Remover produto padrão' : 'Definir produto padrão'}
                     >
@@ -1934,7 +1622,7 @@ export default function ProdutosClient() {
                     {/* desconto exibido apenas na coluna de preço (direita) */}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] min-w-0">
                     {produtoEmFoco.codigo ? (
                       <div className="inline-flex items-center gap-2">
                         <button
@@ -1950,9 +1638,9 @@ export default function ProdutosClient() {
                           title="Copiar código"
                           aria-label={`Copiar código ${produtoEmFoco.codigo}`}
                         >
-                          <span className="font-mono font-semibold text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.codigo}</span>
+                          <span className="font-mono font-semibold text-sm text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]">{produtoEmFoco.codigo}</span>
                           {copiedField === 'codigo' ? (
-                            <Check className="w-3 h-3 text-emerald-500" />
+                            <Check className="w-3 h-3 text-[var(--color-primary)]" />
                           ) : (
                             <Copy className="w-3 h-3 opacity-50 group-hover:opacity-100 dark:opacity-70 transition-opacity" />
                           )}
@@ -1967,13 +1655,13 @@ export default function ProdutosClient() {
                                 setNotification({ type: 'success', message: `GTIN ${produtoEmFoco.gtin} copiado!` });
                               })
                             }
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-800)] hover:bg-[var(--color-neutral-200)] dark:hover:bg-[var(--color-neutral-700)] transition"
                             title="Copiar GTIN"
                             aria-label={`Copiar GTIN ${produtoEmFoco.gtin}`}
                           >
-                            <span className="font-mono text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.gtin}</span>
+                            <span className="font-mono text-sm text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]">{produtoEmFoco.gtin}</span>
                             {copiedField === 'gtin' ? (
-                              <Check className="w-3 h-3 text-emerald-500" />
+                              <Check className="w-3 h-3 text-[var(--color-primary)]" />
                             ) : (
                               <Copy className="w-3 h-3 opacity-50 hover:opacity-100 dark:opacity-70 transition-opacity" />
                             )}
@@ -1984,47 +1672,47 @@ export default function ProdutosClient() {
                     {/* GTIN agora mostrado ao lado do SKU (acima) */}
 
                     <div className="min-w-0 truncate flex-1">
-                      <span className="text-sm text-slate-700 dark:text-slate-200">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
+                      <span className="text-sm text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]">{produtoEmFoco.fornecedor_nome || 'Fornecedor —'}</span>
                     </div>
 
                     {/* Removed duplicate GTIN button (now shown inline with SKU above) */}
                   </div>
                 </div>
-                <div className="hidden sm:flex flex-col items-end gap-2 text-right text-slate-500 dark:text-slate-300">
+                <div className="hidden sm:flex flex-col items-end gap-2 text-right text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">
                   <div className="flex items-center gap-3">
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
-                        {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
-                          <span className="text-sm font-semibold text-slate-500 line-through dark:text-slate-400">{formatBRL(produtoEmFoco.preco)}</span>
-                        ) : null}
-                      </div>
-                      {produtoPercentualDesconto !== null && produtoPercentualDesconto > 0 && (
-                        <span className="self-center inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100 px-2.5 py-1 text-sm font-semibold">
-                          -{produtoPercentualDesconto}%
-                        </span>
-                      )}
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-3xl font-extrabold text-[var(--color-neutral-900)] dark:text-white">{formatBRL(produtoEmFoco.preco_promocional ?? produtoEmFoco.preco)}</span>
+                      {produtoEmFoco.preco_promocional && produtoEmFoco.preco_promocional < (produtoEmFoco.preco || 0) ? (
+                        <span className="text-sm font-semibold text-[var(--color-neutral-500)] line-through dark:text-[var(--color-neutral-400)]">{formatBRL(produtoEmFoco.preco)}</span>
+                      ) : null}
                     </div>
+                    {produtoPercentualDesconto !== null && produtoPercentualDesconto > 0 && (
+                      <span className="self-center inline-flex items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-dark)] dark:bg-[var(--color-primary)]/20 dark:text-[var(--color-primary-light)] px-2.5 py-1 text-sm font-semibold">
+                        -{produtoPercentualDesconto}%
+                      </span>
+                    )}
+                  </div>
 
                   <div className="flex flex-col items-end gap-1">
                     {estoqueFonteLabel ? (
-                      <span className="font-semibold text-slate-700 dark:text-slate-100">{estoqueFonteLabel}</span>
+                      <span className="font-semibold text-[var(--color-neutral-700)] dark:text-slate-100">{estoqueFonteLabel}</span>
                     ) : null}
                   </div>
                 </div>
               </div>
 
-              
+
             </div>
           </div>
 
           {/* metrics summary removed */}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[70%_30%] items-stretch min-h-0">
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-4 space-y-3 h-full flex flex-col min-h-0">
+            <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-4 space-y-3 h-full flex flex-col min-h-0">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trend de vendas</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-300">Período {produtoHeroPreset}</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-500)]">Trend de vendas</p>
+                  <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Período {produtoHeroPreset}</p>
                 </div>
                 <div className="inline-flex items-center gap-1 rounded-full border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/0 p-1 text-[11px] font-semibold">
                   {PRODUTO_SERIE_PRESETS.map(({ value, label }) => (
@@ -2032,11 +1720,10 @@ export default function ProdutosClient() {
                       key={value}
                       type="button"
                       onClick={() => setProdutoHeroPreset(value)}
-                      className={`px-2 py-1 rounded-full transition ${
-                        produtoHeroPreset === value
-                          ? 'bg-purple-600 text-white shadow'
-                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                      }`}
+                      className={`px-2 py-1 rounded-full transition ${produtoHeroPreset === value
+                        ? 'bg-[var(--color-primary)] text-white shadow'
+                        : 'text-[var(--color-neutral-600)] hover:text-[var(--color-neutral-900)] dark:text-[var(--color-neutral-300)] dark:hover:text-white'
+                        }`}
                     >
                       {label}
                     </button>
@@ -2045,72 +1732,71 @@ export default function ProdutosClient() {
               </div>
               <div className="relative min-h-[120px] lg:min-h-0 lg:h-full flex-1">
                 {produtoDesempenhoLoading && (
-                  <div className="absolute inset-0 z-10 rounded-2xl bg-white/80 dark:bg-slate-900/60 flex items-center justify-center">
-                    <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+                  <div className="absolute inset-0 z-10 rounded-2xl bg-white/80 dark:bg-[var(--color-neutral-900)]/60 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)]" />
                   </div>
                 )}
                 {produtoSparkData.length ? (
                   <MicroTrendChart data={produtoSparkData} formatter={formatTooltipCurrency} />
                 ) : produtoDesempenhoError ? (
-                  <p className="text-xs text-rose-500">{produtoDesempenhoError}</p>
+                  <p className="text-xs text-[var(--color-error)]">{produtoDesempenhoError}</p>
                 ) : (
-                  <p className="text-xs text-slate-500 dark:text-slate-300">Sem vendas registradas.</p>
+                  <p className="text-xs text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Sem vendas registradas.</p>
                 )}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-600 dark:text-slate-300">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)]">
                 <span>Melhor dia: {produtoMelhorDia ? `${produtoMelhorDiaLabel} · ${formatBRL(produtoMelhorDia.receita)}` : '—'}</span>
                 <span>Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3 h-full">
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Disponível</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
-                <p className="text-[11px] text-slate-500 whitespace-normal break-words">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
+              <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-500)]">Disponível</p>
+                <p className="text-2xl font-bold text-[var(--color-neutral-900)] dark:text-white">{formatNumber(estoqueParaRuptura)}</p>
+                <p className="text-[11px] text-[var(--color-neutral-500)] whitespace-normal break-words">Reservado {formatNumber(produtoEmFoco.reservado)} · Saldo {formatNumber(produtoEmFoco.saldo)}</p>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Ruptura</p>
+              <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-500)]">Ruptura</p>
                 <p
-                  className={`text-xl font-semibold ${
-                    rupturaCritica
-                      ? 'text-rose-700 dark:text-rose-200'
-                      : rupturaAtencao
-                        ? 'text-amber-700 dark:text-amber-200'
-                        : 'text-emerald-700 dark:text-emerald-200'
-                  }`}
+                  className={`text-xl font-semibold ${rupturaCritica
+                    ? 'text-[var(--color-error-dark)] dark:text-[var(--color-error-light)]'
+                    : rupturaAtencao
+                      ? 'text-[var(--color-warning-dark)] dark:text-amber-200'
+                      : 'text-[var(--color-primary-dark)] dark:text-[var(--color-primary-light)]'
+                    }`}
                 >
                   {produtoDiasParaZerar !== null && produtoMediaDiariaVendas > 0
                     ? `~${produtoDiasParaZerar} dia(s)`
                     : 'Sem giro'}
                 </p>
-                <p className="text-[11px] text-slate-500 whitespace-normal">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
+                <p className="text-[11px] text-[var(--color-neutral-500)] whitespace-normal">Média {formatNumber(produtoMediaDiariaVendas || 0)} un/dia</p>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Receita</p>
+              <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-500)]">Receita</p>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatBRL(produtoTotalReceita)}</span>
+                  <span className="text-lg font-semibold text-[var(--color-neutral-900)] dark:text-white">{formatBRL(produtoTotalReceita)}</span>
                 </div>
               </div>
-              <div className="rounded-2xl bg-white/95 dark:bg-slate-900/60 border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Unidades</p>
+              <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-3 w-full min-h-0 flex flex-col justify-between h-full">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-500)]">Unidades</p>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-lg font-semibold text-slate-900 dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
+                  <span className="text-lg font-semibold text-[var(--color-neutral-900)] dark:text-white">{formatNumber(produtoTotalQuantidade)}</span>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Embalagens</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--color-neutral-400)]">Embalagens</span>
             {produtoEmFoco.embalagens?.length ? (
               produtoEmFoco.embalagens.map((emb) => (
                 <div
                   key={emb.embalagem_id}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/80 dark:bg-slate-900/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-slate-700 dark:text-slate-200"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/80 dark:bg-[var(--color-neutral-900)]/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]"
                 >
                   <span className="font-semibold truncate max-w-[160px]">{emb.embalagem?.nome || 'Embalagem'}</span>
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">x{emb.quantidade}</span>
+                  <span className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)]">x{emb.quantidade}</span>
                   {emb.embalagem?.codigo && (
                     <button
                       type="button"
@@ -2119,59 +1805,59 @@ export default function ProdutosClient() {
                           setNotification({ type: 'success', message: `Código ${emb.embalagem?.codigo} copiado!` })
                         )
                       }
-                      className="inline-flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 w-6 h-6 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                      className="inline-flex items-center justify-center rounded-full bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-800)] w-6 h-6 hover:bg-[var(--color-neutral-200)] dark:hover:bg-[var(--color-neutral-700)] transition"
                       title="Copiar código da embalagem"
                       aria-label={`Copiar código da embalagem ${emb.embalagem.codigo}`}
                     >
-                      <Copy className="w-3 h-3 text-slate-500" />
+                      <Copy className="w-3 h-3 text-[var(--color-neutral-500)]" />
                     </button>
                   )}
                 </div>
               ))
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 dark:bg-slate-800/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-slate-600 dark:text-slate-300">
-                <Package className="w-3.5 h-3.5 text-slate-400" />
+              <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-neutral-100)]/70 dark:bg-[var(--color-neutral-800)]/50 border border-white/60 dark:border-white/10 px-3 py-1 text-[12px] text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)]">
+                <Package className="w-3.5 h-3.5 text-[var(--color-neutral-400)]" />
                 Nenhuma vinculada
               </span>
             )}
           </div>
 
-              <div className="flex flex-wrap items-center gap-2 justify-between text-[12px] text-slate-600 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-2 justify-between text-[12px] text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)]">
             <div className="flex flex-wrap items-center gap-2">
               {/* Editar / Pedidos / Movimentações removed per request */}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {produtoAtualizandoId === produtoEmFoco.id_produto_tiny ? (
                 <span className="inline-flex items-center gap-2">
-                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                  <Loader2 className="w-3 h-3 animate-spin text-[var(--color-primary)]" />
                   Atualizando...
                 </span>
               ) : produtoAtualizacaoMeta && produtoSelecionadoId === produtoEmFoco.id_produto_tiny ? (
                 <span>Atualizado agora{produtoAtualizacaoMeta.attempts429 ? ` · ${produtoAtualizacaoMeta.attempts429} retentativa(s)` : ''}</span>
               ) : null}
               {produtoAtualizacaoErro && produtoSelecionadoId === produtoEmFoco.id_produto_tiny && (
-                <span className="text-rose-500">{produtoAtualizacaoErro}</span>
+                <span className="text-[var(--color-error)]">{produtoAtualizacaoErro}</span>
               )}
               {consolidacaoMensagem && <span>{consolidacaoMensagem}</span>}
             </div>
           </div>
         </section>
-      )}
+      )
+      }
 
       <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
-          <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Catálogo</div>
+          <div className="text-sm font-semibold text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]">Catálogo</div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 dark:text-slate-300">Visualização</span>
-            <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800/70 p-1 border border-white/40 dark:border-white/10">
+            <span className="text-xs text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Visualização</span>
+            <div className="inline-flex rounded-full segmented-control p-1 border border-white/40 dark:border-white/10">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
-                  viewMode === 'table'
-                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${viewMode === 'table'
+                  ? 'bg-white text-[var(--color-neutral-900)] shadow-sm dark:bg-[var(--color-neutral-700)] dark:text-white'
+                  : 'text-[var(--color-neutral-600)] hover:text-[var(--color-neutral-900)] dark:text-[var(--color-neutral-300)] dark:hover:text-white'
+                  }`}
                 title="Visualizar em tabela detalhada"
               >
                 <Rows className="w-4 h-4" />
@@ -2180,11 +1866,10 @@ export default function ProdutosClient() {
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
-                  viewMode === 'grid'
-                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${viewMode === 'grid'
+                  ? 'bg-white text-[var(--color-neutral-900)] shadow-sm dark:bg-[var(--color-neutral-700)] dark:text-white'
+                  : 'text-[var(--color-neutral-600)] hover:text-[var(--color-neutral-900)] dark:text-[var(--color-neutral-300)] dark:hover:text-white'
+                  }`}
                 title="Visualizar em vitrine (cards)"
               >
                 <LayoutGrid className="w-4 h-4" />
@@ -2196,25 +1881,25 @@ export default function ProdutosClient() {
         {!loading && (
           <div className="hidden md:flex items-center justify-between gap-3 px-6 pb-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-white/60 dark:border-slate-700/60 shadow-sm">
-                <span className="text-purple-600 dark:text-purple-300">{produtosFiltrados.length}</span> exibidos
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-[var(--color-neutral-800)]/70 px-3 py-1.5 text-xs font-semibold text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)] border border-white/60 dark:border-[var(--color-neutral-700)]/60 shadow-sm">
+                <span className="text-[var(--color-primary)] dark:text-[var(--color-primary-light)]">{produtosFiltrados.length}</span> exibidos
               </span>
               {metrics.estoqueCritico > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] dark:bg-[var(--color-warning-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--color-warning-dark)] dark:text-[var(--color-warning-light)] border border-[var(--color-warning-soft)] dark:border-[var(--color-warning-dark)]">
                   {metrics.estoqueCritico} estoque crítico
                 </span>
               )}
-              
+
             </div>
-            <div className="inline-flex items-center gap-2 bg-white/70 dark:bg-slate-800/70 border border-white/60 dark:border-slate-700/60 rounded-2xl p-1 shadow-sm">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-300 px-2">Ordenar</span>
+            <div className="inline-flex items-center gap-2 bg-white/70 dark:bg-[var(--color-neutral-800)]/70 border border-white/60 dark:border-[var(--color-neutral-700)]/60 rounded-2xl p-1 shadow-sm">
+              <span className="text-xs font-semibold text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)] px-2">Ordenar</span>
               <select
                 value={sortSelectValue}
                 onChange={(e) => {
                   const value = e.target.value as 'nome-asc' | 'preco-desc' | 'preco-asc' | 'estoque-desc' | 'estoque-asc' | 'codigo-asc' | 'reservado-desc' | 'reservado-asc';
                   applySortOption(value);
                 }}
-                className="text-xs font-semibold bg-transparent px-2 py-1 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="text-xs font-semibold bg-transparent px-2 py-1 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50"
               >
                 <option value="nome-asc">Nome A-Z</option>
                 <option value="preco-desc">Preço (maior)</option>
@@ -2228,65 +1913,65 @@ export default function ProdutosClient() {
             </div>
           </div>
         )}
-      {loading ? (
-        <>
-          <div className="hidden md:block">
-            {/* Skeleton da tabela (somente telas bem largas) */}
-            <div className="overflow-y-auto">
-              <table className="w-full table-fixed min-w-0">
-                <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10">
-                  <tr>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Imagem</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Código</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Produto</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Tipo</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-right">Preço</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Estoque</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Embalagem</th>
-                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <tr key={i} className="border-b border-white/10 animate-pulse">
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="w-14 h-14 rounded-2xl bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4 text-right"><div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-700 ml-auto" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-5 w-32 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" /></td>
-                      <td className="px-4 py-3 sm:px-6 sm:py-4"><div className="h-6 w-16 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto" /></td>
+        {loading ? (
+          <>
+            <div className="hidden md:block">
+              {/* Skeleton da tabela (somente telas bem largas) */}
+              <div className="overflow-y-auto">
+                <table className="w-full table-fixed min-w-0">
+                  <thead className="app-table-header text-[10px] uppercase tracking-[0.05em] text-[var(--color-neutral-500)] sticky top-0 bg-[var(--color-neutral-50)] dark:bg-[var(--color-neutral-900)] shadow-sm z-10">
+                    <tr>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Imagem</th>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Código</th>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Produto</th>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Tipo</th>
+                      <th className="px-3 py-2 text-right sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Preço</th>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Estoque</th>
+                      <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Embalagem</th>
+                      <th className="px-3 py-2 text-center sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <tr key={i} className="border-b border-white/10 animate-pulse">
+                        <td className="px-3 py-2 "><div className="w-14 h-14 rounded-2xl skeleton" /></td>
+                        <td className="px-3 py-2 "><div className="h-4 w-20 rounded skeleton" /></td>
+                        <td className="px-3 py-2 "><div className="h-4 w-48 rounded skeleton" /></td>
+                        <td className="px-3 py-2 "><div className="h-6 w-16 rounded-full skeleton" /></td>
+                        <td className="px-3 py-2 text-right sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]"><div className="h-4 w-20 rounded skeleton ml-auto" /></td>
+                        <td className="px-3 py-2 "><div className="h-5 w-32 rounded-full skeleton" /></td>
+                        <td className="px-3 py-2 "><div className="h-6 w-24 rounded-full skeleton" /></td>
+                        <td className="px-3 py-2 "><div className="h-6 w-16 rounded-full skeleton mx-auto" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
 
-          <div className="2xl:hidden p-4 space-y-3">
-            {/* Skeleton cards (mobile/tablet/notebooks menores) */}
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="app-card p-4 animate-pulse">
-                <div className="flex gap-3">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-200 dark:bg-slate-700" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 w-3/4 rounded bg-slate-200 dark:bg-slate-700" />
-                    <div className="h-3 w-1/2 rounded bg-slate-200 dark:bg-slate-700" />
-                    <div className="h-6 w-24 rounded-full bg-slate-200 dark:bg-slate-700" />
+            <div className="2xl:hidden p-4 space-y-3">
+              {/* Skeleton cards (mobile/tablet/notebooks menores) */}
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="app-card p-4 animate-pulse">
+                  <div className="flex gap-3">
+                    <div className="w-16 h-16 rounded-2xl skeleton" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-3/4 rounded skeleton" />
+                      <div className="h-3 w-1/2 rounded skeleton" />
+                      <div className="h-6 w-24 rounded-full skeleton" />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : !produtos.length ? (
-          <div className="px-8 py-16 text-center">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-100 to-slate-100 dark:from-purple-500/20 dark:to-slate-500/20 flex items-center justify-center">
-              <Package className="w-10 h-10 text-purple-400" />
+              ))}
             </div>
-            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Nenhum produto encontrado</h3>
-            <p className="text-sm text-slate-500 mb-6 max-w-sm mx-auto">
+          </>
+        ) : !produtos.length ? (
+          <div className="px-8 py-16 text-center">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-[var(--color-primary)]/10 to-slate-100 dark:from-[var(--color-primary)]/20 dark:to-slate-500/20 flex items-center justify-center">
+              <Package className="w-10 h-10 text-[var(--color-primary-light)]" />
+            </div>
+            <h3 className="text-xl font-semibold text-[var(--color-neutral-900)] dark:text-white mb-2">Nenhum produto encontrado</h3>
+            <p className="text-sm text-[var(--color-neutral-500)] mb-6 max-w-sm mx-auto">
               {search || quickFilter || precoMin || precoMax || estoqueMin || estoqueMax
                 ? "Tente ajustar os filtros ou buscar por outro termo"
                 : "Sincronize seus produtos do Tiny ERP para começar"}
@@ -2303,7 +1988,7 @@ export default function ProdutosClient() {
                     setEstoqueMin('');
                     setEstoqueMax('');
                   }}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-600 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-neutral-300)] dark:border-[var(--color-neutral-600)] px-5 py-2.5 text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-300)] hover:bg-[var(--color-neutral-50)] dark:hover:bg-[var(--color-neutral-800)] transition-all"
                 >
                   <X className="w-4 h-4" />
                   Limpar filtros
@@ -2312,7 +1997,7 @@ export default function ProdutosClient() {
               <button
                 onClick={syncProdutos}
                 disabled={syncing}
-                className="inline-flex items-center gap-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 text-sm font-semibold transition-all"
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] text-white px-5 py-2.5 text-sm font-semibold transition-all"
               >
                 <RefreshCcw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Sincronizando...' : 'Sincronizar produtos'}
@@ -2325,45 +2010,43 @@ export default function ProdutosClient() {
             {viewMode === 'grid' ? (
               <div>
                 <div className="md:hidden px-4 pb-2 flex items-center gap-2">
-                  <div className="text-xs text-slate-500 dark:text-slate-300">Visualização</div>
-                  <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800/70 p-1 border border-white/40 dark:border-white/10">
+                  <div className="text-xs text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Visualização</div>
+                  <div className="inline-flex rounded-full segmented-control p-1 border border-white/40 dark:border-white/10">
                     <button
                       type="button"
                       onClick={() => setViewMode('table')}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
-                        viewMode !== 'grid'
-                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${viewMode !== 'grid'
+                        ? 'bg-white text-[var(--color-neutral-900)] shadow-sm dark:bg-[var(--color-neutral-700)] dark:text-white'
+                        : 'text-[var(--color-neutral-600)] hover:text-[var(--color-neutral-900)] dark:text-[var(--color-neutral-300)] dark:hover:text-white'
+                        }`}
                     >
                       <Rows className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setViewMode('grid')}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${
-                        viewMode === 'grid'
-                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-full transition ${viewMode === 'grid'
+                        ? 'bg-white text-[var(--color-neutral-900)] shadow-sm dark:bg-[var(--color-neutral-700)] dark:text-white'
+                        : 'text-[var(--color-neutral-600)] hover:text-[var(--color-neutral-900)] dark:text-[var(--color-neutral-300)] dark:hover:text-white'
+                        }`}
                     >
                       <LayoutGrid className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
                 <div className="md:hidden grid grid-cols-2 gap-3 p-4">
-                {produtosFiltrados.map((produto) => (
-                  <ProdutoCard
-                    key={produto.id}
-                    produto={produto}
-                    selected={produtoSelecionadoId === produto.id_produto_tiny}
-                    onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
-                    embalagens={embalagens}
-                    onEmbalagemUpdate={handleEmbalagemUpdate}
-                    onNotify={(type, message) => setNotification({ type, message })}
-                    layout="grid"
-                  />
-                ))}
+                  {produtosFiltrados.map((produto) => (
+                    <ProdutoCard
+                      key={produto.id}
+                      produto={produto}
+                      selected={produtoSelecionadoId === produto.id_produto_tiny}
+                      onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                      embalagens={embalagens}
+                      onEmbalagemUpdate={handleEmbalagemUpdate}
+                      onNotify={(type, message) => setNotification({ type, message })}
+                      layout="grid"
+                    />
+                  ))}
                 </div>
               </div>
             ) : (
@@ -2383,13 +2066,13 @@ export default function ProdutosClient() {
                 {/* Infinite scroll loader */}
                 <div ref={mobileLoaderRef} className="py-4 flex justify-center">
                   {mobileHasMore && (
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <div className="flex items-center gap-2 text-sm text-[var(--color-neutral-500)]">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Carregando mais...</span>
                     </div>
                   )}
                   {!mobileHasMore && mobileProducts.length > 0 && (
-                    <p className="text-sm text-slate-400">Mostrando todos os {mobileProducts.length} produtos</p>
+                    <p className="text-sm text-[var(--color-neutral-400)]">Mostrando todos os {mobileProducts.length} produtos</p>
                   )}
                 </div>
               </div>
@@ -2397,27 +2080,27 @@ export default function ProdutosClient() {
 
             {/* Barra de ações em lote */}
             {selectedIds.size > 0 && viewMode === 'table' && (
-              <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-purple-50 dark:bg-purple-500/10 border-y border-purple-200 dark:border-purple-500/30 sticky top-0 z-20">
+              <div className="hidden md:flex items-center gap-4 px-6 py-3 bg-[var(--color-primary)]/5 dark:bg-[var(--color-primary-dark)]/10 border-y border-[var(--color-primary)]/20 dark:border-[var(--color-primary)]/30 sticky top-0 z-20">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={clearSelection}
-                    className="p-1.5 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-[var(--color-primary)]/10 dark:hover:bg-[var(--color-primary-dark)]/20 text-[var(--color-primary)] dark:text-[var(--color-primary-light)] transition-colors"
                     title="Limpar seleção"
                   >
                     <X className="w-4 h-4" />
                   </button>
-                  <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">
+                  <span className="text-sm font-semibold text-[var(--color-primary-dark)] dark:text-[var(--color-primary-light)]">
                     {selectedIds.size} produto{selectedIds.size > 1 ? 's' : ''} selecionado{selectedIds.size > 1 ? 's' : ''}
                   </span>
-                  <span className="text-xs text-purple-600/80 dark:text-purple-200/80">
+                  <span className="text-xs text-[var(--color-primary)]/80 dark:text-[var(--color-primary-light)]/80">
                     (somente desta página)
                   </span>
                 </div>
-                <div className="h-5 w-px bg-purple-300 dark:bg-purple-600" />
+                <div className="h-5 w-px bg-[var(--color-primary)]/30 dark:bg-[var(--color-primary)]" />
                 <div className="flex items-center gap-2">
                   <button
                     onClick={exportarSelecionados}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-primary)] hover:bg-[var(--color-primary)] text-white text-sm font-medium transition-colors"
                   >
                     <Download className="w-4 h-4" />
                     Exportar selecionados
@@ -2443,96 +2126,96 @@ export default function ProdutosClient() {
                   ))}
                 </div>
 
-                <div className="hidden md:block max-h-[600px] overflow-y-auto">
-                  <table className="w-full table-fixed min-w-0">
-                  <thead className="app-table-header text-[11px] uppercase tracking-[0.3em] text-slate-500 sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 shadow-sm">
-                    <tr>
-                      <th className="px-4 py-4 text-center w-12">
-                        <button
-                          onClick={toggleSelectAll}
-                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title={selectedIds.size === produtosFiltrados.length ? "Desmarcar todos" : "Selecionar todos"}
-                        >
-                          {selectedIds.size === produtosFiltrados.length && produtosFiltrados.length > 0 ? (
-                            <CheckSquare className="w-5 h-5 text-purple-600" />
-                          ) : selectedIds.size > 0 ? (
-                            <div className="relative">
-                              <Square className="w-5 h-5 text-slate-400" />
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-2 h-2 bg-purple-600 rounded-sm" />
+                <div className="hidden md:block table-container max-h-[600px]">
+                  <table className="table-base">
+                    <thead className="app-table-header text-[10px] uppercase tracking-[0.05em] text-[var(--color-neutral-500)] bg-[var(--color-neutral-50)] dark:bg-[var(--color-neutral-900)] shadow-sm relative z-50">
+                      <tr>
+                        <th className="px-3 py-2 text-center w-12 sticky top-0 z-30 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                          <button
+                            onClick={toggleSelectAll}
+                            className="p-1 rounded hover:bg-[var(--color-neutral-100)] dark:hover:bg-[var(--color-neutral-800)] transition-colors"
+                            title={selectedIds.size === produtosFiltrados.length ? "Desmarcar todos" : "Selecionar todos"}
+                          >
+                            {selectedIds.size === produtosFiltrados.length && produtosFiltrados.length > 0 ? (
+                              <CheckSquare className="w-5 h-5 text-[var(--color-primary)]" />
+                            ) : selectedIds.size > 0 ? (
+                              <div className="relative">
+                                <Square className="w-5 h-5 text-[var(--color-neutral-400)]" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="w-2 h-2 bg-[var(--color-primary)] rounded-sm" />
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <Square className="w-5 h-5 text-slate-400" />
-                          )}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Imagem</th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
-                        <button
-                          onClick={() => handleSort('codigo')}
-                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
-                        >
-                          Código
-                          {sortColumn === 'codigo' && (
-                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                          )}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
-                        <button
-                          onClick={() => handleSort('nome')}
-                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
-                        >
-                          Produto
-                          {sortColumn === 'nome' && (
-                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                          )}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Tipo</th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-right">
-                        <button
-                          onClick={() => handleSort('preco')}
-                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors ml-auto"
-                        >
-                          Preço
-                          {sortColumn === 'preco' && (
-                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                          )}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">
-                        <button
-                          onClick={() => handleSort('disponivel')}
-                          className="inline-flex items-center gap-1.5 hover:text-purple-600 transition-colors"
-                        >
-                          Estoque
-                          {sortColumn === 'disponivel' && (
-                            sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                          )}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-left">Embalagem</th>
-                      <th className="px-4 py-3 sm:px-6 sm:py-4 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {produtosFiltrados.map((produto) => (
-                      <ProdutoTableRow
-                        key={produto.id}
-                        produto={produto}
-                        selected={produtoSelecionadoId === produto.id_produto_tiny}
-                        onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
-                        embalagens={embalagens}
-                        onEmbalagemUpdate={handleEmbalagemUpdate}
-                        onNotify={(type, message) => setNotification({ type, message })}
-                        checked={selectedIds.has(produto.id)}
-                        onCheckChange={() => toggleSelectOne(produto.id)}
-                        onConfirmEmbalagemRemove={(payload) => setConfirmDialog(payload)}
-                      />
-                    ))}
-                  </tbody>
+                            ) : (
+                              <Square className="w-5 h-5 text-[var(--color-neutral-400)]" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Imagem</th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                          <button
+                            onClick={() => handleSort('codigo')}
+                            className="sortable-header"
+                          >
+                            Código
+                            {sortColumn === 'codigo' && (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                          <button
+                            onClick={() => handleSort('nome')}
+                            className="sortable-header"
+                          >
+                            Produto
+                            {sortColumn === 'nome' && (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Tipo</th>
+                        <th className="px-3 py-2 text-right sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                          <button
+                            onClick={() => handleSort('preco')}
+                            className="sortable-header justify-end"
+                          >
+                            Preço
+                            {sortColumn === 'preco' && (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                          <button
+                            onClick={() => handleSort('disponivel')}
+                            className="sortable-header"
+                          >
+                            Estoque
+                            {sortColumn === 'disponivel' && (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Embalagem</th>
+                        <th className="px-3 py-2 text-center sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {produtosFiltrados.map((produto) => (
+                        <ProdutoTableRow
+                          key={produto.id}
+                          produto={produto}
+                          selected={produtoSelecionadoId === produto.id_produto_tiny}
+                          onSelect={() => setProdutoSelecionadoId(produto.id_produto_tiny)}
+                          embalagens={embalagens}
+                          onEmbalagemUpdate={handleEmbalagemUpdate}
+                          onNotify={(type, message) => setNotification({ type, message })}
+                          checked={selectedIds.has(produto.id)}
+                          onCheckChange={() => toggleSelectOne(produto.id)}
+                          onConfirmEmbalagemRemove={(payload) => setConfirmDialog(payload)}
+                        />
+                      ))}
+                    </tbody>
                   </table>
                 </div>
               </>
@@ -2560,8 +2243,8 @@ export default function ProdutosClient() {
             )}
 
             {totalPages > 1 && (
-              <div className="border-t border-white/20 dark:border-white/5 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between">
-                <div className="text-sm text-slate-500">
+              <div className="border-t border-white/20 dark:border-white/5 px-3 py-2  flex items-center justify-between">
+                <div className="text-sm text-[var(--color-neutral-500)]">
                   Página {page + 1} de {totalPages} • {total} produtos
                 </div>
                 <div className="flex gap-2">
@@ -2586,77 +2269,83 @@ export default function ProdutosClient() {
         )}
       </section>
 
-      {notification && (
-        <NotificationToast
-          type={notification.type}
-          message={notification.message}
-          onClose={() => setNotification(null)}
-        />
-      )}
+      {
+        notification && (
+          <NotificationToast
+            type={notification.type}
+            message={notification.message}
+            onClose={() => setNotification(null)}
+          />
+        )
+      }
 
-      {confirmDialog && (
-        <ConfirmDialog
-          title="Desvincular Embalagem"
-          message={`Deseja realmente desvincular a embalagem "${confirmDialog.embalagemNome}" deste produto?`}
-          onConfirm={async () => {
-            const { embalagemId, produtoId } = confirmDialog;
-            setConfirmDialog(null);
-            try {
-              const res = await fetch(
-                `/api/produtos/${produtoId}/embalagens?embalagem_id=${embalagemId}`,
-                { method: "DELETE" }
-              );
-              if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Erro ao desvincular embalagem");
+      {
+        confirmDialog && (
+          <ConfirmDialog
+            title="Desvincular Embalagem"
+            message={`Deseja realmente desvincular a embalagem "${confirmDialog.embalagemNome}" deste produto?`}
+            onConfirm={async () => {
+              const { embalagemId, produtoId } = confirmDialog;
+              setConfirmDialog(null);
+              try {
+                const res = await fetch(
+                  `/api/produtos/${produtoId}/embalagens?embalagem_id=${embalagemId}`,
+                  { method: "DELETE" }
+                );
+                if (!res.ok) {
+                  const errorData = await res.json();
+                  throw new Error(errorData.error || "Erro ao desvincular embalagem");
+                }
+                setNotification({ type: 'success', message: 'Embalagem desvinculada com sucesso!' });
+                await fetchProdutos();
+              } catch (err) {
+                setNotification({
+                  type: 'error',
+                  message: err instanceof Error ? err.message : "Erro ao desvincular embalagem"
+                });
               }
-              setNotification({ type: 'success', message: 'Embalagem desvinculada com sucesso!' });
-              await fetchProdutos();
-            } catch (err) {
-              setNotification({
-                type: 'error',
-                message: err instanceof Error ? err.message : "Erro ao desvincular embalagem"
-              });
-            }
-          }}
-          onCancel={() => setConfirmDialog(null)}
-        />
-      )}
+            }}
+            onCancel={() => setConfirmDialog(null)}
+          />
+        )
+      }
 
-      {imageZoom && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setImageZoom(null)}
-        >
-          <div className="relative max-w-6xl max-h-[90vh] w-full">
-            <button
-              onClick={() => setImageZoom(null)}
-              className="absolute -top-12 right-0 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-              title="Fechar (ESC)"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageZoom.url}
-              alt={imageZoom.alt}
-              className="w-full h-auto max-h-[90vh] object-contain rounded-2xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
+      {
+        imageZoom && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setImageZoom(null)}
+          >
+            <div className="relative max-w-6xl max-h-[90vh] w-full">
+              <button
+                onClick={() => setImageZoom(null)}
+                className="absolute -top-12 right-0 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Fechar (ESC)"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageZoom.url}
+                alt={imageZoom.alt}
+                className="w-full h-auto max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* FAB (Floating Action Button) - Mobile only */}
       <div className="md:hidden fixed bottom-6 right-6 z-40">
         {/* FAB backdrop when open */}
         {fabOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setFabOpen(false)}
           />
         )}
-        
+
         {/* FAB Actions */}
         <div className={`absolute bottom-16 right-0 flex flex-col gap-3 items-end transition-all duration-200 ${fabOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
           <button
@@ -2664,7 +2353,7 @@ export default function ProdutosClient() {
               setFabOpen(false);
               exportarCSV();
             }}
-            className="flex items-center gap-3 px-4 py-3 rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-500 transition-all"
+            className="flex items-center gap-3 px-3 py-2 rounded-full bg-[var(--color-primary)] text-white shadow-lg shadow-[var(--color-primary)]/30 hover:bg-[var(--color-primary)] transition-all"
           >
             <span className="text-sm font-medium whitespace-nowrap">Exportar CSV</span>
             <Download className="w-5 h-5" />
@@ -2675,7 +2364,7 @@ export default function ProdutosClient() {
               syncProdutos();
             }}
             disabled={syncing}
-            className="flex items-center gap-3 px-4 py-3 rounded-full bg-purple-600 text-white shadow-lg shadow-purple-500/30 hover:bg-purple-500 disabled:opacity-50 transition-all"
+            className="flex items-center gap-3 px-3 py-2 rounded-full bg-[var(--color-primary)] text-white shadow-lg shadow-[var(--color-primary)]/30 hover:bg-[var(--color-primary-dark)] disabled:opacity-50 transition-all"
           >
             <span className="text-sm font-medium whitespace-nowrap">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
             <RefreshCcw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} />
@@ -2685,7 +2374,7 @@ export default function ProdutosClient() {
               setFabOpen(false);
               setMobileFiltersOpen(true);
             }}
-            className="flex items-center gap-3 px-4 py-3 rounded-full bg-slate-700 text-white shadow-lg shadow-slate-500/30 hover:bg-slate-600 transition-all"
+            className="flex items-center gap-3 px-3 py-2 rounded-full bg-[var(--color-neutral-700)] text-white shadow-lg shadow-slate-500/30 hover:bg-[var(--color-neutral-600)] transition-all"
           >
             <span className="text-sm font-medium whitespace-nowrap">Filtros</span>
             <Search className="w-5 h-5" />
@@ -2695,11 +2384,10 @@ export default function ProdutosClient() {
         {/* Main FAB button */}
         <button
           onClick={() => setFabOpen(!fabOpen)}
-          className={`relative w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 ${
-            fabOpen 
-              ? 'bg-slate-700 rotate-45' 
-              : 'bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
-          }`}
+          className={`relative w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 ${fabOpen
+            ? 'bg-[var(--color-neutral-700)] rotate-45'
+            : 'bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-primary-dark)] hover:from-[var(--color-primary)] hover:to-[var(--color-primary-dark)]'
+            }`}
           aria-label={fabOpen ? 'Fechar menu' : 'Abrir menu de ações'}
         >
           {fabOpen ? (
@@ -2712,13 +2400,13 @@ export default function ProdutosClient() {
         {/* Scroll to top button */}
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="absolute left-4 sm:-left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-slate-800 shadow-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          className="absolute left-4 sm:-left-14 bottom-0 w-12 h-12 rounded-full bg-white dark:bg-[var(--color-neutral-800)] shadow-lg flex items-center justify-center text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] hover:text-[var(--color-primary)] dark:hover:text-[var(--color-primary-light)] transition-colors"
           aria-label="Voltar ao topo"
         >
           <ChevronUp className="w-5 h-5" />
         </button>
       </div>
-    </div>
+    </div >
   );
 }
 
@@ -2733,41 +2421,41 @@ type MetricCardProps = {
 const MetricCard = memo(function MetricCard({ icon: Icon, label, value, color, loading }: MetricCardProps) {
   const colorClasses = {
     blue: "from-blue-500 to-cyan-500",
-    green: "from-green-500 to-emerald-500",
+    green: "from-[var(--color-primary)] to-[var(--color-primary-dark)]",
     red: "from-red-500 to-rose-500",
-    purple: "from-purple-500 to-pink-500",
+    purple: "from-[var(--color-primary)] to-[var(--color-primary-dark)]",
     amber: "from-amber-500 to-orange-500",
   };
 
   const bgClasses = {
-    blue: "bg-blue-50 dark:bg-blue-500/10",
-    green: "bg-green-50 dark:bg-green-500/10",
-    red: "bg-red-50 dark:bg-red-500/10",
-    purple: "bg-purple-50 dark:bg-purple-500/10",
+    blue: "bg-[var(--color-info-soft)] dark:bg-[var(--color-info-soft)]",
+    green: "bg-[var(--color-success-soft)] dark:bg-[var(--color-success)]/10",
+    red: "bg-red-50 dark:bg-[var(--color-error)]/10",
+    purple: "bg-[var(--color-primary)]/5 dark:bg-[var(--color-primary-dark)]/10",
     amber: "bg-amber-50 dark:bg-amber-500/10",
   };
 
   const iconClasses = {
-    blue: "text-blue-600 dark:text-blue-400",
+    blue: "text-blue-600 dark:text-[var(--color-info)]",
     green: "text-green-600 dark:text-green-400",
     red: "text-red-600 dark:text-red-400",
-    purple: "text-purple-600 dark:text-purple-400",
+    purple: "text-[var(--color-primary)] dark:text-[var(--color-primary-light)]",
     amber: "text-amber-600 dark:text-amber-400",
   };
 
   if (loading) {
     return (
-      <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 animate-pulse">
-        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-20 mb-3"></div>
-        <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-32"></div>
+      <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-6 animate-pulse">
+        <div className="h-4 skeleton rounded w-20 mb-3"></div>
+        <div className="h-8 skeleton rounded w-32"></div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 p-6 hover:shadow-lg transition-all duration-300">
+    <div className="rounded-2xl glass-panel border border-white/60 dark:border-white/10 p-6 hover:shadow-lg transition-all duration-300">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{label}</span>
+        <span className="text-sm font-medium text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-400)]">{label}</span>
         <div className={`p-2.5 rounded-xl ${bgClasses[color]}`}>
           <Icon className={`w-5 h-5 ${iconClasses[color]}`} />
         </div>
@@ -2788,18 +2476,18 @@ type NotificationToastProps = {
 function NotificationToast({ type, message, onClose }: NotificationToastProps) {
   const styles = {
     success: {
-      bg: 'bg-green-50 dark:bg-green-500/10 border-green-500',
+      bg: 'bg-[var(--color-success-soft)] dark:bg-[var(--color-success)]/10 border-[var(--color-success)]',
       icon: 'text-green-600 dark:text-green-400',
       text: 'text-green-900 dark:text-green-100',
     },
     error: {
-      bg: 'bg-red-50 dark:bg-red-500/10 border-red-500',
+      bg: 'bg-red-50 dark:bg-[var(--color-error)]/10 border-[var(--color-error)]',
       icon: 'text-red-600 dark:text-red-400',
       text: 'text-red-900 dark:text-red-100',
     },
     info: {
-      bg: 'bg-blue-50 dark:bg-blue-500/10 border-blue-500',
-      icon: 'text-blue-600 dark:text-blue-400',
+      bg: 'bg-[var(--color-info-soft)] dark:bg-[var(--color-info-soft)] border-[var(--color-info)]',
+      icon: 'text-blue-600 dark:text-[var(--color-info)]',
       text: 'text-blue-900 dark:text-blue-100',
     },
   };
@@ -2843,19 +2531,19 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }: ConfirmDialogPro
       onClick={onCancel}
     >
       <div
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full border-2 border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200"
+        className="bg-white dark:bg-[var(--color-neutral-800)] rounded-2xl shadow-2xl max-w-md w-full border-2 border-slate-200 dark:border-[var(--color-neutral-700)] animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 space-y-4">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-500/10 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[var(--color-warning-soft)] dark:bg-amber-500/10 flex items-center justify-center shrink-0">
               <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+              <h3 className="text-lg font-semibold text-[var(--color-neutral-900)] dark:text-white">
                 {title}
               </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+              <p className="text-sm text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-400)] mt-1">
                 {message}
               </p>
             </div>
@@ -2864,13 +2552,13 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }: ConfirmDialogPro
           <div className="flex gap-3 justify-end pt-2">
             <button
               onClick={onCancel}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-300)] hover:bg-[var(--color-neutral-100)] dark:hover:bg-[var(--color-neutral-700)] transition-colors"
             >
               Cancelar
             </button>
             <button
               onClick={onConfirm}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-[var(--color-error)] hover:bg-[var(--color-error-dark)] dark:bg-[var(--color-error)] dark:hover:bg-[var(--color-error)] transition-colors shadow-lg shadow-[var(--color-error)]"
             >
               Confirmar
             </button>
@@ -2897,12 +2585,12 @@ type ProdutoRowProps = {
 const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, layout = 'list' }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
-    color: "bg-slate-100 text-slate-600",
+    color: "bg-[var(--color-neutral-100)] text-[var(--color-neutral-600)]",
   };
   const sitConfig = SITUACAO_CONFIG[produto.situacao] || {
     label: produto.situacao,
-    color: "text-slate-600",
-    bg: "bg-slate-100",
+    color: "text-[var(--color-neutral-600)]",
+    bg: "bg-[var(--color-neutral-100)]",
   };
   const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
   const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
@@ -2964,11 +2652,10 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
           onSelect();
         }
       }}
-      className={`app-card p-4 ${isGrid ? 'w-full flex-col items-start gap-6' : 'gap-3 flex'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
-        selected
-          ? "ring-2 ring-purple-500 shadow-lg shadow-purple-500/20 border-purple-500 bg-purple-50/80 dark:bg-purple-500/10"
-          : ""
-      }`}
+      className={`app-card p-4 ${isGrid ? 'w-full flex-col items-start gap-6' : 'gap-3 flex'} transition cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${selected
+        ? "ring-2 ring-[var(--color-primary)] shadow-lg shadow-[var(--color-primary)]/20 border-[var(--color-primary)] bg-[var(--color-primary)]/5/80 dark:bg-[var(--color-primary-dark)]/10"
+        : ""
+        }`}
     >
       <div className={`${isGrid ? 'w-full aspect-square rounded-3xl' : 'w-16 h-16 rounded-2xl shrink-0'} bg-white/70 dark:bg-white/10 flex items-center justify-center overflow-hidden border border-white/60`}>
         {produto.imagem_url ? (
@@ -2976,54 +2663,27 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
           <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover block" />
         ) : (
           <div className="w-10 h-10 flex items-center justify-center">
-            <Package className="w-5 h-5 text-slate-400" />
+            <Package className="w-5 h-5 text-[var(--color-neutral-400)]" />
           </div>
         )}
       </div>
       <div className="flex-1 min-w-0 space-y-2">
         {isGrid ? (
           <div className="grid grid-cols-[1fr_auto] items-start gap-3">
-                <div className="min-w-0 space-y-1">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.gtin || '—'}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}>{sitConfig.label}</span>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tipoConfig.color}`}>{tipoConfig.label}</span>
-                </div>
-              </div>
-              <div className="text-right flex-shrink-0 self-start">
-                <div className="font-extrabold text-base text-slate-900 dark:text-white">
-                  {shouldShowPromo ? (
-                    <>
-                      <span className="text-sky-600">{formatBRL(discountedPrice)}</span>
-                      <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(originalPrice)}</span>
-                    </>
-                  ) : discountedPrice != null ? (
-                    formatBRL(discountedPrice)
-                  ) : originalPrice != null ? (
-                    formatBRL(originalPrice)
-                  ) : (
-                    shopeePrice === undefined
-                      ? (produto.preco_promocional && produto.preco_promocional < (produto.preco || 0)
-                          ? formatBRL(produto.preco_promocional)
-                          : formatBRL(produto.preco))
-                      : '—'
-                  )}
-                </div>
-              </div>
-          </div>
-        ) : (
-          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{produto.nome}</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-300 truncate">{produto.codigo || "Sem código"} · {produto.gtin || "—"}</p>
+              <p className="text-sm font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{produto.nome}</p>
+              <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)] truncate">{produto.gtin || '—'}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${sitConfig.color} ${sitConfig.bg}`}>{sitConfig.label}</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tipoConfig.color}`}>{tipoConfig.label}</span>
+              </div>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <div className="font-extrabold text-base text-slate-900 dark:text-white">
+            <div className="text-right flex-shrink-0 self-start">
+              <div className="font-extrabold text-base text-[var(--color-neutral-900)] dark:text-white">
                 {shouldShowPromo ? (
                   <>
                     <span className="text-sky-600">{formatBRL(discountedPrice)}</span>
-                    <span className="ml-2 text-xs line-through text-slate-500">{formatBRL(originalPrice)}</span>
+                    <span className="ml-2 text-xs line-through text-[var(--color-neutral-500)]">{formatBRL(originalPrice)}</span>
                   </>
                 ) : discountedPrice != null ? (
                   formatBRL(discountedPrice)
@@ -3032,8 +2692,35 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
                 ) : (
                   shopeePrice === undefined
                     ? (produto.preco_promocional && produto.preco_promocional < (produto.preco || 0)
-                        ? formatBRL(produto.preco_promocional)
-                        : formatBRL(produto.preco))
+                      ? formatBRL(produto.preco_promocional)
+                      : formatBRL(produto.preco))
+                    : '—'
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{produto.nome}</p>
+              <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)] truncate">{produto.codigo || "Sem código"} · {produto.gtin || "—"}</p>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <div className="font-extrabold text-base text-[var(--color-neutral-900)] dark:text-white">
+                {shouldShowPromo ? (
+                  <>
+                    <span className="text-sky-600">{formatBRL(discountedPrice)}</span>
+                    <span className="ml-2 text-xs line-through text-[var(--color-neutral-500)]">{formatBRL(originalPrice)}</span>
+                  </>
+                ) : discountedPrice != null ? (
+                  formatBRL(discountedPrice)
+                ) : originalPrice != null ? (
+                  formatBRL(originalPrice)
+                ) : (
+                  shopeePrice === undefined
+                    ? (produto.preco_promocional && produto.preco_promocional < (produto.preco || 0)
+                      ? formatBRL(produto.preco_promocional)
+                      : formatBRL(produto.preco))
                     : '—'
                 )}
               </div>
@@ -3048,19 +2735,18 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
         )}
 
         <div className={`grid ${isGrid ? 'grid-cols-3' : 'grid-cols-3'} gap-2 mt-2`}>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
-            <p className="text-[11px] text-slate-500 dark:text-slate-300">Estoque</p>
-            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-slate-900 dark:text-white`}>{formatNumber(produto.saldo)}</p>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-[var(--color-neutral-50)]/80 dark:bg-[var(--color-neutral-800)]/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Estoque</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-[var(--color-neutral-900)] dark:text-white`}>{formatNumber(produto.saldo)}</p>
           </div>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
-            <p className="text-[11px] text-slate-500 dark:text-slate-300">Reservado</p>
-            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-slate-900 dark:text-white`}>{formatNumber(produto.reservado)}</p>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-[var(--color-neutral-50)]/80 dark:bg-[var(--color-neutral-800)]/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Reservado</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} text-[var(--color-neutral-900)] dark:text-white`}>{formatNumber(produto.reservado)}</p>
           </div>
-          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-slate-50/80 dark:bg-slate-800/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
-            <p className="text-[11px] text-slate-500 dark:text-slate-300">Disponível</p>
-            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} ${
-              disponivelSnapshot <= 0 ? 'text-rose-600' : temEstoqueBaixo ? 'text-amber-600' : 'text-emerald-600'
-            }`}>{formatNumber(disponivelSnapshot)}</p>
+          <div className="rounded-xl border border-white/60 dark:border-slate-800/70 bg-[var(--color-neutral-50)]/80 dark:bg-[var(--color-neutral-800)]/60 px-3 py-3 text-center w-full h-full flex flex-col justify-center">
+            <p className="text-[11px] text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-300)]">Disponível</p>
+            <p className={`font-semibold ${isGrid ? 'text-lg' : ''} ${disponivelSnapshot <= 0 ? 'text-rose-600' : temEstoqueBaixo ? 'text-amber-600' : 'text-[var(--color-primary)]'
+              }`}>{formatNumber(disponivelSnapshot)}</p>
             {produto.disponivel_total != null && (
               null
             )}
@@ -3070,7 +2756,7 @@ const ProdutoCard = memo(function ProdutoCard({ produto, selected, onSelect, lay
         {produto.embalagens && produto.embalagens.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-1">
             {produto.embalagens.map((link) => (
-              <span key={link.embalagem_id} className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-700 dark:text-blue-400">
+              <span key={link.embalagem_id} className="inline-flex items-center gap-1 rounded-full bg-[var(--color-info-soft)] dark:bg-[var(--color-info-soft)] px-2 py-0.5 text-[10px] text-[var(--color-info-dark)] dark:text-[var(--color-info)]">
                 <Box className="h-2.5 w-2.5" />
                 <span className="font-medium">{link.embalagem.nome}</span>
                 <span className="opacity-70">({link.quantidade}x)</span>
@@ -3180,7 +2866,7 @@ Clique para editar embalagem/quantidade`;
                 }
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
+                className="rounded border border-[var(--color-neutral-300)] px-2 py-1 text-xs dark:border-[var(--color-neutral-600)] dark:bg-[var(--color-neutral-800)]"
               >
                 {[link.embalagem, ...availableEmbalagens].map((emb) => (
                   <option key={emb.id} value={emb.id}>
@@ -3199,7 +2885,7 @@ Clique para editar embalagem/quantidade`;
                 }
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="w-16 rounded border border-slate-300 px-1 py-1 text-xs text-right dark:border-slate-600 dark:bg-slate-800"
+                className="w-16 rounded border border-[var(--color-neutral-300)] px-1 py-1 text-xs text-right dark:border-[var(--color-neutral-600)] dark:bg-[var(--color-neutral-800)]"
               />
               <button
                 type="button"
@@ -3226,7 +2912,7 @@ Clique para editar embalagem/quantidade`;
                     onNotify?.('error', err instanceof Error ? err.message : "Erro ao salvar embalagem");
                   }
                 }}
-                className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded bg-[var(--color-info)] px-2 py-1 text-xs text-white hover:bg-[var(--color-info-dark)] disabled:opacity-50"
               >
                 OK
               </button>
@@ -3236,7 +2922,7 @@ Clique para editar embalagem/quantidade`;
                   e.stopPropagation();
                   setEditingLink(null);
                 }}
-                className="text-slate-500 hover:text-slate-700"
+                className="text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)]"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -3252,7 +2938,7 @@ Clique para editar embalagem/quantidade`;
                     quantidade: link.quantidade || 1,
                   });
                 }}
-                className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-500/10 dark:text-blue-400"
+                className="inline-flex items-center gap-1 rounded-full bg-[var(--color-info-soft)] px-2 py-0.5 text-[var(--color-info-dark)] hover:bg-[var(--color-info-light)] dark:bg-[var(--color-info-soft)] dark:text-[var(--color-info)]"
                 title={formatEmbalagemTooltip(link.embalagem, link.quantidade)}
               >
                 <Box className="h-3 w-3" />
@@ -3266,7 +2952,7 @@ Clique para editar embalagem/quantidade`;
                     e.stopPropagation();
                     handleRemoveEmbalagem(link.embalagem_id);
                   }}
-                  className="text-rose-500 hover:text-rose-700"
+                  className="text-[var(--color-error)] hover:text-[var(--color-error-dark)]"
                   title="Desvincular"
                 >
                   <X className="h-3 w-3" />
@@ -3282,7 +2968,7 @@ Clique para editar embalagem/quantidade`;
           <select
             value={selectedEmbalagemId}
             onChange={(e) => setSelectedEmbalagemId(e.target.value)}
-            className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
+            className="flex-1 rounded border border-[var(--color-neutral-300)] px-2 py-1 text-xs dark:border-[var(--color-neutral-600)] dark:bg-[var(--color-neutral-800)]"
             disabled={adding}
           >
             <option value="">Selecione...</option>
@@ -3297,14 +2983,14 @@ Clique para editar embalagem/quantidade`;
             min={1}
             value={selectedQuantidade}
             onChange={(e) => setSelectedQuantidade(Math.max(1, Number(e.target.value) || 1))}
-            className="w-16 rounded border border-slate-300 px-1 py-1 text-xs text-right dark:border-slate-600 dark:bg-slate-800"
+            className="w-16 rounded border border-[var(--color-neutral-300)] px-1 py-1 text-xs text-right dark:border-[var(--color-neutral-600)] dark:bg-[var(--color-neutral-800)]"
             disabled={adding}
           />
           <button
             type="button"
             onClick={handleAddEmbalagem}
             disabled={!selectedEmbalagemId || adding}
-            className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded bg-[var(--color-info)] px-2 py-1 text-xs text-white hover:bg-[var(--color-info-dark)] disabled:opacity-50"
           >
             {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : "OK"}
           </button>
@@ -3315,7 +3001,7 @@ Clique para editar embalagem/quantidade`;
               setSelectedEmbalagemId("");
             }}
             disabled={adding}
-            className="text-slate-500 hover:text-slate-700 disabled:opacity-50"
+            className="text-[var(--color-neutral-500)] hover:text-[var(--color-neutral-700)] disabled:opacity-50"
           >
             <X className="h-4 w-4" />
           </button>
@@ -3324,7 +3010,7 @@ Clique para editar embalagem/quantidade`;
         <button
           type="button"
           onClick={() => setShowSelect(true)}
-          className="w-fit rounded border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:border-blue-500 hover:text-blue-600 dark:border-slate-600"
+          className="w-fit rounded border border-dashed border-[var(--color-neutral-300)] px-2 py-0.5 text-xs text-[var(--color-neutral-500)] hover:border-[var(--color-info)] hover:text-blue-600 dark:border-[var(--color-neutral-600)]"
         >
           + Adicionar
         </button>
@@ -3346,25 +3032,24 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
 }: ProdutoRowProps) {
   const tipoConfig = TIPO_CONFIG[produto.tipo] || {
     label: produto.tipo,
-    color: "bg-slate-100 text-slate-600",
+    color: "bg-[var(--color-neutral-100)] text-[var(--color-neutral-600)]",
   };
   const sitConfig = SITUACAO_CONFIG[produto.situacao] || {
     label: produto.situacao,
-    color: "text-slate-600",
-    bg: "bg-slate-100",
+    color: "text-[var(--color-neutral-600)]",
+    bg: "bg-[var(--color-neutral-100)]",
   };
   const disponivelSnapshot = produto.disponivel_total ?? produto.disponivel ?? 0;
   const temEstoqueBaixo = disponivelSnapshot > 0 && disponivelSnapshot < 5;
 
   return (
     <tr
-      className={`cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 group odd:bg-white/40 even:bg-white/20 dark:odd:bg-slate-900/30 dark:even:bg-slate-900/20 ${
-        selected
-          ? "bg-purple-50/80 dark:bg-purple-500/10 border-l-4 border-l-purple-500 shadow-md shadow-purple-500/10"
-          : checked
-            ? "bg-purple-50/50 dark:bg-purple-500/5 border-l-4 border-l-purple-300"
-            : "hover:bg-gradient-to-r hover:from-slate-50 hover:to-transparent dark:hover:from-slate-800/50 dark:hover:to-transparent border-l-4 border-l-transparent hover:border-l-slate-300 dark:hover:border-l-slate-600 hover:shadow-sm"
-      }`}
+      className={`app-table-row cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] group ${selected
+        ? "table-row-selected"
+        : checked
+          ? "bg-[var(--color-primary-subtle)] border-l-4 border-l-[var(--color-primary)]/50"
+          : "hover:bg-[var(--color-neutral-50)] dark:hover:bg-white/5"
+        }`}
       onClick={onSelect}
       onKeyDown={(event) => {
         if ((event.key === "Enter" || event.key === " ") && onSelect) {
@@ -3376,75 +3061,73 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
       tabIndex={0}
       aria-pressed={Boolean(selected)}
     >
-      <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">
+      <td className="px-3 py-2 w-[50px] align-middle text-center">
         <button
+          type="button"
+          role="checkbox"
+          aria-checked={Boolean(checked)}
+          className={`app-checkbox ${checked ? 'checked' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             onCheckChange?.();
           }}
-          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         >
-          {checked ? (
-            <CheckSquare className="w-5 h-5 text-purple-600" />
-          ) : (
-            <Square className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300" />
-          )}
+          <span aria-hidden className="app-checkbox-indicator" />
+          <span className="sr-only">{checked ? 'Desmarcar' : 'Selecionar'} produto</span>
         </button>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4">
-        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-white/60 group-hover:ring-2 group-hover:ring-purple-200 dark:group-hover:ring-purple-500/30 transition-all">
+      <td className="px-3 py-2">
+        <div className="product-thumbnail-lg">
           {produto.imagem_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+            <img src={produto.imagem_url} alt={produto.nome} />
           ) : (
-            <Package className="w-5 h-5 text-slate-400" />
+            <Package className="w-5 h-5 text-[var(--color-neutral-400)]" />
           )}
         </div>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 min-w-0">
-        <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{produto.codigo || "—"}</div>
-        <div className="text-xs text-slate-500 dark:text-slate-300 truncate">{produto.gtin || "—"}</div>
+      <td className="px-3 py-2 min-w-0">
+        <div className="cell-text-code truncate">{produto.codigo || "—"}</div>
+        <div className="cell-text-subcode truncate">{produto.gtin || "—"}</div>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 max-w-[320px] min-w-0">
-        <div className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={produto.nome}>
+      <td className="px-3 py-2 max-w-[320px] min-w-0">
+        <div className="cell-text-name truncate" title={produto.nome}>
           {produto.nome}
         </div>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4">
+      <td className="px-3 py-2 ">
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tipoConfig.color}`}>
           {tipoConfig.label}
         </span>
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
-        <div className="text-sm font-semibold text-slate-900 dark:text-white">{formatBRL(produto.preco)}</div>
+      <td className="px-3 py-2 text-right">
+        <div className="cell-text-price">{formatBRL(produto.preco)}</div>
         {produto.preco_promocional && produto.preco_promocional < (produto.preco || 0) && (
-          <div className="text-xs text-emerald-600">Promo {formatBRL(produto.preco_promocional)}</div>
+          <div className="cell-text-promo">Promo {formatBRL(produto.preco_promocional)}</div>
         )}
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4">
+      <td className="px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800/80 dark:text-slate-200">
+          <span className="stock-badge stock-badge-neutral">
             Saldo {formatNumber(produto.saldo)}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+          <span className="stock-badge stock-badge-warning">
             Reservado {formatNumber(produto.reservado)}
           </span>
           <span
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
-              disponivelSnapshot <= 0
-                ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
-                : temEstoqueBaixo
-                  ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
-                  : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200"
-            }`}
+            className={`stock-badge ${disponivelSnapshot <= 0
+              ? "stock-badge-error"
+              : temEstoqueBaixo
+                ? "stock-badge-warning"
+                : "stock-badge-success"
+              }`}
           >
             {disponivelSnapshot <= 0 && <AlertCircle className="w-3.5 h-3.5" />}
             Disp. {formatNumber(disponivelSnapshot)}
           </span>
         </div>
-        {/* Removed 'Pai + variações' display per design */}
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 min-w-0">
+      <td className="px-3 py-2  min-w-0">
         <EmbalagemSelector
           produto={produto}
           embalagens={embalagens}
@@ -3453,7 +3136,7 @@ const ProdutoTableRow = memo(function ProdutoTableRow({
           onConfirmEmbalagemRemove={onConfirmEmbalagemRemove}
         />
       </td>
-      <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">
+      <td className="px-3 py-2 text-center sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
         <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${sitConfig.color} ${sitConfig.bg}`}>
           {sitConfig.label}
         </span>

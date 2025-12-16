@@ -23,6 +23,12 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { TrendBadge } from '@/components/ui/TrendBadge';
+import { MetricSkeleton, ChartSkeleton, TableSkeleton } from '@/components/ui/Skeleton';
+import { Badge } from '@/components/ui/Badge';
+import { Chip } from '@/components/ui/Chip';
+import { VisaoExecutiva } from './components/VisaoExecutiva';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { BrazilSalesMap } from '@/components/BrazilSalesMap';
 import { ChannelDistributionChart } from './components/charts/ChannelDistributionChart';
@@ -941,11 +947,11 @@ export default function DashboardClient() {
     params.set('microPrevEnd', previousEnd.toISOString());
   }
 
-function resolverIntervaloGlobal(): { inicio: string; fim: string } {
-  const fim = isoToday();
-  const inicio = addDays(fim, -(GLOBAL_INTERVAL_DAYS - 1));
-  return { inicio, fim };
-}
+  function resolverIntervaloGlobal(): { inicio: string; fim: string } {
+    const fim = isoToday();
+    const inicio = addDays(fim, -(GLOBAL_INTERVAL_DAYS - 1));
+    return { inicio, fim };
+  }
 
   function resolverIntervaloMesAtual(): { inicio: string; fim: string } {
     const hoje = new Date();
@@ -960,6 +966,31 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     setTopSituacoesMes(top);
     setSituacoesMes(situacoes);
   }
+
+  const handleManualRefresh = async () => {
+    const toastId = toast.loading('Atualizando dashboard...', {
+      description: 'Buscando dados mais recentes',
+    });
+
+    try {
+      await Promise.all([
+        carregarResumo({ force: true }),
+        carregarResumoGlobal({ force: true }),
+        carregarTopSituacoesMes({ force: true }),
+      ]);
+
+      toast.success('Dashboard atualizado!', {
+        id: toastId,
+        description: 'Dados sincronizados com sucesso',
+      });
+    } catch (error) {
+      toast.error('Erro ao atualizar', {
+        id: toastId,
+        description: error instanceof Error ? error.message : 'Tente novamente',
+      });
+    }
+  };
+
 
   async function carregarResumo(options?: { force?: boolean; background?: boolean }) {
     if (!filtersLoaded) return;
@@ -1495,11 +1526,11 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
       if (!autoTrigger) setInsights([]);
       setLoadingInsights(true);
       setErroInsights(null);
-          const payload = {
-            resumoAtual: insightsBaseline,
-            resumoGlobal: null,
-            visaoFiltrada: dashboardSource,
-            filtrosVisuais: {
+      const payload = {
+        resumoAtual: insightsBaseline,
+        resumoGlobal: null,
+        visaoFiltrada: dashboardSource,
+        filtrosVisuais: {
           preset,
           customStart,
           customEnd,
@@ -1974,10 +2005,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const cutoff = produtoCardPreset === '30d'
       ? (() => {
-          const date = new Date();
-          date.setDate(date.getDate() - 29);
-          return date;
-        })()
+        const date = new Date();
+        date.setDate(date.getDate() - 29);
+        return date;
+      })()
       : produtoCardPreset === 'month'
         ? startOfMonth
         : startOfYear;
@@ -2055,282 +2086,286 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
                 {isRefreshing && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50/80 dark:bg-amber-500/15 px-3 py-1 text-amber-700 dark:text-amber-200">
-                    <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                  <Badge variant="warning" size="sm" icon={<RefreshCcw className="w-3.5 h-3.5 animate-spin" />}>
                     Atualizando…
-                  </span>
+                  </Badge>
                 )}
                 {lastUpdatedLabel && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1 text-muted">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                  <Badge variant="neutral" size="sm" icon={<span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />}>
                     Atualizado {lastUpdatedLabel}
-                  </span>
+                  </Badge>
                 )}
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center gap-1 rounded-full bg-white/70 dark:bg-white/5 px-3 py-1 text-muted hover:bg-white/90 dark:hover:bg-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Atualizar dashboard manualmente"
+                >
+                  <RefreshCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>Atualizar</span>
+                </button>
               </div>
               <div className="grid grid-cols-3 gap-2 w-full min-w-0 max-w-full md:flex md:flex-nowrap md:justify-end md:overflow-visible">
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint p-3">
                   <p className="text-xs text-soft uppercase tracking-wide mb-2 truncate">Período</p>
-                    <MultiSelectDropdown
-                      label="Período"
-                      showLabel={false}
-                      options={[
-                        { value: 'today', label: 'Hoje' },
-                        { value: 'yesterday', label: 'Ontem' },
-                        { value: '7d', label: '7 dias' },
-                        { value: 'month', label: 'Mês atual' },
-                        { value: '3m', label: '3 meses' },
-                        { value: 'year', label: 'Ano' },
-                        { value: 'custom', label: 'Personalizado' },
-                      ]}
-                      selected={[preset]}
-                      onChange={(values) => handlePresetChange(values[0] as DatePreset)}
-                      onClear={() => handlePresetChange('month')}
-                      singleSelect
-                      displayFormatter={(values, options) => {
-                        if (!values.length) return 'Selecione...';
+                  <MultiSelectDropdown
+                    label="Período"
+                    showLabel={false}
+                    options={[
+                      { value: 'today', label: 'Hoje' },
+                      { value: 'yesterday', label: 'Ontem' },
+                      { value: '7d', label: '7 dias' },
+                      { value: 'month', label: 'Mês atual' },
+                      { value: '3m', label: '3 meses' },
+                      { value: 'year', label: 'Ano' },
+                      { value: 'custom', label: 'Personalizado' },
+                    ]}
+                    selected={[preset]}
+                    onChange={(values) => handlePresetChange(values[0] as DatePreset)}
+                    onClear={() => handlePresetChange('month')}
+                    singleSelect
+                    displayFormatter={(values, options) => {
+                      if (!values.length) return 'Selecione...';
                       const option = options.find((opt) => opt.value === values[0]);
                       return option?.label ?? 'Selecione...';
                     }}
+                  />
+                  {preset === 'custom' && (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs">
+                      <input
+                        type="date"
+                        className="app-input min-w-0"
+                        value={customStart ?? ''}
+                        onChange={(e) => handleCustomStartChange(e.target.value || null)}
+                      />
+                      <span className="text-soft text-center">a</span>
+                      <input
+                        type="date"
+                        className="app-input min-w-0"
+                        value={customEnd ?? ''}
+                        onChange={(e) => handleCustomEndChange(e.target.value || null)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint p-3">
+                  <p className="text-xs text-soft uppercase tracking-wide mb-2 truncate">Canais</p>
+                  {dashboardSource ? (
+                    <MultiSelectDropdown
+                      label="Canais"
+                      showLabel={false}
+                      options={dashboardSource.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
+                      selected={canaisSelecionados}
+                      onChange={(values) => handleChannelsChange(values as string[])}
+                      onClear={() => handleChannelsChange([])}
                     />
-                    {preset === 'custom' && (
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs">
-                        <input
-                          type="date"
-                          className="app-input min-w-0"
-                          value={customStart ?? ''}
-                          onChange={(e) => handleCustomStartChange(e.target.value || null)}
-                        />
-                        <span className="text-soft text-center">a</span>
-                        <input
-                          type="date"
-                          className="app-input min-w-0"
-                          value={customEnd ?? ''}
-                          onChange={(e) => handleCustomEndChange(e.target.value || null)}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  ) : (
+                    <p className="text-xs text-soft">Carregando…</p>
+                  )}
+                </div>
 
                 <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint p-3">
-                    <p className="text-xs text-soft uppercase tracking-wide mb-2 truncate">Canais</p>
-                    {dashboardSource ? (
-                      <MultiSelectDropdown
-                        label="Canais"
-                        showLabel={false}
-                        options={dashboardSource.canaisDisponiveis.map((canal) => ({ value: canal, label: canal }))}
-                        selected={canaisSelecionados}
-                        onChange={(values) => handleChannelsChange(values as string[])}
-                        onClear={() => handleChannelsChange([])}
-                      />
-                    ) : (
-                      <p className="text-xs text-soft">Carregando…</p>
-                    )}
-                  </div>
-
-                <div className="min-w-0 w-full md:w-[220px] md:max-w-[240px] rounded-[18px] glass-panel glass-tint p-3">
-                    <p className="text-xs text-soft uppercase tracking-wide mb-2 truncate">Situações</p>
-                    {dashboardSource ? (
-                      <MultiSelectDropdown
-                        label="Situações"
-                        showLabel={false}
-                        options={dashboardSource.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
-                        selected={situacoesSelecionadas}
-                        onChange={(values) => handleSituationsChange(values as number[])}
-                        onClear={() => handleSituationsChange([])}
-                      />
-                    ) : (
-                      <p className="text-xs text-soft">Carregando…</p>
-                    )}
-                  </div>
+                  <p className="text-xs text-soft uppercase tracking-wide mb-2 truncate">Situações</p>
+                  {dashboardSource ? (
+                    <MultiSelectDropdown
+                      label="Situações"
+                      showLabel={false}
+                      options={dashboardSource.situacoesDisponiveis.map((sit) => ({ value: sit.codigo, label: sit.descricao }))}
+                      selected={situacoesSelecionadas}
+                      onChange={(values) => handleSituationsChange(values as number[])}
+                      onClear={() => handleSituationsChange([])}
+                    />
+                  ) : (
+                    <p className="text-xs text-soft">Carregando…</p>
+                  )}
+                </div>
               </div>
               {isFilterPending && (
                 <p className="text-xs text-soft mt-1">Aplicando filtros…</p>
               )}
 
               <div className="grid gap-5 md:grid-cols-2">
-              <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
-                <div className="grid grid-cols-2 gap-4 sm:gap-6">
-                  <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-soft mb-2 truncate">
-                      <span className="sm:hidden">Líquido</span>
-                      <span className="hidden sm:inline">Faturamento líquido</span>
-                    </p>
-                    <p className="text-2xl sm:text-3xl font-semibold text-accent break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
-                    <div className="mt-3 min-h-[32px] flex flex-wrap items-center gap-2 text-xs sm:text-sm min-w-0">
-                      {hasComparacaoValor ? (
-                        variacaoValorCards.abs >= 0 ? (
-                          <>
-                            <div className="flex items-center gap-1 rounded-full bg-emerald-100/80 px-2 py-1 text-emerald-600 shrink-0">
-                              <ArrowUpRight className="w-4 h-4" />
-                              <span>{variacaoValorPercStr}</span>
-                            </div>
-                            <span className="text-muted truncate min-w-0">vs período anterior</span>
-                          </>
+                <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
+                  <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-soft mb-2 truncate">
+                        <span className="sm:hidden">Líquido</span>
+                        <span className="hidden sm:inline">Faturamento líquido</span>
+                      </p>
+                      <p className="text-2xl sm:text-3xl font-semibold text-accent break-words">{formatBRL(resumoAtual?.totalValorLiquido ?? 0)}</p>
+                      <div className="mt-3 min-h-[32px] flex flex-wrap items-center gap-2 text-xs sm:text-sm min-w-0">
+                        {hasComparacaoValor ? (
+                          variacaoValorCards.abs >= 0 ? (
+                            <>
+                              <Badge variant="brand" size="sm" icon={<ArrowUpRight className="w-4 h-4" />}>
+                                {variacaoValorPercStr}
+                              </Badge>
+                              <span className="text-muted truncate min-w-0">vs período anterior</span>
+                            </>
+                          ) : (
+                            <>
+                              <Badge variant="error" size="sm" icon={<ArrowDownRight className="w-4 h-4" />}>
+                                {variacaoValorPercStr}
+                              </Badge>
+                              <span className="text-muted truncate min-w-0">Precisa de atenção</span>
+                            </>
+                          )
                         ) : (
                           <>
-                            <div className="flex items-center gap-1 rounded-full bg-rose-100/80 dark:bg-[rgba(255,107,125,0.12)] px-2 py-1 text-rose-500 dark:text-[#ff7b8a] shrink-0">
-                              <ArrowDownRight className="w-4 h-4" />
-                              <span>{variacaoValorPercStr}</span>
-                            </div>
-                            <span className="text-muted truncate min-w-0">Precisa de atenção</span>
+                            <Badge variant="neutral" size="sm" icon={<Info className="w-4 h-4" />}>
+                              {variacaoValorPercStr}
+                            </Badge>
+                            <span className="text-muted truncate min-w-0">Sem base de comparação</span>
                           </>
-                        )
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-1 rounded-full bg-slate-100/80 dark:bg-slate-800/60 px-2 py-1 text-muted shrink-0">
-                            <Info className="w-4 h-4" />
-                            <span>{variacaoValorPercStr}</span>
-                          </div>
-                          <span className="text-muted truncate min-w-0">Sem base de comparação</span>
-                        </>
-                      )}
+                        )}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-soft mb-2 truncate">
+                        <span className="sm:hidden">Bruto</span>
+                        <span className="hidden sm:inline">Faturamento bruto</span>
+                      </p>
+                      <p className="text-2xl sm:text-3xl font-semibold text-accent break-words">{formatBRL(resumoAtual?.totalValor ?? 0)}</p>
+                      <div className="mt-3 min-h-[32px] flex items-center min-w-0">
+                        <p className="text-xs sm:text-sm text-muted truncate">Após frete {formatBRL(resumoAtual?.totalFreteTotal ?? 0)}</p>
+                      </div>
                     </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.3em] text-soft mb-2 truncate">
-                      <span className="sm:hidden">Bruto</span>
-                      <span className="hidden sm:inline">Faturamento bruto</span>
-                    </p>
-                    <p className="text-2xl sm:text-3xl font-semibold text-accent break-words">{formatBRL(resumoAtual?.totalValor ?? 0)}</p>
-                    <div className="mt-3 min-h-[32px] flex items-center min-w-0">
-                      <p className="text-xs sm:text-sm text-muted truncate">Após frete {formatBRL(resumoAtual?.totalFreteTotal ?? 0)}</p>
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4 text-sm text-muted">
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-soft truncate">Pedidos</p>
+                      <p className="text-xl font-semibold text-main truncate" suppressHydrationWarning>
+                        {resumoAtual?.totalPedidos.toLocaleString('pt-BR') ?? '0'}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-soft truncate">Ticket médio</p>
+                      <p className="text-xl font-semibold text-main truncate">{formatBRL(resumoAtual?.ticketMedio ?? 0)}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-soft truncate">% cancelamentos</p>
+                      <p className="text-xl font-semibold text-main truncate">{formatPercent(cancelamentoPerc)}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs uppercase tracking-wide text-soft truncate">Produtos vendidos</p>
+                      <p className="text-xl font-semibold text-main truncate" suppressHydrationWarning>
+                        {totalProdutosVendidos.toLocaleString('pt-BR')}
+                      </p>
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4 text-sm text-muted">
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-soft truncate">Pedidos</p>
-                    <p className="text-xl font-semibold text-main truncate" suppressHydrationWarning>
-                      {resumoAtual?.totalPedidos.toLocaleString('pt-BR') ?? '0'}
-                    </p>
+
+                <div className="rounded-[28px] glass-panel glass-tint p-5 min-h-[220px] flex flex-col">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-soft">Microtrend</p>
+                      <p className="text-sm text-muted">Hoje (0h–23h) vs ontem (0h–23h)</p>
+                    </div>
+                    <span className="text-xs text-soft">
+                      {microTrendHasData ? 'Atualizado em tempo real' : 'Sem dados nas últimas 48h'}
+                    </span>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-soft truncate">Ticket médio</p>
-                    <p className="text-xl font-semibold text-main truncate">{formatBRL(resumoAtual?.ticketMedio ?? 0)}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-soft truncate">% cancelamentos</p>
-                    <p className="text-xl font-semibold text-main truncate">{formatPercent(cancelamentoPerc)}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-soft truncate">Produtos vendidos</p>
-                    <p className="text-xl font-semibold text-main truncate" suppressHydrationWarning>
-                      {totalProdutosVendidos.toLocaleString('pt-BR')}
-                    </p>
-                  </div>
+                  {microTrendHasData ? (
+                    <MicroTrendChart
+                      data={microTrendChartData}
+                      formatter={formatTooltipCurrency}
+                      containerClassName="flex-1 w-full overflow-hidden"
+                      visibleUntilIndex={microTrendVisibleUntilIndex}
+                    />
+                  ) : (
+                    <div className="h-32 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm text-soft">
+                      Sem dados para hoje e ontem
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-h-[220px] flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-soft">Microtrend</p>
-                    <p className="text-sm text-muted">Hoje (0h–23h) vs ontem (0h–23h)</p>
-                  </div>
-                  <span className="text-xs text-soft">
-                    {microTrendHasData ? 'Atualizado em tempo real' : 'Sem dados nas últimas 48h'}
-                  </span>
-                </div>
-                {microTrendHasData ? (
-                  <MicroTrendChart
-                    data={microTrendChartData}
-                    formatter={formatTooltipCurrency}
-                    containerClassName="flex-1 w-full overflow-hidden"
-                    visibleUntilIndex={microTrendVisibleUntilIndex}
-                  />
+
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {quickHighlights.length ? (
+                  quickHighlights.map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-2xl glass-row p-3 sm:p-4 flex flex-col gap-0.5"
+                    >
+                      <p className="text-[10px] uppercase tracking-[0.15em] text-soft font-medium">{item.label}</p>
+                      <p className="text-xl sm:text-2xl font-bold text-main mt-0.5">{item.value}</p>
+                      <p className="text-[10px] text-soft mt-0.5">{item.helper}</p>
+                    </div>
+                  ))
                 ) : (
-                  <div className="h-32 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-sm text-soft">
-                    Sem dados para hoje e ontem
+                  <div className="rounded-2xl glass-row p-4 text-sm text-soft col-span-2 xl:col-span-4">
+                    {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
                   </div>
                 )}
               </div>
-            </div>
 
-
-            <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {quickHighlights.length ? (
-                quickHighlights.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-2xl glass-row p-3 sm:p-4 flex flex-col gap-0.5"
-                  >
-                    <p className="text-[10px] uppercase tracking-[0.15em] text-soft font-medium">{item.label}</p>
-                    <p className="text-xl sm:text-2xl font-bold text-main mt-0.5">{item.value}</p>
-                    <p className="text-[10px] text-soft mt-0.5">{item.helper}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-2xl glass-row p-4 text-sm text-soft col-span-2 xl:col-span-4">
-                  {loadingGlobal ? 'Carregando indicadores consolidados…' : 'Aguardando dados para destaques.'}
+              {erroGlobal && (
+                <div className="rounded-[24px] border border-rose-200/60 bg-rose-50/80 p-4 text-sm text-rose-600">
+                  {erroGlobal}
                 </div>
               )}
-            </div>
 
-            {erroGlobal && (
-              <div className="rounded-[24px] border border-rose-200/60 bg-rose-50/80 p-4 text-sm text-rose-600">
-                {erroGlobal}
-              </div>
-            )}
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-main">Situações em destaque</h3>
-                  <span className="text-xs text-soft">Fluxo Tiny</span>
-                </div>
-                <div className="space-y-3">
-                  {loadingTopSituacoesMes ? (
-                    <p className="text-sm text-soft">Carregando situações do mês…</p>
-                  ) : topSituacoes.length ? (
-                    topSituacoes.map((sit) => (
-                      <div key={sit.situacao} className="flex items-center justify-between rounded-2xl glass-row px-4 py-3">
-                        <div>
-                          <p className="text-sm font-semibold text-main">{labelSituacao(sit.situacao)}</p>
-                          <p className="text-[11px] text-soft">{sit.quantidade.toLocaleString('pt-BR')} pedidos</p>
-                        </div>
-                        <span className="text-sm font-semibold text-accent">{sit.quantidade}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-soft">Aguardando dados…</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-main">Últimos dias</h3>
-                  <span className="text-xs text-soft">Base consolidada</span>
-                </div>
-                <div className="space-y-3">
-                  {trendingDias.length ? (
-                    trendingDias.map((dia) => {
-                      const parts = dia.data.split('-');
-                      const dataFormatada =
-                        parts.length === 3
-                          ? `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}`
-                          : dia.data;
-                      return (
-                        <div
-                          key={dia.data}
-                          className="flex items-center justify-between rounded-2xl glass-row px-4 py-3"
-                        >
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-main">Situações em destaque</h3>
+                    <span className="text-xs text-soft">Fluxo Tiny</span>
+                  </div>
+                  <div className="space-y-3">
+                    {loadingTopSituacoesMes ? (
+                      <p className="text-sm text-soft">Carregando situações do mês…</p>
+                    ) : topSituacoes.length ? (
+                      topSituacoes.map((sit) => (
+                        <div key={sit.situacao} className="flex items-center justify-between rounded-2xl glass-row px-4 py-3">
                           <div>
-                            <p className="text-sm font-semibold text-main">{dataFormatada}</p>
-                            <p className="text-[11px] text-soft">{dia.quantidade} pedidos</p>
+                            <p className="text-sm font-semibold text-main">{labelSituacao(sit.situacao)}</p>
+                            <p className="text-[11px] text-soft">{sit.quantidade.toLocaleString('pt-BR')} pedidos</p>
                           </div>
-                          <span className="text-sm font-semibold text-main">{formatBRL(dia.totalDia)}</span>
+                          <span className="text-sm font-semibold text-accent">{sit.quantidade}</span>
                         </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-soft">Ainda sem histórico suficiente.</p>
-                  )}
+                      ))
+                    ) : (
+                      <p className="text-sm text-soft">Aguardando dados…</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-main">Últimos dias</h3>
+                    <span className="text-xs text-soft">Base consolidada</span>
+                  </div>
+                  <div className="space-y-3">
+                    {trendingDias.length ? (
+                      trendingDias.map((dia) => {
+                        const parts = dia.data.split('-');
+                        const dataFormatada =
+                          parts.length === 3
+                            ? `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}`
+                            : dia.data;
+                        return (
+                          <div
+                            key={dia.data}
+                            className="flex items-center justify-between rounded-2xl glass-row px-4 py-3"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-main">{dataFormatada}</p>
+                              <p className="text-[11px] text-soft">{dia.quantidade} pedidos</p>
+                            </div>
+                            <span className="text-sm font-semibold text-main">{formatBRL(dia.totalDia)}</span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-soft">Ainda sem histórico suficiente.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
           <aside
             className="hidden xl:flex rounded-[36px] glass-panel glass-tint p-6 flex-col gap-6 self-start overflow-hidden"
@@ -2348,10 +2383,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
             >
               {loadingInsights ? 'Gerando insights…' : 'Atualizar com Gemini'}
             </button>
-              <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div className="relative flex-1 min-h-0 overflow-hidden">
               <div
                 ref={insightsScrollRef}
-              className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
+                className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
               >
                 {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
                 {!erroInsights && insights.length === 0 && !loadingInsights && (
@@ -2403,8 +2438,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
         </section>
 
         {isInitialLoading && !dashboardSource && (
-          <div className="rounded-[32px] glass-panel glass-tint p-6 text-sm text-muted">
-            Carregando dados do Tiny…
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <MetricSkeleton key={i} />
+            ))}
           </div>
         )}
         {erro && (
@@ -2413,9 +2450,18 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
           </div>
         )}
 
+
         {dashboardSource && resumoAtual && (
           <div className="space-y-8">
-              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 overflow-visible">
+            {/* Visão Executiva - Métricas Estratégicas */}
+            <VisaoExecutiva
+              dataInicial={resumoAtual.dataInicial}
+              dataFinal={resumoAtual.dataFinal}
+              canais={canaisSelecionados.length > 0 ? canaisSelecionados : undefined}
+              situacoes={situacoesSelecionadas}
+            />
+
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 overflow-visible">
               <div
                 className="rounded-[28px] glass-panel glass-tint p-5 min-w-0"
                 title={diffsDisponiveis ? `vs período anterior: ${formatPercent(faturamentoDeltaPercent)} (${faturamentoDelta >= 0 ? '+' : ''}${formatBRL(Math.abs(faturamentoDelta))})` : 'Aguardando dados do período anterior'}
@@ -2428,32 +2474,26 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-xs text-muted mt-2 truncate">Após frete {formatBRL(resumoAtual.totalFreteTotal)}</p>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-muted truncate">Faturamento bruto</p>
                   <TrendingUp className="w-5 h-5 text-accent shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-accent truncate">{formatBRL(resumoAtual.totalValor)}</p>
-                <p className="text-xs text-muted mt-2 truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
-
-                {/* Tooltip ao hover */}
-                {diffsDisponiveis && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
-                    <div className="flex items-center gap-2">
-                      <span className={faturamentoDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                        {formatPercent(faturamentoDeltaPercent)}
-                      </span>
-                      <span className="text-soft">vs período anterior</span>
-                      <span className={faturamentoDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                        {`${faturamentoDelta >= 0 ? '+' : '-'}`}{formatBRL(Math.abs(faturamentoDelta))}
-                      </span>
-                    </div>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
-                  </div>
-                )}
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted truncate">Frete incluso {formatBRL(resumoAtual.totalFreteTotal)}</p>
+                  {diffsDisponiveis && (
+                    <TrendBadge
+                      delta={faturamentoDelta}
+                      deltaPercent={faturamentoDeltaPercent}
+                      mode="percent"
+                      size="sm"
+                    />
+                  )}
+                </div>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-muted truncate">Pedidos</p>
                   <ShoppingCart className="w-5 h-5 text-emerald-500 dark:text-[#33e2a7] shrink-0" />
@@ -2461,22 +2501,16 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-3xl font-semibold text-emerald-500 dark:text-[#33e2a7] truncate" suppressHydrationWarning>
                   {resumoAtual.totalPedidos.toLocaleString('pt-BR')}
                 </p>
-
-                {/* Tooltip ao hover */}
-                {diffsDisponiveis && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
-                    <div className="flex items-center gap-2">
-                      <span className={pedidosDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                        {formatPercent(pedidosDeltaPercent)}
-                      </span>
-                      <span className="text-soft">vs período anterior</span>
-                      <span className={pedidosDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                        {pedidosDelta >= 0 ? '+' : ''}{pedidosDelta.toLocaleString('pt-BR')} pedidos
-                      </span>
-                    </div>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
-                  </div>
-                )}
+                <div className="flex items-center justify-end mt-2">
+                  {diffsDisponiveis && (
+                    <TrendBadge
+                      delta={pedidosDelta}
+                      deltaPercent={pedidosDeltaPercent}
+                      mode="percent"
+                      size="sm"
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -2490,28 +2524,22 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 <p className="text-xs text-muted mt-2 truncate">Total de itens</p>
               </div>
 
-              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0 relative group overflow-visible">
+              <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs uppercase tracking-wide text-muted truncate">Ticket médio</p>
                   <BarChart3 className="w-5 h-5 text-amber-500 dark:text-[#f7b84a] shrink-0" />
                 </div>
                 <p className="text-3xl font-semibold text-amber-500 dark:text-[#f7b84a] truncate">{formatBRL(resumoAtual.ticketMedio)}</p>
-
-                {/* Tooltip ao hover */}
-                {diffsDisponiveis && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white text-xs whitespace-nowrap scale-0 group-hover:scale-100 transition-transform duration-200 origin-bottom pointer-events-none z-[9999] shadow-xl">
-                    <div className="flex items-center gap-2">
-                      <span className={ticketDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                        {formatPercent(ticketDeltaPercent)}
-                      </span>
-                      <span className="text-soft">vs período anterior</span>
-                      <span className={ticketDelta >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                        {ticketDelta >= 0 ? '+' : '-'}{formatBRL(Math.abs(ticketDelta))}
-                      </span>
-                    </div>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"></div>
-                  </div>
-                )}
+                <div className="flex items-center justify-end mt-2">
+                  {diffsDisponiveis && (
+                    <TrendBadge
+                      delta={ticketDelta}
+                      deltaPercent={ticketDeltaPercent}
+                      mode="percent"
+                      size="sm"
+                    />
+                  )}
+                </div>
               </div>
 
               <div className="rounded-[28px] glass-panel glass-tint p-5 min-w-0">
@@ -2528,13 +2556,12 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   )}
                 </div>
                 <p
-                  className={`text-3xl font-semibold truncate ${
-                    !diffsDisponiveis || !hasComparacaoValor
-                      ? 'text-muted'
-                      : variacaoValorCards.abs >= 0
-                        ? 'text-emerald-500 dark:text-[#33e2a7]'
-                        : 'text-rose-500 dark:text-[#ff6b7d]'
-                  }`}
+                  className={`text-3xl font-semibold truncate ${!diffsDisponiveis || !hasComparacaoValor
+                    ? 'text-muted'
+                    : variacaoValorCards.abs >= 0
+                      ? 'text-emerald-500 dark:text-[#33e2a7]'
+                      : 'text-rose-500 dark:text-[#ff6b7d]'
+                    }`}
                 >
                   {!diffsDisponiveis
                     ? 'Aguardando dados do período anterior'
@@ -2548,7 +2575,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
               </div>
             </div>
 
-              <div className="rounded-[36px] glass-panel glass-tint p-6">
+            <div className="rounded-[36px] glass-panel glass-tint p-6">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
                   <h2 className="text-xl font-semibold text-main">Faturamento por dia</h2>
@@ -2556,15 +2583,14 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {[['today', 'Hoje'], ['7d', '7 dias'], ['30d', '30 dias'], ['month', 'Mês']].map(([key, label]) => (
-                    <button
+                    <Chip
                       key={key}
+                      active={chartPreset === key}
                       onClick={() => handleChartPresetChange(key as ChartPreset)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                        chartPreset === key ? 'bg-[var(--accent)] text-white' : 'bg-white/60 text-muted'
-                      }`}
+                      size="sm"
                     >
                       {label}
-                    </button>
+                    </Chip>
                   ))}
                   <button
                     onClick={handleComplementChart}
@@ -2575,30 +2601,30 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                   </button>
                 </div>
               </div>
-                {chartPreset === 'custom' && (
-                  <div className="flex items-center gap-2 mb-4 text-xs">
-                    <input
-                      type="date"
-                      className="app-input flex-1"
-                      value={chartCustomStart ?? ''}
-                      onChange={(e) => handleChartCustomStartChange(e.target.value || null)}
-                    />
-                    <span className="text-soft">até</span>
-                    <input
-                      type="date"
-                      className="app-input flex-1"
-                      value={chartCustomEnd ?? ''}
-                      onChange={(e) => handleChartCustomEndChange(e.target.value || null)}
-                    />
-                  </div>
-                )}
-              {loadingChart && <p className="text-xs text-soft mb-2">Carregando…</p>}
+              {chartPreset === 'custom' && (
+                <div className="flex items-center gap-2 mb-4 text-xs">
+                  <input
+                    type="date"
+                    className="app-input flex-1"
+                    value={chartCustomStart ?? ''}
+                    onChange={(e) => handleChartCustomStartChange(e.target.value || null)}
+                  />
+                  <span className="text-soft">até</span>
+                  <input
+                    type="date"
+                    className="app-input flex-1"
+                    value={chartCustomEnd ?? ''}
+                    onChange={(e) => handleChartCustomEndChange(e.target.value || null)}
+                  />
+                </div>
+              )}
+              {loadingChart && <ChartSkeleton height={400} />}
               {erroChart && <p className="text-xs text-rose-500 mb-2">{erroChart}</p>}
               {complementMsg && <p className="text-xs text-soft mb-2">{complementMsg}</p>}
-              <DailyRevenueChart data={chartData} ticks={chartTicks} formatter={formatTooltipCurrency} />
+              {!loadingChart && <DailyRevenueChart data={chartData} ticks={chartTicks} formatter={formatTooltipCurrency} />}
             </div>
 
-              <div className="grid gap-6">
+            <div className="grid gap-6">
               <div className="grid gap-6 lg:grid-cols-2 w-full min-w-0">
                 <div className="rounded-[36px] glass-panel glass-tint p-4 sm:p-6 flex flex-col w-full min-w-0 overflow-hidden">
                   <div className="flex items-start justify-between gap-4 mb-4">
@@ -2607,7 +2633,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                       <p className="text-sm text-muted">Distribuição percentual do período</p>
                     </div>
                   </div>
-                  {canaisData.length === 0 ? (
+                  {isInitialLoading ? (
+                    <ChartSkeleton height={300} />
+                  ) : canaisData.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center text-sm text-soft">Nenhum pedido no período.</div>
                   ) : (
                     <div className="flex flex-col items-center gap-4 w-full">
@@ -2645,25 +2673,25 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                         );
                       })()}
                     </div>
-                      <div className="min-w-0 flex flex-col gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-soft mb-2">Estados</p>
-                          <div className="space-y-2">
-                            {((dashboardSource?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
-                              <div key={uf.uf} className="flex items-center justify-between rounded-xl glass-panel glass-tint px-3 py-2">
-                                <div className="text-sm font-semibold text-main">{uf.uf}</div>
-                                <div className="text-right text-xs">
-                                  <div className="font-semibold text-main">{formatBRL(uf.totalValor)}</div>
-                                  <div className="text-muted">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
-                                </div>
+                    <div className="min-w-0 flex flex-col gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.3em] text-soft mb-2">Estados</p>
+                        <div className="space-y-2">
+                          {((dashboardSource?.mapaVendasUF ?? []).slice(0, 6)).map((uf) => (
+                            <div key={uf.uf} className="flex items-center justify-between rounded-xl glass-panel glass-tint px-3 py-2">
+                              <div className="text-sm font-semibold text-main">{uf.uf}</div>
+                              <div className="text-right text-xs">
+                                <div className="font-semibold text-main">{formatBRL(uf.totalValor)}</div>
+                                <div className="text-muted">{uf.totalPedidos.toLocaleString('pt-BR')} pedidos</div>
                               </div>
-                            ))}
-                            {(!dashboardSource?.mapaVendasUF || dashboardSource.mapaVendasUF.length === 0) && (
-                              <p className="text-xs text-soft">Nenhum estado com vendas.</p>
-                            )}
-                          </div>
+                            </div>
+                          ))}
+                          {(!dashboardSource?.mapaVendasUF || dashboardSource.mapaVendasUF.length === 0) && (
+                            <p className="text-xs text-soft">Nenhum estado com vendas.</p>
+                          )}
                         </div>
                       </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2716,7 +2744,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                               {produtoEmFoco.imagemUrl ? (
                                 <div className="relative w-32 h-32 rounded-2xl overflow-hidden border border-white/60 dark:border-white/10 flex-shrink-0">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={produtoEmFoco.imagemUrl} alt={produtoDisplayDescricao} className="w-full h-full object-cover" />
+                                  <img src={produtoEmFoco.imagemUrl} alt={produtoDisplayDescricao} className="w-full h-full object-cover" loading="lazy" />
                                 </div>
                               ) : null}
                             </div>
@@ -2771,11 +2799,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                         setProdutoCardPreset(presetOption.id);
                                       }
                                     }}
-                                    className={`cursor-pointer select-none transition ${
-                                      produtoCardPreset === presetOption.id
-                                        ? 'text-main font-semibold'
-                                        : 'text-soft'
-                                    }`}
+                                    className={`cursor-pointer select-none transition ${produtoCardPreset === presetOption.id
+                                      ? 'text-main font-semibold'
+                                      : 'text-soft'
+                                      }`}
                                   >
                                     {presetOption.label}
                                   </span>
@@ -2799,11 +2826,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                 type="button"
                                 onClick={() => setSelectedProdutoKey(key)}
                                 aria-pressed={ativo}
-                                className={`product-card rounded-3xl p-4 flex gap-4 items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${
-                                  ativo
-                                    ? 'ring-2 ring-[var(--accent)] shadow-xl'
-                                    : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
-                                }`}
+                                className={`product-card rounded-3xl p-4 flex gap-4 items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-white/70 dark:focus-visible:ring-offset-slate-900/70 ${ativo
+                                  ? 'ring-2 ring-[var(--accent)] shadow-xl'
+                                  : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
+                                  }`}
                               >
                                 <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
                                   {produto.imagemUrl ? (
@@ -2812,20 +2838,20 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                       {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
                                       <img
                                         src={produto.imagemUrl}
-                                          alt={nomeProdutoCard}
+                                        alt={nomeProdutoCard}
                                         className="absolute inset-0 w-full h-full object-cover"
                                       />
                                     </>
                                   ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                        {getInitials(nomeProdutoCard)}
+                                      {getInitials(nomeProdutoCard)}
                                     </div>
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col gap-3">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                        <p className="text-base font-semibold text-main leading-tight truncate">{nomeProdutoCard}</p>
+                                      <p className="text-base font-semibold text-main leading-tight truncate">{nomeProdutoCard}</p>
                                       <p className="text-[11px] font-medium uppercase tracking-wide text-muted truncate">{produto.sku ?? 'Sem SKU'}</p>
                                     </div>
                                     <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-accent text-xs font-extrabold">
@@ -2863,11 +2889,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                 type="button"
                                 onClick={() => setSelectedProdutoKey(key)}
                                 aria-pressed={ativo}
-                                className={`product-card rounded-3xl p-4 flex gap-4 min-w-[86vw] snap-center items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-                                  ativo
-                                    ? 'ring-2 ring-[var(--accent)] shadow-xl'
-                                    : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
-                                }`}
+                                className={`product-card rounded-3xl p-4 flex gap-4 min-w-[86vw] snap-center items-stretch text-left transition border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${ativo
+                                  ? 'ring-2 ring-[var(--accent)] shadow-xl'
+                                  : 'hover:ring-1 hover:ring-slate-200/80 dark:hover:ring-white/20'
+                                  }`}
                               >
                                 <div className="relative w-32 h-32 rounded-2xl overflow-hidden flex-shrink-0 border border-white/60 dark:border-white/10">
                                   {produto.imagemUrl ? (
@@ -2876,20 +2901,20 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                       {/* eslint-disable-next-line @next/next/no-img-element -- Tiny image URLs não estão na allowlist do Next Image ainda */}
                                       <img
                                         src={produto.imagemUrl}
-                                          alt={nomeProdutoCard}
+                                        alt={nomeProdutoCard}
                                         className="absolute inset-0 w-full h-full object-cover"
                                       />
                                     </>
                                   ) : (
                                     <div className="absolute inset-0 flex items-center justify-center text-lg font-semibold text-white bg-slate-800/90">
-                                        {getInitials(nomeProdutoCard)}
+                                      {getInitials(nomeProdutoCard)}
                                     </div>
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col gap-3">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-main truncate">{nomeProdutoCard}</p>
+                                      <p className="text-sm font-semibold text-main truncate">{nomeProdutoCard}</p>
                                       <p className="text-[11px] font-medium uppercase tracking-wide text-muted truncate">{produto.sku ?? 'Sem SKU'}</p>
                                     </div>
                                     <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/60 dark:border-white/15 bg-white/80 dark:bg-white/10 text-accent text-xs font-extrabold">
@@ -2932,9 +2957,9 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                         const situacaoLabel = labelSituacao(pedido.situacao ?? -1);
                         const dataCriacao = pedido.dataCriacao
                           ? (() => {
-                              const [y, m, d] = pedido.dataCriacao.split('-');
-                              return `${d}/${m}/${y.slice(2)}`;
-                            })()
+                            const [y, m, d] = pedido.dataCriacao.split('-');
+                            return `${d}/${m}/${y.slice(2)}`;
+                          })()
                           : '';
                         return (
                           <div
@@ -2947,10 +2972,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                                   <>
                                     <div className="w-full h-full rounded-2xl overflow-hidden">
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" />
+                                      <img src={pedido.primeiraImagem} alt="Produto" className="w-full h-full object-cover" loading="lazy" />
                                     </div>
                                     {(pedido.itensQuantidade ?? 0) > 1 && (
-                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{zIndex:50}}>
+                                      <span className="absolute top-0 right-0 translate-x-2 -translate-y-1/2 bg-white text-[var(--accent)] border border-[var(--accent)] rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ zIndex: 50 }}>
                                         +{(pedido.itensQuantidade ?? 0) - 1}
                                       </span>
                                     )}
@@ -3017,9 +3042,8 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                       return (
                         <div
                           key={linha.data}
-                          className={`grid grid-cols-3 px-4 py-3 text-xs sm:text-sm ${
-                            idx % 2 === 0 ? ' dark:bg-white/5' : 'dark:bg-white/[0.02]'
-                          } hover:bg-white/70 dark:hover:bg-white/10 transition-colors`}
+                          className={`grid grid-cols-3 px-4 py-3 text-xs sm:text-sm ${idx % 2 === 0 ? ' dark:bg-white/5' : 'dark:bg-white/[0.02]'
+                            } hover:bg-white/70 dark:hover:bg-white/10 transition-colors`}
                         >
                           <div className="flex items-center gap-2 text-main font-semibold">
                             <span className="text-[10px] sm:text-[11px] uppercase text-soft">{weekday}</span>
@@ -3037,7 +3061,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
                 </div>
               </div>
 
-            <div className="rounded-[32px] glass-panel glass-tint p-6">
+              <div className="rounded-[32px] glass-panel glass-tint p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-main">Pedidos por situação</h2>
                   <span className="text-xs text-soft">Fluxo Tiny</span>
@@ -3066,10 +3090,10 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
             </div>
           </div>
         )}
-      </div>
+      </div >
 
       {/* Copilot mobile-only (rendered no final do app) */}
-      <div className="xl:hidden pb-12 mt-8">
+      < div className="xl:hidden pb-12 mt-8" >
         <aside
           className="w-full min-w-0 mx-auto rounded-[32px] glass-panel glass-tint p-6 flex flex-col gap-5 overflow-hidden"
         >
@@ -3139,7 +3163,7 @@ function resolverIntervaloGlobal(): { inicio: string; fim: string } {
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
           </div>
         </aside>
-      </div>
+      </div >
     </>
   );
 }

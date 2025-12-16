@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import type { ChartTooltipPayload, ChartTooltipValue, CustomTooltipFormatter } from './ChartTooltips';
 
-const PRIMARY_COLOR = 'rgb(168, 85, 247)'; // novo roxo
+const PRIMARY_COLOR = 'rgb(168, 85, 247)'; // purple for charts
 const SECONDARY_COLOR = '#E4E4E9';
 
 type RevenueDatum = {

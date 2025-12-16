@@ -236,6 +236,44 @@ export default function ComprasClient() {
     dadosRef.current = dados;
   }, [dados]);
 
+  // Estado para pedidos pendentes (histórico considerado como estoque)
+  const [selectedPendingOrderIds, setSelectedPendingOrderIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('compras_pending_orders_v1');
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
+  // Persistir seleção de pedidos pendentes
+  useEffect(() => {
+    localStorage.setItem('compras_pending_orders_v1', JSON.stringify(selectedPendingOrderIds));
+  }, [selectedPendingOrderIds]);
+
+  // Mapa de estoque pendente (soma das quantidades dos pedidos selecionados)
+  const estoquePendenteMap = useMemo(() => {
+    const map = new Map<number, number>();
+    const selectedOrders = savedOrders.filter(o => selectedPendingOrderIds.includes(o.id));
+
+    for (const order of selectedOrders) {
+      for (const prod of order.produtos) {
+        // Garantir que ID seja número (caso venha string do JSON)
+        const id = Number(prod.id_produto_tiny);
+        if (!id) continue;
+
+        const current = map.get(id) || 0;
+        map.set(id, current + Number(prod.quantidade || 0));
+      }
+    }
+    return map;
+  }, [savedOrders, selectedPendingOrderIds]);
+
+  const togglePendingOrder = useCallback((id: string) => {
+    setSelectedPendingOrderIds(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -428,18 +466,22 @@ export default function ComprasClient() {
     return dadosFiltrados.map((p, index) => {
       // 1. Calcular sugestão baseada no targetDays
       const consumoDiario = p.consumo_mensal / 30;
+
+      // Estoque pendente (dos pedidos salvos selecionados)
+      const estoquePendente = estoquePendenteMap.get(Number(p.id_produto_tiny)) || 0;
       const pontoMinimo = consumoDiario * (p.lead_time_dias || DEFAULT_LEAD_TIME);
 
       const estoqueAtual = (p.saldo || 0) - (p.reservado || 0); // Disponível físico
       // OU p.disponivel (que já desconta reservado, checar consistência)
       // Vamos manter a lógica original de exibição/cálculo:
 
-      // Cobertura atual em dias
+      // Cobertura atual em dias (baseia-se no estoque físico)
       const coberturaAtualDias = consumoDiario > 0 ? estoqueAtual / consumoDiario : 9999;
 
       // Necessidade para atingir os dias alvo (targetDays)
+      // Desconta: estoque físico + estoque pendente (pedidos já feitos mas não recebidos)
       const demandaAlvo = consumoDiario * targetDays;
-      const quantidadeNecessaria = Math.max(0, demandaAlvo - estoqueAtual);
+      const quantidadeNecessaria = Math.max(0, demandaAlvo - estoqueAtual - estoquePendente);
 
       const precisaRepor = quantidadeNecessaria > 0;
 
@@ -454,14 +496,15 @@ export default function ComprasClient() {
 
       const necessarioLabel = Math.ceil(quantidadeNecessaria);
 
-      const alerta = p.alerta_embalagem; // vindo da API ou recalcular?
-      // A API já manda 'alerta_embalagem' baseado no parametro da URL.
-      // Como mudamos targetDays localmente, idealmente recalcularíamos o alerta
-      // Mas ok usar o booleano de necessidade > 0 e arredondamento.
+      const alerta = p.alerta_embalagem;
 
-      const statusCobertura = precisaRepor
+      let statusCobertura = precisaRepor
         ? `Cobertura insuficiente — faltam ${necessarioLabel} unid. para ${targetDays} dias.`
         : 'Abaixo do lote, mas ainda dentro da cobertura — não comprar agora.';
+
+      if (estoquePendente > 0) {
+        statusCobertura += ` (${estoquePendente} unid. a receber)`;
+      }
 
       const overrideValue = pedidoOverrides[p.id_produto_tiny];
       const quantidadeFinalAjustada = Number.isFinite(overrideValue)
@@ -489,7 +532,7 @@ export default function ComprasClient() {
         // curvaABC já vem do enriched
       };
     });
-  }, [dadosFiltrados, pedidoOverrides, targetDays]);
+  }, [dadosFiltrados, pedidoOverrides, targetDays, estoquePendenteMap]);
 
   const sortedProdutos = useMemo(() => {
     if (!sortConfig.length) return derivados;
@@ -1475,6 +1518,8 @@ export default function ComprasClient() {
               onDelete={handleDeleteSavedOrder}
               onRename={handleRenameSavedOrder}
               onRenameBlur={handleRenameSavedOrderBlur}
+              selectedPendingOrderIds={selectedPendingOrderIds}
+              onTogglePendingOrder={togglePendingOrder}
             />
           </div>
         </div>

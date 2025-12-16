@@ -9,6 +9,7 @@ import {
     Calendar,
     Package,
     AlertCircle,
+    Check,
 } from 'lucide-react';
 import type { SavedOrder } from '@/src/types/compras';
 
@@ -22,6 +23,8 @@ type OrderHistoryTabProps = {
     onRename: (id: string, value: string) => void;
     onRenameBlur: (id: string) => void;
     onExportPdf?: (order: SavedOrder) => void;
+    selectedPendingOrderIds: string[];
+    onTogglePendingOrder: (id: string) => void;
 };
 
 const formatDate = (iso: string) => {
@@ -47,6 +50,8 @@ export function OrderHistoryTab({
     onDelete,
     onRename,
     onRenameBlur,
+    selectedPendingOrderIds,
+    onTogglePendingOrder,
 }: OrderHistoryTabProps) {
     const sortedOrders = [...savedOrders].sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -150,14 +155,38 @@ export function OrderHistoryTab({
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                                 <div className="flex-1 min-w-0 space-y-2">
                                     {/* Nome editável */}
-                                    <input
-                                        type="text"
-                                        value={order.name}
-                                        onChange={(e) => onRename(order.id, e.target.value)}
-                                        onBlur={() => onRenameBlur(order.id)}
-                                        className="app-input w-full font-semibold text-lg bg-transparent border-transparent hover:border-white/40 focus:border-[var(--accent)]/50 px-0"
-                                        placeholder="Nome do pedido"
-                                    />
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => onTogglePendingOrder(order.id)}
+                                            className={`
+                                                w-5 h-5 rounded border flex items-center justify-center transition-colors
+                                                ${selectedPendingOrderIds.includes(order.id)
+                                                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                                                    : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400'
+                                                }
+                                            `}
+                                            title="Considerar como estoque pendente (a receber)"
+                                        >
+                                            {selectedPendingOrderIds.includes(order.id) && <Check className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <input
+                                            type="text"
+                                            value={order.name}
+                                            onChange={(e) => onRename(order.id, e.target.value)}
+                                            onBlur={() => onRenameBlur(order.id)}
+                                            className="app-input w-full font-semibold text-lg bg-transparent border-transparent hover:border-white/40 focus:border-[var(--accent)]/50 px-0"
+                                            placeholder="Nome do pedido"
+                                        />
+                                    </div>
+
+                                    {/* Badge de "Considerado no Estoque" */}
+                                    {selectedPendingOrderIds.includes(order.id) && (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
+                                            <Package className="w-3 h-3" />
+                                            Considerado como estoque pendente
+                                        </span>
+                                    )}
 
                                     {/* Metadados */}
                                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">

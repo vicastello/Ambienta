@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
 import { ToastProvider } from '@/app/components/ui/Toast';
+import { Toaster } from '@/components/ui/Toaster';
 import './globals.css';
 
 const inter = Inter({
@@ -54,6 +55,7 @@ export default function RootLayout({
       </head>
       <body>
         <ToastProvider>{children}</ToastProvider>
+        <Toaster />
       </body>
     </html>
   );
