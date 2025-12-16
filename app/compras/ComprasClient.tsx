@@ -767,6 +767,33 @@ export default function ComprasClient() {
     );
   }, [manualItems, selectedIds, selectionFilter]);
 
+  // Handlers para itens manuais - Adicionar
+  const handleAddManualItem = useCallback((item: Omit<ManualItem, 'id'>) => {
+    const newId = Date.now(); // ID único baseado em timestamp
+    const newItem: ManualItem = { ...item, id: newId };
+    setManualItems((prev) => [...prev, newItem]);
+    // Selecionar automaticamente o novo item
+    setSelectedIds((prev) => ({ ...prev, [newId]: true }));
+  }, []);
+
+  // Handlers para itens manuais - Editar
+  const handleEditManualItem = useCallback((id: number, updates: Partial<ManualItem>) => {
+    setManualItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  }, []);
+
+  // Handlers para itens manuais - Deletar
+  const handleDeleteManualItem = useCallback((id: number) => {
+    setManualItems((prev) => prev.filter((item) => item.id !== id));
+    // Remover da seleção também
+    setSelectedIds((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+  }, []);
+
   const toggleSort = (key: SortKey) => {
     setSortConfig((prev) => {
       const existingIndex = prev.findIndex((entry) => entry.key === key);
@@ -1710,6 +1737,9 @@ export default function ComprasClient() {
                   sanitizeFornecedor={sanitizeFornecedor}
                   sanitizeEmbalagem={sanitizeEmbalagem}
                   sanitizeObservacao={sanitizeObservacao}
+                  onAddManualItem={handleAddManualItem}
+                  onEditManualItem={handleEditManualItem}
+                  onDeleteManualItem={handleDeleteManualItem}
                 />
               </div>
             </div>

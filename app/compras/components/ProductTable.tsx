@@ -8,6 +8,11 @@ import {
     ChevronsUpDown,
     ChevronUp,
     ChevronDown,
+    Plus,
+    Pencil,
+    Trash2,
+    X,
+    Check,
 } from 'lucide-react';
 import {
     ProdutoDerivado,
@@ -42,6 +47,10 @@ type ProductTableProps = {
     sanitizeFornecedor: (val: string) => string | null;
     sanitizeEmbalagem: (val: number) => number | null;
     sanitizeObservacao: (val: string) => string | null;
+    // Callbacks para itens manuais
+    onAddManualItem?: (item: Omit<ManualItem, 'id'>) => void;
+    onEditManualItem?: (id: number, item: Partial<ManualItem>) => void;
+    onDeleteManualItem?: (id: number) => void;
 };
 
 // Helper for recency
@@ -81,8 +90,58 @@ export function ProductTable({
     sanitizeFornecedor,
     sanitizeEmbalagem,
     sanitizeObservacao,
+    onAddManualItem,
+    onEditManualItem,
+    onDeleteManualItem,
 }: ProductTableProps) {
     const parentRef = useRef<HTMLDivElement>(null);
+
+    // Estado para input inline de novo item manual
+    const [newItemInput, setNewItemInput] = React.useState({ nome: '', fornecedor_codigo: '', quantidade: '' });
+    const [editingItemId, setEditingItemId] = React.useState<number | null>(null);
+    const [editingItemData, setEditingItemData] = React.useState({ nome: '', fornecedor_codigo: '', quantidade: '' });
+
+    const handleAddItem = () => {
+        if (!onAddManualItem) return;
+        const nome = newItemInput.nome.trim();
+        const fornecedor_codigo = newItemInput.fornecedor_codigo.trim();
+        const quantidade = parseInt(newItemInput.quantidade, 10);
+        if (!nome || !quantidade || quantidade <= 0) return;
+
+        onAddManualItem({
+            nome,
+            fornecedor_codigo,
+            quantidade,
+            observacao: '',
+        });
+        setNewItemInput({ nome: '', fornecedor_codigo: '', quantidade: '' });
+    };
+
+    const handleStartEdit = (item: ManualItem) => {
+        setEditingItemId(item.id);
+        setEditingItemData({
+            nome: item.nome,
+            fornecedor_codigo: item.fornecedor_codigo,
+            quantidade: item.quantidade.toString(),
+        });
+    };
+
+    const handleSaveEdit = () => {
+        if (!onEditManualItem || editingItemId === null) return;
+        const quantidade = parseInt(editingItemData.quantidade, 10);
+        if (!editingItemData.nome.trim() || !quantidade || quantidade <= 0) return;
+
+        onEditManualItem(editingItemId, {
+            nome: editingItemData.nome.trim(),
+            fornecedor_codigo: editingItemData.fornecedor_codigo.trim(),
+            quantidade,
+        });
+        setEditingItemId(null);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingItemId(null);
+    };
 
     type RowItem =
         | { type: 'product'; data: ProdutoDerivado }
@@ -199,8 +258,10 @@ export function ProductTable({
 
                         if (item.type === 'manual') {
                             const m = item.data;
+                            const isEditing = editingItemId === m.id;
+
                             return (
-                                <tr key={`manual-item-${m.id}`} className="align-middle manual-row ">
+                                <tr key={`manual-item-${m.id}`} className="align-middle manual-row bg-amber-50/30 dark:bg-amber-900/10">
                                     <td className="px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm">
                                         <button
                                             type="button"
@@ -214,24 +275,100 @@ export function ProductTable({
                                         </button>
                                     </td>
                                     <td className="px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
-                                        <div>
-                                            <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{m.nome}</div>
-                                            <p className="text-[11px] text-[var(--color-neutral-500)]">Cadastro manual</p>
-                                        </div>
+                                        {isEditing ? (
+                                            <input
+                                                type="text"
+                                                value={editingItemData.nome}
+                                                onChange={(e) => setEditingItemData(prev => ({ ...prev, nome: e.target.value }))}
+                                                className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800"
+                                                placeholder="Nome do produto"
+                                            />
+                                        ) : (
+                                            <div>
+                                                <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{m.nome}</div>
+                                                <p className="text-[11px] text-amber-600 dark:text-amber-400">Item manual</p>
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[330px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
                                     <td className="px-3 py-2 sticky left-[420px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
-                                        <div className="text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)] truncate" title={m.fornecedor_codigo}>{m.fornecedor_codigo}</div>
+                                        {isEditing ? (
+                                            <input
+                                                type="text"
+                                                value={editingItemData.fornecedor_codigo}
+                                                onChange={(e) => setEditingItemData(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
+                                                className="w-full px-2 py-1 text-sm rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800"
+                                                placeholder="Cód. Forn."
+                                            />
+                                        ) : (
+                                            <div className="text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)] truncate" title={m.fornecedor_codigo}>{m.fornecedor_codigo || '—'}</div>
+                                        )}
                                     </td>
                                     <td colSpan={7} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">—</td>
                                     <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[530px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
-                                        {m.quantidade}
+                                        {isEditing ? (
+                                            <input
+                                                type="number"
+                                                value={editingItemData.quantidade}
+                                                onChange={(e) => setEditingItemData(prev => ({ ...prev, quantidade: e.target.value }))}
+                                                className="w-16 px-2 py-1 text-sm text-right rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800"
+                                                min="1"
+                                            />
+                                        ) : (
+                                            m.quantidade
+                                        )}
                                     </td>
                                     <td colSpan={2} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)] sticky min-w-[120px]">—</td>
                                     <td className="px-3 py-2 min-w-[120px]">
                                         <span className="text-sm text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] truncate block" title={m.observacao}>{m.observacao}</span>
                                     </td>
-                                    <td className="px-3 py-2 min-w-[140px]" />
+                                    <td className="px-3 py-2 min-w-[100px]">
+                                        <div className="flex items-center gap-1">
+                                            {isEditing ? (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSaveEdit}
+                                                        className="p-1.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 transition-colors"
+                                                        title="Salvar"
+                                                    >
+                                                        <Check className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleCancelEdit}
+                                                        className="p-1.5 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 transition-colors"
+                                                        title="Cancelar"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {onEditManualItem && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleStartEdit(m)}
+                                                            className="p-1.5 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors"
+                                                            title="Editar"
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    {onDeleteManualItem && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onDeleteManualItem(m.id)}
+                                                            className="p-1.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition-colors"
+                                                            title="Remover"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
                                 </tr>
                             );
                         }
@@ -475,6 +612,63 @@ export function ProductTable({
                     })}
 
                     {paddingBottom > 0 && <tr><td colSpan={15} style={{ height: `${paddingBottom}px` }} /></tr>}
+
+                    {/* Linha de input inline para adicionar novo item manual */}
+                    {onAddManualItem && (
+                        <tr className="align-middle bg-gradient-to-r from-amber-50/50 to-transparent dark:from-amber-900/20 dark:to-transparent border-t-2 border-dashed border-amber-300 dark:border-amber-700">
+                            <td className="px-3 py-3 w-[50px] align-middle text-center sticky left-0 z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm">
+                                <Plus className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto" />
+                            </td>
+                            <td className="px-3 py-3 sticky left-[50px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
+                                <input
+                                    type="text"
+                                    value={newItemInput.nome}
+                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, nome: e.target.value }))}
+                                    className="w-full px-3 py-1.5 text-sm rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
+                                    placeholder="Nome do produto"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+                                />
+                            </td>
+                            <td className="px-3 py-3 text-center text-neutral-400 sticky left-[330px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
+                            <td className="px-3 py-3 sticky left-[420px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                <input
+                                    type="text"
+                                    value={newItemInput.fornecedor_codigo}
+                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
+                                    className="w-full px-2 py-1.5 text-sm rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
+                                    placeholder="Cód. Forn."
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+                                />
+                            </td>
+                            <td colSpan={7} className="text-center text-neutral-300 dark:text-neutral-700">—</td>
+                            <td className="px-3 py-3 sticky left-[530px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                <input
+                                    type="number"
+                                    value={newItemInput.quantidade}
+                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, quantidade: e.target.value }))}
+                                    className="w-16 px-2 py-1.5 text-sm text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
+                                    placeholder="Qtd"
+                                    min="1"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
+                                />
+                            </td>
+                            <td colSpan={2} className="text-center text-neutral-300 dark:text-neutral-700">—</td>
+                            <td className="px-3 py-3">
+                                <span className="text-xs text-neutral-400 italic">Item não cadastrado</span>
+                            </td>
+                            <td className="px-3 py-3">
+                                <button
+                                    type="button"
+                                    onClick={handleAddItem}
+                                    disabled={!newItemInput.nome.trim() || !newItemInput.quantidade || parseInt(newItemInput.quantidade, 10) <= 0}
+                                    className="p-2 rounded-full bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
+                                    title="Adicionar item"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                </button>
+                            </td>
+                        </tr>
+                    )}
                 </tbody>
             </table>
         </div>
