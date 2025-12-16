@@ -146,6 +146,7 @@ export default function ComprasClient() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<Record<number, 'saving' | 'saved' | 'error'>>({});
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
+  const [initialSelectedIds, setInitialSelectedIds] = useState<Record<number, boolean>>({}); // Snapshot das seleções automáticas
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all');
 
   const [pedidoOverrides, setPedidoOverrides] = useState<Record<number, number>>(() => {
@@ -295,6 +296,7 @@ export default function ComprasClient() {
     setCurrentOrderName(buildDefaultOrderName());
     setSelectionFilter('all');
     setSelectedIds({});
+    setInitialSelectedIds({}); // Resetar snapshot de seleções
 
     // Limpar Storage (local + servidor)
     localStorage.removeItem(COMPRAS_DRAFT_KEY);
@@ -472,7 +474,9 @@ export default function ComprasClient() {
       .map(d => d.id_produto_tiny);
 
     if (suggestionsToSelect.length > 0) {
-      setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+      const autoSelection = suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {});
+      setSelectedIds(autoSelection);
+      setInitialSelectedIds(autoSelection); // Snapshot para detectar modificações manuais
     }
 
     const validIds = new Set(dados.map((item) => item.id_produto_tiny));
@@ -914,6 +918,18 @@ export default function ComprasClient() {
     }
     return total;
   }, [derivados, selectedIds]);
+
+  // Detectar se seleções foram modificadas manualmente (diferentes do snapshot inicial)
+  const hasManualSelectionChanges = useMemo(() => {
+    const currentKeys = Object.keys(selectedIds).filter(k => selectedIds[Number(k)]);
+    const initialKeys = Object.keys(initialSelectedIds).filter(k => initialSelectedIds[Number(k)]);
+    if (currentKeys.length !== initialKeys.length) return true;
+    const initialSet = new Set(initialKeys);
+    for (const key of currentKeys) {
+      if (!initialSet.has(key)) return true;
+    }
+    return false;
+  }, [selectedIds, initialSelectedIds]);
 
 
   const highlightCards = useMemo(
@@ -1446,7 +1462,7 @@ export default function ComprasClient() {
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Central de Compras</h1>
             {/* Badge de Estado do Pedido */}
-            {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) ? (
+            {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0 || hasManualSelectionChanges) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                 Rascunho em andamento
@@ -1506,7 +1522,7 @@ export default function ComprasClient() {
           className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''} flex items-center gap-2`}
         >
           Pedido
-          {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) && (
+          {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0 || hasManualSelectionChanges) && (
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Rascunho em andamento (alterações não salvas)" />
           )}
         </button>
@@ -1844,7 +1860,9 @@ export default function ComprasClient() {
                         .filter(d => d.sugestao_ajustada > 0)
                         .map(d => d.id_produto_tiny);
                       if (suggestionsToSelect.length > 0) {
-                        setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+                        const autoSelection = suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {});
+                        setSelectedIds(autoSelection);
+                        setInitialSelectedIds(autoSelection); // Resetar snapshot para não marcar como rascunho
                       }
                     }}
                   >
