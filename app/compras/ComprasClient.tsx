@@ -1681,16 +1681,16 @@ export default function ComprasClient() {
                         {new Date(new Date().setDate(new Date().getDate() + targetDays)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                       </span>
                     </div>
-                    <div className="relative flex items-center h-10 w-full rounded-full border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)] bg-white dark:bg-[var(--color-neutral-800)] overflow-hidden focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary-subtle)] pr-1">
+                    <div className="relative h-10 w-full">
                       <input
                         type="number"
                         min={15}
                         max={180}
-                        className="flex-1 h-full bg-transparent border-none outline-none text-sm text-center font-semibold text-[var(--color-neutral-900)] dark:text-white pl-3 pr-1"
+                        className="app-input w-full h-full rounded-full text-sm text-center font-semibold !pr-10 !pl-4 border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-subtle)] bg-white dark:bg-[var(--color-neutral-800)]"
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="w-8 h-8 flex-shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center z-10 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+                      <div className="absolute top-1 right-1 w-8 h-8 rounded-full bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-700)] flex items-center justify-center z-10 hover:bg-[var(--color-neutral-200)] dark:hover:bg-[var(--color-neutral-600)] transition-colors text-slate-500 hover:text-[var(--color-primary)]">
                         <AppDatePicker
                           align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
