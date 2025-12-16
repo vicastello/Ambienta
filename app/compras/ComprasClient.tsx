@@ -120,6 +120,8 @@ const normalizeSavedOrderRecord = (pedido?: SavedOrderLike): SavedOrder => {
 export default function ComprasClient() {
   const [periodDays, setPeriodDays] = useState(DEFAULT_PERIOD_DIAS);
   const [targetDays, setTargetDays] = useState(DEFAULT_COBERTURA_DIAS);
+  const [initialPeriodDays, setInitialPeriodDays] = useState(DEFAULT_PERIOD_DIAS); // Snapshot inicial
+  const [initialTargetDays, setInitialTargetDays] = useState(DEFAULT_COBERTURA_DIAS); // Snapshot inicial
   const [dados, setDados] = useState<Sugestao[]>([]);
   const [produtoFiltro, setProdutoFiltro] = useState('');
   const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<string[]>([]);
@@ -297,6 +299,10 @@ export default function ComprasClient() {
     setSelectionFilter('all');
     setSelectedIds({});
     setInitialSelectedIds({}); // Resetar snapshot de seleções
+    setPeriodDays(DEFAULT_PERIOD_DIAS);
+    setTargetDays(DEFAULT_COBERTURA_DIAS);
+    setInitialPeriodDays(DEFAULT_PERIOD_DIAS); // Resetar snapshot
+    setInitialTargetDays(DEFAULT_COBERTURA_DIAS); // Resetar snapshot
 
     // Limpar Storage (local + servidor)
     localStorage.removeItem(COMPRAS_DRAFT_KEY);
@@ -342,9 +348,18 @@ export default function ComprasClient() {
             if (serverDraft.pedidoOverrides) setPedidoOverrides(serverDraft.pedidoOverrides);
             if (serverDraft.manualItems) setManualItems(serverDraft.manualItems);
             if (serverDraft.currentOrderName) setCurrentOrderName(serverDraft.currentOrderName);
-            if (serverDraft.selectedIds) setSelectedIds(serverDraft.selectedIds);
-            if (serverDraft.periodDays) setPeriodDays(serverDraft.periodDays);
-            if (serverDraft.targetDays) setTargetDays(serverDraft.targetDays);
+            if (serverDraft.selectedIds) {
+              setSelectedIds(serverDraft.selectedIds);
+              setInitialSelectedIds(serverDraft.selectedIds); // Salvar como snapshot inicial
+            }
+            if (serverDraft.periodDays) {
+              setPeriodDays(serverDraft.periodDays);
+              setInitialPeriodDays(serverDraft.periodDays); // Salvar como snapshot inicial
+            }
+            if (serverDraft.targetDays) {
+              setTargetDays(serverDraft.targetDays);
+              setInitialTargetDays(serverDraft.targetDays); // Salvar como snapshot inicial
+            }
             console.log('[Compras] Rascunho carregado do servidor');
           }
         }
@@ -919,8 +934,9 @@ export default function ComprasClient() {
     return total;
   }, [derivados, selectedIds]);
 
-  // Detectar se seleções foram modificadas manualmente (diferentes do snapshot inicial)
+  // Detectar se seleções ou parâmetros foram modificados manualmente
   const hasManualSelectionChanges = useMemo(() => {
+    // Verificar mudanças nas seleções
     const currentKeys = Object.keys(selectedIds).filter(k => selectedIds[Number(k)]);
     const initialKeys = Object.keys(initialSelectedIds).filter(k => initialSelectedIds[Number(k)]);
     if (currentKeys.length !== initialKeys.length) return true;
@@ -928,8 +944,11 @@ export default function ComprasClient() {
     for (const key of currentKeys) {
       if (!initialSet.has(key)) return true;
     }
+    // Verificar mudanças em periodDays e targetDays
+    if (periodDays !== initialPeriodDays) return true;
+    if (targetDays !== initialTargetDays) return true;
     return false;
-  }, [selectedIds, initialSelectedIds]);
+  }, [selectedIds, initialSelectedIds, periodDays, initialPeriodDays, targetDays, initialTargetDays]);
 
 
   const highlightCards = useMemo(
