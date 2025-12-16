@@ -326,12 +326,22 @@ export default function ComprasClient() {
         if (!res.ok) return;
         const json = await res.json();
         if (json.draft) {
-          // Rascunho do servidor tem prioridade
           const serverDraft = json.draft;
-          if (Object.keys(serverDraft.pedidoOverrides || {}).length > 0 || (serverDraft.manualItems || []).length > 0) {
-            setPedidoOverrides(serverDraft.pedidoOverrides || {});
-            setManualItems(serverDraft.manualItems || []);
+          // Verificar se tem qualquer dado no rascunho
+          const hasData =
+            Object.keys(serverDraft.pedidoOverrides || {}).length > 0 ||
+            (serverDraft.manualItems || []).length > 0 ||
+            Object.keys(serverDraft.selectedIds || {}).length > 0 ||
+            serverDraft.currentOrderName;
+
+          if (hasData) {
+            // Restaurar todos os estados do rascunho
+            if (serverDraft.pedidoOverrides) setPedidoOverrides(serverDraft.pedidoOverrides);
+            if (serverDraft.manualItems) setManualItems(serverDraft.manualItems);
             if (serverDraft.currentOrderName) setCurrentOrderName(serverDraft.currentOrderName);
+            if (serverDraft.selectedIds) setSelectedIds(serverDraft.selectedIds);
+            if (serverDraft.periodDays) setPeriodDays(serverDraft.periodDays);
+            if (serverDraft.targetDays) setTargetDays(serverDraft.targetDays);
             console.log('[Compras] Rascunho carregado do servidor');
           }
         }
@@ -342,6 +352,7 @@ export default function ComprasClient() {
     void loadServerDraft();
   }, []);
 
+
   // Auto-Save do Rascunho (LocalStorage + Servidor debounced)
   const draftSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -350,6 +361,9 @@ export default function ComprasClient() {
       manualItems,
       pedidoOverrides,
       currentOrderName,
+      selectedIds,
+      periodDays,
+      targetDays,
       timestamp: Date.now(),
     };
     localStorage.setItem(COMPRAS_DRAFT_KEY, JSON.stringify(draft));
@@ -367,6 +381,7 @@ export default function ComprasClient() {
             pedidoOverrides,
             manualItems,
             currentOrderName,
+            selectedIds,
             periodDays,
             targetDays,
           }),
@@ -381,7 +396,8 @@ export default function ComprasClient() {
         clearTimeout(draftSaveTimerRef.current);
       }
     };
-  }, [manualItems, pedidoOverrides, currentOrderName, periodDays, targetDays]);
+  }, [manualItems, pedidoOverrides, currentOrderName, selectedIds, periodDays, targetDays]);
+
 
   // Estado para pedidos pendentes (histórico considerado como estoque)
   const [selectedPendingOrderIds, setSelectedPendingOrderIds] = useState<string[]>(() => {

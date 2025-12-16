@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS compras_drafts (
   draft_key TEXT PRIMARY KEY DEFAULT 'default',
   pedido_overrides JSONB NOT NULL DEFAULT '{}',
   manual_items JSONB NOT NULL DEFAULT '[]',
+  selected_ids JSONB NOT NULL DEFAULT '{}',
   current_order_name TEXT NOT NULL DEFAULT '',
   period_days INTEGER,
   target_days INTEGER,

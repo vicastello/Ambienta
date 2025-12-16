@@ -168,6 +168,7 @@ export interface ComprasDraftRow {
   draft_key: string; // única chave (ex: 'default')
   pedido_overrides: Json; // Record<number, number>
   manual_items: Json; // ManualItem[]
+  selected_ids: Json; // Record<number, boolean>
   current_order_name: string;
   period_days: number | null;
   target_days: number | null;
@@ -587,6 +588,7 @@ export type ComprasDraftUpsert = {
   draft_key: string;
   pedido_overrides?: Json;
   manual_items?: Json;
+  selected_ids?: Json;
   current_order_name?: string;
   period_days?: number | null;
   target_days?: number | null;
