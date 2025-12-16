@@ -37,6 +37,7 @@ import { StickyTotalsBar } from './components/StickyTotalsBar';
 import { useComprasSugestoes } from './hooks/useComprasSugestoes';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { useToast } from '../components/ui/Toast';
+import { AppDatePicker } from './components/AppDatePicker';
 
 const COMPRAS_RECALC_DEBOUNCE_MS = 350;
 const AUTO_SAVE_DEBOUNCE_MS = 800;
@@ -134,7 +135,7 @@ export default function ComprasClient() {
   const [pedidoInputDrafts, setPedidoInputDrafts] = useState<Record<number, string>>({});
   const [estoqueLive, setEstoqueLive] = useState<Record<number, EstoqueSnapshot>>({});
   const [estoqueLoading, setEstoqueLoading] = useState<Record<number, boolean>>({});
-  const [sortConfig, setSortConfig] = useState<Array<{ key: SortKey; direction: SortDirection }>>([]);
+  const [sortConfig, setSortConfig] = useState<Array<{ key: SortKey; direction: SortDirection }>>([{ key: 'codigo', direction: 'asc' }]);
   const [currentOrderName, setCurrentOrderName] = useState(() => buildDefaultOrderName());
   const [activeTab, setActiveTab] = useState<'current' | 'history' | 'suppliers'>('current');
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>([]);
@@ -1321,9 +1322,14 @@ export default function ComprasClient() {
                       />
                     </div>
                   </div>
-                  <div className="w-[88px]">
-                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block text-center">Cobertura</label>
-                    <div className="relative">
+                  <div className="w-[130px]">
+                    <div className="flex items-center justify-between mb-1.5 ml-1 mr-1">
+                      <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Cobertura</label>
+                      <span className="text-[9px] text-[var(--color-primary)] font-medium">
+                        {new Date(new Date().setDate(new Date().getDate() + targetDays)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="relative flex items-center gap-1">
                       <input
                         type="number"
                         min={15}
@@ -1332,6 +1338,27 @@ export default function ComprasClient() {
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
+                      <div className="absolute right-1 top-0 bottom-0 flex items-center">
+                        <AppDatePicker
+                          date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
+                          onSelect={(date) => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const target = new Date(date);
+                            target.setHours(0, 0, 0, 0);
+                            const diffTime = target.getTime() - today.getTime();
+                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                            if (diffDays >= 1) { // Permitir seleção livre, o input manual já tem clamp.
+                              // Mas se definirmos state direto, precisamos respeitar limites do app? 
+                              // O input manual tem clamp. Vou aplicar clamp para consistência.
+                              const clamped = Math.max(diffDays, 1);
+                              setTargetDays(clamped);
+                            }
+                          }}
+                          minDate={new Date()}
+                          align="right"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
