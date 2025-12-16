@@ -1406,71 +1406,72 @@ export default function ComprasClient() {
       const doc = new JsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
 
-      // Cores Ambienta (verde esmeralda)
-      const primaryColor: [number, number, number] = [16, 185, 129]; // emerald-500
-      const darkColor: [number, number, number] = [6, 78, 59]; // emerald-900
+      // Cores Ambienta (Teal #009CA6)
+      const primaryColor: [number, number, number] = [0, 156, 166]; // #009CA6 - Teal Ambienta
+      const darkColor: [number, number, number] = [0, 121, 130]; // #007982 - Teal escuro
       const lightGray: [number, number, number] = [248, 250, 252]; // slate-50
-      const textDark: [number, number, number] = [30, 41, 59]; // slate-800
+      const textDark: [number, number, number] = [51, 65, 85]; // slate-700
 
-      // Logo (tenta carregar SVG como PNG via fetch)
+      // Logo (converter SVG para PNG via canvas com maior resolução)
       try {
         const logoResp = await fetch('/logos/Logo Vertical.svg');
         const svgText = await logoResp.text();
-        // Converter SVG para data URL
-        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
+        // Criar data URL do SVG diretamente
+        const svgBase64 = btoa(unescape(encodeURIComponent(svgText)));
+        const svgDataUrl = `data:image/svg+xml;base64,${svgBase64}`;
         const img = new Image();
-        img.src = url;
+        img.src = svgDataUrl;
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
           img.onerror = () => reject(new Error('Falha ao carregar logo'));
         });
-        // Desenhar em canvas para converter para PNG
+        // Desenhar em canvas com alta resolução
+        const scale = 4; // Escala para melhor qualidade
         const canvas = document.createElement('canvas');
-        canvas.width = 100;
-        canvas.height = 133; // Proporção aproximada do logo vertical
+        canvas.width = 150 * scale;
+        canvas.height = 200 * scale;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.drawImage(img, 0, 0, 100, 133);
+          ctx.scale(scale, scale);
+          ctx.drawImage(img, 0, 0, 150, 200);
           const dataUrl = canvas.toDataURL('image/png');
-          doc.addImage(dataUrl, 'PNG', 14, 10, 25, 33);
+          doc.addImage(dataUrl, 'PNG', 14, 8, 22, 30);
         }
-        URL.revokeObjectURL(url);
       } catch { } // Continua sem logo se falhar
 
-      // Cabeçalho - Título
-      doc.setFontSize(20);
+      // Cabeçalho - Título (menor)
+      doc.setFontSize(16);
       doc.setTextColor(...darkColor);
       doc.setFont('helvetica', 'bold');
-      doc.text('PEDIDO DE COMPRAS', 45, 18);
+      doc.text('PEDIDO DE COMPRAS', 40, 16);
 
-      // Linha decorativa verde
+      // Linha decorativa Teal
       doc.setDrawColor(...primaryColor);
-      doc.setLineWidth(2);
-      doc.line(45, 22, pageWidth - 14, 22);
+      doc.setLineWidth(1.5);
+      doc.line(40, 19, pageWidth - 14, 19);
 
-      // Dados do pedido
-      doc.setFontSize(10);
+      // Dados do pedido (menores)
+      doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100);
-      doc.text(`Pedido: ${orderTitle}`, 45, 30);
-      doc.text(`Data: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 45, 36);
-      doc.text(`Itens: ${produtosSnapshot.length + manualSnapshot.length}`, 45, 42);
+      doc.text(`Pedido: ${orderTitle}`, 40, 25);
+      doc.text(`Data: ${new Intl.DateTimeFormat('pt-BR').format(new Date())}`, 40, 30);
+      doc.text(`Itens: ${produtosSnapshot.length + manualSnapshot.length}`, 40, 35);
 
-      // Dados da empresa (lado direito)
-      doc.setFontSize(8);
+      // Dados da empresa (lado direito, menores)
+      doc.setFontSize(7);
       doc.setTextColor(80);
       const companyX = pageWidth - 14;
-      doc.text('Ambienta Utilidades', companyX, 30, { align: 'right' });
-      doc.text('CNPJ: 47.176.585/0001-69', companyX, 35, { align: 'right' });
-      doc.text('Rua Candido Portinari, 285 – Morumbi', companyX, 40, { align: 'right' });
-      doc.text('Pedreira/SP – CEP 13920-224', companyX, 45, { align: 'right' });
-      doc.text('(19) 99336-0379 | vitor@ambientautilidades.com.br', companyX, 50, { align: 'right' });
+      doc.text('Ambienta Utilidades', companyX, 25, { align: 'right' });
+      doc.text('CNPJ: 47.176.585/0001-69', companyX, 29, { align: 'right' });
+      doc.text('Rua Candido Portinari, 285 – Morumbi', companyX, 33, { align: 'right' });
+      doc.text('Pedreira/SP – CEP 13920-224', companyX, 37, { align: 'right' });
+      doc.text('(19) 99336-0379 | vitor@ambientautilidades.com.br', companyX, 41, { align: 'right' });
 
       // Separador
       doc.setDrawColor(220, 220, 220);
-      doc.setLineWidth(0.3);
-      doc.line(14, 55, pageWidth - 14, 55);
+      doc.setLineWidth(0.2);
+      doc.line(14, 45, pageWidth - 14, 45);
 
       // Tabela de produtos
       const rows = produtosSnapshot.map((p) => [
@@ -1493,39 +1494,40 @@ export default function ComprasClient() {
       autoTable(doc, {
         head: [['Código Forn.', 'EAN/GTIN', 'Produto', 'Qtd', 'Observações']],
         body: rows,
-        startY: 60,
+        startY: 50,
         margin: { left: 14, right: 14 },
         styles: {
-          fontSize: 9,
-          cellPadding: 4,
+          fontSize: 8,
+          cellPadding: 3,
           fillColor: [255, 255, 255],
           textColor: textDark,
-          lineColor: [230, 230, 230],
+          lineColor: [220, 220, 220],
           lineWidth: 0.1,
           overflow: 'linebreak',
         },
         headStyles: {
-          fillColor: darkColor,
+          fillColor: primaryColor,
           textColor: [255, 255, 255],
           fontStyle: 'bold',
+          fontSize: 8,
           lineWidth: 0,
         },
         alternateRowStyles: {
           fillColor: lightGray,
         },
         columnStyles: {
-          0: { cellWidth: 22 }, // Código
-          1: { cellWidth: 32 }, // EAN
+          0: { cellWidth: 20 }, // Código
+          1: { cellWidth: 28 }, // EAN
           2: { cellWidth: 'auto' }, // Produto - expande
-          3: { cellWidth: 15, halign: 'center' }, // Qtd
-          4: { cellWidth: 45 }, // Observações
+          3: { cellWidth: 14, halign: 'center' }, // Qtd
+          4: { cellWidth: 42 }, // Observações
         },
         theme: 'plain',
         didDrawPage: (data) => {
           // Rodapé em cada página
           const pageCount = doc.getNumberOfPages();
           const pageNumber = data.pageNumber;
-          doc.setFontSize(8);
+          doc.setFontSize(7);
           doc.setTextColor(150);
           doc.text(
             `Página ${pageNumber} de ${pageCount}`,
@@ -1533,10 +1535,10 @@ export default function ComprasClient() {
             doc.internal.pageSize.getHeight() - 10,
             { align: 'center' }
           );
-          // Linha verde no rodapé
+          // Linha Teal no rodapé
           doc.setDrawColor(...primaryColor);
-          doc.setLineWidth(1);
-          doc.line(14, doc.internal.pageSize.getHeight() - 15, pageWidth - 14, doc.internal.pageSize.getHeight() - 15);
+          doc.setLineWidth(0.8);
+          doc.line(14, doc.internal.pageSize.getHeight() - 14, pageWidth - 14, doc.internal.pageSize.getHeight() - 14);
         },
       });
 
