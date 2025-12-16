@@ -638,6 +638,11 @@ export default function ComprasClient() {
       const res = await fetch(`/api/tiny/produtos/${id_produto_tiny}/estoque?source=live`, {
         cache: 'no-store',
       });
+
+      if (res.status === 429) {
+        throw new Error('Muitas requisições (429). O Tiny limitou o acesso temporariamente.');
+      }
+
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error?.message ?? 'Falha ao atualizar estoque');
@@ -653,12 +658,21 @@ export default function ComprasClient() {
           source: json.source ?? null,
         },
       }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Compras] Falha ao buscar estoque live', error);
+      const isRateLimit = error?.message?.includes('429');
+      toast({
+        type: 'error',
+        title: isRateLimit ? 'Muitas Requisições' : 'Erro ao Atualizar',
+        message: isRateLimit
+          ? 'Muitas tentativas seguidas. Aguarde alguns instantes.'
+          : (error?.message ?? 'Não foi possível atualizar o estoque.'),
+        duration: 5000,
+      });
     } finally {
       setEstoqueLoading((prev) => ({ ...prev, [id_produto_tiny]: false }));
     }
-  }, []);
+  }, [toast]);
 
   const totalCompra = useMemo(
     () => derivados.reduce((acc, cur) => acc + (cur.sugestao_ajustada || 0), 0),
