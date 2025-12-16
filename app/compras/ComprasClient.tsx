@@ -268,13 +268,14 @@ export default function ComprasClient() {
     }
   }, [periodDays, targetDays]);
 
-  // Recálculo automático apenas via debounce dos parâmetros (periodDays/targetDays)
+  // Carregar dados apenas uma vez no mount inicial (recálculo manual via botão "Novo Pedido")
+  const initialLoadDoneRef = useRef(false);
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      void load();
-    }, COMPRAS_RECALC_DEBOUNCE_MS);
-    return () => clearTimeout(timeout);
-  }, [load]);
+    if (initialLoadDoneRef.current) return;
+    initialLoadDoneRef.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Função para ação explícita de "Novo Pedido"
   const handleNewOrder = async () => {
@@ -1471,7 +1472,7 @@ export default function ComprasClient() {
           onClick={() => setActiveTab('current')}
           className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''} flex items-center gap-2`}
         >
-          Novo Pedido
+          Pedido
           {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) && (
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Rascunho em andamento (alterações não salvas)" />
           )}
