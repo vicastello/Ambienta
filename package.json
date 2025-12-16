@@ -16,8 +16,7 @@
     "db:backfill:city-uf": "tsx scripts/backfillCityState.ts",
     "generate:mapa-vendas": "tsx scripts/generateMapaVendas.ts",
     "cron:generate-mapa:recommendation": "# Suggestion: run 'npm run generate:mapa-vendas' periodically via cron or a scheduled job",
-    "db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts"
-    ,
+    "db:backfill:city-centroids": "tsx scripts/backfillCityCentroids.ts",
     "backfill:shopee-precos": "tsx scripts/backfillShopeePrecos.ts"
   },
   "dependencies": {
@@ -25,6 +24,7 @@
     "@south-paw/react-vector-maps": "^3.2.0",
     "@supabase/supabase-js": "^2.81.1",
     "@svg-maps/brazil": "^1.0.0",
+    "@tanstack/react-virtual": "^3.13.13",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
     "html-to-image": "^1.11.13",

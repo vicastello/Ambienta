@@ -7,6 +7,7 @@ export type SavedOrderProduct = {
   gtin: string | null;
   quantidade: number;
   observacao: string | null;
+  preco_custo?: number | null;
 };
 
 export type SavedOrderManualItem = {

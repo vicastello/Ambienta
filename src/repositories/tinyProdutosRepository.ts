@@ -173,19 +173,44 @@ export type ProdutoBaseRow = Pick<
   | 'imagem_url'
   | 'tipo'
   | 'situacao'
->;
+  | 'categoria'
+> & { preco_custo: number };
 
 export async function listProdutosAtivosSimples() {
   const { data, error } = await supabaseAdmin
     .from('tiny_produtos')
     .select(
-      'id_produto_tiny,codigo,nome,gtin,saldo,reservado,disponivel,fornecedor_codigo,fornecedor_nome,embalagem_qtd,observacao_compras,imagem_url,tipo,situacao'
+      'id_produto_tiny,codigo,nome,gtin,saldo,reservado,disponivel,fornecedor_codigo,fornecedor_nome,embalagem_qtd,observacao_compras,imagem_url,tipo,situacao,categoria,raw_payload'
     )
     .eq('situacao', 'A')
     .eq('tipo', 'S');
 
   if (error) throw error;
-  return (data || []) as ProdutoBaseRow[];
+
+  return (data || []).map((row: any) => {
+    const cost = row.raw_payload?.precos?.precoCusto;
+    const preco_custo = typeof cost === 'number' ? cost : 0;
+
+    // Return explicit object matching ProdutoBaseRow and excluding raw_payload for memory safety
+    return {
+      id_produto_tiny: row.id_produto_tiny,
+      codigo: row.codigo,
+      nome: row.nome,
+      gtin: row.gtin,
+      saldo: row.saldo,
+      reservado: row.reservado,
+      disponivel: row.disponivel,
+      fornecedor_codigo: row.fornecedor_codigo,
+      fornecedor_nome: row.fornecedor_nome,
+      embalagem_qtd: row.embalagem_qtd,
+      observacao_compras: row.observacao_compras,
+      imagem_url: row.imagem_url,
+      tipo: row.tipo,
+      situacao: row.situacao,
+      categoria: row.categoria,
+      preco_custo
+    };
+  });
 }
 
 export async function countProdutos() {

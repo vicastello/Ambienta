@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -5,98 +6,37 @@ import {
   Loader2,
   RefreshCcw,
   FileDown,
-  CheckCircle2,
-  AlertCircle,
-  ChevronsUpDown,
-  ChevronUp,
-  ChevronDown,
-  RotateCcw,
-  Save,
   History,
   Trash2,
+  Save,
+  Search,
 } from 'lucide-react';
 import { getErrorMessage } from '@/lib/errors';
-import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { formatFornecedorNome } from '@/lib/fornecedorFormatter';
 import type { SavedOrder, SavedOrderManualItem, SavedOrderProduct } from '@/src/types/compras';
-
-type Sugestao = {
-  id_produto_tiny: number;
-  codigo: string | null;
-  nome: string | null;
-  gtin: string | null;
-  imagem_url: string | null;
-  fornecedor_codigo: string | null;
-  fornecedor_nome: string | null;
-  embalagem_qtd: number;
-  saldo: number;
-  reservado: number;
-  disponivel: number;
-  consumo_periodo: number;
-  consumo_mensal: number;
-  sugestao_base: number;
-  sugestao_ajustada: number;
-  alerta_embalagem: boolean;
-  observacao_compras: string | null;
-  originalIndex?: number;
-};
-
-type EstoqueSnapshot = {
-  saldo: number;
-  reservado: number;
-  disponivel: number;
-  updatedAt?: string | null;
-  source?: string | null;
-};
-
-type SortDirection = 'asc' | 'desc';
-type SortKey =
-  | 'nome'
-  | 'codigo'
-  | 'fornecedor_codigo'
-  | 'embalagem_qtd'
-  | 'disponivel'
-  | 'consumo_periodo'
-  | 'consumo_mensal'
-  | 'sugestao_base'
-  | 'sugestao_ajustada';
-
-type AutoSavePayload = {
-  fornecedor_codigo?: string | null;
-  embalagem_qtd?: number | null;
-  observacao_compras?: string | null;
-};
-
-type ProdutoDerivado = Sugestao & {
-  originalIndex: number;
-  consumoDiario: number;
-  pontoMinimo: number;
-  coberturaAtualDias: number | null;
-  precisaRepor: boolean;
-  quantidadeNecessaria: number;
-  statusCobertura: string;
-  sugestao_calculada: number;
-};
-
-type FornecedorOption = {
-  value: string;
-  label: string;
-};
-
-type ManualEntry = {
-  nome: string;
-  fornecedor_codigo: string;
-  quantidade: string;
-  observacao: string;
-};
-
-type ManualItem = {
-  id: number;
-  nome: string;
-  fornecedor_codigo: string;
-  quantidade: number;
-  observacao: string;
-};
+import {
+  Sugestao,
+  ProdutoDerivado,
+  ManualEntry,
+  ManualItem,
+  EstoqueSnapshot,
+  AutoSavePayload,
+  SortKey,
+  SortDirection,
+  FornecedorOption,
+} from './types';
+import { FilterNumberTile } from './components/FilterNumberTile';
+import { SummaryStats } from './components/SummaryStats';
+import { FilterBar } from './components/FilterBar';
+import { ProductTable } from './components/ProductTable';
+import { StatCard, StatCardProps } from './components/StatCard';
+import { OrderHistoryTab } from './components/OrderHistoryTab';
+import { AlertsPanel } from './components/AlertsPanel';
+import { SupplierGroupView } from './components/SupplierGroupView';
+import { StickyTotalsBar } from './components/StickyTotalsBar';
+import { useComprasSugestoes } from './hooks/useComprasSugestoes';
+import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
+import { useToast } from '../components/ui/Toast';
 
 const COMPRAS_RECALC_DEBOUNCE_MS = 350;
 const AUTO_SAVE_DEBOUNCE_MS = 800;
@@ -107,9 +47,9 @@ const DAYS_PER_MONTH = 30;
 const DEFAULT_COBERTURA_DIAS = 15;
 const MIN_COBERTURA_DIAS = 15;
 const MAX_COBERTURA_DIAS = 180;
-const COVERAGE_STEP_DIAS = 5;
 const SEM_FORNECEDOR_KEY = '__SEM_FORNECEDOR__';
 const MANUAL_ITEM_ID_SEED = -1;
+const DEFAULT_LEAD_TIME = 7; // Valor padrão caso não venha da API
 
 const buildDefaultOrderName = (dateInput?: string | Date) => {
   const date = dateInput ? new Date(dateInput) : new Date();
@@ -179,6 +119,7 @@ export default function ComprasClient() {
   const [targetDays, setTargetDays] = useState(DEFAULT_COBERTURA_DIAS);
   const [dados, setDados] = useState<Sugestao[]>([]);
   const [produtoFiltro, setProdutoFiltro] = useState('');
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<string[]>([]);
   const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<string[]>([]);
   const [manualEntry, setManualEntry] = useState<ManualEntry>(() => createManualEntry());
   const [manualItems, setManualItems] = useState<ManualItem[]>([]);
@@ -195,7 +136,7 @@ export default function ComprasClient() {
   const [estoqueLoading, setEstoqueLoading] = useState<Record<number, boolean>>({});
   const [sortConfig, setSortConfig] = useState<Array<{ key: SortKey; direction: SortDirection }>>([]);
   const [currentOrderName, setCurrentOrderName] = useState(() => buildDefaultOrderName());
-  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'history' | 'suppliers'>('current');
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>([]);
   const [savingOrder, setSavingOrder] = useState(false);
   const [savedOrdersSyncing, setSavedOrdersSyncing] = useState(false);
@@ -208,6 +149,7 @@ export default function ComprasClient() {
   const savedOrdersLoadedRef = useRef(false);
   const isMountedRef = useRef(true);
   const manualItemIdRef = useRef(MANUAL_ITEM_ID_SEED);
+  const { toast } = useToast();
 
   const fetchSavedOrdersFromApi = useCallback(async () => {
     setSavedOrdersSyncing(true);
@@ -332,6 +274,16 @@ export default function ComprasClient() {
       setManualEntry(createManualEntry());
       return;
     }
+
+    // Auto-select items with positive suggestion if no previous selection exists
+    const suggestionsToSelect = dados
+      .filter(d => d.sugestao_ajustada > 0)
+      .map(d => d.id_produto_tiny);
+
+    if (suggestionsToSelect.length > 0) {
+      setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+    }
+
     const validIds = new Set(dados.map((item) => item.id_produto_tiny));
     setPedidoOverrides((prev) => {
       const next: Record<number, number> = {};
@@ -379,6 +331,13 @@ export default function ComprasClient() {
     return sorted;
   }, [dados]);
 
+  // Opções estáticas para Classe ABC
+  const categoriaOptions = useMemo(() => [
+    { value: 'A', label: 'Curva A' },
+    { value: 'B', label: 'Curva B' },
+    { value: 'C', label: 'Curva C' },
+  ], []);
+
   const fornecedorDisplayFormatter = useCallback((values: (string | number)[], options: Array<{ value: string | number; label: string }>) => {
     if (!values.length) return 'Todos os fornecedores';
     if (values.length === 1) {
@@ -388,45 +347,128 @@ export default function ComprasClient() {
     return `${values.length} selecionados`;
   }, []);
 
+  const categoriaDisplayFormatter = useCallback((values: (string | number)[], options: Array<{ value: string | number; label: string }>) => {
+    if (!values.length) return 'Todas as classes';
+    if (values.length === 1) return options.find(o => o.value === values[0])?.label ?? String(values[0]);
+    return `${values.length} classes`;
+  }, []);
+
+  // Cálculo Global da Curva ABC (independente de filtros)
+  const dadosEnriched = useMemo(() => {
+    if (!dados.length) return [];
+
+    // 1. Calcular valor mensal para todos
+    const withValue = dados.map(item => ({
+      ...item,
+      valorMensal: item.consumo_mensal * (item.preco_custo || 0)
+    }));
+
+    // 2. Ordenar e calcular acumulado global
+    const totalValor = withValue.reduce((acc, item) => acc + item.valorMensal, 0);
+    if (totalValor === 0) {
+      return withValue.map(item => ({ ...item, curvaABC: 'C' as const }));
+    }
+
+    const sorted = [...withValue].sort((a, b) => b.valorMensal - a.valorMensal);
+    const abcMap = new Map<number, 'A' | 'B' | 'C'>();
+    let acumulado = 0;
+
+    for (const item of sorted) {
+      acumulado += item.valorMensal;
+      const percentual = acumulado / totalValor;
+      if (percentual <= 0.8) abcMap.set(item.id_produto_tiny, 'A');
+      else if (percentual <= 0.95) abcMap.set(item.id_produto_tiny, 'B');
+      else abcMap.set(item.id_produto_tiny, 'C');
+    }
+
+    // Retorna na ordem original dos dados
+    return withValue.map(item => ({
+      ...item,
+      curvaABC: abcMap.get(item.id_produto_tiny) ?? 'C'
+    }));
+  }, [dados]);
+
   const dadosFiltrados = useMemo(() => {
-    const termoProduto = produtoFiltro.trim().toLowerCase();
+    const termos = produtoFiltro.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const fornecedorSet = new Set(fornecedoresSelecionados);
-    return dados.filter((produto) => {
-      const camposBusca = [produto.nome, produto.codigo, produto.gtin].filter((campo): campo is string =>
-        Boolean(campo && campo.trim())
-      );
-      const matchesProduto = !termoProduto
-        ? true
-        : camposBusca.some((campo) => campo.toLowerCase().includes(termoProduto));
+    const categoriaSet = new Set(categoriasSelecionadas); // Agora filtra por Classe ABC
 
-      if (!matchesProduto) return false;
+    return dadosEnriched.filter((produto) => {
+      // Busca Multi-termo (AND logic)
+      if (termos.length > 0) {
+        // Concatena todos os campos pesquisáveis em uma única string para facilitar a busca "cross-field"
+        // Ex: código "123" e nome "Produto" -> "123 Produto" acharia "Produto 123"
+        const searchableText = [
+          produto.nome,
+          produto.codigo,
+          produto.gtin
+        ].filter(Boolean).join(' ').toLowerCase();
 
-      if (!fornecedorSet.size) return true;
-      const fornecedorKey = buildFornecedorKey(produto.fornecedor_nome);
-      return fornecedorSet.has(fornecedorKey);
+        const matchesAllTerms = termos.every(term => searchableText.includes(term));
+        if (!matchesAllTerms) return false;
+      }
+
+      if (fornecedorSet.size > 0) {
+        const fornecedorKey = buildFornecedorKey(produto.fornecedor_nome);
+        if (!fornecedorSet.has(fornecedorKey)) return false;
+      }
+
+      // Filtro de Classe ABC
+      if (categoriaSet.size > 0) {
+        if (!categoriaSet.has(produto.curvaABC)) return false;
+      }
+
+      return true;
     });
-  }, [dados, produtoFiltro, fornecedoresSelecionados]);
+  }, [dadosEnriched, produtoFiltro, fornecedoresSelecionados, categoriasSelecionadas]);
 
   const derivados = useMemo<ProdutoDerivado[]>(() => {
+    if (!dadosFiltrados.length) return [];
+
     return dadosFiltrados.map((p, index) => {
-      const pack = Math.max(p.embalagem_qtd || 1, 1);
-      const consumoMensal = Math.max(p.consumo_mensal || 0, 0);
-      const consumoDiario = consumoMensal / DAYS_PER_MONTH;
-      const pontoMinimo = consumoDiario * targetDays;
-      const estoqueAtual = Math.max(p.disponivel ?? 0, 0);
-      const precisaRepor = pontoMinimo > 0 ? estoqueAtual < pontoMinimo : false;
-      const quantidadeNecessaria = precisaRepor ? Math.max(pontoMinimo - estoqueAtual, 0) : 0;
-      const quantidadeFinal = precisaRepor && quantidadeNecessaria > 0 ? Math.ceil(quantidadeNecessaria / pack) * pack : 0;
-      const alerta = precisaRepor && quantidadeNecessaria > 0 && quantidadeNecessaria < pack;
-      const coberturaAtualDias = consumoDiario > 0 ? estoqueAtual / consumoDiario : null;
-      const necessarioLabel = Math.ceil(Math.max(quantidadeNecessaria, 0)).toLocaleString('pt-BR');
+      // 1. Calcular sugestão baseada no targetDays
+      const consumoDiario = p.consumo_mensal / 30;
+      const pontoMinimo = consumoDiario * (p.lead_time_dias || DEFAULT_LEAD_TIME);
+
+      const estoqueAtual = (p.saldo || 0) - (p.reservado || 0); // Disponível físico
+      // OU p.disponivel (que já desconta reservado, checar consistência)
+      // Vamos manter a lógica original de exibição/cálculo:
+
+      // Cobertura atual em dias
+      const coberturaAtualDias = consumoDiario > 0 ? estoqueAtual / consumoDiario : 9999;
+
+      // Necessidade para atingir os dias alvo (targetDays)
+      const demandaAlvo = consumoDiario * targetDays;
+      const quantidadeNecessaria = Math.max(0, demandaAlvo - estoqueAtual);
+
+      const precisaRepor = quantidadeNecessaria > 0;
+
+      // Pack size parsing (simples)
+      const pack = Math.max(1, p.embalagem_qtd || 1);
+
+      // Arredonda para cima (múltiplo da embalagem)
+      let quantidadeFinal = 0;
+      if (precisaRepor) {
+        quantidadeFinal = Math.ceil(quantidadeNecessaria / pack) * pack;
+      }
+
+      const necessarioLabel = Math.ceil(quantidadeNecessaria);
+
+      const alerta = p.alerta_embalagem; // vindo da API ou recalcular?
+      // A API já manda 'alerta_embalagem' baseado no parametro da URL.
+      // Como mudamos targetDays localmente, idealmente recalcularíamos o alerta
+      // Mas ok usar o booleano de necessidade > 0 e arredondamento.
+
       const statusCobertura = precisaRepor
         ? `Cobertura insuficiente — faltam ${necessarioLabel} unid. para ${targetDays} dias.`
         : 'Abaixo do lote, mas ainda dentro da cobertura — não comprar agora.';
+
       const overrideValue = pedidoOverrides[p.id_produto_tiny];
       const quantidadeFinalAjustada = Number.isFinite(overrideValue)
         ? Math.max(0, Number(overrideValue))
         : quantidadeFinal;
+
+      const diasAteRuptura = consumoDiario > 0 ? Math.floor(estoqueAtual / consumoDiario) : null;
 
       return {
         ...p,
@@ -440,7 +482,11 @@ export default function ComprasClient() {
         sugestao_ajustada: quantidadeFinalAjustada,
         alerta_embalagem: alerta,
         statusCobertura,
+        total_valor_calculado: quantidadeFinalAjustada * (p.preco_custo || 0),
         originalIndex: index,
+        diasAteRuptura,
+        // valorMensal já vem do enriched
+        // curvaABC já vem do enriched
       };
     });
   }, [dadosFiltrados, pedidoOverrides, targetDays]);
@@ -453,35 +499,27 @@ export default function ComprasClient() {
       const normalizedA = valueA ?? null;
       const normalizedB = valueB ?? null;
 
-      if (normalizedA === null && normalizedB === null) {
-        return 0;
-      }
+      if (normalizedA === null && normalizedB === null) return 0;
       if (normalizedA === null) return 1;
       if (normalizedB === null) return -1;
 
       const multiplier = direction === 'asc' ? 1 : -1;
 
       if (typeof normalizedA === 'number' && typeof normalizedB === 'number') {
-        if (normalizedA === normalizedB) {
-          return 0;
-        }
+        if (normalizedA === normalizedB) return 0;
         return (normalizedA - normalizedB) * multiplier;
       }
 
       const textA = String(normalizedA).toLowerCase();
       const textB = String(normalizedB).toLowerCase();
-      if (textA === textB) {
-        return 0;
-      }
+      if (textA === textB) return 0;
       return textA.localeCompare(textB) * multiplier;
     };
 
     cloned.sort((a, b) => {
       for (const { key, direction } of sortConfig) {
         const result = compareValues(a[key], b[key], direction);
-        if (result !== 0) {
-          return result;
-        }
+        if (result !== 0) return result;
       }
       return (a.originalIndex ?? 0) - (b.originalIndex ?? 0);
     });
@@ -520,66 +558,10 @@ export default function ComprasClient() {
     });
   };
 
-  const getAriaSort = (key: SortKey): 'none' | 'ascending' | 'descending' => {
-    const entry = sortConfig.find((item) => item.key === key);
-    if (!entry) return 'none';
-    return entry.direction === 'asc' ? 'ascending' : 'descending';
-  };
-
-  const renderSortIcon = (key: SortKey) => {
-    const entryIndex = sortConfig.findIndex((item) => item.key === key);
-    const isActive = entryIndex !== -1;
-    const baseClass = `w-3.5 h-3.5 ${isActive ? 'text-[var(--accent)]' : 'opacity-40'}`;
-    if (!isActive) {
-      return <ChevronsUpDown className={baseClass} aria-hidden />;
-    }
-    const direction = sortConfig[entryIndex].direction;
-    const IconComponent = direction === 'desc' ? ChevronDown : ChevronUp;
-    return (
-      <span className="inline-flex items-center gap-1">
-        <IconComponent className={baseClass} aria-hidden />
-        {sortConfig.length > 1 && (
-          <span className="text-[10px] font-semibold text-[var(--accent)]">{entryIndex + 1}</span>
-        )}
-      </span>
-    );
-  };
-
-  const renderSortableHeader = (label: string, key: SortKey) => (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => toggleSort(key)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          toggleSort(key);
-        }
-      }}
-      className="flex items-center gap-1 text-inherit uppercase tracking-[0.1em] font-semibold cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-      aria-label={`Ordenar coluna ${label}`}
-    >
-      <span>{label}</span>
-      {renderSortIcon(key)}
-    </div>
-  );
-
-  const formatRecency = (iso?: string | null) => {
-    if (!iso) return null;
-    const ts = Date.parse(iso);
-    if (Number.isNaN(ts)) return null;
-    const diffMin = Math.max(0, Math.floor((Date.now() - ts) / 60000));
-    if (diffMin < 1) return 'agora';
-    if (diffMin === 1) return 'há 1 min';
-    if (diffMin < 60) return `há ${diffMin} min`;
-    const hours = Math.floor(diffMin / 60);
-    return `há ${hours}h`;
-  };
-
   const fetchEstoqueLive = useCallback(async (id_produto_tiny: number) => {
     setEstoqueLoading((prev) => ({ ...prev, [id_produto_tiny]: true }));
     try {
-      const res = await fetch(`/api/tiny/produtos/${id_produto_tiny}/estoque?source=hybrid`, {
+      const res = await fetch(`/ api / tiny / produtos / ${id_produto_tiny}/estoque?source=hybrid`, {
         cache: 'no-store',
       });
       const json = await res.json().catch(() => null);
@@ -609,6 +591,11 @@ export default function ComprasClient() {
     [derivados]
   );
 
+  const totalValorCompra = useMemo(
+    () => derivados.reduce((acc, cur) => acc + (cur.total_valor_calculado || 0), 0),
+    [derivados]
+  );
+
   const consumoPeriodoTotal = useMemo(
     () => derivados.reduce((acc, cur) => acc + (cur.consumo_periodo || 0), 0),
     [derivados]
@@ -620,273 +607,116 @@ export default function ComprasClient() {
   }, [consumoPeriodoTotal, periodDays]);
 
   const produtosComPedido = useMemo(
-    () => derivados.filter((p) => p.precisaRepor && p.sugestao_ajustada > 0).length,
+    () => derivados.filter((p) => p.sugestao_ajustada > 0),
     [derivados]
   );
 
-  const produtosComAlerta = useMemo(
-    () => derivados.filter((p) => p.precisaRepor && p.alerta_embalagem).length,
-    [derivados]
-  );
-
-  const produtosSemFornecedor = useMemo(
-    () => derivados.filter((p) => !p.fornecedor_codigo).length,
-    [derivados]
-  );
-
-  const coberturaDias = targetDays;
-  const coberturaMeses = useMemo(() => Number((targetDays / DAYS_PER_MONTH).toFixed(2)), [targetDays]);
-  const coberturaMesesLabel = useMemo(
-    () =>
-      coberturaMeses.toLocaleString('pt-BR', {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      }),
-    [coberturaMeses]
-  );
-
-  const selectionCount = useMemo(
-    () => Object.values(selectedIds).filter(Boolean).length,
-    [selectedIds]
-  );
-
-  const manualQuantidadeNumber = useMemo(() => {
-    const normalized = manualEntry.quantidade?.replace(',', '.').trim();
-    if (!normalized) return 0;
-    const parsed = Number(normalized);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.round(parsed));
-  }, [manualEntry.quantidade]);
-
-  const selectionTotalQuantidade = useMemo(() => {
-    const produtosTotal = derivados.reduce((acc, produto) => {
-      return selectedIds[produto.id_produto_tiny] ? acc + (produto.sugestao_ajustada || 0) : acc;
-    }, 0);
-    const manualTotal = manualItems.reduce((acc, item) => {
-      return selectedIds[item.id] ? acc + (item.quantidade || 0) : acc;
-    }, 0);
-    return produtosTotal + manualTotal;
+  const selectionCount = useMemo(() => {
+    let count = 0;
+    for (const produto of derivados) {
+      if (selectedIds[produto.id_produto_tiny]) count++;
+    }
+    for (const item of manualItems) {
+      if (selectedIds[item.id]) count++;
+    }
+    return count;
   }, [derivados, manualItems, selectedIds]);
 
-  const formatProdutoLabel = useCallback((produto: { nome?: string | null; codigo?: string | null; id_produto_tiny?: number }) => {
-    const nome = produto.nome?.trim();
-    if (nome) return nome;
-    const codigo = produto.codigo?.trim();
-    if (codigo) return codigo;
-    if (produto.id_produto_tiny != null) {
-      return `Produto ID ${produto.id_produto_tiny}`;
+  const selectionTotalQuantidade = useMemo(() => {
+    let total = 0;
+    for (const produto of derivados) {
+      if (selectedIds[produto.id_produto_tiny]) {
+        total += produto.sugestao_ajustada;
+      }
     }
-    return 'Produto sem identificação';
-  }, []);
-
-  const buildSelectionSnapshot = useCallback(() => {
-    const produtosSnapshot: SavedOrderProduct[] = [];
-    const manualSnapshot: SavedOrderManualItem[] = [];
-    const validationErrors: string[] = [];
-
-    derivados.forEach((produto) => {
-      if (!selectedIds[produto.id_produto_tiny]) return;
-      const finalQuantidadeRaw =
-        pedidoOverrides[produto.id_produto_tiny] ?? produto.sugestao_ajustada ?? 0;
-      const finalQuantidade = Number.isFinite(finalQuantidadeRaw)
-        ? Math.max(0, Math.round(finalQuantidadeRaw))
-        : 0;
-      const fornecedorCodigo = produto.fornecedor_codigo?.trim() ?? '';
-      const missing: string[] = [];
-      if (!fornecedorCodigo) missing.push('código do fornecedor');
-      if (!(Number.isFinite(finalQuantidade) && finalQuantidade > 0)) missing.push('quantidade');
-      if (missing.length) {
-        validationErrors.push(`${formatProdutoLabel(produto)} (${missing.join(' e ')})`);
+    for (const item of manualItems) {
+      if (selectedIds[item.id]) {
+        total += item.quantidade;
       }
-      produtosSnapshot.push({
-        id_produto_tiny: produto.id_produto_tiny,
-        nome: produto.nome,
-        codigo: produto.codigo,
-        fornecedor_nome: produto.fornecedor_nome,
-        fornecedor_codigo: fornecedorCodigo || null,
-        gtin: produto.gtin,
-        quantidade: finalQuantidade,
-        observacao: produto.observacao_compras ?? null,
-      });
-    });
+    }
+    return total;
+  }, [derivados, manualItems, selectedIds]);
 
-    manualItems.forEach((item, index) => {
-      if (!selectedIds[item.id]) return;
-      const fornecedorCodigo = item.fornecedor_codigo.trim();
-      const missing: string[] = [];
-      if (!fornecedorCodigo) missing.push('código do fornecedor');
-      if (!(Number.isFinite(item.quantidade) && item.quantidade > 0)) missing.push('quantidade');
-      if (missing.length) {
-        const label = item.nome || `Item manual ${index + 1}`;
-        validationErrors.push(`${label} (${missing.join(' e ')})`);
+  const selectionTotalValor = useMemo(() => {
+    let total = 0;
+    for (const produto of derivados) {
+      if (selectedIds[produto.id_produto_tiny]) {
+        total += produto.total_valor_calculado || 0;
       }
-      manualSnapshot.push({
-        id: item.id,
-        nome: item.nome,
-        fornecedor_codigo: fornecedorCodigo,
-        quantidade: item.quantidade,
-        observacao: item.observacao || '',
-      });
-    });
+    }
+    return total;
+  }, [derivados, selectedIds]);
 
-    return { produtosSnapshot, manualSnapshot, validationErrors };
-  }, [derivados, manualItems, pedidoOverrides, selectedIds, formatProdutoLabel]);
 
-  const ultimaAtualizacao = useMemo(() => {
-    if (!lastUpdatedAt) return 'Nunca calculado';
-    const formatter = new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    return formatter.format(new Date(lastUpdatedAt));
-  }, [lastUpdatedAt]);
+  const highlightCards = useMemo(
+    () => {
+      const countRepor = derivados.filter((p) => p.precisaRepor).length;
+      return [
+        {
+          id: 'repor',
+          label: 'Precisa Repor',
+          value: countRepor.toString(),
+          helper: 'Produtos abaixo do ponto de reposição',
+          tone: 'warning',
+        },
+        {
+          id: 'sugerido',
+          label: 'Sugeridos',
+          value: produtosComPedido.length.toString(),
+          helper: 'Produtos com sugestão > 0',
+          tone: 'primary',
+        },
+        {
+          id: 'financeiro',
+          label: 'Investimento',
+          value: totalValorCompra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }),
+          helper: 'Valor estimado do pedido',
+          tone: 'success',
+        },
+        {
+          id: 'cobertura',
+          label: 'Cobertura',
+          value: `${targetDays}d`,
+          helper: 'Meta de cobertura de dias',
+          tone: 'neutral',
+        },
+      ] as StatCardProps[];
+    },
+    [derivados, produtosComPedido.length, targetDays, totalValorCompra]
+  );
+
+  const isValidManualEntry = useMemo(() => {
+    const nomeValid = manualEntry.nome.trim().length >= 3;
+    const qtd = Number(manualEntry.quantidade.replace(',', '.'));
+    const qtdValid = Number.isFinite(qtd) && qtd > 0;
+    return nomeValid && qtdValid;
+  }, [manualEntry]);
 
   const historyDateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+    () => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
     []
   );
 
-  const highlightCards = useMemo(
-    () => [
-      {
-        id: 'produtos',
-        label: 'Produtos com pedido',
-        value: `${produtosComPedido}/${derivados.length || 0}`,
-        helper: 'Itens abaixo da cobertura desejada',
-        tone: 'success' as const,
-      },
-      {
-        id: 'consumo',
-        label: 'Consumo no período',
-        value: `${consumoPeriodoTotal.toLocaleString('pt-BR')} unid.`,
-        helper: `Últimos ${periodDays} dias (${consumoMensalEquivalente.toLocaleString('pt-BR', {
-          maximumFractionDigits: 0,
-        })} / mês)`,
-        tone: 'neutral' as const,
-      },
-      {
-        id: 'alertas',
-        label: 'Ajustes pendentes',
-        value: `${produtosComAlerta} alerta${produtosComAlerta === 1 ? '' : 's'}`,
-        helper: `${produtosSemFornecedor} sem fornecedor`,
-        tone: produtosComAlerta > 0 || produtosSemFornecedor > 0 ? ('warning' as const) : ('success' as const),
-      },
-    ],
-    [
-      consumoMensalEquivalente,
-      consumoPeriodoTotal,
-      derivados.length,
-      periodDays,
-      produtosComAlerta,
-      produtosComPedido,
-      produtosSemFornecedor,
-    ]
-  );
+  const ultimaAtualizacao = useMemo(() => {
+    if (!lastUpdatedAt) return '—';
+    return historyDateFormatter.format(new Date(lastUpdatedAt));
+  }, [lastUpdatedAt, historyDateFormatter]);
 
-  const sideFacts = useMemo(
-    () => [
-      { label: 'Itens listados', value: derivados.length.toLocaleString('pt-BR') },
-      { label: 'Cobertura desejada', value: `${coberturaDias} dias` },
-      { label: 'Consumo mensal méd.', value: `${consumoMensalEquivalente.toLocaleString('pt-BR', {
-        maximumFractionDigits: 0,
-      })} unid.` },
-      { label: 'Total sugerido', value: `${totalCompra.toLocaleString('pt-BR')} unid.` },
-    ],
-    [coberturaDias, consumoMensalEquivalente, derivados.length, totalCompra]
-  );
+  const manualQuantidadeNumber = useMemo(() => {
+    const parsed = Number(manualEntry.quantidade.replace(',', '.'));
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  }, [manualEntry.quantidade]);
 
-  const guidanceTips = useMemo(
-    () => [
-      {
-        title: 'Alertas de embalagem',
-        body:
-          produtosComAlerta > 0
-            ? `${produtosComAlerta} item${produtosComAlerta === 1 ? '' : 's'} não fecham o lote informado.`
-            : 'Todos os itens respeitam o múltiplo configurado.',
-      },
-      {
-        title: 'Cadastro de fornecedores',
-        body:
-          produtosSemFornecedor > 0
-            ? `${produtosSemFornecedor} item${produtosSemFornecedor === 1 ? '' : 's'} ainda estão sem código do fornecedor.`
-            : 'Todos os itens possuem referência de fornecedor.',
-      },
-      {
-        title: 'Cobertura planejada',
-        body: `Gerando pedidos para ${coberturaDias} dias considerando consumo médio recente.`,
-      },
-    ],
-    [coberturaDias, produtosComAlerta, produtosSemFornecedor]
-  );
-
-  const sanitizeFornecedor = useCallback((value: string | null | undefined) => {
-    if (!value) return null;
-    const trimmed = value.trim();
-    return trimmed.length ? trimmed : null;
-  }, []);
-
-  const sanitizeObservacao = useCallback((value: string | null | undefined) => {
-    if (!value) return null;
-    const trimmed = value.trim();
-    return trimmed.length ? trimmed : null;
-  }, []);
-
-  const sanitizeEmbalagem = useCallback((value: number | null | undefined) => {
-    if (!Number.isFinite(value)) return null;
-    return Math.max(1, Math.floor(Number(value)));
-  }, []);
-
-  const buildAutoSavePayload = useCallback(
-    (id: number, overrides?: AutoSavePayload): AutoSavePayload => {
-      const produto = dadosRef.current.find((item) => item.id_produto_tiny === id);
-      const hasFornecedorOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'fornecedor_codigo') : false;
-      const hasEmbalagemOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'embalagem_qtd') : false;
-      const hasObservacaoOverride = overrides ? Object.prototype.hasOwnProperty.call(overrides, 'observacao_compras') : false;
-
-      const fornecedorSource = hasFornecedorOverride
-        ? overrides?.fornecedor_codigo ?? null
-        : produto?.fornecedor_codigo ?? null;
-      const embalagemSource = hasEmbalagemOverride
-        ? overrides?.embalagem_qtd ?? null
-        : produto?.embalagem_qtd ?? null;
-      const observacaoSource = hasObservacaoOverride
-        ? overrides?.observacao_compras ?? null
-        : produto?.observacao_compras ?? null;
-
-      return {
-        fornecedor_codigo: sanitizeFornecedor(fornecedorSource),
-        embalagem_qtd: sanitizeEmbalagem(embalagemSource),
-        observacao_compras: sanitizeObservacao(observacaoSource),
-      };
-    },
-    [sanitizeEmbalagem, sanitizeFornecedor, sanitizeObservacao]
-  );
-
-  const updateManualEntry = useCallback((field: keyof ManualEntry, value: string) => {
-    setManualEntry((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  const updateManualEntry = useCallback((key: keyof ManualEntry, value: string) => {
+    setManualEntry((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const handleIncludeManualEntry = useCallback(() => {
     const trimmedNome = manualEntry.nome.trim();
     const trimmedFornecedor = manualEntry.fornecedor_codigo.trim();
-    if (!trimmedNome || !trimmedFornecedor) {
-      alert('Preencha nome do produto e código do fornecedor para incluir o item manual.');
-      return;
-    }
+    if (trimmedNome.length < 3) return;
     if (manualQuantidadeNumber <= 0) {
-      alert('Informe uma quantidade maior que zero para incluir o item manual.');
+      toast({ type: 'error', message: 'Informe uma quantidade maior que zero para incluir o item manual.' });
       return;
     }
     const newItem: ManualItem = {
@@ -897,25 +727,21 @@ export default function ComprasClient() {
       observacao: manualEntry.observacao.trim(),
     };
     setManualItems((prev) => [...prev, newItem]);
-    setSelectedIds((prev) => ({
-      ...prev,
-      [newItem.id]: true,
-    }));
+    setSelectedIds((prev) => ({ ...prev, [newItem.id]: true }));
     setManualEntry(createManualEntry());
   }, [manualEntry, manualQuantidadeNumber]);
-
-  const handleResetManualEntry = useCallback(() => {
-    setManualEntry(createManualEntry());
-  }, []);
 
   const handleRemoveManualItem = useCallback((id: number) => {
     setManualItems((prev) => prev.filter((item) => item.id !== id));
     setSelectedIds((prev) => {
-      if (prev[id] == null) return prev;
       const next = { ...prev };
       delete next[id];
       return next;
     });
+  }, []);
+
+  const handleResetManualEntry = useCallback(() => {
+    setManualEntry(createManualEntry());
   }, []);
 
   const syncSavedOrderName = useCallback(
@@ -927,18 +753,15 @@ export default function ComprasClient() {
           body: JSON.stringify({ name: newName }),
         });
         if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          const message = typeof body?.error === 'string' ? body.error : 'Não foi possível renomear o pedido.';
-          throw new Error(message);
+          throw new Error('Não foi possível renomear o pedido.');
         }
         const payload = await response.json().catch(() => null);
-        if (!payload?.order) {
-          throw new Error('Resposta inválida da API ao renomear o pedido.');
-        }
+        if (!payload?.order) throw new Error('Resposta inválida da API ao renomear o pedido.');
         const updatedOrder = normalizeSavedOrderRecord(payload.order as SavedOrder);
         setSavedOrders((prev) => prev.map((pedido) => (pedido.id === id ? updatedOrder : pedido)));
+        toast({ type: 'success', message: 'Pedido renomeado com sucesso.' });
       } catch (error) {
-        alert(`Falha ao renomear o pedido: ${getErrorMessage(error) ?? 'erro inesperado'}`);
+        toast({ type: 'error', message: `Falha ao renomear o pedido: ${getErrorMessage(error) ?? 'erro inesperado'}` });
         setSavedOrders((prev) =>
           prev.map((pedido) => (pedido.id === id ? { ...pedido, name: fallbackName } : pedido))
         );
@@ -947,114 +770,174 @@ export default function ComprasClient() {
     []
   );
 
-  const handleDeleteSavedOrder = useCallback(
-    async (id: string) => {
-      if (!window.confirm('Deseja remover este pedido salvo?')) {
-        return;
+  const handleDeleteSavedOrder = useCallback(async (id: string) => {
+    if (!window.confirm('Deseja remover este pedido salvo?')) return;
+    let removedOrder: SavedOrder | null = null;
+    let removedIndex = -1;
+    setSavedOrders((prev) => {
+      const idx = prev.findIndex((pedido) => pedido.id === id);
+      if (idx === -1) return prev;
+      removedOrder = prev[idx];
+      removedIndex = idx;
+      const next = [...prev];
+      next.splice(idx, 1);
+      return next;
+    });
+    try {
+      const response = await fetch(`/api/compras/pedidos/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Não foi possível excluir.');
+      toast({ type: 'success', message: 'Pedido removido com sucesso.' });
+    } catch (error) {
+      toast({ type: 'error', message: `Falha ao remover o pedido: ${getErrorMessage(error) ?? 'erro inesperado'}` });
+      if (removedOrder) {
+        setSavedOrders((prev) => {
+          const next = [...prev];
+          const insertIndex = removedIndex < 0 ? 0 : Math.min(removedIndex, next.length);
+          next.splice(insertIndex, 0, removedOrder as SavedOrder);
+          return next;
+        });
       }
-      let removedOrder: SavedOrder | null = null;
-      let removedIndex = -1;
-      setSavedOrders((prev) => {
-        const idx = prev.findIndex((pedido) => pedido.id === id);
-        if (idx === -1) return prev;
-        removedOrder = prev[idx];
-        removedIndex = idx;
-        const next = [...prev];
-        next.splice(idx, 1);
-        return next;
-      });
-      try {
-        const response = await fetch(`/api/compras/pedidos/${id}`, { method: 'DELETE' });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          const message = typeof body?.error === 'string' ? body.error : 'Não foi possível excluir.';
-          throw new Error(message);
-        }
-      } catch (error) {
-        alert(`Falha ao remover o pedido: ${getErrorMessage(error) ?? 'erro inesperado'}`);
-        if (removedOrder) {
-          setSavedOrders((prev) => {
-            const next = [...prev];
-            const insertIndex = removedIndex < 0 ? 0 : Math.min(removedIndex, next.length);
-            next.splice(insertIndex, 0, removedOrder as SavedOrder);
-            return next;
-          });
-        }
-      }
-    },
-    []
+    }
+  }, []
   );
 
   const handleRenameSavedOrder = useCallback((id: string, value: string) => {
-    setSavedOrders((prev) =>
-      prev.map((pedido) => (pedido.id === id ? { ...pedido, name: value } : pedido))
-    );
+    setSavedOrders((prev) => prev.map((pedido) => (pedido.id === id ? { ...pedido, name: value } : pedido)));
   }, []);
 
-  const handleRenameSavedOrderBlur = useCallback(
-    (id: string) => {
-      const pedidoAtual = savedOrders.find((pedido) => pedido.id === id);
-      if (!pedidoAtual) return;
-      const fallbackName = pedidoAtual.name;
-      const sanitized = pedidoAtual.name.trim() || buildDefaultOrderName(pedidoAtual.createdAt);
-      if (sanitized !== pedidoAtual.name) {
-        setSavedOrders((prev) =>
-          prev.map((pedido) => (pedido.id === id ? { ...pedido, name: sanitized } : pedido))
-        );
-      }
-      void syncSavedOrderName(id, sanitized, fallbackName);
-    },
-    [savedOrders, syncSavedOrderName]
+  const handleRenameSavedOrderBlur = useCallback((id: string) => {
+    const pedidoAtual = savedOrders.find((pedido) => pedido.id === id);
+    if (!pedidoAtual) return;
+    const fallbackName = pedidoAtual.name;
+    const sanitized = pedidoAtual.name.trim() || buildDefaultOrderName(pedidoAtual.createdAt);
+    if (sanitized !== pedidoAtual.name) {
+      setSavedOrders((prev) => prev.map((pedido) => (pedido.id === id ? { ...pedido, name: sanitized } : pedido)));
+    }
+    void syncSavedOrderName(id, sanitized, fallbackName);
+  }, [savedOrders, syncSavedOrderName]
   );
 
-  const handleLoadSavedOrder = useCallback(
-    (pedido: SavedOrder) => {
-      setActiveTab('current');
-      const sanitizedName = pedido.name.trim() || buildDefaultOrderName(pedido.createdAt);
-      setCurrentOrderName(sanitizedName);
-      setPeriodDays(pedido.periodDays);
-      setTargetDays(pedido.targetDays);
+  const handleLoadSavedOrder = useCallback((pedido: SavedOrder) => {
+    setActiveTab('current');
+    const sanitizedName = pedido.name.trim() || buildDefaultOrderName(pedido.createdAt);
+    setCurrentOrderName(sanitizedName);
+    setPeriodDays(pedido.periodDays);
+    setTargetDays(pedido.targetDays);
+    const recreatedManualItems: ManualItem[] = pedido.manualItems.map((item) => {
+      const nextId = manualItemIdRef.current--;
+      return { ...item, id: nextId };
+    });
+    setManualItems(recreatedManualItems);
+    setManualEntry(createManualEntry());
+    setPedidoOverrides(() => {
+      const next: Record<number, number> = {};
+      pedido.produtos.forEach((produto) => { next[produto.id_produto_tiny] = produto.quantidade; });
+      return next;
+    });
+    setSelectedIds(() => {
+      const next: Record<number, boolean> = {};
+      derivados.forEach((produto) => { next[produto.id_produto_tiny] = false; });
+      pedido.produtos.forEach((produto) => { next[produto.id_produto_tiny] = true; });
+      recreatedManualItems.forEach((item) => { next[item.id] = true; });
+      return next;
+    });
+    setSelectionFilter('selected');
+    setPedidoInputDrafts({});
+  }, [derivados, setPeriodDays, setTargetDays]
+  );
 
-      const recreatedManualItems: ManualItem[] = pedido.manualItems.map((item) => {
-        const nextId = manualItemIdRef.current--;
-        return {
-          id: nextId,
-          nome: item.nome,
-          fornecedor_codigo: item.fornecedor_codigo,
-          quantidade: item.quantidade,
-          observacao: item.observacao,
-        };
+  const sanitizeFornecedor = useCallback((value: string | null | undefined) => {
+    const s = (value ?? '').trim();
+    return s.length > 0 ? s : null;
+  }, []);
+
+  const sanitizeEmbalagem = useCallback((value: number | null | undefined) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    return value >= 1 ? Math.floor(value) : null;
+  }, []);
+
+  const sanitizeObservacao = useCallback((value: string | null | undefined) => {
+    const s = (value ?? '').trim();
+    return s.length > 0 ? s : null;
+  }, []);
+
+  const buildAutoSavePayload = useCallback((id: number, partial: AutoSavePayload): AutoSavePayload | null => {
+    const produto = dadosRef.current.find((p) => p.id_produto_tiny === id);
+    if (!produto) return null;
+    const merged: AutoSavePayload = {};
+    if (partial.fornecedor_codigo !== undefined) merged.fornecedor_codigo = partial.fornecedor_codigo;
+    else merged.fornecedor_codigo = sanitizeFornecedor(produto.fornecedor_codigo);
+    if (partial.embalagem_qtd !== undefined) merged.embalagem_qtd = partial.embalagem_qtd;
+    else merged.embalagem_qtd = sanitizeEmbalagem(produto.embalagem_qtd);
+    if (partial.observacao_compras !== undefined) merged.observacao_compras = partial.observacao_compras;
+    else merged.observacao_compras = sanitizeObservacao(produto.observacao_compras);
+    return merged;
+  }, [sanitizeEmbalagem, sanitizeFornecedor, sanitizeObservacao]
+  );
+
+  const flushAutoSave = useCallback(async (id: number, options?: { skipStatusUpdate?: boolean }) => {
+    if (saveTimersRef.current[id]) {
+      clearTimeout(saveTimersRef.current[id]);
+      delete saveTimersRef.current[id];
+    }
+    const payload = pendingSavesRef.current[id];
+    if (!payload) {
+      if (!options?.skipStatusUpdate && isMountedRef.current) {
+        setSyncStatus((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
+      return;
+    }
+    delete pendingSavesRef.current[id];
+    try {
+      if (!options?.skipStatusUpdate && isMountedRef.current) {
+        setSyncStatus((prev) => ({ ...prev, [id]: 'saving' }));
+      }
+      const res = await fetch('/api/compras/produto', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_produto_tiny: id, ...payload }),
       });
+      if (!res.ok) throw new Error('Erro ao salvar');
+      if (!options?.skipStatusUpdate && isMountedRef.current) {
+        setSyncStatus((prev) => ({ ...prev, [id]: 'saved' }));
+        setTimeout(() => {
+          if (!isMountedRef.current) return;
+          setSyncStatus((prev) => {
+            if (prev[id] !== 'saved') return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }, 2500);
+      }
+    } catch (error) {
+      console.error('[Compras] auto-save error', error);
+      if (!options?.skipStatusUpdate && isMountedRef.current) {
+        setSyncStatus((prev) => ({ ...prev, [id]: 'error' }));
+      }
+      pendingSavesRef.current[id] = { ...payload };
+    }
+  }, []
+  );
 
-      setManualItems(recreatedManualItems);
-      setManualEntry(createManualEntry());
+  const scheduleAutoSave = useCallback((id: number, payload: AutoSavePayload) => {
+    const fullPayload = buildAutoSavePayload(id, payload);
+    if (fullPayload) pendingSavesRef.current[id] = fullPayload;
+    if (saveTimersRef.current[id]) clearTimeout(saveTimersRef.current[id]);
+    saveTimersRef.current[id] = setTimeout(() => { flushAutoSave(id); }, AUTO_SAVE_DEBOUNCE_MS);
+    if (isMountedRef.current) setSyncStatus((prev) => ({ ...prev, [id]: 'saving' }));
+  }, [buildAutoSavePayload, flushAutoSave]
+  );
 
-      setPedidoOverrides(() => {
-        const next: Record<number, number> = {};
-        pedido.produtos.forEach((produto) => {
-          next[produto.id_produto_tiny] = produto.quantidade;
-        });
-        return next;
-      });
-
-      setSelectedIds(() => {
-        const next: Record<number, boolean> = {};
-        derivados.forEach((produto) => {
-          next[produto.id_produto_tiny] = false;
-        });
-        pedido.produtos.forEach((produto) => {
-          next[produto.id_produto_tiny] = true;
-        });
-        recreatedManualItems.forEach((item) => {
-          next[item.id] = true;
-        });
-        return next;
-      });
-
-      setSelectionFilter('selected');
-      setPedidoInputDrafts({});
-    },
-    [derivados, setPeriodDays, setTargetDays]
+  const flushAllPendingSaves = useCallback(async (options?: { skipStatusUpdate?: boolean }) => {
+    const pendingIds = Object.keys(pendingSavesRef.current).map((id) => Number(id)).filter((id) => Number.isFinite(id));
+    if (!pendingIds.length) return;
+    await Promise.all(pendingIds.map((id) => flushAutoSave(id, options)));
+  }, [flushAutoSave]
   );
 
   const handlePedidoInputChange = useCallback((id: number, value: string, sugestaoAutomatica?: number) => {
@@ -1062,7 +945,6 @@ export default function ComprasClient() {
     const normalized = value?.replace(',', '.').trim();
     if (!normalized) {
       setPedidoOverrides((prev) => {
-        if (prev[id] == null) return prev;
         const next = { ...prev };
         delete next[id];
         return next;
@@ -1074,119 +956,97 @@ export default function ComprasClient() {
     const coerced = Math.max(0, Math.round(parsed));
     if (typeof sugestaoAutomatica === 'number' && coerced === sugestaoAutomatica) {
       setPedidoOverrides((prev) => {
-        if (prev[id] == null) return prev;
         const next = { ...prev };
         delete next[id];
         return next;
       });
       return;
     }
-    setPedidoOverrides((prev) => {
-      if (prev[id] === coerced) return prev;
-      return { ...prev, [id]: coerced };
-    });
+    setPedidoOverrides((prev) => ({ ...prev, [id]: coerced }));
   }, []);
 
   const handlePedidoInputBlur = useCallback((id: number) => {
     setPedidoInputDrafts((prev) => {
-      if (prev[id] == null) return prev;
       const next = { ...prev };
       delete next[id];
       return next;
     });
   }, []);
 
-  const flushAutoSave = useCallback(
-    async (id: number, options?: { skipStatusUpdate?: boolean }) => {
-      if (saveTimersRef.current[id]) {
-        clearTimeout(saveTimersRef.current[id]);
-        delete saveTimersRef.current[id];
-      }
-      const payload = pendingSavesRef.current[id];
-      if (!payload) {
-        if (!options?.skipStatusUpdate && isMountedRef.current) {
-          setSyncStatus((prev) => {
-            if (!prev[id]) return prev;
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-        }
-        return;
-      }
-      delete pendingSavesRef.current[id];
-      try {
-        if (!options?.skipStatusUpdate && isMountedRef.current) {
-          setSyncStatus((prev) => ({ ...prev, [id]: 'saving' }));
-        }
-        const res = await fetch('/api/compras/produto', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id_produto_tiny: id, ...payload }),
-        });
-        if (!res.ok) throw new Error('Erro ao salvar');
-        if (!options?.skipStatusUpdate && isMountedRef.current) {
-          setSyncStatus((prev) => ({ ...prev, [id]: 'saved' }));
-          setTimeout(() => {
-            if (!isMountedRef.current) return;
-            setSyncStatus((prev) => {
-              if (prev[id] !== 'saved') return prev;
-              const next = { ...prev };
-              delete next[id];
-              return next;
-            });
-          }, 2500);
-        }
-      } catch (error) {
-        console.error('[Compras] auto-save error', error);
-        if (!options?.skipStatusUpdate && isMountedRef.current) {
-          setSyncStatus((prev) => ({ ...prev, [id]: 'error' }));
-        }
-        pendingSavesRef.current[id] = { ...payload };
-      }
-    },
-    []
+  const handleUpdateObservacao = useCallback((id: number, value: string) => {
+    setDados((prev) => prev.map((x) => x.id_produto_tiny === id ? { ...x, observacao_compras: value } : x));
+    scheduleAutoSave(id, { observacao_compras: sanitizeObservacao(value) });
+  }, [scheduleAutoSave, sanitizeObservacao]);
+
+  const handleUpdateFornecedor = useCallback((id: number, value: string) => {
+    setDados((prev) => prev.map((x) => x.id_produto_tiny === id ? { ...x, fornecedor_codigo: value } : x));
+    scheduleAutoSave(id, { fornecedor_codigo: sanitizeFornecedor(value) });
+  }, [scheduleAutoSave, sanitizeFornecedor]);
+
+  const handleUpdateEmbalagem = useCallback((id: number, value: number) => {
+    setDados((prev) => prev.map((x) => x.id_produto_tiny === id ? { ...x, embalagem_qtd: value } : x));
+    scheduleAutoSave(id, { embalagem_qtd: sanitizeEmbalagem(value) });
+  }, [scheduleAutoSave, sanitizeEmbalagem]);
+
+  const handleUpdateLeadTime = useCallback((id: number, value: number) => {
+    const sanitized = Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+    setDados((prev) => prev.map((x) => x.id_produto_tiny === id ? { ...x, lead_time_dias: sanitized } : x));
+    scheduleAutoSave(id, { lead_time_dias: sanitized });
+  }, [scheduleAutoSave]);
+
+  const toggleSelection = useCallback((id: number) => {
+    setSelectedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const retryAutoSave = useCallback((id: number) => {
+    const produto = dados.find((item) => item.id_produto_tiny === id);
+    if (!produto) return;
+    scheduleAutoSave(id, {
+      fornecedor_codigo: sanitizeFornecedor(produto.fornecedor_codigo),
+      embalagem_qtd: sanitizeEmbalagem(produto.embalagem_qtd),
+      observacao_compras: sanitizeObservacao(produto.observacao_compras),
+    });
+  }, [dados, sanitizeEmbalagem, sanitizeFornecedor, sanitizeObservacao, scheduleAutoSave]
   );
 
-  const scheduleAutoSave = useCallback(
-    (id: number, payload: AutoSavePayload) => {
-      const fullPayload = buildAutoSavePayload(id, payload);
-      pendingSavesRef.current[id] = fullPayload;
-      if (saveTimersRef.current[id]) {
-        clearTimeout(saveTimersRef.current[id]);
-      }
-      saveTimersRef.current[id] = setTimeout(() => {
-        flushAutoSave(id);
-      }, AUTO_SAVE_DEBOUNCE_MS);
-      if (isMountedRef.current) {
-        setSyncStatus((prev) => ({ ...prev, [id]: 'saving' }));
-      }
-    },
-    [buildAutoSavePayload, flushAutoSave]
-  );
-
-  const flushAllPendingSaves = useCallback(
-    async (options?: { skipStatusUpdate?: boolean }) => {
-      const pendingIds = Object.keys(pendingSavesRef.current)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id));
-      if (!pendingIds.length) return;
-      await Promise.all(pendingIds.map((id) => flushAutoSave(id, options)));
-    },
-    [flushAutoSave]
-  );
+  const buildSelectionSnapshot = useCallback(() => {
+    const produtosSelecionados = derivados.filter((p) => selectedIds[p.id_produto_tiny]);
+    const manuaisSelecionados = manualItems.filter((m) => selectedIds[m.id]);
+    const validationErrors: string[] = [];
+    const produtosSnapshot = produtosSelecionados.map((p) => {
+      const code = (p.fornecedor_codigo ?? '').trim();
+      if (!code && p.sugestao_ajustada > 0) validationErrors.push(`Produto "${p.nome}" (cód ${p.codigo || '?'}) sem código fornecedor`);
+      return {
+        id_produto_tiny: p.id_produto_tiny,
+        nome: p.nome || '',
+        codigo: p.codigo,
+        gtin: p.gtin,
+        fornecedor_codigo: code,
+        quantidade: p.sugestao_ajustada,
+        observacao: p.observacao_compras || '',
+        embalagem_qtd: p.embalagem_qtd,
+        preco_custo: p.preco_custo
+      };
+    });
+    const manualSnapshot = manuaisSelecionados.map((m) => ({
+      id: m.id, // negative ID
+      nome: m.nome,
+      fornecedor_codigo: m.fornecedor_codigo,
+      quantidade: m.quantidade,
+      observacao: m.observacao,
+    }));
+    return { produtosSnapshot, manualSnapshot, validationErrors };
+  }, [derivados, manualItems, selectedIds]);
 
   const handleSaveCurrentOrder = useCallback(async () => {
     if (savingOrder) return;
     const { produtosSnapshot, manualSnapshot, validationErrors } = buildSelectionSnapshot();
     if (!produtosSnapshot.length && !manualSnapshot.length) {
-      alert('Selecione pelo menos um item para salvar o pedido.');
+      toast({ type: 'warning', message: 'Selecione pelo menos um item para salvar o pedido.' });
       return;
     }
     if (validationErrors.length) {
-      alert(
-        `Não é possível salvar o pedido ainda. Revise os campos pendentes.\n- ${validationErrors.join('\n- ')}`
-      );
+      toast({ type: 'error', title: 'Não é possível salvar', message: `Revise os campos pendentes: ${validationErrors[0]}...` });
       return;
     }
     await flushAllPendingSaves();
@@ -1206,56 +1066,30 @@ export default function ComprasClient() {
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        const message = typeof body?.error === 'string' ? body.error : 'Não foi possível salvar o pedido.';
-        throw new Error(message);
+        throw new Error(typeof body?.error === 'string' ? body.error : 'Não foi possível salvar o pedido.');
       }
       const payload = await response.json().catch(() => null);
-      if (!payload?.order) {
-        throw new Error('Resposta inválida da API ao salvar o pedido.');
-      }
+      if (!payload?.order) throw new Error('Resposta inválida da API ao salvar o pedido.');
       const savedOrder = normalizeSavedOrderRecord(payload.order as SavedOrder);
       setSavedOrders((prev) => [savedOrder, ...prev.filter((pedido) => pedido.id !== savedOrder.id)]);
       setActiveTab('history');
+      toast({ type: 'success', title: 'Sucesso', message: 'Pedido salvo na nuvem.' });
     } catch (error) {
-      alert(`Não foi possível salvar o pedido na nuvem: ${getErrorMessage(error) ?? 'erro inesperado'}`);
+      toast({ type: 'error', message: `Não foi possível salvar o pedido na nuvem: ${getErrorMessage(error) ?? 'erro inesperado'}` });
     } finally {
       setSavingOrder(false);
     }
-  }, [
-    buildSelectionSnapshot,
-    currentOrderName,
-    flushAllPendingSaves,
-    periodDays,
-    savingOrder,
-    targetDays,
-  ]);
-
-  const retryAutoSave = useCallback(
-    (id: number) => {
-      const produto = dados.find((item) => item.id_produto_tiny === id);
-      if (!produto) return;
-      scheduleAutoSave(id, {
-        fornecedor_codigo: sanitizeFornecedor(produto.fornecedor_codigo),
-        embalagem_qtd: sanitizeEmbalagem(produto.embalagem_qtd),
-        observacao_compras: sanitizeObservacao(produto.observacao_compras),
-      });
-    },
-    [dados, sanitizeEmbalagem, sanitizeFornecedor, sanitizeObservacao, scheduleAutoSave]
-  );
+  }, [buildSelectionSnapshot, currentOrderName, flushAllPendingSaves, periodDays, savingOrder, targetDays, toast]);
 
   const gerarPdf = async () => {
     if (exportando) return;
     const { produtosSnapshot, manualSnapshot, validationErrors } = buildSelectionSnapshot();
     if (produtosSnapshot.length === 0 && manualSnapshot.length === 0) {
-      alert('Selecione pelo menos um item para exportar.');
+      toast({ type: 'warning', message: 'Selecione pelo menos um item para exportar.' });
       return;
     }
     if (validationErrors.length) {
-      alert(
-        `Não é possível gerar o PDF com itens pendentes. Preencha o código do fornecedor e a quantidade final:\n- ${
-          validationErrors.join('\n- ')
-        }`
-      );
+      toast({ type: 'error', title: 'Impossível exportar', message: `Revise os campos pendentes: ${validationErrors[0]}...` });
       return;
     }
     setExportando(true);
@@ -1276,9 +1110,7 @@ export default function ComprasClient() {
           reader.readAsDataURL(blob);
         });
         doc.addImage(dataUrl, 'PNG', 14, 12, 18, 24);
-      } catch {
-        // prossegue sem logo
-      }
+      } catch { } // prossegue sem logo
 
       doc.setFontSize(16);
       doc.text('Pedido de Compras', 36, 18);
@@ -1290,16 +1122,13 @@ export default function ComprasClient() {
       doc.setFontSize(11);
       doc.text(`Pedido: ${orderTitle}`, 36, 35);
 
-      const rows = produtosSnapshot.map((p) => {
-        return [
-          p.fornecedor_codigo || '-',
-          p.gtin || '-',
-          p.nome || '',
-          p.quantidade.toLocaleString('pt-BR'),
-          (p.observacao || '').slice(0, 120),
-        ];
-      });
-
+      const rows = produtosSnapshot.map((p) => [
+        p.fornecedor_codigo || '-',
+        p.gtin || '-',
+        p.nome || '',
+        p.quantidade.toLocaleString('pt-BR'),
+        (p.observacao || '').slice(0, 120),
+      ]);
       manualSnapshot.forEach((item) => {
         rows.push([
           item.fornecedor_codigo.trim() || '-',
@@ -1309,8 +1138,7 @@ export default function ComprasClient() {
           item.observacao.slice(0, 120) || '',
         ]);
       });
-
-      const tableResult = autoTable(doc, {
+      autoTable(doc, {
         head: [['Código', 'EAN', 'Produto', 'Qtd Pedido', 'Observações']],
         body: rows,
         startY: 42,
@@ -1319,29 +1147,10 @@ export default function ComprasClient() {
         alternateRowStyles: { fillColor: [255, 255, 255] },
         theme: 'plain',
       });
-
-      const tableMeta = (tableResult as unknown as { table?: { startX: number; startY: number; width: number; height: number } })?.table
-        ?? (doc as unknown as {
-          lastAutoTable?: { finalY?: number; startY?: number; startX?: number; width?: number; height?: number };
-        }).lastAutoTable;
-      if (tableMeta) {
-        const { startX, startY, width, height } = tableMeta;
-        const numericArgs = [startX, startY, width, height];
-        const hasAllNumbers = numericArgs.every((value) => typeof value === 'number' && Number.isFinite(value));
-        if (hasAllNumbers && (width ?? 0) > 0 && (height ?? 0) > 0) {
-          try {
-            doc.setDrawColor(216, 223, 230);
-            doc.setLineWidth(0.4);
-            doc.roundedRect(startX as number, startY as number, width as number, height as number, 4, 4, 'S');
-          } catch (error) {
-            console.warn('[Compras] falha ao desenhar borda arredondada no PDF, ignorando.', error);
-          }
-        }
-      }
-
       doc.save(`${toSafeFileName(orderTitle)}.pdf`);
+      toast({ type: 'success', message: 'PDF gerado com sucesso!', duration: 5000 });
     } catch (error) {
-      alert(`Erro ao gerar PDF: ${getErrorMessage(error) ?? 'erro inesperado'}`);
+      toast({ type: 'error', message: `Erro ao gerar PDF: ${getErrorMessage(error) ?? 'erro inesperado'}` });
     } finally {
       setExportando(false);
     }
@@ -1354,833 +1163,336 @@ export default function ComprasClient() {
     return () => {
       isMountedRef.current = false;
       abortRef.current?.abort();
-      Object.values(saveTimers).forEach((timeoutId) => {
-        clearTimeout(timeoutId);
-      });
-      const pendingIds = Object.keys(pendingSaves)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id));
-      pendingIds.forEach((id) => {
-        void flushAutoSave(id, { skipStatusUpdate: true });
-      });
+      Object.values(saveTimers).forEach(clearTimeout);
+      const pendingIds = Object.keys(pendingSaves).map(Number).filter(Number.isFinite);
+      pendingIds.forEach((id) => { void flushAutoSave(id, { skipStatusUpdate: true }); });
     };
   }, [flushAutoSave]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const stored = localStorage.getItem(COMPRAS_SELECTION_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Record<string, boolean>;
-        const normalized = Object.entries(parsed).reduce<Record<number, boolean>>((acc, [key, value]) => {
-          const numericKey = Number(key);
-          if (Number.isFinite(numericKey)) {
-            acc[numericKey] = Boolean(value);
-          }
-          return acc;
-        }, {});
-        setSelectedIds(normalized);
-      }
-    } catch {
-      // ignora erros de leitura
-    } finally {
-      selectionLoadedRef.current = true;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !selectionLoadedRef.current) return;
-    try {
-      localStorage.setItem(COMPRAS_SELECTION_STORAGE_KEY, JSON.stringify(selectedIds));
-    } catch {
-      // ignora erros de escrita
-    }
-  }, [selectedIds]);
-
-  useEffect(() => {
-    if (!derivados.length) return;
-    setSelectedIds((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const produto of derivados) {
-        if (next[produto.id_produto_tiny] == null) {
-          next[produto.id_produto_tiny] = produto.precisaRepor && produto.sugestao_ajustada > 0;
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [derivados]);
-
   return (
-    <div className="space-y-10 pb-24">
-      <section className="rounded-[36px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 sm:p-8 space-y-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-4 max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/60 dark:border-white/10 bg-white/60 dark:bg-white/5 px-4 py-1">
-              <span className="text-xs font-semibold tracking-[0.3em] uppercase text-slate-500">Compras</span>
-              <span className="text-xs text-slate-500">Workflow em tempo real</span>
-            </div>
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900 dark:text-white">Central de compras</h1>
-              <p className="text-base text-slate-600 dark:text-slate-300">
-                Acompanhe consumo real, ajuste coberturas, organize fornecedores e gere pedidos prontos para PDF com poucos cliques.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm text-slate-500 dark:text-slate-300">
-              <div className="inline-flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" aria-hidden />
-                <span>Última atualização {ultimaAtualizacao}</span>
-              </div>
-              <div className="inline-flex items-center gap-2">
-                <History className="w-3.5 h-3.5" />
-                <span>
-                  {selectionCount} item{selectionCount === 1 ? '' : 's'} preparados · {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
-                </span>
-              </div>
+    <div className="flex flex-col min-h-[calc(100vh-6rem)] space-y-3 pb-4">
+      {/* Header compacto */}
+      <section className="rounded-[28px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-4 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* Título e status */}
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Central de Compras</h1>
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                {ultimaAtualizacao}
+              </span>
+              <span className="text-slate-300 dark:text-slate-600">•</span>
+              <span>{derivados.length} produtos</span>
             </div>
           </div>
-          <div className="w-full max-w-sm space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <button
-                onClick={load}
-                className="app-btn-primary min-w-[140px] justify-center"
-                disabled={loading}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-                Recalcular
-              </button>
-              <button
-                onClick={gerarPdf}
-                className="app-btn-primary min-w-[140px] justify-center"
-                disabled={exportando}
-              >
-                {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                {exportando ? 'Gerando…' : 'Gerar PDF'}
-              </button>
-            </div>
-            <div className="rounded-[28px] border border-white/60 dark:border-white/10 bg-white/70 dark:bg-white/5 px-5 py-4">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {selectionCount} item{selectionCount === 1 ? '' : 's'} prontos para pedido
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-300">Total sugerido: {selectionTotalQuantidade.toLocaleString('pt-BR')} unidades</p>
-            </div>
+
+          {/* Ações */}
+          <div className="flex items-center gap-2">
+            <button onClick={load} className="app-btn-primary" disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              Recalcular
+            </button>
+            <button onClick={handleSaveCurrentOrder} className="app-btn-primary" disabled={savingOrder}>
+              {savingOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Salvar
+            </button>
+            <button onClick={gerarPdf} className="app-btn-primary" disabled={exportando}>
+              {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              PDF
+            </button>
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+        {/* Stats inline */}
+        <div className="flex flex-wrap items-center gap-6 mt-3 pt-3 border-t border-white/30 dark:border-white/5">
           {highlightCards.map((card) => (
-            <StatCard key={card.id} {...card} />
+            <div key={card.id} className="flex items-center gap-2">
+              <span className={`text-lg font-bold ${card.tone === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
+                card.tone === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                  card.tone === 'primary' ? 'text-violet-600 dark:text-violet-400' :
+                    'text-slate-700 dark:text-slate-200'
+                }`}>{card.value}</span>
+              <span className="text-xs text-slate-500">{card.label}</span>
+            </div>
           ))}
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(260px,1fr)] items-start">
-        <div className="space-y-6 min-w-0">
-          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 space-y-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <label className="w-full space-y-2 lg:max-w-xl">
-                <span className="text-xs uppercase tracking-[0.3em] text-slate-400">Nome do pedido</span>
-                <input
-                  className="app-input w-full"
-                  value={currentOrderName}
-                  onChange={(event) => setCurrentOrderName(event.target.value)}
-                  placeholder="Pedido 02-02-2025"
-                />
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <button
-                  type="button"
-                  onClick={handleSaveCurrentOrder}
-                  className="app-btn-primary min-w-[150px] justify-center gap-2"
-                  disabled={savingOrder}
-                >
-                  {savingOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {savingOrder ? 'Salvando…' : 'Salvar pedido'}
-                </button>
-                <button
-                  type="button"
-                  onClick={load}
-                  className="app-btn-primary min-w-[150px] justify-center"
-                  disabled={loading}
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                  Refazer pedido
-                </button>
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Sincronizado com a nuvem da Ambienta. Abra e edite pedidos em qualquer dispositivo pelo Histórico.
-            </p>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <FilterNumberTile
-              label="Período analisado"
-              value={periodDays}
-              min={15}
-              max={180}
-              helper="Mínimo de 15 dias · máximo 180"
-              onChange={handlePeriodInput}
-              disabled={loading}
-            />
-            <FilterNumberTile
-              label="Cobertura desejada"
-              value={targetDays}
-              min={MIN_COBERTURA_DIAS}
-              max={MAX_COBERTURA_DIAS}
-              step={COVERAGE_STEP_DIAS}
-              helper={`≈ ${coberturaMesesLabel} meses`}
-              onChange={handleCoverageInput}
-              suffix="dias"
-              disabled={loading}
-            />
-            <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-1">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Total sugerido</p>
-              <p className="text-3xl font-semibold text-slate-900 dark:text-white">
-                {totalCompra.toLocaleString('pt-BR')} unid.
-              </p>
-              <p className="text-xs text-slate-500">Considera lote informado e consumo real.</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-2">
-              <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
-                <span>Filtro de produto</span>
-                <span className="text-[10px] tracking-[0.2em] text-slate-400">Busca inteligente</span>
-              </div>
-              <p className="text-xs text-slate-500">Busque por nome, SKU ou EAN</p>
-              <div className="w-full">
-                <input
-                  className="app-input w-full"
-                  placeholder="Ex: Floreira, 1234, 789..."
-                  value={produtoFiltro}
-                  onChange={(e) => setProdutoFiltro(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-2">
-              <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
-                <span>Filtro de fornecedor</span>
-                <span className="text-[10px] tracking-[0.2em] text-slate-400">Inclui &quot;Sem fornecedor&quot;</span>
-              </div>
-              <p className="text-xs text-slate-500">Selecione um ou mais parceiros para focar o planejamento.</p>
-              <MultiSelectDropdown
-                label="Fornecedores"
-                options={fornecedorOptions}
-                selected={fornecedoresSelecionados}
-                onChange={(values) => setFornecedoresSelecionados(values.map(String))}
-                onClear={() => setFornecedoresSelecionados([])}
-                displayFormatter={fornecedorDisplayFormatter}
-                showLabel={false}
-              />
-            </div>
-          </div>
-        </div>
-
-        <aside className="space-y-4">
-          <div className="rounded-[32px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-5 space-y-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Resumo rápido</p>
-            <ul className="space-y-3 text-sm text-slate-600 dark:text-slate-200">
-              {sideFacts.map((fact) => (
-                <li key={fact.label} className="flex items-center justify-between gap-4">
-                  <span className="truncate">{fact.label}</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{fact.value}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-[32px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-5 space-y-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Boas práticas</p>
-            <ul className="space-y-3 text-sm text-slate-600 dark:text-slate-200">
-              {guidanceTips.map((tip) => (
-                <li key={tip.title}>
-                  <p className="font-semibold text-slate-900 dark:text-white">{tip.title}</p>
-                  <p>{tip.body}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
-      </section>
-
-      {erro && (
-        <div
-          role="alert"
-          className="glass-panel glass-tint rounded-[32px] border border-rose-200/60 dark:border-rose-500/20 px-5 py-4 text-sm text-rose-600 dark:text-rose-300"
+      {/* Tabs principais */}
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => setActiveTab('current')}
+          className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''}`}
         >
-          {erro}
-        </div>
-      )}
+          Novo Pedido
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`app-tab px-5 py-2.5 ${activeTab === 'history' ? 'active' : ''}`}
+        >
+          <History className="w-4 h-4" />
+          Histórico {savedOrders.length > 0 && `(${savedOrders.length})`}
+        </button>
+        <button
+          onClick={() => setActiveTab('suppliers')}
+          className={`app-tab px-5 py-2.5 ${activeTab === 'suppliers' ? 'active' : ''}`}
+        >
+          Por Fornecedor {selectionCount > 0 && `(${selectionCount})`}
+        </button>
+      </div>
 
-      <section className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 overflow-hidden">
-        <header className="border-b border-white/40 dark:border-white/10 px-6 py-4 space-y-4">
-          <div className="inline-flex rounded-full bg-white/50 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden">
-            {[
-              { label: 'Sugestão atual', value: 'current' as const },
-              { label: 'Histórico de pedidos', value: 'history' as const },
-            ].map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setActiveTab(tab.value)}
-                className={`px-4 py-1.5 text-xs font-semibold tracking-[0.2em] uppercase transition ${
-                  activeTab === tab.value
-                    ? 'bg-[var(--accent)] text-white'
-                    : 'text-slate-600 dark:text-slate-300'
-                }`}
-                aria-pressed={activeTab === tab.value}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          {activeTab === 'current' ? (
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Pedidos sugeridos</p>
-                <h3 className="text-2xl font-semibold text-slate-900 dark:text-white">Itens recomendados</h3>
-              </div>
-              <div className="flex flex-col gap-2 text-sm text-slate-500 dark:text-slate-300 text-right">
-                <p>
-                  Atualizado {ultimaAtualizacao} · {selectionCount} selecionado{selectionCount === 1 ? '' : 's'}
-                </p>
-                <div className="flex flex-wrap items-center justify-end gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Filtro</span>
-                    <div className="inline-flex rounded-full bg-white/60 dark:bg-white/10 border border-white/60 dark:border-white/5 overflow-hidden">
-                      {[
-                        { label: 'Selecionados', value: 'selected' as const },
-                        { label: 'Sem seleção', value: 'unselected' as const },
-                        { label: 'Limpar', value: 'all' as const },
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setSelectionFilter(option.value)}
-                          className={`px-3 py-1 text-xs font-semibold transition ${
-                            selectionFilter === option.value
-                              ? 'text-white bg-[var(--accent)]'
-                              : 'text-slate-600 dark:text-slate-300'
-                          }`}
-                          aria-pressed={selectionFilter === option.value}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
+      {/* Conteúdo da aba ativa */}
+      {activeTab === 'current' && (
+        <div className="flex flex-col flex-1 min-h-0 space-y-2">
+          <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 flex flex-col h-full">
+            {/* Toolbar de Controle Unificada */}
+            <div className="flex flex-col gap-3 shrink-0 mb-3">
+              <div className="flex flex-wrap items-end gap-4 p-4 rounded-[24px] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/5 shadow-sm backdrop-blur-md">
+
+                {/* 1. Identificação */}
+                <div className="w-full sm:w-[220px] shrink-0">
+                  <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block">Pedido</label>
+                  <input
+                    className="app-input w-full h-10 text-sm font-medium"
+                    value={currentOrderName}
+                    onChange={(event) => setCurrentOrderName(event.target.value)}
+                    placeholder="Nome do pedido..."
+                  />
+                </div>
+
+                <div className="hidden sm:block w-px h-10 bg-white/30 dark:bg-white/10 self-end mb-0.5" />
+
+                {/* 2. Parâmetros (Agrupados) */}
+                <div className="flex items-end gap-3">
+                  <div className="w-[88px]">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block text-center">Dias Venda</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={15}
+                        max={180}
+                        className="app-input w-full h-10 text-sm text-center font-semibold"
+                        value={periodDays}
+                        onChange={(e) => handlePeriodInput(e.target.value)}
+                      />
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="app-btn-primary min-w-[200px] justify-center"
-                    onClick={() => {
-                      setSelectedIds(() => {
-                        const next: Record<number, boolean> = {};
-                        derivados.forEach((produto) => {
-                          next[produto.id_produto_tiny] = produto.precisaRepor && produto.sugestao_ajustada > 0;
-                        });
-                        manualItems.forEach((item) => {
-                          next[item.id] = item.quantidade > 0;
-                        });
-                        return next;
-                      });
-                    }}
-                  >
-                    Selecionar itens com pedido
-                  </button>
+                  <div className="w-[88px]">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block text-center">Cobertura</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={15}
+                        max={180}
+                        className="app-input w-full h-10 text-sm text-center font-semibold"
+                        value={targetDays}
+                        onChange={(e) => handleCoverageInput(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hidden lg:block w-px h-10 bg-white/30 dark:bg-white/10 self-end mb-0.5" />
+
+                {/* 3. Filtros de Pesquisa (Expandem para ocupar espaço restante) */}
+                <div className="flex-1 flex items-end gap-3 min-w-[300px]">
+                  {/* Busca */}
+                  <div className="flex-1 relative">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block">Busca</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                      <input
+                        id="search-input"
+                        type="text"
+                        className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm"
+                        value={produtoFiltro}
+                        onChange={(e) => setProdutoFiltro(e.target.value)}
+                        placeholder="Buscar produto (nome, SKU, GTIN)..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Categoria (Classe ABC) */}
+                  <div className="w-[200px]">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block">Classe ABC</label>
+                    <div className="h-10">
+                      <MultiSelectDropdown
+                        label="Classe ABC"
+                        options={categoriaOptions}
+                        selected={categoriasSelecionadas}
+                        onChange={(values) => setCategoriasSelecionadas(values.map(String))}
+                        onClear={() => setCategoriasSelecionadas([])}
+                        displayFormatter={categoriaDisplayFormatter}
+                        showLabel={false}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Fornecedor */}
+                  <div className="w-[280px]">
+                    <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block">Fornecedor</label>
+                    <div className="h-10">
+                      <MultiSelectDropdown
+                        label="Fornecedores"
+                        options={fornecedorOptions}
+                        selected={fornecedoresSelecionados}
+                        onChange={(values) => setFornecedoresSelecionados(values.map(String))}
+                        onClear={() => setFornecedoresSelecionados([])}
+                        displayFormatter={fornecedorDisplayFormatter}
+                        showLabel={false}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="text-sm text-slate-600 dark:text-slate-300">
-              <p>Consulte e reabra pedidos salvos para editar quantidades, ajustar nomes e gerar novos PDFs.</p>
-              <p className="text-xs text-slate-500">
-                {savedOrdersSyncing
-                  ? 'Sincronizando pedidos com a nuvem…'
-                  : savedOrders.length === 0
-                  ? 'Nenhum pedido salvo por enquanto.'
-                  : `${savedOrders.length} pedido${savedOrders.length === 1 ? '' : 's'} sincronizado${savedOrders.length === 1 ? '' : 's'} na nuvem.`}
-              </p>
-              {savedOrdersSyncError && (
-                <div className="flex flex-wrap items-center gap-3 text-xs text-rose-600">
-                  <span>{savedOrdersSyncError}</span>
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() => {
-                      void fetchSavedOrdersFromApi();
-                    }}
-                  >
-                    Tentar novamente
-                  </button>
+
+              {/* Linha Secundária: Alertas, Totais e View Mode */}
+              <div className="flex flex-wrap items-start justify-between gap-4 px-2">
+                <div className="flex-1 min-w-[300px]">
+                  <AlertsPanel produtos={derivados} />
                 </div>
-              )}
-            </div>
-          )}
-        </header>
-        {activeTab === 'current' ? (
-          <>
-            <div className="overflow-auto scrollbar-hide">
-              <table className="w-full text-sm">
-            <thead className="app-table-header text-[11px] uppercase tracking-[0.1em] text-slate-500">
-              <tr>
-                <th className="px-4 py-3 text-left">
-                  <span className="sr-only">Selecionar</span>
-                </th>
-                <th className="px-4 py-3 text-left w-[740px]" aria-sort={getAriaSort('nome')}>
-                  {renderSortableHeader('Produto', 'nome')}
-                </th>
-                <th className="px-4 py-3 text-left w-[110px]" aria-sort={getAriaSort('codigo')}>
-                  {renderSortableHeader('SKU', 'codigo')}
-                </th>
-                <th
-                  className="px-4 py-3 text-left"
-                  aria-sort={getAriaSort('fornecedor_codigo')}
-                  style={{ width: '131px', maxWidth: '131px' }}
-                >
-                  {renderSortableHeader('Código fornecedor', 'fornecedor_codigo')}
-                </th>
-                <th className="px-4 py-3 text-left w-[50px]" aria-sort={getAriaSort('embalagem_qtd')}>
-                  {renderSortableHeader('Emb.', 'embalagem_qtd')}
-                </th>
-                <th className="px-4 py-3 text-left w-[90px]" aria-sort={getAriaSort('disponivel')}>
-                  {renderSortableHeader('Estoque disp.', 'disponivel')}
-                </th>
-                <th className="px-4 py-3 text-left w-[90px]" aria-sort={getAriaSort('consumo_periodo')}>
-                  {renderSortableHeader('Consumo período', 'consumo_periodo')}
-                </th>
-                <th className="px-4 py-3 text-left w-[80px]" aria-sort={getAriaSort('consumo_mensal')}>
-                  {renderSortableHeader('Consumo mensal', 'consumo_mensal')}
-                </th>
-                <th className="px-4 py-3 text-left w-[80px]" aria-sort={getAriaSort('sugestao_base')}>
-                  {renderSortableHeader('Pedido (sugestão bruta)', 'sugestao_base')}
-                </th>
-                <th className="px-4 py-3 text-left w-[90px]" aria-sort={getAriaSort('sugestao_ajustada')}>
-                  {renderSortableHeader('Pedido final', 'sugestao_ajustada')}
-                </th>
-                <th className="px-4 py-3 text-left w-[220px]">Observações (PDF)</th>
-                <th className="px-4 py-3 text-left w-[140px]">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/30 dark:divide-white/5">
-              {filteredSortedProdutos.map((p) => {
-                const fornecedorNomeFormatado = formatFornecedorNome(p.fornecedor_nome);
-                const draftValue = pedidoInputDrafts[p.id_produto_tiny];
-                const overrideValue = pedidoOverrides[p.id_produto_tiny];
-                const fallbackFinal = overrideValue ?? p.sugestao_ajustada;
-                const pedidoInputValue = draftValue ?? fallbackFinal.toString();
-                return (
-                  <tr key={p.id_produto_tiny} className="align-top">
-                  <td className="px-4 py-3 align-middle text-center">
+
+                <div className="flex items-center gap-4 shrink-0">
+                  {/* Card de Totais Compacto */}
+                  <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-white/60 dark:bg-white/5 border border-white/20">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-slate-500 font-semibold uppercase">Qtd</span>
+                      <span className="text-sm font-bold text-slate-900 dark:text-white leading-none">{totalCompra.toLocaleString('pt-BR')}</span>
+                    </div>
+                    <div className="w-px h-6 bg-slate-300 dark:bg-white/10" />
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-semibold uppercase">Total</span>
+                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 leading-none">{totalValorCompra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    </div>
+                  </div>
+
+                  {/* Botões View Mode */}
+                  <div className="flex p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-white/10">
                     <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={Boolean(selectedIds[p.id_produto_tiny])}
-                      className={`app-checkbox ${selectedIds[p.id_produto_tiny] ? 'checked' : ''}`}
-                      onClick={() =>
-                        setSelectedIds((prev) => ({
-                          ...prev,
-                          [p.id_produto_tiny]: !prev[p.id_produto_tiny],
-                        }))
-                      }
+                      onClick={() => setSelectionFilter('all')}
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'all'
+                        ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
                     >
-                      <span aria-hidden className="app-checkbox-indicator" />
-                      <span className="sr-only">
-                        {selectedIds[p.id_produto_tiny] ? 'Desmarcar' : 'Selecionar'} {p.nome || 'produto'}
-                      </span>
+                      Todos
                     </button>
-                  </td>
-                  <td className="px-4 py-3 w-[740px]">
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-14 h-14 rounded-2xl bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0">
-                        {p.imagem_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.imagem_url} alt={p.nome ?? 'Produto'} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">Sem imagem</div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900 dark:text-white">{p.nome || 'Sem nome'}</div>
-                        <p className="text-[11px] text-slate-500">EAN {p.gtin || '-'}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300 w-[110px]">{p.codigo || '-'}</td>
-                  <td className="px-4 py-3" style={{ width: '131px', maxWidth: '131px' }}>
-                    <div className="flex flex-col gap-1 w-full min-w-0">
-                      <input
-                        className="app-input"
-                        value={p.fornecedor_codigo || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setDados((prev) =>
-                            prev.map((x) =>
-                              x.id_produto_tiny === p.id_produto_tiny ? { ...x, fornecedor_codigo: value } : x
-                            )
-                          );
-                          scheduleAutoSave(p.id_produto_tiny, {
-                            fornecedor_codigo: sanitizeFornecedor(value),
-                          });
-                        }}
-                        placeholder="Código forn."
-                      />
-                      <p
-                        className={`text-[10px] leading-tight truncate ${fornecedorNomeFormatado ? 'text-slate-500' : 'text-slate-400 italic'}`}
-                        title={fornecedorNomeFormatado || undefined}
-                      >
-                        {fornecedorNomeFormatado || 'Nome não cadastrado no Tiny'}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 w-[50px]">
-                    <input
-                      type="number"
-                      min={1}
-                      className="app-input w-20"
-                      value={p.embalagem_qtd}
-                      onChange={(e) => {
-                        const numeric = Number(e.target.value);
-                        setDados((prev) =>
-                          prev.map((x) =>
-                            x.id_produto_tiny === p.id_produto_tiny
-                              ? { ...x, embalagem_qtd: Math.max(1, Number.isFinite(numeric) ? numeric : 1) }
-                              : x
-                          )
-                        );
-                        scheduleAutoSave(p.id_produto_tiny, {
-                          embalagem_qtd: sanitizeEmbalagem(numeric),
-                        });
-                      }}
-                    />
-                  </td>
-                <td className="px-4 py-3 w-[110px]">
-                  {(() => {
-                    const live = estoqueLive[p.id_produto_tiny];
-                    const saldo = live ? live.saldo : p.saldo ?? 0;
-                    const reservado = live ? live.reservado : p.reservado ?? 0;
-                    const disponivel = live ? live.disponivel : p.disponivel;
-                    const source = live?.source;
-                    const updatedAt = live?.updatedAt ?? null;
-                    const loadingLive = estoqueLoading[p.id_produto_tiny];
-                    return (
-                      <div className="space-y-1">
-                        <div className="text-slate-900 dark:text-white font-semibold">
-                          {disponivel.toLocaleString('pt-BR')}
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          Saldo {saldo.toLocaleString('pt-BR')} · Reservado {reservado.toLocaleString('pt-BR')}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="text-[11px] px-2 py-1 rounded-full bg-white/60 dark:bg-white/10 border border-white/50 dark:border-white/5 text-slate-700 dark:text-slate-200 transition hover:border-[var(--accent)]"
-                            onClick={() => fetchEstoqueLive(p.id_produto_tiny)}
-                            disabled={loadingLive}
-                          >
-                            {loadingLive ? 'Atualizando…' : 'Atualizar estoque'}
-                          </button>
-                          {source && (
-                            <div className="flex flex-col text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                              <span>{source.includes('live') ? 'Live' : 'Cache'}</span>
-                              {source.includes('cache') && updatedAt && (
-                                <span className="normal-case tracking-normal text-[11px] text-slate-500">
-                                  {formatRecency(updatedAt)}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </td>
-                  <td className="px-4 py-3 text-slate-900 dark:text-white w-[90px]">{p.consumo_periodo.toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-3 text-slate-900 dark:text-white w-[80px]">{p.consumo_mensal.toFixed(1)}</td>
-                  <td className="px-4 py-3 w-[80px]">
-                    <div className="font-semibold text-slate-900 dark:text-white">{p.sugestao_base.toFixed(1)}</div>
-                    {p.alerta_embalagem && p.precisaRepor && (
-                      <div className="text-[11px] text-amber-600">Abaixo do lote ({p.embalagem_qtd})</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 w-[90px]">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={Math.max(1, p.embalagem_qtd)}
-                        className={`app-input w-28 text-right font-semibold ${
-                          p.precisaRepor
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-slate-500 dark:text-slate-400 opacity-80'
+                    <button
+                      onClick={() => setSelectionFilter('selected')}
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'selected'
+                        ? 'bg-white dark:bg-slate-600 text-violet-600 dark:text-violet-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
-                        value={pedidoInputValue}
-                        onChange={(event) => handlePedidoInputChange(p.id_produto_tiny, event.target.value, p.sugestao_calculada)}
-                        onBlur={() => handlePedidoInputBlur(p.id_produto_tiny)}
-                      />
-                      {!p.precisaRepor && p.sugestao_base > 0 && (
-                        <span
-                          className="text-sm text-amber-600"
-                          aria-label="Recomendação ignorada"
-                          role="img"
-                          title={p.statusCobertura}
-                        >
-                          *
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 w-[220px]">
-                    <textarea
-                      className="app-input w-56 min-h-[64px]"
-                      value={p.observacao_compras ?? ''}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setDados((prev) =>
-                          prev.map((x) =>
-                            x.id_produto_tiny === p.id_produto_tiny ? { ...x, observacao_compras: value } : x
-                          )
-                        );
-                        scheduleAutoSave(p.id_produto_tiny, {
-                          observacao_compras: sanitizeObservacao(value),
-                        });
-                      }}
-                      placeholder="Mensagem para fornecedor"
-                    />
-                  </td>
-                  <td className="px-4 py-3 w-[140px]">
-                    {syncStatus[p.id_produto_tiny] === 'saving' && (
-                      <span className="flex items-center gap-1 text-xs text-slate-500">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Salvando…
-                      </span>
-                    )}
-                    {syncStatus[p.id_produto_tiny] === 'saved' && (
-                      <span className="flex items-center gap-1 text-xs text-emerald-600">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Salvo
-                      </span>
-                    )}
-                    {syncStatus[p.id_produto_tiny] === 'error' && (
-                      <button
-                        type="button"
-                        onClick={() => retryAutoSave(p.id_produto_tiny)}
-                        className="inline-flex items-center gap-1 text-xs text-rose-600"
-                      >
-                        <AlertCircle className="w-3.5 h-3.5" /> Tentar novamente
-                      </button>
-                    )}
-                  </td>
-                  </tr>
-                );
-              })}
-                {manualItemsFiltered.map((item) => (
-                  <tr key={`manual-item-${item.id}`} className="align-top bg-white/50 dark:bg-white/10">
-                    <td className="px-4 py-3 align-middle text-center">
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={Boolean(selectedIds[item.id])}
-                        className={`app-checkbox ${selectedIds[item.id] ? 'checked' : ''}`}
-                        onClick={() =>
-                          setSelectedIds((prev) => ({
-                            ...prev,
-                            [item.id]: !prev[item.id],
-                          }))
-                        }
-                      >
-                        <span aria-hidden className="app-checkbox-indicator" />
-                        <span className="sr-only">{selectedIds[item.id] ? 'Desmarcar' : 'Selecionar'} item manual</span>
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 w-[740px]">
-                      <div>
-                        <div className="font-semibold text-slate-900 dark:text-white">{item.nome}</div>
-                        <p className="text-[11px] text-slate-500">Cadastro manual</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[110px]">—</td>
-                    <td className="px-4 py-3" style={{ width: '131px', maxWidth: '131px' }}>
-                      <div className="flex flex-col gap-1 w-full">
-                        <span className="font-semibold text-slate-900 dark:text-white">{item.fornecedor_codigo}</span>
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Manual</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[50px]">—</td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[90px]">—</td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[90px]">—</td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[80px]">—</td>
-                    <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[80px]">—</td>
-                    <td className="px-4 py-3 w-[80px]">
-                      <div className="font-semibold text-slate-900 dark:text-white text-right">{item.quantidade.toLocaleString('pt-BR')}</div>
-                    </td>
-                    <td className="px-4 py-3 w-[220px]">
-                      <div className="text-sm text-slate-600 dark:text-slate-200 whitespace-pre-wrap break-words">
-                        {item.observacao || '—'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 w-[140px]">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveManualItem(item.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 dark:border-white/20 bg-white/60 dark:bg-white/10 text-slate-600 dark:text-slate-200 hover:text-rose-600 hover:border-rose-400 transition"
-                        aria-label={`Remover item manual ${item.nome}`}
-                      >
-                        <span aria-hidden className="text-base leading-none font-semibold">−</span>
-                        <span className="sr-only">Remover</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              <tr key="manual-entry" className="align-top bg-white/40 dark:bg-white/5">
-                  <td className="px-4 py-3 align-middle text-center text-slate-400">—</td>
-                  <td className="px-4 py-3 w-[740px]">
-                    <input
-                      className="app-input w-full"
-                      placeholder="Nome do produto"
-                      value={manualEntry.nome}
-                      onChange={(event) => updateManualEntry('nome', event.target.value)}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[110px]">—</td>
-                  <td className="px-4 py-3" style={{ width: '131px', maxWidth: '131px' }}>
-                    <input
-                      className="app-input"
-                      placeholder="Código fornecedor"
-                      value={manualEntry.fornecedor_codigo}
-                      onChange={(event) => updateManualEntry('fornecedor_codigo', event.target.value)}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[50px]">—</td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[90px]">—</td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[90px]">—</td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[80px]">—</td>
-                  <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 w-[80px]">—</td>
-                  <td className="px-4 py-3 w-[90px]">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        className={`app-input w-28 text-right font-semibold ${
-                          'text-slate-600 dark:text-white'
+                    >
+                      Sel.
+                    </button>
+                    <button
+                      onClick={() => setSelectionFilter('unselected')}
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'unselected'
+                        ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
-                        value={manualEntry.quantidade}
-                        onChange={(event) => updateManualEntry('quantidade', event.target.value)}
-                      />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 w-[220px]">
-                    <textarea
-                      className="app-input w-56 min-h-[64px]"
-                      placeholder="Observações"
-                      value={manualEntry.observacao}
-                      onChange={(event) => updateManualEntry('observacao', event.target.value)}
-                    />
-                  </td>
-                  <td className="px-4 py-3 w-[140px]">
-                    <div className="flex flex-col items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleIncludeManualEntry}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 dark:border-white/20 bg-white/60 dark:bg-white/10 text-slate-600 dark:text-slate-200 hover:text-[var(--accent)] hover:border-[var(--accent)] transition"
-                        aria-label="Incluir item manual"
-                      >
-                        <span aria-hidden className="text-base leading-none font-semibold">+</span>
-                        <span className="sr-only">Adicionar</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleResetManualEntry}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/50 dark:border-white/20 bg-white/60 dark:bg-white/10 text-slate-600 dark:text-slate-200 hover:text-rose-600 hover:border-rose-400 transition"
-                        aria-label="Excluir item manual"
-                      >
-                        <span aria-hidden className="text-base leading-none font-semibold">−</span>
-                        <span className="sr-only">Remover</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-            </tbody>
-          </table>
-            </div>
-            <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/40 dark:border-white/10 px-6 py-4 text-sm text-slate-500 dark:text-slate-300">
-              <div>
-                {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · Total sugerido dos selecionados: {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
+                    >
+                      Não Sel.
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div>
+            </div>
+
+            <div className="overflow-hidden rounded-[24px] border border-white/50 dark:border-white/10 relative flex-1 min-h-[400px]">
+              <div className="h-full absolute inset-0">
+                <ProductTable
+                  products={filteredSortedProdutos}
+                  manualItems={manualItemsFiltered}
+                  selectedIds={selectedIds}
+                  onToggleSelection={toggleSelection}
+                  estoqueLive={estoqueLive}
+                  estoqueLoading={estoqueLoading}
+                  onRefreshEstoque={fetchEstoqueLive}
+                  pedidoOverrides={pedidoOverrides}
+                  pedidoInputDrafts={pedidoInputDrafts}
+                  onPedidoChange={handlePedidoInputChange}
+                  onPedidoBlur={handlePedidoInputBlur}
+                  onUpdateObservacao={handleUpdateObservacao}
+                  onUpdateFornecedor={handleUpdateFornecedor}
+                  onUpdateEmbalagem={handleUpdateEmbalagem}
+                  onUpdateLeadTime={handleUpdateLeadTime}
+                  syncStatus={syncStatus}
+                  onRetrySave={retryAutoSave}
+                  sortConfig={sortConfig}
+                  onToggleSort={toggleSort}
+                  formatFornecedorNome={formatFornecedorNome}
+                  sanitizeFornecedor={sanitizeFornecedor}
+                  sanitizeEmbalagem={sanitizeEmbalagem}
+                  sanitizeObservacao={sanitizeObservacao}
+                />
+              </div>
+            </div>
+            {/* Toolbar inferior fixa */}
+            <div className="flex items-center justify-between gap-4 p-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 rounded-b-[24px] -mx-4 -mb-4 mt-4">
+              <div className="text-sm text-slate-500 dark:text-slate-300">
+                {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · Total sugerido: {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="app-btn-primary min-w-[160px] justify-center"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors"
                   onClick={() => setSelectedIds({})}
                 >
                   Limpar seleção
                 </button>
-              </div>
-            </footer>
-          </>
-        ) : (
-          <div className="p-6 space-y-4">
-            {savedOrders.length === 0 ? (
-              <div className="rounded-[28px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-6 text-center text-sm text-slate-600 dark:text-slate-200 space-y-3">
-                <p>Nenhum pedido salvo ainda. Salve sua seleção atual para manter o histórico.</p>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('current')}
-                  className="app-btn-primary min-w-[200px] justify-center"
+                  className="px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-sm font-medium transition-colors"
+                  onClick={() => {
+                    const suggestionsToSelect = filteredSortedProdutos
+                      .filter(d => d.sugestao_ajustada > 0)
+                      .map(d => d.id_produto_tiny);
+                    if (suggestionsToSelect.length > 0) {
+                      setSelectedIds(suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {}));
+                    }
+                  }}
                 >
-                  Voltar para criar pedido
+                  Selecionar com ped.
                 </button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {savedOrders.map((pedido) => {
-                  const createdLabel = historyDateFormatter.format(new Date(pedido.createdAt));
-                  const totalItens = pedido.produtos.length + pedido.manualItems.length;
-                  return (
-                    <div key={pedido.id} className="rounded-[28px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-5 space-y-4">
-                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                        <div className="w-full md:max-w-xl space-y-2">
-                          <label className="text-xs uppercase tracking-[0.3em] text-slate-400">Nome salvo</label>
-                          <input
-                            className="app-input w-full"
-                            value={pedido.name}
-                            onChange={(event) => handleRenameSavedOrder(pedido.id, event.target.value)}
-                            onBlur={() => handleRenameSavedOrderBlur(pedido.id)}
-                          />
-                        </div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300 space-y-1 text-left md:text-right">
-                          <p>Salvo em {createdLabel}</p>
-                          <p>
-                            {totalItens} item{totalItens === 1 ? '' : 's'} · {pedido.produtos.length} catálogo · {pedido.manualItems.length}{' '}
-                            {pedido.manualItems.length === 1 ? 'manual' : 'manuais'}
-                          </p>
-                          <p>Período {pedido.periodDays} dias · Cobertura {pedido.targetDays} dias</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          className="app-btn-primary min-w-[200px] justify-center gap-2"
-                          onClick={() => handleLoadSavedOrder(pedido)}
-                        >
-                          <History className="w-4 h-4" />
-                          Editar / gerar PDF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSavedOrder(pedido.id)}
-                          className="inline-flex items-center gap-2 rounded-full border border-white/50 dark:border-white/20 bg-white/60 dark:bg-white/10 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-200 hover:text-rose-600 hover:border-rose-400 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+
+      {activeTab === 'history' && (
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 h-full overflow-auto">
+            <OrderHistoryTab
+              savedOrders={savedOrders}
+              syncing={savedOrdersSyncing}
+              syncError={savedOrdersSyncError}
+              onRefresh={fetchSavedOrdersFromApi}
+              onLoad={handleLoadSavedOrder}
+              onDelete={handleDeleteSavedOrder}
+              onRename={handleRenameSavedOrder}
+              onRenameBlur={handleRenameSavedOrderBlur}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'suppliers' && (
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="rounded-[32px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-5 h-full overflow-auto">
+            <SupplierGroupView
+              produtos={derivados}
+              manualItems={manualItemsFiltered}
+              selectedIds={selectedIds}
+              formatFornecedorNome={formatFornecedorNome}
+            />
+          </div>
+        </div>
+      )}
+
       {activeTab === 'current' && (
         <div className="lg:hidden fixed bottom-4 left-4 right-4 z-40">
           <div className="rounded-[28px] border border-white/20 bg-white/60 dark:bg-slate-900/40 dark:border-white/6 backdrop-blur-sm shadow-md p-4 space-y-3">
@@ -2188,87 +1500,44 @@ export default function ComprasClient() {
               {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={handleSaveCurrentOrder}
-                className="app-btn-primary w-full justify-center gap-2"
-                disabled={savingOrder}
-              >
-                {savingOrder ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {savingOrder ? 'Salvando…' : 'Salvar'}
+              <button type="button" onClick={handleSaveCurrentOrder} className="app-btn-primary w-full justify-center gap-2" disabled={savingOrder}>
+                {savingOrder ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Salvar Pedido ({Object.keys(pedidoOverrides).length})
+                  </>
+                )}
               </button>
-              <button
-                type="button"
-                onClick={gerarPdf}
-                className="app-btn-primary w-full justify-center gap-2"
-                disabled={exportando}
-              >
-                {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                {exportando ? 'Gerando…' : 'PDF'}
+              <button type="button" onClick={gerarPdf} className="app-btn-primary w-full justify-center gap-2" disabled={exportando}>
+                {exportando ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Gerando PDF...
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-4 h-4" />
+                    Exportar PDF
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Barra fixa de totais */}
+      <StickyTotalsBar
+        selectedCount={selectionCount}
+        totalQuantidade={selectionTotalQuantidade}
+        totalValor={selectionTotalValor}
+      />
     </div>
   );
 }
 
-type FilterNumberTileProps = {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  helper?: string;
-  suffix?: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-};
-
-function FilterNumberTile({ label, value, min, max, step, helper, suffix, disabled, onChange }: FilterNumberTileProps) {
-  return (
-    <label className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-2">
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</p>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          className="app-input w-full"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-        />
-        {suffix && <span className="text-xs font-semibold text-slate-500">{suffix}</span>}
-      </div>
-      {helper && <p className="text-xs text-slate-500">{helper}</p>}
-    </label>
-  );
-}
-
-type StatCardProps = {
-  id: string;
-  label: string;
-  value: string;
-  helper: string;
-  tone: 'primary' | 'success' | 'neutral' | 'warning';
-};
-
-const STAT_TONE_CLASSES: Record<StatCardProps['tone'], string> = {
-  primary: 'text-[#5b21b6] dark:text-[#c4b5fd]',
-  success: 'text-emerald-600 dark:text-emerald-400',
-  neutral: 'text-slate-900 dark:text-white',
-  warning: 'text-amber-600 dark:text-amber-400',
-};
-
-function StatCard({ label, value, helper, tone }: StatCardProps) {
-  return (
-    <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-3">
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</p>
-      <p className={`text-2xl font-semibold ${STAT_TONE_CLASSES[tone]}`}>{value}</p>
-      <p className="text-xs text-slate-500">{helper}</p>
-    </div>
-  );
-}

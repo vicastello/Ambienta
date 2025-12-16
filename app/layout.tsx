@@ -1,6 +1,14 @@
 // app/layout.tsx
 import type { ReactNode } from 'react';
+import { Inter } from 'next/font/google';
+import { ToastProvider } from '@/app/components/ui/Toast';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 const themeScript = `
   (function() {
@@ -38,13 +46,15 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning className={`${inter.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/favicon.ico" />
       </head>
-      <body>{children}</body>
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

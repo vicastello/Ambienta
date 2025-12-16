@@ -13,6 +13,10 @@ export default {
           "bg-soft-alt": "#ECF4F5",
         },
       },
+      fontFamily: {
+        sans: ["var(--font-inter)", "sans-serif"],
+        display: ["var(--font-inter)", "sans-serif"],
+      },
       backdropBlur: {
         xs: "2px",
         sm: "4px",

@@ -56,6 +56,8 @@ export async function GET(req: NextRequest) {
         sugestao_ajustada: sugeridoAjustado,
         alerta_embalagem: alertaEmbalagem,
         observacao_compras: p.observacao_compras,
+        categoria: p.categoria,
+        preco_custo: p.preco_custo,
       };
     });
 
