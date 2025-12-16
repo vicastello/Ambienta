@@ -294,8 +294,9 @@ export default function ComprasClient() {
     setSelectionFilter('all');
     setSelectedIds({});
 
-    // Limpar Storage
+    // Limpar Storage (local + servidor)
     localStorage.removeItem(COMPRAS_DRAFT_KEY);
+    fetch('/api/compras/draft', { method: 'DELETE' }).catch(() => { });
 
     // Recarregar sugestões frescas
     await load();
@@ -312,8 +313,38 @@ export default function ComprasClient() {
     dadosRef.current = dados;
   }, [dados]);
 
-  // Auto-Save do Rascunho no LocalStorage
+  // Carregar rascunho do servidor no mount (prioridade sobre localStorage)
+  const draftLoadedRef = useRef(false);
   useEffect(() => {
+    if (draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+
+    const loadServerDraft = async () => {
+      try {
+        const res = await fetch('/api/compras/draft', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json.draft) {
+          // Rascunho do servidor tem prioridade
+          const serverDraft = json.draft;
+          if (Object.keys(serverDraft.pedidoOverrides || {}).length > 0 || (serverDraft.manualItems || []).length > 0) {
+            setPedidoOverrides(serverDraft.pedidoOverrides || {});
+            setManualItems(serverDraft.manualItems || []);
+            if (serverDraft.currentOrderName) setCurrentOrderName(serverDraft.currentOrderName);
+            console.log('[Compras] Rascunho carregado do servidor');
+          }
+        }
+      } catch (err) {
+        console.warn('[Compras] Falha ao carregar rascunho do servidor:', err);
+      }
+    };
+    void loadServerDraft();
+  }, []);
+
+  // Auto-Save do Rascunho (LocalStorage + Servidor debounced)
+  const draftSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    // Salvar localmente imediatamente
     const draft = {
       manualItems,
       pedidoOverrides,
@@ -321,7 +352,35 @@ export default function ComprasClient() {
       timestamp: Date.now(),
     };
     localStorage.setItem(COMPRAS_DRAFT_KEY, JSON.stringify(draft));
-  }, [manualItems, pedidoOverrides, currentOrderName]);
+
+    // Debounce para salvar no servidor (evitar requisições excessivas)
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+    }
+    draftSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await fetch('/api/compras/draft', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pedidoOverrides,
+            manualItems,
+            currentOrderName,
+            periodDays,
+            targetDays,
+          }),
+        });
+      } catch (err) {
+        console.warn('[Compras] Falha ao salvar rascunho no servidor:', err);
+      }
+    }, 2000); // 2 segundos de debounce para servidor
+
+    return () => {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+      }
+    };
+  }, [manualItems, pedidoOverrides, currentOrderName, periodDays, targetDays]);
 
   // Estado para pedidos pendentes (histórico considerado como estoque)
   const [selectedPendingOrderIds, setSelectedPendingOrderIds] = useState<string[]>(() => {

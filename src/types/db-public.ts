@@ -164,6 +164,17 @@ export interface ComprasSavedOrderRow {
   updated_at: string; // timestamptz
 }
 
+export interface ComprasDraftRow {
+  draft_key: string; // única chave (ex: 'default')
+  pedido_overrides: Json; // Record<number, number>
+  manual_items: Json; // ManualItem[]
+  current_order_name: string;
+  period_days: number | null;
+  target_days: number | null;
+  created_at: string; // timestamptz
+  updated_at: string; // timestamptz
+}
+
 export interface TinyTokensRow {
   id: number;
   access_token: string | null;
@@ -571,6 +582,15 @@ export type ComprasSavedOrderInsert = {
 };
 
 export type ComprasSavedOrderUpdate = Partial<Omit<ComprasSavedOrderInsert, 'id'>>;
+
+export type ComprasDraftUpsert = {
+  draft_key: string;
+  pedido_overrides?: Json;
+  manual_items?: Json;
+  current_order_name?: string;
+  period_days?: number | null;
+  target_days?: number | null;
+};
 
 /* ============================================================================
  * DATABASE SHAPE PARA SUPABASE CLIENT
