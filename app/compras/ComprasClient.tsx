@@ -1411,6 +1411,18 @@ export default function ComprasClient() {
           {/* Título e status */}
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Central de Compras</h1>
+            {/* Badge de Estado do Pedido */}
+            {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Rascunho em andamento
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Novo Pedido
+              </span>
+            )}
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
