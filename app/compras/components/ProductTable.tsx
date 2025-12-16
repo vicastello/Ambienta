@@ -213,18 +213,18 @@ export function ProductTable({
                                             <span className="sr-only">{selectedIds[m.id] ? 'Desmarcar' : 'Selecionar'} item manual</span>
                                         </button>
                                     </td>
-                                    <td className="px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '360px', minWidth: '360px', maxWidth: '360px' }}>
+                                    <td className="px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
                                         <div>
                                             <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white truncate">{m.nome}</div>
                                             <p className="text-[11px] text-[var(--color-neutral-500)]">Cadastro manual</p>
                                         </div>
                                     </td>
-                                    <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[410px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>—</td>
-                                    <td className="px-3 py-2 sticky left-[520px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
+                                    <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[330px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
+                                    <td className="px-3 py-2 sticky left-[420px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                         <div className="text-sm font-medium text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)] truncate" title={m.fornecedor_codigo}>{m.fornecedor_codigo}</div>
                                     </td>
                                     <td colSpan={7} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">—</td>
-                                    <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[650px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
+                                    <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[530px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                         {m.quantidade}
                                     </td>
                                     <td colSpan={2} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)] sticky min-w-[120px]">—</td>
@@ -288,7 +288,7 @@ export function ProductTable({
                                 <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${isUrgent ? 'sticky-cell-urgent ' :
                                     isWarning ? 'sticky-cell-warning ' :
                                         'sticky-cell '
-                                    }`} style={{ width: '360px', minWidth: '360px', maxWidth: '360px' }}>
+                                    }`} style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
                                     <div className="flex items-center gap-2">
                                         <div className="relative w-10 h-10 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
                                             {p.imagem_url ? (
@@ -312,8 +312,8 @@ export function ProductTable({
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[410px] z-10 sticky-cell  backdrop-blur-sm" title={p.codigo ?? ''} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>{p.codigo || '-'}</td>
-                                <td className="px-3 py-2 sticky left-[520px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '130px', minWidth: '130px', maxWidth: '130px' }}>
+                                <td className="px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[330px] z-10 sticky-cell  backdrop-blur-sm" title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
+                                <td className="px-3 py-2 sticky left-[420px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                     <div className="flex flex-col gap-0.5 w-full min-w-0">
                                         <input
                                             className="app-input h-7 text-xs px-2"
@@ -329,7 +329,7 @@ export function ProductTable({
                                         </p>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right sticky left-[650px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
+                                <td className="px-3 py-2 text-right sticky left-[530px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                     <input
                                         type="number"
                                         min={1}
