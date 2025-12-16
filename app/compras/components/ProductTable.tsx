@@ -411,7 +411,7 @@ export function ProductTable({
                                         {p.estoquePendente > 0 && (
                                             <div
                                                 className="w-2 h-2 rounded-full bg-amber-400 absolute -left-3 top-1/2 -translate-y-1/2 animate-pulse"
-                                                title={`Aguardando ${p.estoquePendente} unid. de outros pedidos`}
+                                                title={`Aguardando recebimento de ${p.estoquePendente} unidades`}
                                             />
                                         )}
                                         <input
