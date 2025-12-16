@@ -44,6 +44,7 @@ const COMPRAS_RECALC_DEBOUNCE_MS = 350;
 const AUTO_SAVE_DEBOUNCE_MS = 800;
 const COMPRAS_SELECTION_STORAGE_KEY = 'compras_selection_v1';
 const COMPRAS_SAVED_ORDERS_KEY = 'compras_saved_orders_v1';
+const COMPRAS_DRAFT_KEY = 'compras_draft_v1';
 const DEFAULT_PERIOD_DIAS = 60;
 const DAYS_PER_MONTH = 30;
 const DEFAULT_COBERTURA_DIAS = 15;
@@ -124,7 +125,21 @@ export default function ComprasClient() {
   const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<string[]>([]);
   const [fornecedoresSelecionados, setFornecedoresSelecionados] = useState<string[]>([]);
   const [manualEntry, setManualEntry] = useState<ManualEntry>(() => createManualEntry());
-  const [manualItems, setManualItems] = useState<ManualItem[]>([]);
+
+  // Inicialização Lazy com LocalStorage para Rascunho
+  const [manualItems, setManualItems] = useState<ManualItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(COMPRAS_DRAFT_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return Array.isArray(parsed.manualItems) ? parsed.manualItems : [];
+        } catch { }
+      }
+    }
+    return [];
+  });
+
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [exportando, setExportando] = useState(false);
@@ -132,12 +147,38 @@ export default function ComprasClient() {
   const [syncStatus, setSyncStatus] = useState<Record<number, 'saving' | 'saved' | 'error'>>({});
   const [selectedIds, setSelectedIds] = useState<Record<number, boolean>>({});
   const [selectionFilter, setSelectionFilter] = useState<'all' | 'selected' | 'unselected'>('all');
-  const [pedidoOverrides, setPedidoOverrides] = useState<Record<number, number>>({});
+
+  const [pedidoOverrides, setPedidoOverrides] = useState<Record<number, number>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(COMPRAS_DRAFT_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return parsed.pedidoOverrides || {};
+        } catch { }
+      }
+    }
+    return {};
+  });
+
   const [pedidoInputDrafts, setPedidoInputDrafts] = useState<Record<number, string>>({});
   const [estoqueLive, setEstoqueLive] = useState<Record<number, EstoqueSnapshot>>({});
   const [estoqueLoading, setEstoqueLoading] = useState<Record<number, boolean>>({});
   const [sortConfig, setSortConfig] = useState<Array<{ key: SortKey; direction: SortDirection }>>([{ key: 'codigo', direction: 'asc' }]);
-  const [currentOrderName, setCurrentOrderName] = useState(() => buildDefaultOrderName());
+
+  const [currentOrderName, setCurrentOrderName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(COMPRAS_DRAFT_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.currentOrderName) return parsed.currentOrderName;
+        } catch { }
+      }
+    }
+    return buildDefaultOrderName();
+  });
+
   const [activeTab, setActiveTab] = useState<'current' | 'history' | 'suppliers'>('current');
   const [savedOrders, setSavedOrders] = useState<SavedOrder[]>([]);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -228,6 +269,7 @@ export default function ComprasClient() {
     }
   }, [periodDays, targetDays]);
 
+  // Recálculo automático apenas via debounce dos parâmetros (periodDays/targetDays)
   useEffect(() => {
     const timeout = setTimeout(() => {
       void load();
@@ -235,9 +277,52 @@ export default function ComprasClient() {
     return () => clearTimeout(timeout);
   }, [load]);
 
+  // Função para ação explícita de "Novo Pedido"
+  const handleNewOrder = async () => {
+    const hasDraftData = Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0;
+
+    if (hasDraftData) {
+      const confirmed = window.confirm(
+        'Você tem um pedido em andamento (Rascunho). Deseja descartá-lo e iniciar um novo pedido zerado?\n\nIsso limpará todas as quantidades digitadas manualmente.'
+      );
+      if (!confirmed) return;
+    }
+
+    // Resetar Rascunho
+    setPedidoOverrides({});
+    setManualItems([]);
+    setCurrentOrderName(buildDefaultOrderName());
+    setSelectionFilter('all');
+    setSelectedIds({});
+
+    // Limpar Storage
+    localStorage.removeItem(COMPRAS_DRAFT_KEY);
+
+    // Recarregar sugestões frescas
+    await load();
+
+    toast({
+      type: 'success',
+      title: 'Novo Pedido Iniciado',
+      message: 'As sugestões foram recalculadas com dados frescos.',
+      duration: 3000
+    });
+  };
+
   useEffect(() => {
     dadosRef.current = dados;
   }, [dados]);
+
+  // Auto-Save do Rascunho no LocalStorage
+  useEffect(() => {
+    const draft = {
+      manualItems,
+      pedidoOverrides,
+      currentOrderName,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(COMPRAS_DRAFT_KEY, JSON.stringify(draft));
+  }, [manualItems, pedidoOverrides, currentOrderName]);
 
   // Estado para pedidos pendentes (histórico considerado como estoque)
   const [selectedPendingOrderIds, setSelectedPendingOrderIds] = useState<string[]>(() => {
@@ -1280,7 +1365,7 @@ export default function ComprasClient() {
 
           {/* Ações */}
           <div className="flex items-center gap-2">
-            <button onClick={load} className="app-btn-primary" disabled={loading}>
+            <button onClick={handleNewOrder} className="app-btn-primary" disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               Novo Pedido
             </button>
@@ -1314,9 +1399,12 @@ export default function ComprasClient() {
       <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={() => setActiveTab('current')}
-          className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''}`}
+          className={`app-tab px-5 py-2.5 ${activeTab === 'current' ? 'active' : ''} flex items-center gap-2`}
         >
           Novo Pedido
+          {(Object.keys(pedidoOverrides).length > 0 || manualItems.length > 0) && (
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Rascunho em andamento (alterações não salvas)" />
+          )}
         </button>
         <button
           onClick={() => setActiveTab('history')}
