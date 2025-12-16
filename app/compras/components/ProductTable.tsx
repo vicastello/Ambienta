@@ -612,63 +612,6 @@ export function ProductTable({
                     })}
 
                     {paddingBottom > 0 && <tr><td colSpan={15} style={{ height: `${paddingBottom}px` }} /></tr>}
-
-                    {/* Linha de input inline para adicionar novo item manual */}
-                    {onAddManualItem && (
-                        <tr className="align-middle bg-gradient-to-r from-amber-50/50 to-transparent dark:from-amber-900/20 dark:to-transparent border-t-2 border-dashed border-amber-300 dark:border-amber-700">
-                            <td className="px-3 py-3 w-[50px] align-middle text-center sticky left-0 z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm">
-                                <Plus className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto" />
-                            </td>
-                            <td className="px-3 py-3 sticky left-[50px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
-                                <input
-                                    type="text"
-                                    value={newItemInput.nome}
-                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, nome: e.target.value }))}
-                                    className="w-full px-3 py-1.5 text-sm rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
-                                    placeholder="Nome do produto"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-                                />
-                            </td>
-                            <td className="px-3 py-3 text-center text-neutral-400 sticky left-[330px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
-                            <td className="px-3 py-3 sticky left-[420px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
-                                <input
-                                    type="text"
-                                    value={newItemInput.fornecedor_codigo}
-                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
-                                    className="w-full px-2 py-1.5 text-sm rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
-                                    placeholder="Cód. Forn."
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-                                />
-                            </td>
-                            <td colSpan={7} className="text-center text-neutral-300 dark:text-neutral-700">—</td>
-                            <td className="px-3 py-3 sticky left-[530px] z-10 bg-amber-50/80 dark:bg-amber-900/30 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
-                                <input
-                                    type="number"
-                                    value={newItemInput.quantidade}
-                                    onChange={(e) => setNewItemInput(prev => ({ ...prev, quantidade: e.target.value }))}
-                                    className="w-16 px-2 py-1.5 text-sm text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-neutral-800 placeholder:text-neutral-400"
-                                    placeholder="Qtd"
-                                    min="1"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-                                />
-                            </td>
-                            <td colSpan={2} className="text-center text-neutral-300 dark:text-neutral-700">—</td>
-                            <td className="px-3 py-3">
-                                <span className="text-xs text-neutral-400 italic">Item não cadastrado</span>
-                            </td>
-                            <td className="px-3 py-3">
-                                <button
-                                    type="button"
-                                    onClick={handleAddItem}
-                                    disabled={!newItemInput.nome.trim() || !newItemInput.quantidade || parseInt(newItemInput.quantidade, 10) <= 0}
-                                    className="p-2 rounded-full bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
-                                    title="Adicionar item"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                </button>
-                            </td>
-                        </tr>
-                    )}
                 </tbody>
             </table>
         </div>

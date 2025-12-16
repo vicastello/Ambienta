@@ -11,6 +11,7 @@ import {
   Save,
   Search,
   Sparkles,
+  Plus,
 } from 'lucide-react';
 import { getErrorMessage } from '@/lib/errors';
 import { formatFornecedorNome } from '@/lib/fornecedorFormatter';
@@ -1744,21 +1745,101 @@ export default function ComprasClient() {
               </div>
             </div>
             {/* Toolbar inferior fixa */}
-            <div className="flex items-center justify-between gap-4 p-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 rounded-b-[24px] -mx-4 -mb-4 mt-4">
-              <div className="text-sm text-slate-500 dark:text-slate-300">
-                {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · Total sugerido: {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
+            <div className="flex items-center justify-between gap-4 p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 rounded-b-[24px] -mx-4 -mb-4 mt-4">
+              {/* Info de seleção */}
+              <div className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                {selectionCount} sel. · {selectionTotalQuantidade.toLocaleString('pt-BR')} un.
               </div>
+
+              {/* Input inline para item manual (minimalista) */}
+              <div className="flex items-center gap-2 flex-1 max-w-xl">
+                <input
+                  type="text"
+                  value={manualEntry.nome}
+                  onChange={(e) => setManualEntry(prev => ({ ...prev, nome: e.target.value }))}
+                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  placeholder="Nome do produto"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
+                      handleAddManualItem({
+                        nome: manualEntry.nome.trim(),
+                        fornecedor_codigo: manualEntry.fornecedor_codigo.trim(),
+                        quantidade: parseInt(manualEntry.quantidade, 10),
+                        observacao: '',
+                      });
+                      setManualEntry(createManualEntry());
+                    }
+                  }}
+                />
+                <input
+                  type="text"
+                  value={manualEntry.fornecedor_codigo}
+                  onChange={(e) => setManualEntry(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
+                  className="w-20 px-2 py-1.5 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  placeholder="Cód."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
+                      handleAddManualItem({
+                        nome: manualEntry.nome.trim(),
+                        fornecedor_codigo: manualEntry.fornecedor_codigo.trim(),
+                        quantidade: parseInt(manualEntry.quantidade, 10),
+                        observacao: '',
+                      });
+                      setManualEntry(createManualEntry());
+                    }
+                  }}
+                />
+                <input
+                  type="number"
+                  value={manualEntry.quantidade}
+                  onChange={(e) => setManualEntry(prev => ({ ...prev, quantidade: e.target.value }))}
+                  className="w-16 px-2 py-1.5 text-xs text-right rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/20 placeholder:text-amber-400 focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  placeholder="Qtd"
+                  min="1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
+                      handleAddManualItem({
+                        nome: manualEntry.nome.trim(),
+                        fornecedor_codigo: manualEntry.fornecedor_codigo.trim(),
+                        quantidade: parseInt(manualEntry.quantidade, 10),
+                        observacao: '',
+                      });
+                      setManualEntry(createManualEntry());
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!manualEntry.nome.trim() || !manualEntry.quantidade || parseInt(manualEntry.quantidade, 10) <= 0) return;
+                    handleAddManualItem({
+                      nome: manualEntry.nome.trim(),
+                      fornecedor_codigo: manualEntry.fornecedor_codigo.trim(),
+                      quantidade: parseInt(manualEntry.quantidade, 10),
+                      observacao: '',
+                    });
+                    setManualEntry(createManualEntry());
+                  }}
+                  disabled={!manualEntry.nome.trim() || !manualEntry.quantidade || parseInt(manualEntry.quantidade, 10) <= 0}
+                  className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
+                  title="Adicionar item manual"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Ações de seleção */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium transition-colors"
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-medium transition-colors"
                   onClick={() => setSelectedIds({})}
                 >
-                  Limpar seleção
+                  Limpar
                 </button>
                 <button
                   type="button"
-                  className="px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-sm font-medium transition-colors"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-xs font-medium transition-colors"
                   onClick={() => {
                     const suggestionsToSelect = filteredSortedProdutos
                       .filter(d => d.sugestao_ajustada > 0)
@@ -1768,7 +1849,7 @@ export default function ComprasClient() {
                     }
                   }}
                 >
-                  Selecionar com ped.
+                  Sel. c/ ped.
                 </button>
               </div>
             </div>
