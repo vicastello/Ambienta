@@ -119,7 +119,7 @@ export function AppDatePicker({
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full h-full flex items-center justify-center text-[var(--color-neutral-400)] hover:text-[var(--color-primary)] transition-colors"
+                className="w-full h-full flex items-center justify-center rounded-full text-[var(--color-neutral-500)] hover:text-[var(--color-primary)] transition-colors"
                 title="Selecionar data alvo"
             >
                 <CalendarIcon className="w-4 h-4" />
