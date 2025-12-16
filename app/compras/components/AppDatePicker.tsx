@@ -127,7 +127,7 @@ export function AppDatePicker({
 
             {isOpen && (
                 <div className={`
-                    absolute top-full mt-2 z-50 
+                    absolute top-full mt-2 z-[100] 
                     bg-white dark:bg-slate-900 
                     border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)]
                     rounded-[20px] shadow-xl p-4 w-[280px]

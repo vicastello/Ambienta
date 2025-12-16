@@ -10,6 +10,7 @@ const DEFAULT_PERIOD_DIAS = 60;
 const DEFAULT_COBERTURA_DIAS = 15;
 const MIN_COBERTURA_DIAS = 15;
 const MAX_COBERTURA_DIAS = 180;
+const DEFAULT_LEAD_TIME = 5;
 
 export type UseComprasSugestoesOptions = {
     /**
@@ -127,7 +128,9 @@ export function useComprasSugestoes(options?: UseComprasSugestoesOptions): UseCo
             const pack = Math.max(p.embalagem_qtd || 1, 1);
             const consumoMensal = Math.max(p.consumo_mensal || 0, 0);
             const consumoDiario = consumoMensal / DAYS_PER_MONTH;
-            const pontoMinimo = consumoDiario * targetDays;
+            const isDefaultLeadTime = p.lead_time_dias === null || p.lead_time_dias === undefined;
+            const leadTimeDias = p.lead_time_dias ?? DEFAULT_LEAD_TIME;
+            const pontoMinimo = consumoDiario * leadTimeDias;
             const estoqueAtual = Math.max(p.disponivel ?? 0, 0);
             const precisaRepor = pontoMinimo > 0 ? estoqueAtual < pontoMinimo : false;
             const quantidadeNecessaria = precisaRepor ? Math.max(pontoMinimo - estoqueAtual, 0) : 0;
@@ -150,6 +153,7 @@ export function useComprasSugestoes(options?: UseComprasSugestoesOptions): UseCo
 
             return {
                 ...p,
+                lead_time_dias: leadTimeDias,
                 embalagem_qtd: pack,
                 consumoDiario,
                 pontoMinimo,
@@ -164,6 +168,7 @@ export function useComprasSugestoes(options?: UseComprasSugestoesOptions): UseCo
                 originalIndex: index,
                 diasAteRuptura,
                 valorMensal, // campo temporário para cálculo ABC
+                isDefaultLeadTime,
             };
         });
 

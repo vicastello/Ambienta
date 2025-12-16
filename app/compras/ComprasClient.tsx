@@ -142,6 +142,7 @@ export default function ComprasClient() {
   const [savingOrder, setSavingOrder] = useState(false);
   const [savedOrdersSyncing, setSavedOrdersSyncing] = useState(false);
   const [savedOrdersSyncError, setSavedOrdersSyncError] = useState<string | null>(null);
+  const [alertFilterId, setAlertFilterId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const dadosRef = useRef<Sugestao[]>([]);
   const pendingSavesRef = useRef<Record<number, AutoSavePayload>>({});
@@ -470,7 +471,11 @@ export default function ComprasClient() {
 
       // Estoque pendente (dos pedidos salvos selecionados)
       const estoquePendente = estoquePendenteMap.get(Number(p.id_produto_tiny)) || 0;
-      const pontoMinimo = consumoDiario * (p.lead_time_dias || DEFAULT_LEAD_TIME);
+      // Usar Nullish Coalescing (??) para que 0 seja considerado um valor válido de Lead Time
+      // Se p.lead_time_dias for null/undefined, usamos o default.
+      const isDefaultLeadTime = p.lead_time_dias === null || p.lead_time_dias === undefined;
+      const leadTimeDias = p.lead_time_dias ?? DEFAULT_LEAD_TIME;
+      const pontoMinimo = consumoDiario * leadTimeDias;
 
       const estoqueAtual = (p.saldo || 0) - (p.reservado || 0); // Disponível físico
       // OU p.disponivel (que já desconta reservado, checar consistência)
@@ -478,25 +483,26 @@ export default function ComprasClient() {
 
       // Cobertura atual em dias (baseia-se no estoque físico)
       const coberturaAtualDias = consumoDiario > 0 ? estoqueAtual / consumoDiario : 9999;
+      // Cobertura Inteligente: Soma o Lead Time (dias de entrega) aos dias de cobertura desejados
+      // Isso garante estoque suficiente até o próximo pedido CHEGAR.
+      const targetEstoque = consumoDiario * (targetDays + leadTimeDias);
+      const quantidadeNecessaria = Math.max(0, targetEstoque - estoqueAtual - estoquePendente);
 
-      // Necessidade para atingir os dias alvo (targetDays)
-      // Desconta: estoque físico + estoque pendente (pedidos já feitos mas não recebidos)
-      const demandaAlvo = consumoDiario * targetDays;
-      const quantidadeNecessaria = Math.max(0, demandaAlvo - estoqueAtual - estoquePendente);
+      // Quantidade a comprar baseada na embalagem
+      // Se não tem embalagem (ou é 0), assume unitário (1)
+      const pack = p.embalagem_qtd || 1;
+      const qtdSugestao = Math.ceil(quantidadeNecessaria / pack) * pack;
 
-      const precisaRepor = quantidadeNecessaria > 0;
+      // Calcular valor total da sugestão
+      // const valorSugestao = qtdSugestao * (p.preco_custo || 0);
 
-      // Pack size parsing (simples)
-      const pack = Math.max(1, p.embalagem_qtd || 1);
+      // Quantidade Final (sugestão do sistema)
+      const quantidadeFinal = qtdSugestao;
 
-      // Arredonda para cima (múltiplo da embalagem)
-      let quantidadeFinal = 0;
-      if (precisaRepor) {
-        quantidadeFinal = Math.ceil(quantidadeNecessaria / pack) * pack;
-      }
+      const precisaRepor = coberturaAtualDias < targetDays;
 
-      const necessarioLabel = Math.ceil(quantidadeNecessaria);
-
+      // Labels e status
+      const necessarioLabel = Math.ceil(quantidadeNecessaria).toLocaleString('pt-BR');
       const alerta = p.alerta_embalagem;
 
       let statusCobertura = precisaRepor
@@ -516,6 +522,7 @@ export default function ComprasClient() {
 
       return {
         ...p,
+        lead_time_dias: leadTimeDias,
         embalagem_qtd: pack,
         consumoDiario,
         pontoMinimo,
@@ -531,6 +538,7 @@ export default function ComprasClient() {
         diasAteRuptura,
         // valorMensal já vem do enriched
         // curvaABC já vem do enriched
+        isDefaultLeadTime,
       };
     });
   }, [dadosFiltrados, pedidoOverrides, targetDays, estoquePendenteMap]);
@@ -572,12 +580,33 @@ export default function ComprasClient() {
   }, [derivados, sortConfig]);
 
   const filteredSortedProdutos = useMemo(() => {
-    if (selectionFilter === 'all') return sortedProdutos;
-    const predicate = selectionFilter === 'selected'
-      ? (produto: ProdutoDerivado) => Boolean(selectedIds[produto.id_produto_tiny])
-      : (produto: ProdutoDerivado) => !selectedIds[produto.id_produto_tiny];
-    return sortedProdutos.filter(predicate);
-  }, [selectionFilter, selectedIds, sortedProdutos]);
+    // 1. Filtragem por Seleção (checkbox)
+    let base = sortedProdutos;
+    if (selectionFilter !== 'all') {
+      const predicate = selectionFilter === 'selected'
+        ? (produto: ProdutoDerivado) => Boolean(selectedIds[produto.id_produto_tiny])
+        : (produto: ProdutoDerivado) => !selectedIds[produto.id_produto_tiny];
+      base = base.filter(predicate);
+    }
+
+    // 2. Filtragem por Alerta (Dashboard Alerts)
+    if (alertFilterId) {
+      base = base.filter((p) => {
+        if (alertFilterId === 'a-critical') {
+          return p.curvaABC === 'A' && p.diasAteRuptura !== null && p.diasAteRuptura <= 7;
+        }
+        if (alertFilterId === 'ruptura-iminente') {
+          return p.diasAteRuptura !== null && p.diasAteRuptura <= 3 && p.curvaABC !== 'A';
+        }
+        if (alertFilterId === 'alerta-embalagem') {
+          return p.alerta_embalagem;
+        }
+        return true;
+      });
+    }
+
+    return base;
+  }, [selectionFilter, selectedIds, sortedProdutos, alertFilterId]);
 
   const manualItemsFiltered = useMemo(() => {
     if (selectionFilter === 'all') return manualItems;
@@ -1292,7 +1321,7 @@ export default function ComprasClient() {
           <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 flex flex-col h-full">
             {/* Toolbar de Controle Unificada */}
             <div className="flex flex-col gap-3 shrink-0 mb-3">
-              <div className="flex flex-wrap items-end gap-4 p-4 rounded-[24px] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/5 shadow-sm backdrop-blur-md">
+              <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/5 shadow-sm backdrop-blur-md">
 
                 {/* 1. Identificação */}
                 <div className="w-full sm:w-[220px] shrink-0">
@@ -1338,7 +1367,7 @@ export default function ComprasClient() {
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="absolute right-[2px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center pointer-events-auto z-10">
+                      <div className="absolute right-0 top-0 h-10 w-10 flex items-center justify-center pointer-events-auto z-[60]">
                         <AppDatePicker
                           align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
@@ -1418,7 +1447,11 @@ export default function ComprasClient() {
               {/* Linha Secundária: Alertas, Totais e View Mode */}
               <div className="flex flex-wrap items-start justify-between gap-4 px-2">
                 <div className="flex-1 min-w-[300px]">
-                  <AlertsPanel produtos={derivados} />
+                  <AlertsPanel
+                    produtos={derivados}
+                    activeFilterId={alertFilterId}
+                    onSelectFilter={setAlertFilterId}
+                  />
                 </div>
 
                 <div className="flex items-center gap-4 shrink-0">

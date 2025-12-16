@@ -252,26 +252,43 @@ export function ProductTable({
                         const updatedAt = live?.updatedAt ?? null;
                         const loadingLive = estoqueLoading[p.id_produto_tiny];
 
-                        // Determinar classe de urgência e zebra
+                        // Restaurando flags para lógica interna (se necessário em outros lugares)
                         const isUrgent = p.diasAteRuptura !== null && p.diasAteRuptura <= 3;
-                        const isWarning = p.diasAteRuptura !== null && p.diasAteRuptura > 3 && p.diasAteRuptura <= 7;
-                        const isEven = virtualRow.index % 2 === 0;
-                        const isSelected = selectedIds[p.id_produto_tiny];
-                        const rowClasses = [
-                            'align-middle transition-all duration-200',
-                            isSelected ? 'table-row-selected' :
-                                isUrgent ? 'table-row-urgent   ' :
-                                    isWarning ? 'table-row-warning   ' :
-                                        isEven ? 'table-row-even dark:bg-white/[0.02]  ' :
-                                            'bg-[var(--color-neutral-50)]/40 dark:bg-[var(--color-neutral-800)]/20 hover:bg-[var(--color-neutral-100)]/40 dark:hover:bg-slate-700/20',
-                        ].join(' ');
+                        const isWarning = p.curvaABC === 'A' && p.diasAteRuptura !== null && p.diasAteRuptura <= 7;
+
+                        // Definir estilo da linha baseado em alertas
+                        let rowClass = 'align-middle transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800';
+                        if (selectedIds[p.id_produto_tiny]) {
+                            rowClass = 'align-middle transition-all duration-200 table-row-selected';
+                        } else if (isWarning) {
+                            // Gradiente vermelho para Curva A com risco de ruptura
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-100 dark:border-rose-500/20';
+                        } else if (isUrgent) {
+                            // Gradiente vermelho para ruptura iminente (geral)
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-100 dark:border-rose-500/20';
+                        } else if (p.alerta_embalagem) {
+                            // Gradiente amarelo para alerta de embalagem
+                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-500/10 dark:to-transparent border-b border-amber-100 dark:border-amber-500/20';
+                        } else if (virtualRow.index % 2 === 0) {
+                            rowClass = 'align-middle transition-all duration-200 table-row-even dark:bg-white/[0.02] border-b border-slate-100 dark:border-slate-800';
+                        } else {
+                            rowClass = 'align-middle transition-all duration-200 bg-[var(--color-neutral-50)]/40 dark:bg-[var(--color-neutral-800)]/20 hover:bg-[var(--color-neutral-100)]/40 dark:hover:bg-slate-700/20 border-b border-slate-100 dark:border-slate-800';
+                        }
+
+
+                        // Definir background específico para células sticky em linhas de alerta
+                        // Isso garante que elas tenham a cor correta (e não branco) mas continuem opacas/blur
+                        // Intensificando para 100 para criar o efeito de "Início do Gradiente" mais forte que o resto da linha
+                        let stickyDataClass = 'sticky-cell';
+                        if (isWarning || isUrgent) {
+                            stickyDataClass = 'bg-rose-100 dark:bg-rose-900/40';
+                        } else if (p.alerta_embalagem) {
+                            stickyDataClass = 'bg-amber-100 dark:bg-amber-900/40';
+                        }
 
                         return (
-                            <tr key={p.id_produto_tiny} className={rowClasses}>
-                                <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 backdrop-blur-sm ${isUrgent ? 'sticky-cell-urgent ' :
-                                    isWarning ? 'sticky-cell-warning ' :
-                                        'sticky-cell '
-                                    }`}>
+                            <tr key={p.id_produto_tiny} className={rowClass}>
+                                <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 backdrop-blur-sm ${stickyDataClass}`}>
                                     <button
                                         type="button"
                                         role="checkbox"
@@ -285,10 +302,7 @@ export function ProductTable({
                                         </span>
                                     </button>
                                 </td>
-                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${isUrgent ? 'sticky-cell-urgent ' :
-                                    isWarning ? 'sticky-cell-warning ' :
-                                        'sticky-cell '
-                                    }`} style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
+                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
                                     <div className="flex items-center gap-2">
                                         <div className="relative w-10 h-10 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
                                             {p.imagem_url ? (
@@ -312,8 +326,8 @@ export function ProductTable({
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[330px] z-10 sticky-cell  backdrop-blur-sm" title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
-                                <td className="px-3 py-2 sticky left-[420px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                <td className={`px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[330px] z-10 backdrop-blur-sm ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
+                                <td className={`px-3 py-2 sticky left-[420px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                     <div className="flex flex-col gap-0.5 w-full min-w-0">
                                         <input
                                             className="app-input h-7 text-xs px-2"
@@ -329,7 +343,7 @@ export function ProductTable({
                                         </p>
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right sticky left-[530px] z-10 sticky-cell  backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                <td className={`px-3 py-2 text-right sticky left-[530px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                     <input
                                         type="number"
                                         min={1}
@@ -343,7 +357,7 @@ export function ProductTable({
                                         type="number"
                                         min={0}
                                         max={365}
-                                        className="app-input app-input-editable w-full h-7 text-xs px-1 text-center"
+                                        className={`app-input app-input-editable w-full h-7 text-xs px-1 text-center ${p.isDefaultLeadTime ? 'text-[var(--color-neutral-400)] italic' : ''}`}
                                         value={p.lead_time_dias ?? ''}
                                         placeholder="—"
                                         onChange={(e) => onUpdateLeadTime(p.id_produto_tiny, Number(e.target.value))}

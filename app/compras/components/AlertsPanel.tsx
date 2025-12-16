@@ -15,6 +15,8 @@ type Alert = {
 
 type AlertsPanelProps = {
     produtos: ProdutoDerivado[];
+    activeFilterId?: string | null;
+    onSelectFilter?: (id: string | null) => void;
 };
 
 const ALERT_STYLES = {
@@ -29,7 +31,7 @@ const ICON_STYLES = {
     info: 'text-sky-500 dark:text-sky-400',
 };
 
-export function AlertsPanel({ produtos }: AlertsPanelProps) {
+export function AlertsPanel({ produtos, activeFilterId, onSelectFilter }: AlertsPanelProps) {
     const [isCollapsed, setIsCollapsed] = React.useState(false);
 
     const alerts = React.useMemo<Alert[]>(() => {
@@ -81,6 +83,16 @@ export function AlertsPanel({ produtos }: AlertsPanelProps) {
         return result;
     }, [produtos]);
 
+    const handleAlertClick = (id: string) => {
+        if (onSelectFilter) {
+            if (activeFilterId === id) {
+                onSelectFilter(null); // Remove filter if clicking active one
+            } else {
+                onSelectFilter(id);
+            }
+        }
+    };
+
     if (alerts.length === 0) return null;
 
     const totalAlerts = alerts.reduce((acc, a) => acc + a.count, 0);
@@ -119,18 +131,29 @@ export function AlertsPanel({ produtos }: AlertsPanelProps) {
             {/* Conteúdo */}
             {!isCollapsed && (
                 <div className="px-4 pb-3 pt-3 flex flex-wrap gap-3">
-                    {alerts.map((alert) => (
-                        <div
-                            key={alert.id}
-                            className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border ${ALERT_STYLES[alert.type]}`}
-                        >
-                            <span className={ICON_STYLES[alert.type]}>{alert.icon}</span>
-                            <div className="flex flex-col">
-                                <span className="text-xs font-semibold">{alert.title}</span>
-                                <span className="text-[11px] opacity-80">{alert.message}</span>
-                            </div>
-                        </div>
-                    ))}
+                    {alerts.map((alert) => {
+                        const isActive = activeFilterId === alert.id;
+                        return (
+                            <button
+                                type="button"
+                                key={alert.id}
+                                onClick={() => handleAlertClick(alert.id)}
+                                className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border transition-all duration-200 text-left cursor-pointer
+                                    ${ALERT_STYLES[alert.type]}
+                                    ${isActive
+                                        ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 ring-[var(--color-primary)] shadow-md'
+                                        : 'hover:opacity-90 hover:scale-[1.01] active:scale-[0.98]'
+                                    }
+                                `}
+                            >
+                                <span className={ICON_STYLES[alert.type]}>{alert.icon}</span>
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-semibold">{alert.title}</span>
+                                    <span className="text-[11px] opacity-80">{alert.message}</span>
+                                </div>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
         </div>

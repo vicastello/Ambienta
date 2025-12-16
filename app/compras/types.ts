@@ -63,6 +63,7 @@ export type ProdutoDerivado = Sugestao & {
     total_valor_calculado: number;
     diasAteRuptura: number | null;
     curvaABC: 'A' | 'B' | 'C';
+    isDefaultLeadTime: boolean;
 };
 
 export type FornecedorOption = {
