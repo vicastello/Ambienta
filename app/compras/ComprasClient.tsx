@@ -1213,7 +1213,7 @@ export default function ComprasClient() {
   }, [flushAutoSave]);
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-6rem)] space-y-3 pb-4">
+    <div className="flex flex-col h-[calc(100vh-5rem)] space-y-3">
       {/* Header compacto */}
       <section className="rounded-[28px] glass-panel glass-tint border border-white/50 dark:border-white/10 p-4 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-4">
