@@ -1690,7 +1690,7 @@ export default function ComprasClient() {
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="absolute top-1 right-1 w-8 h-8 rounded-full bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-700)] flex items-center justify-center overflow-hidden z-10 hover:bg-[var(--color-neutral-200)] dark:hover:bg-[var(--color-neutral-600)] transition-colors">
+                      <div className="absolute top-1 right-1 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center z-10 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
                         <AppDatePicker
                           align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
