@@ -353,21 +353,9 @@ export default function ComprasClient() {
   }, []);
 
 
-  // Auto-Save do Rascunho (LocalStorage + Servidor debounced)
+  // Auto-Save do Rascunho no Servidor (debounced - sem localStorage para evitar QuotaExceeded)
   const draftSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    // Salvar localmente imediatamente
-    const draft = {
-      manualItems,
-      pedidoOverrides,
-      currentOrderName,
-      selectedIds,
-      periodDays,
-      targetDays,
-      timestamp: Date.now(),
-    };
-    localStorage.setItem(COMPRAS_DRAFT_KEY, JSON.stringify(draft));
-
     // Debounce para salvar no servidor (evitar requisições excessivas)
     if (draftSaveTimerRef.current) {
       clearTimeout(draftSaveTimerRef.current);
@@ -397,6 +385,7 @@ export default function ComprasClient() {
       }
     };
   }, [manualItems, pedidoOverrides, currentOrderName, selectedIds, periodDays, targetDays]);
+
 
 
   // Estado para pedidos pendentes (histórico considerado como estoque)
