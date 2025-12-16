@@ -538,7 +538,9 @@ export default function ComprasClient() {
         diasAteRuptura,
         // valorMensal já vem do enriched
         // curvaABC já vem do enriched
+        // curvaABC já vem do enriched
         isDefaultLeadTime,
+        estoquePendente,
       };
     });
   }, [dadosFiltrados, pedidoOverrides, targetDays, estoquePendenteMap]);

@@ -407,7 +407,13 @@ export function ProductTable({
                                     )}
                                 </td>
                                 <td className="px-3 py-2 text-right" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
-                                    <div className="flex items-center justify-end gap-1">
+                                    <div className="flex items-center justify-end gap-1 relative">
+                                        {p.estoquePendente > 0 && (
+                                            <div
+                                                className="w-2 h-2 rounded-full bg-amber-400 absolute -left-3 top-1/2 -translate-y-1/2 animate-pulse"
+                                                title={`Aguardando ${p.estoquePendente} unid. de outros pedidos`}
+                                            />
+                                        )}
                                         <input
                                             type="number"
                                             min={0}

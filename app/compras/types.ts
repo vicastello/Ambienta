@@ -64,6 +64,7 @@ export type ProdutoDerivado = Sugestao & {
     diasAteRuptura: number | null;
     curvaABC: 'A' | 'B' | 'C';
     isDefaultLeadTime: boolean;
+    estoquePendente: number;
 };
 
 export type FornecedorOption = {

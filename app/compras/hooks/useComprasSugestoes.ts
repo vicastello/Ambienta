@@ -169,6 +169,7 @@ export function useComprasSugestoes(options?: UseComprasSugestoesOptions): UseCo
                 diasAteRuptura,
                 valorMensal, // campo temporário para cálculo ABC
                 isDefaultLeadTime,
+                estoquePendente: 0,
             };
         });
 
