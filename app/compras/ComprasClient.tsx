@@ -1251,12 +1251,12 @@ export default function ComprasClient() {
         <div className="flex flex-wrap items-center gap-6 mt-3 pt-3 border-t border-white/30 dark:border-white/5">
           {highlightCards.map((card) => (
             <div key={card.id} className="flex items-center gap-2">
-              <span className={`text-lg font-bold ${card.tone === 'success' ? 'text-emerald-600 dark:text-emerald-400' :
-                card.tone === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                  card.tone === 'primary' ? 'text-violet-600 dark:text-violet-400' :
-                    'text-slate-700 dark:text-slate-200'
+              <span className={`text-lg font-bold ${card.tone === 'success' ? 'text-[var(--color-success)] dark:text-[var(--color-success-light)]' :
+                card.tone === 'warning' ? 'text-[var(--color-warning)] dark:text-[var(--color-warning-light)]' :
+                  card.tone === 'primary' ? 'text-[var(--color-primary)] dark:text-[var(--color-primary-light)]' :
+                    'text-[var(--color-neutral-700)] dark:text-[var(--color-neutral-200)]'
                 }`}>{card.value}</span>
-              <span className="text-xs text-slate-500">{card.label}</span>
+              <span className="text-xs text-[var(--color-neutral-500)]">{card.label}</span>
             </div>
           ))}
         </div>
