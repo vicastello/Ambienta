@@ -1681,16 +1681,16 @@ export default function ComprasClient() {
                         {new Date(new Date().setDate(new Date().getDate() + targetDays)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                       </span>
                     </div>
-                    <div className="flex items-center h-10 rounded-lg border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)] bg-white dark:bg-[var(--color-neutral-800)] overflow-hidden focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary-subtle)]">
+                    <div className="relative flex items-center h-10 rounded-full border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)] bg-white dark:bg-[var(--color-neutral-800)] overflow-hidden focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary-subtle)] pr-1">
                       <input
                         type="number"
                         min={15}
                         max={180}
-                        className="flex-1 h-full bg-transparent border-none outline-none text-sm text-center font-semibold text-[var(--color-neutral-900)] dark:text-white px-2"
+                        className="flex-1 h-full bg-transparent border-none outline-none text-sm text-center font-semibold text-[var(--color-neutral-900)] dark:text-white pl-3 pr-1"
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
-                      <div className="h-full w-8 flex-shrink-0 flex items-center justify-center">
+                      <div className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--color-neutral-100)] dark:bg-[var(--color-neutral-700)] flex items-center justify-center">
                         <AppDatePicker
                           align="right"
                           date={new Date(new Date().setDate(new Date().getDate() + targetDays))}
