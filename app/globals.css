@@ -607,11 +607,7 @@
     box-shadow: var(--dark-card-shadow);
   }
 
-  :root.dark .glass-row {
-    border: 1px solid var(--dark-card-border);
-    background: var(--surface-card-bg);
-    box-shadow: var(--dark-card-shadow);
-  }
+  /* glass-row dark mode styling handled via CSS variables */
 
   /* Força o mesmo look em qualquer card/painel/row no dark mode */
   :root.dark .glass-tint,
