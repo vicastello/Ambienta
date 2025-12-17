@@ -287,10 +287,6 @@ export function ProductTable({
         <div
             ref={parentRef}
             className="table-container h-full"
-            style={{
-                scrollbarGutter: 'stable',
-                overflowY: 'auto',
-            }}
         >
             <table className="table-base">
                 <thead className="app-table-header z-50">

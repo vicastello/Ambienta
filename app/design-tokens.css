@@ -1209,9 +1209,11 @@
         position: relative;
     }
 
+    /* Removido - agora usa as scrollbars customizadas de globals.css
     .table-container::-webkit-scrollbar {
         display: none;
     }
+    */
 
     .table-base {
         width: 100%;
