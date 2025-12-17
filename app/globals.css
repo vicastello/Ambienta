@@ -119,15 +119,13 @@
     --card-sat: 1.08;
 
     /* Removendo gradientes opacos para restaurar glassmorphism */
-    --surface-panel-bg: rgba(28, 31, 42, 0.3);
-    /* Transparente como glass-panel */
+    --surface-panel-bg: linear-gradient(165deg, rgba(28, 31, 42, 0.9), rgba(16, 18, 26, 0.92));
     --surface-panel-border: rgba(255, 255, 255, 0.04);
     --surface-panel-shadow: none;
     --panel-blur: 100px;
     --panel-sat: 1.08;
 
-    --surface-row-bg: rgba(16, 20, 30, 0.3);
-    /* Transparente como glass-row */
+    --surface-row-bg: linear-gradient(165deg, rgba(16, 20, 30, 0.82), rgba(10, 12, 20, 0.86));
     --surface-row-border: rgba(255, 255, 255, 0.01);
     --surface-row-shadow: none;
     --row-blur: 100px;
