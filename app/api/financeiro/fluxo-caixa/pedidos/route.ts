@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
                 tiny_data_faturamento,
                 cliente_nome,
                 valor_total_pedido,
+                valor,
                 situacao,
                 canal,
                 payment_received,
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
         // We only need fields relevant for calculation: payment status, value, date
         let summaryQuery = supabaseAdmin
             .from('tiny_orders')
-            .select('valor_total_pedido, payment_received, data_criacao');
+            .select('valor_total_pedido, valor, payment_received, data_criacao');
 
         summaryQuery = applyFilters(summaryQuery);
 
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
                 tiny_id: order.tiny_id,
                 numero_pedido: order.numero_pedido,
                 cliente: order.cliente_nome,
-                valor: order.valor_total_pedido,
+                valor: order.valor_total_pedido ?? order.valor ?? 0,
                 data_pedido: order.data_criacao,
                 data_faturamento: order.tiny_data_faturamento,
                 status_pagamento: financialStatus,
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
 
         const today = new Date();
         summaryRes.data.forEach((o: any) => {
-            const valor = o.valor_total_pedido || 0;
+            const valor = o.valor_total_pedido ?? o.valor ?? 0;
             summary.total += valor;
 
             if (o.payment_received) {
