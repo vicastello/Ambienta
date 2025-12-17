@@ -730,8 +730,8 @@
     border: 1px solid var(--surface-card-border);
     border-radius: 2rem;
     overflow: hidden;
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    -webkit-backdrop-filter: blur(100px) !important;
+    backdrop-filter: blur(100px) !important;
     contain: paint;
   }
 
