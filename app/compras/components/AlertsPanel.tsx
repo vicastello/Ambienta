@@ -99,11 +99,11 @@ export function AlertsPanel({ produtos, activeFilterId, onSelectFilter }: Alerts
     const criticalCount = alerts.filter(a => a.type === 'critical').reduce((acc, a) => acc + a.count, 0);
 
     return (
-        <div className="rounded-2xl glass-panel overflow-hidden">
+        <div className="rounded-2xl glass-panel overflow-hidden !border-none !shadow-none transform-gpu">
             {/* Header colapsável */}
             <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
+                className={`w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 dark:hover:bg-white/5 transition-colors !border-0 ${!isCollapsed ? 'rounded-none' : ''}`}
             >
                 <div className="flex items-center gap-3">
                     {isCollapsed ? (

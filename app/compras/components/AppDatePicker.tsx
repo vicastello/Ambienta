@@ -139,7 +139,7 @@ export function AppDatePicker({
                     absolute top-full mt-2 z-[100] 
                     active:scale-95
                     glass-panel
-                    rounded-[20px] shadow-xl p-4 w-[280px]
+                    rounded-[20px] shadow-xl p-4 w-[320px]
                     animate-fade-in
                     ${align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}
                 `}>
@@ -157,7 +157,7 @@ export function AppDatePicker({
                     </div>
 
                     {/* Week Days */}
-                    <div className="grid grid-cols-7 mb-2">
+                    <div className="grid grid-cols-7 mb-2 place-items-center">
                         {weekDays.map((day, i) => (
                             <div key={i} className="h-8 w-8 flex items-center justify-center text-[10px] font-bold text-[var(--color-neutral-400)] uppercase">
                                 {day}
@@ -166,7 +166,7 @@ export function AppDatePicker({
                     </div>
 
                     {/* Days Grid */}
-                    <div className="grid grid-cols-7 gap-y-1">
+                    <div className="grid grid-cols-7 gap-y-1 place-items-center">
                         {renderCalendarDays()}
                     </div>
                 </div>
