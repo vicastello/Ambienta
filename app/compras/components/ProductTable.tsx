@@ -218,7 +218,7 @@ export function ProductTable({
         count: allItems.length,
         getScrollElement: () => parentRef.current,
         estimateSize: () => 72, // More accurate height estimate
-        overscan: 150, // Ultra-wide buffer for seamless scrolling
+        overscan: 60, // Balanced buffer for smooth scrolling without overloading DOM
     });
 
     const getAriaSort = (key: SortKey): 'none' | 'ascending' | 'descending' => {
@@ -365,8 +365,8 @@ export function ProductTable({
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[370px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
-                                            <td className="px-3 py-2 sticky left-[460px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                            <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[370px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
+                                            <td className="px-3 py-2 sticky left-[460px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                                 {isEditing ? (
                                                     <input
                                                         type="text"
@@ -380,7 +380,7 @@ export function ProductTable({
                                                 )}
                                             </td>
                                             <td colSpan={7} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">—</td>
-                                            <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[570px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                            <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[570px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                                 {isEditing ? (
                                                     <input
                                                         type="number"
@@ -517,7 +517,7 @@ export function ProductTable({
 
                                 return (
                                     <tr key={p.id_produto_tiny} className={rowClass}>
-                                        <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 backdrop-blur-sm ${stickyDataClass}`}>
+                                        <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell ${stickyDataClass}`}>
                                             <button
                                                 type="button"
                                                 role="checkbox"
@@ -531,7 +531,7 @@ export function ProductTable({
                                                 </span>
                                             </button>
                                         </td>
-                                        <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '320px', minWidth: '320px', maxWidth: '320px' }}>
+                                        <td className={`px-3 py-2 sticky left-[50px] z-10 ${stickyDataClass}`} style={{ width: '320px', minWidth: '320px', maxWidth: '320px' }}>
                                             <div className="flex items-center gap-3">
                                                 <div className="relative w-14 h-14 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
                                                     {p.imagem_url ? (
@@ -556,7 +556,7 @@ export function ProductTable({
                                             </div>
                                         </td>
                                         <td className={`px-3 py-2 cell-text-code select-all truncate sticky left-[370px] z-10 ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
-                                        <td className={`px-3 py-2 sticky left-[460px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                        <td className={`px-3 py-2 sticky left-[460px] z-10 ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                             <div className="flex flex-col gap-0.5 w-full min-w-0">
                                                 <input
                                                     className="app-input h-8 text-sm px-2"
@@ -572,7 +572,7 @@ export function ProductTable({
                                                 </p>
                                             </div>
                                         </td>
-                                        <td className={`px-3 py-2 text-right sticky left-[570px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                        <td className={`px-3 py-2 text-right sticky left-[570px] z-10 ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                             <input
                                                 type="number"
                                                 min={1}
