@@ -2,10 +2,13 @@
 
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Loader2, Search, X, ShoppingBag, Package, Store } from 'lucide-react';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import {
+    ChevronLeft, ChevronRight, Loader2, Search, X,
+    ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
+    CheckCircle2, Clock, AlertTriangle, XCircle, Bell
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Order {
@@ -27,7 +30,16 @@ interface Meta {
     page: number;
     limit: number;
     totalPages: number;
+    summary?: {
+        recebido: number;
+        pendente: number;
+        atrasado: number;
+        total: number;
+    };
 }
+
+type SortField = 'numero_pedido' | 'data_pedido' | 'cliente' | 'valor' | 'status_pagamento' | 'vencimento_estimado';
+type SortDirection = 'asc' | 'desc';
 
 const formatCurrency = (value: number) => {
     return value.toLocaleString('pt-BR', {
@@ -60,16 +72,175 @@ const getMarketplaceBadge = (canal: string) => {
     return marketplaceBadges['Outros'];
 };
 
+// Enhanced status configuration
+const getEnhancedStatus = (order: Order) => {
+    if (order.status_pagamento === 'pago') {
+        return {
+            icon: CheckCircle2,
+            label: 'Pago',
+            bg: 'bg-emerald-100 dark:bg-emerald-900/30',
+            text: 'text-emerald-700 dark:text-emerald-300',
+            iconColor: 'text-emerald-500',
+        };
+    }
+
+    if (order.status_pagamento === 'atrasado') {
+        const daysOverdue = order.vencimento_estimado
+            ? Math.abs(differenceInDays(new Date(), new Date(order.vencimento_estimado)))
+            : 0;
+        return {
+            icon: XCircle,
+            label: daysOverdue > 0 ? `${daysOverdue}d atrasado` : 'Atrasado',
+            bg: 'bg-rose-100 dark:bg-rose-900/30',
+            text: 'text-rose-700 dark:text-rose-300',
+            iconColor: 'text-rose-500',
+        };
+    }
+
+    // Pending - check if due today or tomorrow
+    if (order.vencimento_estimado) {
+        const vencimento = new Date(order.vencimento_estimado);
+
+        if (isToday(vencimento)) {
+            return {
+                icon: AlertTriangle,
+                label: 'Vence hoje',
+                bg: 'bg-amber-100 dark:bg-amber-900/30 animate-pulse',
+                text: 'text-amber-700 dark:text-amber-300',
+                iconColor: 'text-amber-500',
+            };
+        }
+
+        if (isTomorrow(vencimento)) {
+            return {
+                icon: Clock,
+                label: 'Vence amanhã',
+                bg: 'bg-amber-50 dark:bg-amber-900/20',
+                text: 'text-amber-600 dark:text-amber-400',
+                iconColor: 'text-amber-400',
+            };
+        }
+    }
+
+    return {
+        icon: Clock,
+        label: 'Pendente',
+        bg: 'bg-slate-100 dark:bg-slate-800/50',
+        text: 'text-slate-600 dark:text-slate-400',
+        iconColor: 'text-slate-400',
+    };
+};
+
 export interface ReceivablesTableProps {
     orders: Order[];
     meta: Meta | null;
     loading: boolean;
 }
 
+// Sortable header component
+function SortableHeader({
+    label,
+    field,
+    sortField,
+    sortDirection,
+    onSort,
+    align = 'left'
+}: {
+    label: string;
+    field: SortField;
+    sortField: SortField | null;
+    sortDirection: SortDirection;
+    onSort: (field: SortField) => void;
+    align?: 'left' | 'right' | 'center';
+}) {
+    const isActive = sortField === field;
+
+    return (
+        <th
+            className={cn(
+                "py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 cursor-pointer select-none",
+                "hover:bg-white/40 dark:hover:bg-white/5 transition-colors",
+                align === 'right' && 'text-right',
+                align === 'center' && 'text-center'
+            )}
+            onClick={() => onSort(field)}
+        >
+            <div className={cn(
+                "inline-flex items-center gap-1.5",
+                align === 'right' && 'flex-row-reverse',
+                align === 'center' && 'justify-center'
+            )}>
+                {label}
+                {isActive ? (
+                    sortDirection === 'asc'
+                        ? <ArrowUp className="w-3.5 h-3.5 text-primary-500" />
+                        : <ArrowDown className="w-3.5 h-3.5 text-primary-500" />
+                ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100" />
+                )}
+            </div>
+        </th>
+    );
+}
+
+// Alert Banner Component
+function AlertBanner({ orders }: { orders: Order[] }) {
+    const alerts = useMemo(() => {
+        const dueTodayOrders = orders.filter(o => {
+            if (o.status_pagamento === 'pago') return false;
+            if (!o.vencimento_estimado) return false;
+            return isToday(new Date(o.vencimento_estimado));
+        });
+
+        const overdueOrders = orders.filter(o => o.status_pagamento === 'atrasado');
+        const overdueOver15Days = overdueOrders.filter(o => {
+            if (!o.vencimento_estimado) return false;
+            return Math.abs(differenceInDays(new Date(), new Date(o.vencimento_estimado))) > 15;
+        });
+
+        const dueTodayTotal = dueTodayOrders.reduce((sum, o) => sum + o.valor, 0);
+        const overdueTotal = overdueOrders.reduce((sum, o) => sum + o.valor, 0);
+
+        return {
+            dueToday: { count: dueTodayOrders.length, total: dueTodayTotal },
+            overdue: { count: overdueOrders.length, total: overdueTotal },
+            overdueOver15: { count: overdueOver15Days.length },
+        };
+    }, [orders]);
+
+    if (alerts.dueToday.count === 0 && alerts.overdue.count === 0) {
+        return null;
+    }
+
+    return (
+        <div className="flex flex-wrap gap-3">
+            {alerts.dueToday.count > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-100/80 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
+                    <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-bounce" />
+                    <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        {alerts.dueToday.count} pagamento{alerts.dueToday.count > 1 ? 's' : ''} vence{alerts.dueToday.count > 1 ? 'm' : ''} hoje ({formatCurrency(alerts.dueToday.total)})
+                    </span>
+                </div>
+            )}
+
+            {alerts.overdueOver15.count > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-100/80 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    <span className="text-sm font-medium text-rose-800 dark:text-rose-200">
+                        {alerts.overdueOver15.count} atrasado{alerts.overdueOver15.count > 1 ? 's' : ''} há mais de 15 dias
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTableProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
+    const [sortField, setSortField] = useState<SortField | null>(null);
+    const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
     const handlePageChange = (newPage: number) => {
         const params = new URLSearchParams(searchParams.toString());
@@ -77,17 +248,59 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         router.push(`?${params.toString()}`);
     };
 
-    // Client-side filtering by search term
-    const filteredOrders = useMemo(() => {
-        if (!searchTerm.trim()) return orders;
-        const term = searchTerm.toLowerCase();
-        return orders.filter(order =>
-            order.cliente?.toLowerCase().includes(term) ||
-            order.numero_pedido?.toString().includes(term) ||
-            order.tiny_id?.toString().includes(term) ||
-            order.canal?.toLowerCase().includes(term)
-        );
-    }, [orders, searchTerm]);
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('desc');
+        }
+    };
+
+    // Client-side filtering and sorting
+    const processedOrders = useMemo(() => {
+        let result = [...orders];
+
+        // Filter by search term
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            result = result.filter(order =>
+                order.cliente?.toLowerCase().includes(term) ||
+                order.numero_pedido?.toString().includes(term) ||
+                order.tiny_id?.toString().includes(term) ||
+                order.canal?.toLowerCase().includes(term)
+            );
+        }
+
+        // Sort
+        if (sortField) {
+            result.sort((a, b) => {
+                let aVal: any = a[sortField];
+                let bVal: any = b[sortField];
+
+                // Handle nulls
+                if (aVal === null || aVal === undefined) aVal = '';
+                if (bVal === null || bVal === undefined) bVal = '';
+
+                // Handle dates
+                if (sortField === 'data_pedido' || sortField === 'vencimento_estimado') {
+                    aVal = aVal ? new Date(aVal).getTime() : 0;
+                    bVal = bVal ? new Date(bVal).getTime() : 0;
+                }
+
+                // Handle numbers
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                // Handle strings
+                const comparison = String(aVal).localeCompare(String(bVal), 'pt-BR');
+                return sortDirection === 'asc' ? comparison : -comparison;
+            });
+        }
+
+        return result;
+    }, [orders, searchTerm, sortField, sortDirection]);
 
     if (loading) {
         return (
@@ -99,6 +312,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
 
     return (
         <div className="space-y-4">
+            {/* Alert Banners */}
+            <AlertBanner orders={orders} />
+
             {/* Search Input */}
             <div className="relative max-w-md">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -130,18 +346,57 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
-                            <tr>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Pedido</th>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Data</th>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Cliente</th>
+                            <tr className="group">
+                                <SortableHeader
+                                    label="Pedido"
+                                    field="numero_pedido"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                />
+                                <SortableHeader
+                                    label="Data"
+                                    field="data_pedido"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                />
+                                <SortableHeader
+                                    label="Cliente"
+                                    field="cliente"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                />
                                 <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Canal</th>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-right">Valor</th>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-center">Status</th>
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-right">Data Rec.</th>
+                                <SortableHeader
+                                    label="Valor"
+                                    field="valor"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                    align="right"
+                                />
+                                <SortableHeader
+                                    label="Status"
+                                    field="status_pagamento"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                    align="center"
+                                />
+                                <SortableHeader
+                                    label="Vencimento"
+                                    field="vencimento_estimado"
+                                    sortField={sortField}
+                                    sortDirection={sortDirection}
+                                    onSort={handleSort}
+                                    align="right"
+                                />
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/10 dark:divide-white/5">
-                            {filteredOrders.length === 0 ? (
+                            {processedOrders.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="py-12 text-center text-slate-500">
                                         {searchTerm ? (
@@ -155,14 +410,17 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                     </td>
                                 </tr>
                             ) : (
-                                filteredOrders.map((order) => {
-                                    const badge = getMarketplaceBadge(order.canal);
-                                    const BadgeIcon = badge.icon;
+                                processedOrders.map((order) => {
+                                    const marketplaceBadge = getMarketplaceBadge(order.canal);
+                                    const BadgeIcon = marketplaceBadge.icon;
+                                    const status = getEnhancedStatus(order);
+                                    const StatusIcon = status.icon;
+
                                     return (
                                         <tr
                                             key={order.id}
                                             className={cn(
-                                                "hover:bg-white/40 dark:hover:bg-white/5 transition-colors group",
+                                                "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer group",
                                                 order.status_pagamento === 'atrasado' && "bg-rose-50/50 dark:bg-rose-950/20",
                                                 order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10"
                                             )}
@@ -186,29 +444,29 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                             <td className="py-4 px-6">
                                                 <span className={cn(
                                                     "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium",
-                                                    badge.bg, badge.text
+                                                    marketplaceBadge.bg, marketplaceBadge.text
                                                 )}>
                                                     <BadgeIcon className="w-3.5 h-3.5" />
-                                                    {badge.label}
+                                                    {marketplaceBadge.label}
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6 text-right font-semibold text-slate-700 dark:text-slate-200">
                                                 {formatCurrency(order.valor)}
                                             </td>
                                             <td className="py-4 px-6 text-center">
-                                                <StatusBadge
-                                                    status={
-                                                        order.status_pagamento === 'pago' ? 'success' :
-                                                            order.status_pagamento === 'atrasado' ? 'error' : 'warning'
-                                                    }
-                                                    label={
-                                                        order.status_pagamento === 'pago' ? 'Pago' :
-                                                            order.status_pagamento === 'atrasado' ? 'Atrasado' : 'Pendente'
-                                                    }
-                                                />
+                                                <span className={cn(
+                                                    "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium",
+                                                    status.bg, status.text
+                                                )}>
+                                                    <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
+                                                    {status.label}
+                                                </span>
                                             </td>
                                             <td className="py-4 px-6 text-right text-slate-500 text-xs">
-                                                {order.data_pagamento ? formatDate(order.data_pagamento) : '-'}
+                                                {order.status_pagamento === 'pago'
+                                                    ? formatDate(order.data_pagamento)
+                                                    : formatDate(order.vencimento_estimado)
+                                                }
                                             </td>
                                         </tr>
                                     );
@@ -229,7 +487,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                             <ChevronLeft className="w-5 h-5" />
                         </button>
                         <span className="text-sm text-slate-600 dark:text-slate-400">
-                            Página {meta.page} de {meta.totalPages} • {filteredOrders.length} de {orders.length} registros
+                            Página {meta.page} de {meta.totalPages} • {processedOrders.length} de {orders.length} registros
                         </span>
                         <button
                             onClick={() => handlePageChange(meta.page + 1)}
@@ -244,4 +502,3 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         </div>
     );
 }
-
