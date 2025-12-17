@@ -1861,8 +1861,8 @@ export default function ComprasClient() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-white/50 dark:border-white/10 relative flex-1 min-h-0">
-              <div className="h-full absolute inset-0 overflow-auto">
+            <div className="overflow-hidden rounded-[24px] border border-white/50 dark:border-white/10 relative flex-1 min-h-0 transform-gpu isolate" style={{ clipPath: 'inset(0 round 24px)' }}>
+              <div className="h-full absolute inset-0 overflow-auto rounded-[24px]">
                 <ProductTable
                   products={filteredSortedProdutos}
                   manualItems={manualItemsFiltered}
