@@ -1124,23 +1124,23 @@
     }
 
     .sticky-cell-urgent {
-        background: #ffe4e6 !important;
-        /* rose-100 */
+        background: #fff8f9 !important;
+        /* rose-subtle */
     }
 
     :root.dark .sticky-cell-urgent {
-        background: #4c0519 !important;
-        /* rose-950 */
+        background: rgba(136, 19, 55, 0.5) !important;
+        /* rose-950/50 */
     }
 
     .sticky-cell-warning {
-        background: #fef3c7 !important;
-        /* amber-100 */
+        background: #fffdfa !important;
+        /* amber-subtle */
     }
 
     :root.dark .sticky-cell-warning {
-        background: #451a03 !important;
-        /* amber-950 */
+        background: rgba(120, 53, 15, 0.5) !important;
+        /* amber-950/50 */
     }
 
     /* ==========================================================================
