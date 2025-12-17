@@ -1641,16 +1641,16 @@ export default function ComprasClient() {
       {/* Conteúdo da aba ativa */}
       {activeTab === 'current' && (
         <div className="flex flex-col flex-1 min-h-0">
-          <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="rounded-[24px] glass-panel p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Toolbar de Controle Unificada */}
             <div className="flex flex-col gap-3 shrink-0 mb-3">
-              <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px] bg-white/40 dark:bg-white/5 border border-white/20 dark:border-white/5 shadow-sm backdrop-blur-md">
+              <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px] glass-panel">
 
                 {/* 1. Identificação */}
                 <div className="w-full sm:w-[220px] shrink-0">
                   <label className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 ml-1 block">Pedido</label>
                   <input
-                    className="app-input w-full h-10 text-sm font-medium"
+                    className="glass-input h-10 text-sm font-medium"
                     value={currentOrderName}
                     onChange={(event) => setCurrentOrderName(event.target.value)}
                     placeholder="Nome do pedido..."
@@ -1668,7 +1668,7 @@ export default function ComprasClient() {
                         type="number"
                         min={15}
                         max={180}
-                        className="app-input w-full h-10 text-sm text-center font-semibold"
+                        className="glass-input h-10 text-sm text-center font-semibold"
                         value={periodDays}
                         onChange={(e) => handlePeriodInput(e.target.value)}
                       />
@@ -1686,7 +1686,7 @@ export default function ComprasClient() {
                         type="number"
                         min={15}
                         max={180}
-                        className="app-input w-full h-full rounded-full text-sm text-center font-semibold !pr-10 !pl-4 border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-subtle)] bg-white dark:bg-[var(--color-neutral-800)]"
+                        className="glass-input h-full rounded-full text-sm text-center font-semibold !pr-10 !pl-4"
                         value={targetDays}
                         onChange={(e) => handleCoverageInput(e.target.value)}
                       />
@@ -1725,7 +1725,7 @@ export default function ComprasClient() {
                       <input
                         id="search-input"
                         type="text"
-                        className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm"
+                        className="glass-input pl-10 pr-4 py-2 text-sm"
                         value={produtoFiltro}
                         onChange={(e) => setProdutoFiltro(e.target.value)}
                         placeholder="Buscar produto (nome, SKU, GTIN)..."
@@ -1779,7 +1779,7 @@ export default function ComprasClient() {
 
                 <div className="flex items-center gap-4 shrink-0">
                   {/* Card de Totais Compacto */}
-                  <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-white/60 dark:bg-white/5 border border-white/20">
+                  <div className="flex items-center gap-4 px-4 py-2 rounded-xl glass-panel">
                     <div className="flex flex-col items-end">
                       <span className="text-[10px] text-slate-500 font-semibold uppercase">Qtd</span>
                       <span className="text-sm font-bold text-slate-900 dark:text-white leading-none">{totalCompra.toLocaleString('pt-BR')}</span>
@@ -1792,30 +1792,30 @@ export default function ComprasClient() {
                   </div>
 
                   {/* Botões View Mode */}
-                  <div className="flex p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-lg border border-white/10">
+                  <div className="flex items-center gap-1 p-1 rounded-xl glass-panel">
                     <button
                       onClick={() => setSelectionFilter('all')}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'all'
-                        ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${selectionFilter === 'all'
+                        ? 'bg-[var(--glass-highlight)] text-slate-900 dark:text-white shadow-sm ring-1 ring-white/10'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                     >
                       Todos
                     </button>
                     <button
                       onClick={() => setSelectionFilter('selected')}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'selected'
-                        ? 'bg-white dark:bg-slate-600 text-violet-600 dark:text-violet-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${selectionFilter === 'selected'
+                        ? 'bg-[var(--glass-highlight)] text-violet-600 dark:text-violet-300 shadow-sm ring-1 ring-white/10'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                     >
                       Sel.
                     </button>
                     <button
                       onClick={() => setSelectionFilter('unselected')}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all ${selectionFilter === 'unselected'
-                        ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all ${selectionFilter === 'unselected'
+                        ? 'bg-[var(--glass-highlight)] text-slate-900 dark:text-white shadow-sm ring-1 ring-white/10'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                     >
                       Não Sel.
@@ -1858,14 +1858,14 @@ export default function ComprasClient() {
               </div>
             </div>
             {/* Toolbar inferior fixa - Sempre visível no final */}
-            <div className="flex items-center justify-between gap-4 p-3 mt-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm rounded-xl shrink-0">
+            <div className="flex items-center justify-between gap-4 p-3 mt-3 glass-panel rounded-xl shrink-0">
               {/* Input inline para item manual (minimalista) - ESQUERDA */}
               <div className="flex items-center gap-2 flex-1 max-w-md">
                 <input
                   type="text"
                   value={manualEntry.nome}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, nome: e.target.value }))}
-                  className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                  className="glass-input flex-1 min-w-0 px-3 py-1.5 text-xs"
                   placeholder="Produto não cadastrado..."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
@@ -1883,7 +1883,7 @@ export default function ComprasClient() {
                   type="text"
                   value={manualEntry.fornecedor_codigo}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, fornecedor_codigo: e.target.value }))}
-                  className="w-16 px-2 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                  className="glass-input w-16 px-2 py-1.5 text-xs"
                   placeholder="Cód."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && manualEntry.nome.trim() && manualEntry.quantidade) {
@@ -1901,7 +1901,7 @@ export default function ComprasClient() {
                   type="number"
                   value={manualEntry.quantidade}
                   onChange={(e) => setManualEntry(prev => ({ ...prev, quantidade: e.target.value }))}
-                  className="w-14 px-2 py-1.5 text-xs text-right rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+                  className="glass-input w-14 px-2 py-1.5 text-xs text-right"
                   placeholder="Qtd"
                   min="1"
                   onKeyDown={(e) => {
@@ -1929,7 +1929,7 @@ export default function ComprasClient() {
                     setManualEntry(createManualEntry());
                   }}
                   disabled={!manualEntry.nome.trim() || !manualEntry.quantidade || parseInt(manualEntry.quantidade, 10) <= 0}
-                  className="p-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white transition-colors shadow-sm"
+                  className="glass-btn glass-btn-primary p-1.5 rounded-lg shadow-sm"
                   title="Adicionar item manual"
                 >
                   <Plus className="w-4 h-4" />
@@ -1944,14 +1944,14 @@ export default function ComprasClient() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-medium transition-colors"
+                    className="glass-btn glass-btn-secondary px-3 py-1.5 rounded-lg text-xs"
                     onClick={() => setSelectedIds({})}
                   >
                     Limpar
                   </button>
                   <button
                     type="button"
-                    className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-xs font-medium transition-colors"
+                    className="glass-btn glass-btn-secondary px-3 py-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:border-emerald-500/40 hover:bg-emerald-500/10 text-xs"
                     onClick={() => {
                       const suggestionsToSelect = filteredSortedProdutos
                         .filter(d => d.sugestao_ajustada > 0)
@@ -2006,12 +2006,12 @@ export default function ComprasClient() {
 
       {activeTab === 'current' && (
         <div className="lg:hidden fixed bottom-4 left-4 right-4 z-40">
-          <div className="rounded-[28px] border border-white/20 bg-white/60 dark:bg-slate-900/40 dark:border-white/6 backdrop-blur-sm shadow-md p-4 space-y-3">
+          <div className="rounded-[28px] glass-panel backdrop-blur-md shadow-md p-4 space-y-3">
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               {selectionCount} item{selectionCount === 1 ? '' : 's'} selecionado{selectionCount === 1 ? '' : 's'} · {selectionTotalQuantidade.toLocaleString('pt-BR')} unid.
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={handleSaveCurrentOrder} className="app-btn-primary w-full justify-center gap-2" disabled={savingOrder}>
+              <button type="button" onClick={handleSaveCurrentOrder} className="glass-btn glass-btn-primary w-full justify-center gap-2" disabled={savingOrder}>
                 {savingOrder ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -2024,7 +2024,7 @@ export default function ComprasClient() {
                   </>
                 )}
               </button>
-              <button type="button" onClick={gerarPdf} className="app-btn-primary w-full justify-center gap-2" disabled={exportando}>
+              <button type="button" onClick={gerarPdf} className="glass-btn glass-btn-primary w-full justify-center gap-2" disabled={exportando}>
                 {exportando ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />

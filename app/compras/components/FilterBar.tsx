@@ -41,7 +41,7 @@ export function FilterBar({
                     />
                 </div>
             </div>
-            <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-2">
+            <div className="rounded-[24px] glass-panel p-4 sm:p-5 space-y-2">
                 <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-400">
                     <span>Filtro de fornecedor</span>
                     <span className="text-[10px] tracking-[0.2em] text-slate-400">Inclui &quot;Sem fornecedor&quot;</span>

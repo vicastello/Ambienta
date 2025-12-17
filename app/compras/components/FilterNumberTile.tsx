@@ -15,7 +15,7 @@ type FilterNumberTileProps = {
 
 export function FilterNumberTile({ label, value, min, max, step, helper, suffix, disabled, onChange }: FilterNumberTileProps) {
     return (
-        <label className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-2">
+        <label className="rounded-[24px] glass-panel p-4 sm:p-5 space-y-2">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</p>
             <div className="flex items-center gap-2">
                 <input
@@ -23,7 +23,7 @@ export function FilterNumberTile({ label, value, min, max, step, helper, suffix,
                     min={min}
                     max={max}
                     step={step}
-                    className="app-input w-full"
+                    className="glass-input w-full"
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     disabled={disabled}

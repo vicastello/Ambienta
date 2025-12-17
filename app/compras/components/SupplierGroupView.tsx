@@ -109,8 +109,8 @@ export function SupplierGroupView({
                     </span>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={expandAll} className="app-btn-secondary text-xs">Expandir todos</button>
-                    <button onClick={collapseAll} className="app-btn-secondary text-xs">Recolher todos</button>
+                    <button onClick={expandAll} className="glass-btn glass-btn-secondary text-xs px-3 py-1.5 h-auto">Expandir todos</button>
+                    <button onClick={collapseAll} className="glass-btn glass-btn-secondary text-xs px-3 py-1.5 h-auto">Recolher todos</button>
                 </div>
             </div>
 
@@ -125,12 +125,12 @@ export function SupplierGroupView({
                     return (
                         <div
                             key={group.fornecedor}
-                            className="rounded-2xl border border-white/50 dark:border-white/10 bg-white/50 dark:bg-white/5 overflow-hidden"
+                            className="rounded-2xl glass-panel overflow-hidden"
                         >
                             {/* Header do grupo */}
                             <button
                                 onClick={() => toggleGroup(group.fornecedor)}
-                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/50 dark:hover:bg-white/5 transition-colors"
+                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 dark:hover:bg-white/5 transition-colors"
                             >
                                 <div className="flex items-center gap-3">
                                     {isExpanded ? (
@@ -139,7 +139,7 @@ export function SupplierGroupView({
                                         <ChevronRight className="w-4 h-4 text-slate-400" />
                                     )}
                                     <span className="font-semibold text-slate-900 dark:text-white">{displayName}</span>
-                                    <span className="text-xs text-slate-500 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                                    <span className="text-xs text-slate-500 bg-[var(--glass-surface-light)] dark:bg-white/5 px-2 py-0.5 rounded-full ring-1 ring-white/10">
                                         {group.produtosCount} item{group.produtosCount > 1 ? 's' : ''}
                                     </span>
                                 </div>
@@ -153,15 +153,15 @@ export function SupplierGroupView({
 
                             {/* Lista de produtos (expandido) */}
                             {isExpanded && (
-                                <div className="border-t border-white/50 dark:border-white/10 divide-y divide-white/30 dark:divide-white/5">
+                                <div className="border-t border-white/10 divide-y divide-white/5">
                                     {group.produtos.map((p) => (
                                         <div key={p.id_produto_tiny} className="flex items-center justify-between px-4 py-2 pl-10">
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <span className={`shrink-0 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${p.curvaABC === 'A'
-                                                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400'
-                                                        : p.curvaABC === 'B'
-                                                            ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
-                                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400'
+                                                    : p.curvaABC === 'B'
+                                                        ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
+                                                        : 'bg-[var(--glass-surface-light)] text-slate-500 dark:bg-white/5 dark:text-slate-400 ring-1 ring-white/10'
                                                     }`}>{p.curvaABC}</span>
                                                 <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{p.nome}</span>
                                                 <span className="text-xs text-slate-400">{p.codigo}</span>

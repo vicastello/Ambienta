@@ -25,7 +25,7 @@ export function StickyTotalsBar({
 
     return (
         <div className="fixed bottom-8 left-0 right-0 z-[100] px-4 pointer-events-none flex justify-center animate-slide-in-bottom">
-            <div className="inline-flex pointer-events-auto items-center gap-6 px-6 py-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border border-[var(--color-neutral-200)] dark:border-white/10 shadow-2xl">
+            <div className="inline-flex pointer-events-auto items-center gap-6 px-6 py-4 rounded-2xl glass-panel shadow-2xl">
                 {/* Métricas */}
                 <div className="flex items-center gap-6">
                     {/* Produtos selecionados */}
@@ -73,7 +73,7 @@ export function StickyTotalsBar({
                     <button
                         onClick={onConfirm}
                         disabled={confirmLoading}
-                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-semibold transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="glass-btn glass-btn-primary px-6 py-3 rounded-xl shadow-lg shadow-emerald-500/25"
                     >
                         {confirmLoading ? (
                             <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

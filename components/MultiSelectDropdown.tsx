@@ -104,13 +104,13 @@ export function MultiSelectDropdown({
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center gap-2 px-4 py-2 rounded-2xl border app-border-subtle bg-[var(--bg-card-soft)] text-[var(--text-main)] hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors min-w-0 justify-between"
+        className="glass-input flex items-center justify-between gap-2 h-10 px-4 py-2 cursor-pointer hover:brightness-95 dark:hover:brightness-110 active:scale-[0.98]"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={label}
       >
-        <span className="text-sm truncate">{displayText}</span>
-        <span className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>▼</span>
+        <span className="truncate">{displayText}</span>
+        <span className={`transition-transform text-xs opacity-50 ${isOpen ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {isOpen &&
@@ -118,14 +118,12 @@ export function MultiSelectDropdown({
         ReactDOM.createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] bg-white/60 dark:bg-slate-950/60 border border-white/40 dark:border-slate-700/40 rounded-2xl"
+            className="fixed z-[9999] glass-panel rounded-2xl overflow-hidden"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,
               width: position.width,
               maxWidth: 'calc(100vw - 24px)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
             }}
           >
             <div className="max-h-80 overflow-y-auto">
@@ -152,13 +150,13 @@ export function MultiSelectDropdown({
                   onClear();
                   setIsOpen(false);
                 }}
-                className="text-xs px-3 py-1 rounded-full bg-transparent text-[var(--text-muted)] hover:bg-slate-200/40 dark:hover:bg-slate-800/60"
+                className="glass-btn glass-btn-ghost text-xs px-3 py-1 rounded-full h-auto"
               >
                 Limpar
               </button>
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-xs px-3 py-1 rounded-full bg-sky-500 text-white hover:bg-sky-600"
+                className="glass-btn glass-btn-primary text-xs px-3 py-1 rounded-full h-auto"
               >
                 Fechar
               </button>

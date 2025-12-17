@@ -137,8 +137,8 @@ export function AppDatePicker({
             {isOpen && (
                 <div className={`
                     absolute top-full mt-2 z-[100] 
-                    bg-white dark:bg-slate-900 
-                    border border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-700)]
+                    active:scale-95
+                    glass-panel
                     rounded-[20px] shadow-xl p-4 w-[280px]
                     animate-fade-in
                     ${align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}

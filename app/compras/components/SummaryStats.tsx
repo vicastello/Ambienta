@@ -8,7 +8,7 @@ type SummaryStatsProps = {
 
 export function SummaryStats({ totalCompra, totalValorCompra }: SummaryStatsProps) {
     return (
-        <div className="rounded-[24px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 space-y-1">
+        <div className="rounded-[24px] glass-panel p-4 sm:p-5 space-y-1">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Total sugerido</p>
             <div className="flex flex-col">
                 <p className="text-3xl font-semibold text-slate-900 dark:text-white">

@@ -150,7 +150,7 @@ export function OrderHistoryTab({
                     return (
                         <div
                             key={order.id}
-                            className="rounded-[20px] glass-panel glass-tint border border-white/60 dark:border-white/10 p-4 sm:p-5 transition-all hover:border-[var(--accent)]/30"
+                            className="rounded-[20px] glass-panel p-4 sm:p-5 transition-all hover:border-[var(--accent)]/30"
                         >
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                                 <div className="flex-1 min-w-0 space-y-2">

@@ -414,13 +414,18 @@ export function ProductTable({
 
 
                         // Definir background específico para células sticky em linhas de alerta
-                        // Isso garante que elas tenham a cor correta (e não branco) mas continuem opacas/blur
-                        // Suavizando para 50 para atender pedido de "cores mais suaves"
+                        // Cores OPACAS para esconder o conteúdo que rola por baixo
+                        // Usamos !important para garantir override sobre a classe .sticky-cell
                         let stickyDataClass = 'sticky-cell';
-                        if (isWarning || isUrgent) {
-                            stickyDataClass = 'bg-rose-50 dark:bg-rose-950/20';
+                        if (selectedIds[p.id_produto_tiny]) {
+                            // Linha selecionada - Teal claro OPACO (substitui primary-subtle que é transparente)
+                            stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
+                        } else if (isWarning || isUrgent) {
+                            // Linha de warning - rosa/vermelho OPACO
+                            stickyDataClass = '!bg-rose-100 dark:!bg-rose-950';
                         } else if (p.alerta_embalagem) {
-                            stickyDataClass = 'bg-amber-50 dark:bg-amber-950/20';
+                            // Linha de alerta embalagem - âmbar OPACO
+                            stickyDataClass = '!bg-amber-100 dark:!bg-amber-950';
                         }
 
                         return (
