@@ -1,13 +1,15 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
     ChevronLeft, ChevronRight, Loader2, Search, X,
     ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
-    CheckCircle2, Clock, AlertTriangle, XCircle, Bell
+    CheckCircle2, Clock, AlertTriangle, XCircle, Bell,
+    Check, Download, CreditCard, SquareCheck, Square, Minus,
+    ExternalLink, Calendar, User, Hash, MapPin, FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -97,7 +99,6 @@ const getEnhancedStatus = (order: Order) => {
         };
     }
 
-    // Pending - check if due today or tomorrow
     if (order.vencimento_estimado) {
         const vencimento = new Date(order.vencimento_estimado);
 
@@ -199,16 +200,14 @@ function AlertBanner({ orders }: { orders: Order[] }) {
         });
 
         const dueTodayTotal = dueTodayOrders.reduce((sum, o) => sum + o.valor, 0);
-        const overdueTotal = overdueOrders.reduce((sum, o) => sum + o.valor, 0);
 
         return {
             dueToday: { count: dueTodayOrders.length, total: dueTodayTotal },
-            overdue: { count: overdueOrders.length, total: overdueTotal },
             overdueOver15: { count: overdueOver15Days.length },
         };
     }, [orders]);
 
-    if (alerts.dueToday.count === 0 && alerts.overdue.count === 0) {
+    if (alerts.dueToday.count === 0 && alerts.overdueOver15.count === 0) {
         return null;
     }
 
@@ -235,12 +234,245 @@ function AlertBanner({ orders }: { orders: Order[] }) {
     );
 }
 
+// Selection Action Bar Component
+function SelectionActionBar({
+    selectedCount,
+    selectedTotal,
+    onClearSelection,
+    onMarkAsPaid,
+    onExportCSV,
+    isProcessing
+}: {
+    selectedCount: number;
+    selectedTotal: number;
+    onClearSelection: () => void;
+    onMarkAsPaid: () => void;
+    onExportCSV: () => void;
+    isProcessing: boolean;
+}) {
+    if (selectedCount === 0) return null;
+
+    return (
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 rounded-2xl bg-primary-500/10 dark:bg-primary-500/20 border border-primary-500/30 backdrop-blur-sm animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <SquareCheck className="w-5 h-5 text-primary-500" />
+                    <span className="font-medium text-primary-700 dark:text-primary-300">
+                        {selectedCount} selecionado{selectedCount > 1 ? 's' : ''}
+                    </span>
+                </div>
+                <span className="text-sm text-primary-600 dark:text-primary-400">
+                    Total: {formatCurrency(selectedTotal)}
+                </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={onMarkAsPaid}
+                    disabled={isProcessing}
+                    className={cn(
+                        "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium",
+                        "bg-emerald-500 hover:bg-emerald-600 text-white",
+                        "disabled:opacity-50 disabled:cursor-not-allowed",
+                        "transition-colors"
+                    )}
+                >
+                    {isProcessing ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                        <CreditCard className="w-4 h-4" />
+                    )}
+                    Marcar como Pago
+                </button>
+
+                <button
+                    onClick={onExportCSV}
+                    disabled={isProcessing}
+                    className={cn(
+                        "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium",
+                        "bg-white/60 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20",
+                        "text-slate-700 dark:text-slate-200 border border-white/40 dark:border-white/10",
+                        "disabled:opacity-50 disabled:cursor-not-allowed",
+                        "transition-colors"
+                    )}
+                >
+                    <Download className="w-4 h-4" />
+                    Exportar CSV
+                </button>
+
+                <button
+                    onClick={onClearSelection}
+                    className="p-2 rounded-lg hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                    title="Limpar seleção"
+                >
+                    <X className="w-4 h-4 text-slate-500" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// Order Detail Drawer Component
+function OrderDetailDrawer({
+    order,
+    onClose
+}: {
+    order: Order | null;
+    onClose: () => void;
+}) {
+    if (!order) return null;
+
+    const status = getEnhancedStatus(order);
+    const StatusIcon = status.icon;
+    const marketplaceBadge = getMarketplaceBadge(order.canal);
+    const BadgeIcon = marketplaceBadge.icon;
+
+    return (
+        <>
+            {/* Backdrop */}
+            <div
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={onClose}
+            />
+
+            {/* Drawer */}
+            <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl animate-in slide-in-from-right duration-300">
+                <div className="h-full flex flex-col">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                            Pedido #{order.numero_pedido}
+                        </h2>
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        >
+                            <X className="w-5 h-5 text-slate-500" />
+                        </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                        {/* Status Card */}
+                        <div className={cn(
+                            "p-4 rounded-2xl",
+                            status.bg
+                        )}>
+                            <div className="flex items-center gap-3">
+                                <StatusIcon className={cn("w-8 h-8", status.iconColor)} />
+                                <div>
+                                    <p className={cn("text-lg font-semibold", status.text)}>
+                                        {status.label}
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                                        {formatCurrency(order.valor)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Details Grid */}
+                        <div className="space-y-4">
+                            <DetailRow
+                                icon={User}
+                                label="Cliente"
+                                value={order.cliente || 'Consumidor Final'}
+                            />
+                            <DetailRow
+                                icon={Hash}
+                                label="ID Tiny"
+                                value={String(order.tiny_id)}
+                            />
+                            <DetailRow
+                                icon={Calendar}
+                                label="Data do Pedido"
+                                value={formatDate(order.data_pedido)}
+                            />
+                            <DetailRow
+                                icon={Calendar}
+                                label="Vencimento Estimado"
+                                value={formatDate(order.vencimento_estimado)}
+                            />
+                            {order.data_pagamento && (
+                                <DetailRow
+                                    icon={CheckCircle2}
+                                    label="Data de Pagamento"
+                                    value={formatDate(order.data_pagamento)}
+                                />
+                            )}
+                            <DetailRow
+                                icon={BadgeIcon}
+                                label="Canal"
+                                value={order.canal}
+                                badge={marketplaceBadge}
+                            />
+                        </div>
+
+                        {/* Quick Actions */}
+                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                            <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">
+                                Ações Rápidas
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                                    <ExternalLink className="w-4 h-4" />
+                                    Ver no Tiny
+                                </button>
+                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                                    <FileText className="w-4 h-4" />
+                                    Ver NF-e
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
+function DetailRow({
+    icon: Icon,
+    label,
+    value,
+    badge
+}: {
+    icon: any;
+    label: string;
+    value: string;
+    badge?: { bg: string; text: string };
+}) {
+    return (
+        <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">
+                <Icon className="w-4 h-4 text-slate-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className="text-sm text-slate-500 dark:text-slate-400">{label}</p>
+                {badge ? (
+                    <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded text-sm font-medium mt-0.5",
+                        badge.bg, badge.text
+                    )}>
+                        {value}
+                    </span>
+                ) : (
+                    <p className="text-slate-900 dark:text-white font-medium truncate">{value}</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTableProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
     const [sortField, setSortField] = useState<SortField | null>(null);
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [detailOrder, setDetailOrder] = useState<Order | null>(null);
 
     const handlePageChange = (newPage: number) => {
         const params = new URLSearchParams(searchParams.toString());
@@ -255,6 +487,73 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
             setSortField(field);
             setSortDirection('desc');
         }
+    };
+
+    // Selection handlers
+    const toggleSelection = useCallback((id: number) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    }, []);
+
+    const toggleSelectAll = useCallback(() => {
+        const pendingOrders = processedOrders.filter(o => o.status_pagamento !== 'pago');
+        if (selectedIds.size === pendingOrders.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(pendingOrders.map(o => o.id)));
+        }
+    }, []);
+
+    const clearSelection = () => setSelectedIds(new Set());
+
+    const selectedTotal = useMemo(() => {
+        return orders
+            .filter(o => selectedIds.has(o.id))
+            .reduce((sum, o) => sum + o.valor, 0);
+    }, [orders, selectedIds]);
+
+    // Action handlers
+    const handleMarkAsPaid = async () => {
+        setIsProcessing(true);
+        try {
+            // TODO: Implement API call to mark orders as paid
+            console.log('Marking as paid:', Array.from(selectedIds));
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
+            clearSelection();
+            router.refresh();
+        } catch (error) {
+            console.error('Error marking as paid:', error);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleExportCSV = () => {
+        const selectedOrders = orders.filter(o => selectedIds.has(o.id));
+        const headers = ['Pedido', 'Data', 'Cliente', 'Canal', 'Valor', 'Status', 'Vencimento'];
+        const rows = selectedOrders.map(o => [
+            o.numero_pedido,
+            formatDate(o.data_pedido),
+            o.cliente || 'Consumidor Final',
+            o.canal,
+            o.valor,
+            o.status_pagamento,
+            formatDate(o.vencimento_estimado)
+        ]);
+
+        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `recebiveis_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+        link.click();
     };
 
     // Client-side filtering and sorting
@@ -278,22 +577,18 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                 let aVal: any = a[sortField];
                 let bVal: any = b[sortField];
 
-                // Handle nulls
                 if (aVal === null || aVal === undefined) aVal = '';
                 if (bVal === null || bVal === undefined) bVal = '';
 
-                // Handle dates
                 if (sortField === 'data_pedido' || sortField === 'vencimento_estimado') {
                     aVal = aVal ? new Date(aVal).getTime() : 0;
                     bVal = bVal ? new Date(bVal).getTime() : 0;
                 }
 
-                // Handle numbers
                 if (typeof aVal === 'number' && typeof bVal === 'number') {
                     return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
                 }
 
-                // Handle strings
                 const comparison = String(aVal).localeCompare(String(bVal), 'pt-BR');
                 return sortDirection === 'asc' ? comparison : -comparison;
             });
@@ -301,6 +596,14 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
 
         return result;
     }, [orders, searchTerm, sortField, sortDirection]);
+
+    const pendingOrders = useMemo(() =>
+        processedOrders.filter(o => o.status_pagamento !== 'pago'),
+        [processedOrders]
+    );
+
+    const allPendingSelected = pendingOrders.length > 0 && selectedIds.size === pendingOrders.length;
+    const somePendingSelected = selectedIds.size > 0 && selectedIds.size < pendingOrders.length;
 
     if (loading) {
         return (
@@ -314,6 +617,16 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         <div className="space-y-4">
             {/* Alert Banners */}
             <AlertBanner orders={orders} />
+
+            {/* Selection Action Bar */}
+            <SelectionActionBar
+                selectedCount={selectedIds.size}
+                selectedTotal={selectedTotal}
+                onClearSelection={clearSelection}
+                onMarkAsPaid={handleMarkAsPaid}
+                onExportCSV={handleExportCSV}
+                isProcessing={isProcessing}
+            />
 
             {/* Search Input */}
             <div className="relative max-w-md">
@@ -347,6 +660,25 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                     <table className="w-full text-sm text-left">
                         <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
                             <tr className="group">
+                                {/* Checkbox header */}
+                                <th className="py-4 px-4 w-12">
+                                    <button
+                                        onClick={toggleSelectAll}
+                                        className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                        title={allPendingSelected ? 'Desmarcar todos' : 'Selecionar todos pendentes'}
+                                    >
+                                        {allPendingSelected ? (
+                                            <SquareCheck className="w-5 h-5 text-primary-500" />
+                                        ) : somePendingSelected ? (
+                                            <div className="relative">
+                                                <Square className="w-5 h-5 text-slate-400" />
+                                                <Minus className="w-3 h-3 text-primary-500 absolute top-1 left-1" />
+                                            </div>
+                                        ) : (
+                                            <Square className="w-5 h-5 text-slate-400" />
+                                        )}
+                                    </button>
+                                </th>
                                 <SortableHeader
                                     label="Pedido"
                                     field="numero_pedido"
@@ -398,7 +730,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                         <tbody className="divide-y divide-white/10 dark:divide-white/5">
                             {processedOrders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="py-12 text-center text-slate-500">
+                                    <td colSpan={8} className="py-12 text-center text-slate-500">
                                         {searchTerm ? (
                                             <div className="flex flex-col items-center gap-2">
                                                 <Search className="w-8 h-8 text-slate-300" />
@@ -415,16 +747,35 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                     const BadgeIcon = marketplaceBadge.icon;
                                     const status = getEnhancedStatus(order);
                                     const StatusIcon = status.icon;
+                                    const isSelected = selectedIds.has(order.id);
+                                    const isPaid = order.status_pagamento === 'pago';
 
                                     return (
                                         <tr
                                             key={order.id}
+                                            onClick={() => setDetailOrder(order)}
                                             className={cn(
                                                 "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer group",
                                                 order.status_pagamento === 'atrasado' && "bg-rose-50/50 dark:bg-rose-950/20",
-                                                order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10"
+                                                order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10",
+                                                isSelected && "bg-primary-50/50 dark:bg-primary-950/20 ring-1 ring-primary-500/30"
                                             )}
                                         >
+                                            {/* Checkbox */}
+                                            <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                                                {!isPaid && (
+                                                    <button
+                                                        onClick={() => toggleSelection(order.id)}
+                                                        className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                    >
+                                                        {isSelected ? (
+                                                            <SquareCheck className="w-5 h-5 text-primary-500" />
+                                                        ) : (
+                                                            <Square className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </td>
                                             <td className="py-4 px-6">
                                                 <div className="flex flex-col">
                                                     <span className="font-mono font-medium text-slate-700 dark:text-slate-200">
@@ -499,6 +850,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                     </div>
                 )}
             </div>
+
+            {/* Order Detail Drawer */}
+            <OrderDetailDrawer order={detailOrder} onClose={() => setDetailOrder(null)} />
         </div>
     );
 }
