@@ -193,16 +193,54 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     [pathname, router]
   );
 
-  const handleNavHover = useCallback((index: number) => {
-    const target = NAV_ITEMS[index];
-    if (!target || target.href !== '/marketplaces') return;
-    // Hover no marketplace não abre/fecha nada para evitar flicker
+  const closeAllMenus = useCallback(() => {
+    setShowMarketplaceMenu(false);
+    setShowRelatoriosMenu(false);
+    setShowFinanceiroMenu(false);
+    setShowVendasMenu(false);
+    setShowOperacoesMenu(false);
   }, []);
 
+  const handleNavHover = useCallback((index: number) => {
+    const target = DESKTOP_NAV_ITEMS[index];
+    if (!target) return;
+
+    if (target.href === '/vendas') {
+      closeAllMenus();
+      setShowVendasMenu(true);
+      return;
+    }
+    if (target.href === '/financeiro') {
+      closeAllMenus();
+      setShowFinanceiroMenu(true);
+      return;
+    }
+    if (target.href === '/operacoes') {
+      closeAllMenus();
+      setShowOperacoesMenu(true);
+      return;
+    }
+    if (target.href === '/marketplaces') {
+      closeAllMenus();
+      setShowMarketplaceMenu(true);
+      return;
+    }
+    if (target.href === '/relatorios') {
+      closeAllMenus();
+      setShowRelatoriosMenu(true);
+      return;
+    }
+
+    // Se for um item normal (ex: Dashboard, Configurações), fecha os menus abertos para limpar a tela
+    closeAllMenus();
+  }, [closeAllMenus]);
+
   const handleMobileNavHover = useCallback((index: number) => {
+    // Mobile geralmente usa click, mas se quisermos suportar hover em tablets/hybrid
+    // Podemos manter a mesma lógica ou simplificar
     const target = MOBILE_NAV_ITEMS[index];
     if (!target || target.href !== '/marketplaces') return;
-    // Hover no marketplace não abre/fecha nada para evitar flicker
+    // Por enquanto sem hover agressivo no mobile para evitar toque acidental
   }, []);
   const logoIcon = (
     <div className="relative h-10 w-10 flex-shrink-0">
@@ -249,7 +287,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       />
 
       {/* Desktop sidebar (only visible on lg+) */}
-      <aside className="hidden lg:block fixed left-5 top-0 h-full z-40 w-14 transition-all duration-300 ease-out">
+      <aside className="hidden lg:block fixed left-5 top-0 h-full z-50 w-14 transition-all duration-300 ease-out">
         <div className="relative h-full flex flex-col">
           <div className="flex flex-col items-center gap-6 w-full pt-8">
             <div className="flex w-10 justify-center">{logoIcon}</div>
@@ -257,7 +295,10 @@ export function AppLayout({ title, children }: AppLayoutProps) {
               activeIndex={activeNavIndex}
               onChange={handleNavChange}
               onItemHover={handleNavHover}
-              onMarketplaceHover={() => setShowMarketplaceMenu(true)}
+              onMarketplaceHover={() => {
+                closeAllMenus();
+                setShowMarketplaceMenu(true);
+              }}
               items={GLASS_NAV_ITEMS}
               className="w-10"
             />

@@ -102,11 +102,20 @@ export function GlassVerticalNav({
             const Icon = item.icon;
             const isActive = index === clampedIndex;
             const label = item.label ?? item.id;
-            const isMarketplace = item.disableTooltip && item.id.toLowerCase().includes('marketplace');
-            const tooltipProps = isMarketplace ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
-            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, isMarketplace ? styles.noTooltip : null]
+
+            // Fix: Respect disableTooltip property for ALL items, not just marketplaces
+            const shouldDisableTooltip = !!item.disableTooltip;
+
+            // Check for marketplaces specifically only for the onMarketplaceHover legacy prop if needed,
+            // though AppLayout now handles it via onItemHover too.
+            const isMarketplace = item.id.toLowerCase().includes('marketplace');
+
+            const tooltipProps = shouldDisableTooltip ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
+
+            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, shouldDisableTooltip ? styles.noTooltip : null]
               .filter(Boolean)
               .join(' ');
+
             return (
               <button
                 key={item.id}
@@ -115,10 +124,12 @@ export function GlassVerticalNav({
                 aria-label={label}
                 onClick={() => onChange?.(index)}
                 onMouseEnter={() => {
-                  if (isMarketplace) {
-                    onMarketplaceHover?.();
-                  } else {
-                    onItemHover?.(index);
+                  // Always trigger the generic hover which now handles everything in AppLayout
+                  onItemHover?.(index);
+
+                  // Keep legacy support if explicit marketplace handler is passed and it IS a marketplace
+                  if (isMarketplace && onMarketplaceHover) {
+                    onMarketplaceHover();
                   }
                 }}
                 className={buttonClass}
@@ -197,11 +208,17 @@ export function GlassHorizontalNav({
             const Icon = item.icon;
             const isActive = index === clampedIndex;
             const label = item.label ?? item.id;
-            const isMarketplace = item.disableTooltip && item.id.toLowerCase().includes('marketplace');
-            const tooltipProps = isMarketplace ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
-            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, isMarketplace ? styles.noTooltip : null]
+
+            // Fix: Respect disableTooltip property for ALL items
+            const shouldDisableTooltip = !!item.disableTooltip;
+            const isMarketplace = item.id.toLowerCase().includes('marketplace');
+
+            const tooltipProps = shouldDisableTooltip ? { 'data-tooltip': undefined, title: undefined } : { 'data-tooltip': label };
+
+            const buttonClass = [styles.button, isActive ? styles.buttonActive : null, shouldDisableTooltip ? styles.noTooltip : null]
               .filter(Boolean)
               .join(' ');
+
             return (
               <button
                 key={item.id}
@@ -210,10 +227,9 @@ export function GlassHorizontalNav({
                 aria-label={label}
                 onClick={() => onChange?.(index)}
                 onMouseEnter={() => {
-                  if (isMarketplace) {
-                    onMarketplaceHover?.();
-                  } else {
-                    onItemHover?.(index);
+                  onItemHover?.(index);
+                  if (isMarketplace && onMarketplaceHover) {
+                    onMarketplaceHover();
                   }
                 }}
                 className={buttonClass}

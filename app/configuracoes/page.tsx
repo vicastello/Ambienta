@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { DollarSign, Settings, Bell } from 'lucide-react';
+import { AppLayout } from '@/components/layout/AppLayout';
 import ConfigFinanceiro from './tabs/ConfigFinanceiro';
+import ConfigGeral from './tabs/ConfigGeral';
 
 type TabId = 'financeiro' | 'geral' | 'notificacoes';
 
@@ -28,9 +30,9 @@ export default function ConfiguracoesPage() {
   const [activeTab, setActiveTab] = useState<TabId>('financeiro');
 
   return (
-    <div className="min-h-screen bg-[var(--bg-body)] p-4 sm:p-8">
-      <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
+    <AppLayout title="Configurações">
+      <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-main mb-2">
             Configurações
           </h1>
@@ -40,8 +42,8 @@ export default function ConfiguracoesPage() {
         </div>
 
         {/* Tabs */}
-        <div className="glass-panel glass-tint rounded-t-[36px] overflow-hidden">
-          <div className="flex border-b border-white/10">
+        <div className="glass-panel glass-tint rounded-[24px] overflow-hidden border border-white/10 shadow-xl shadow-black/5">
+          <div className="flex border-b border-white/10 overflow-x-auto scrollbar-hide">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -51,7 +53,7 @@ export default function ConfiguracoesPage() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`
-                    flex items-center gap-2 px-6 py-4 font-semibold transition-all
+                    flex items-center gap-2 px-6 py-4 font-semibold transition-all whitespace-nowrap
                     ${isActive
                       ? 'text-accent border-b-2 border-accent bg-accent/5'
                       : 'text-muted hover:text-main hover:bg-white/5'
@@ -69,22 +71,20 @@ export default function ConfiguracoesPage() {
           <div className="p-6 sm:p-8">
             {activeTab === 'financeiro' && <ConfigFinanceiro />}
 
-            {activeTab === 'geral' && (
-              <div className="text-center py-12 text-muted">
-                <Settings className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Configurações gerais em breve</p>
-              </div>
-            )}
+            {activeTab === 'geral' && <ConfigGeral />}
 
             {activeTab === 'notificacoes' && (
-              <div className="text-center py-12 text-muted">
-                <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Configurações de notificações em breve</p>
+              <div className="text-center py-16 text-muted">
+                <div className="w-16 h-16 rounded-full bg-white/5 mx-auto mb-4 flex items-center justify-center">
+                  <Bell className="w-8 h-8 opacity-40" />
+                </div>
+                <h3 className="text-lg font-medium text-main mb-1">Notificações</h3>
+                <p>Configurações de alertas em breve</p>
               </div>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
