@@ -393,8 +393,9 @@
     /* Panel Base - Card principal estilo "vidro" flutuando no espaço */
     .glass-panel {
         background: var(--glass-surface-light);
-        backdrop-filter: blur(24px) saturate(2.0);
-        /* Blur maior e saturação para vivacidade */
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        /* Blur para glassmorphism - saturate removido por bug no minificador */
         border: 1px solid var(--glass-border-light);
         border-top: 1px solid var(--glass-highlight);
         /* Highlight superior para efeito 3D */

@@ -594,8 +594,8 @@
     border-radius: 1.5rem;
     position: relative;
     overflow: hidden;
-    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
-    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    backdrop-filter: blur(100px);
+    -webkit-backdrop-filter: blur(100px);
     will-change: transform;
     contain: paint;
   }
