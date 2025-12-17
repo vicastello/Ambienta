@@ -186,7 +186,7 @@ async function matchPaymentWithTinyOrder(
             .single();
 
         console.log('[MatchPayment] Magalu query result:', { data, error, marketplaceOrderId });
-        tinyOrderId = data?.tiny_order_id;
+        tinyOrderId = data?.tiny_order_id ?? null;
     } else if (marketplace === 'mercado_livre') {
         const { data } = await supabaseAdmin
             .from('marketplace_order_links')
@@ -194,7 +194,7 @@ async function matchPaymentWithTinyOrder(
             .eq('marketplace', 'mercado_livre')
             .eq('marketplace_order_id', marketplaceOrderId)
             .single();
-        tinyOrderId = data?.tiny_order_id;
+        tinyOrderId = data?.tiny_order_id ?? null;
     } else if (marketplace === 'shopee') {
         const { data } = await supabaseAdmin
             .from('marketplace_order_links')
@@ -202,7 +202,7 @@ async function matchPaymentWithTinyOrder(
             .eq('marketplace', 'shopee')
             .eq('marketplace_order_id', marketplaceOrderId)
             .single();
-        tinyOrderId = data?.tiny_order_id;
+        tinyOrderId = data?.tiny_order_id ?? null;
     }
 
     console.log('[MatchPayment] Resolved tiny_order_id:', tinyOrderId);

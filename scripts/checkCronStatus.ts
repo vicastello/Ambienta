@@ -24,7 +24,7 @@ async function checkCronStatus() {
       // Fallback: tentar query direta via RPC exec_sql
       let fallback: any = { data: null, error: null };
       try {
-        fallback = await supabaseAdmin.rpc('exec_sql', { sql: 'SELECT * FROM cron.job ORDER BY jobid;' });
+        fallback = await (supabaseAdmin.rpc as any)('exec_sql', { sql: 'SELECT * FROM cron.job ORDER BY jobid;' });
       } catch (_) {
         fallback = { data: null, error: null };
       }

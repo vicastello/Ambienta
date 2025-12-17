@@ -58,7 +58,7 @@ export async function POST() {
         }
 
         // Tentar executar
-        const { error } = await supabase.rpc("exec_sql", {
+        const { error } = await (supabase.rpc as any)("exec_sql", {
           query: statement.endsWith(";") ? statement : `${statement};`,
         });
 

@@ -102,8 +102,8 @@ export default function ImportarPagamentosPage() {
                                     key={mp}
                                     onClick={() => setMarketplace(mp)}
                                     className={`px-4 py-2 rounded-xl font-medium transition-all ${marketplace === mp
-                                            ? 'bg-accent text-white'
-                                            : 'bg-white/50 dark:bg-white/5 text-main hover:bg-white/70 dark:hover:bg-white/10'
+                                        ? 'bg-accent text-white'
+                                        : 'bg-white/50 dark:bg-white/5 text-main hover:bg-white/70 dark:hover:bg-white/10'
                                         }`}
                                 >
                                     {mp === 'magalu' && 'Magalu'}
@@ -170,8 +170,8 @@ export default function ImportarPagamentosPage() {
                 {/* Result */}
                 {result && (
                     <div className={`glass-panel glass-tint rounded-[32px] border p-6 ${result.success
-                            ? 'border-emerald-500/30 bg-emerald-50/5'
-                            : 'border-rose-500/30 bg-rose-50/5'
+                        ? 'border-emerald-500/30 bg-emerald-50/5'
+                        : 'border-rose-500/30 bg-rose-50/5'
                         }`}>
                         <div className="flex items-start gap-3">
                             {result.success ? (
@@ -192,7 +192,7 @@ export default function ImportarPagamentosPage() {
                                         <p className="text-muted">
                                             <span className="font-medium text-emerald-600 dark:text-emerald-400">{result.rowsMatched}</span> vinculadas com sucesso ({result.matchRate})
                                         </p>
-                                        {result.rowsSkipped > 0 && (
+                                        {(result.rowsSkipped ?? 0) > 0 && (
                                             <p className="text-muted">
                                                 <span className="font-medium text-amber-600 dark:text-amber-400">{result.rowsSkipped}</span> ignoradas (duplicadas)
                                             </p>

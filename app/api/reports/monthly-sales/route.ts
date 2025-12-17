@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
       ? [startDate.toISOString(), endDate.toISOString(), marketplace]
       : [startDate.toISOString(), endDate.toISOString()];
 
-    const { data, error } = await supabaseAdmin.rpc('exec_sql', {
+    const { data, error } = await (supabaseAdmin.rpc as any)('exec_sql', {
       sql: query,
       params
     });

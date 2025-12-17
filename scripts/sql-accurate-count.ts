@@ -21,7 +21,7 @@ async function sqlCount() {
   console.log(`Period: ${startDate} → ${endDate}\n`);
 
   // Total orders
-  const { data: totalData, error: totalError } = await supabaseAdmin.rpc('exec_sql', {
+  const { data: totalData, error: totalError } = await (supabaseAdmin.rpc as any)('exec_sql', {
     sql: `
       SELECT COUNT(*) as total
       FROM tiny_orders

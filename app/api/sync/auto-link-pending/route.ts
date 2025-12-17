@@ -127,9 +127,9 @@ export async function POST(request: Request) {
         if (marketplaceExists) actualMarketplaceOrderId = normalized;
       } else if (marketplace === 'mercado_livre') {
         const { data } = await supabaseAdmin
-          .from('mercado_livre_orders')
-          .select('order_id')
-          .eq('order_id', parseInt(marketplaceOrderId))
+          .from('meli_orders')
+          .select('meli_order_id')
+          .eq('meli_order_id', parseInt(marketplaceOrderId, 10))
           .maybeSingle();
         marketplaceExists = !!data;
       }

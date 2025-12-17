@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Upload } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -197,10 +197,33 @@ function FluxoCaixaContent() {
     );
 }
 
+function FluxoCaixaLoading() {
+    return (
+        <div className="space-y-6 pb-6">
+            <div className="flex flex-col gap-6">
+                <div className="flex justify-end gap-3">
+                    <div className="h-10 w-32 bg-white/10 rounded-xl animate-pulse" />
+                    <div className="h-10 w-40 bg-white/10 rounded-xl animate-pulse" />
+                </div>
+                <div className="h-16 bg-white/10 rounded-2xl animate-pulse" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-24 bg-white/10 rounded-2xl animate-pulse" />
+                ))}
+            </div>
+            <div className="h-64 bg-white/10 rounded-[32px] animate-pulse" />
+        </div>
+    );
+}
+
 export default function FluxoCaixaPage() {
     return (
         <AppLayout title="Fluxo de Caixa">
-            <FluxoCaixaContent />
+            <Suspense fallback={<FluxoCaixaLoading />}>
+                <FluxoCaixaContent />
+            </Suspense>
         </AppLayout>
     );
 }
+

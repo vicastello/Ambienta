@@ -89,7 +89,7 @@ export async function parseMagaluCSV(file: File): Promise<ParseResult> {
                         errors,
                     });
                 },
-                error: (error) => {
+                error: (error: Error) => {
                     resolve({
                         success: false,
                         payments: [],

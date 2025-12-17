@@ -109,14 +109,14 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
           order.date_closed ??
           order.date_created,
         currency_id: order.currency_id,
-        total_amount: String(order.total_amount ?? 0),
+        total_amount: Number(order.total_amount ?? 0),
         total_amount_with_shipping:
           (order as any).total_amount_with_shipping != null
-            ? String((order as any).total_amount_with_shipping)
+            ? Number((order as any).total_amount_with_shipping)
             : null,
         shipping_cost:
           (order as any).total_shipping != null
-            ? String((order as any).total_shipping)
+            ? Number((order as any).total_shipping)
             : null,
         buyer_id: order.buyer?.id ?? null,
         buyer_nickname: order.buyer?.nickname ?? null,
@@ -148,7 +148,7 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
           title: oi.item.title,
           sku: extractMeliSku(oi),
           quantity: oi.quantity,
-          unit_price: String(oi.unit_price),
+          unit_price: Number(oi.unit_price),
           currency_id: oi.currency_id,
           category_id: oi.item.category_id ?? null,
           variation_id: oi.item.variation_id ? String(oi.item.variation_id) : null,

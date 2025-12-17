@@ -127,8 +127,8 @@ export async function updateSyncSettings(update: SyncSettingsUpdate) {
 
 // Execução de SQL bruto via RPC exec_sql (usa service role)
 export async function runSqlStatement(statement: string) {
-  const { error } = await supabaseAdmin.rpc('exec_sql', {
+  const { error } = await (supabaseAdmin.rpc as any)('exec_sql', {
     query: statement.endsWith(';') ? statement : `${statement};`,
-  } as any);
+  });
   if (error) throw error;
 }
