@@ -196,7 +196,7 @@ export function ProductTable({
             )
         };
 
-        // Ensure solid background with !important (using !) and high opacity
+        // Ensure solid background with !important (using !) to hide scrolling content
         const baseBg = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
         const stickyBg = stickyLeft ? '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] shadow-[1px_0_0_0_rgba(0,0,0,0.05)]' : baseBg;
         const stickyClass = `${stickyBg} border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]`;
@@ -225,29 +225,29 @@ export function ProductTable({
     return (
         <div ref={parentRef} className="table-container h-full">
             <table className="table-base">
-                <thead className="app-table-header text-[10px] uppercase tracking-[0.05em] text-[var(--color-neutral-500)] bg-[var(--color-neutral-50)] dark:bg-[var(--color-neutral-900)] shadow-sm relative z-50">
+                <thead className="app-table-header z-50">
                     <tr>
-                        <th className="px-3 py-2 text-left w-[50px] sticky top-0 left-0 z-30 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-bottom border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
+                        <th className="px-3 py-2 text-left w-[50px] sticky top-0 left-0 z-30 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-middle border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
                             <span className="sr-only">Selecionar</span>
                         </th>
                         {/* Frozen Columns */}
-                        {renderSortableHeader('Produto', 'nome', '280px', 'left', '50px')}
-                        {renderSortableHeader('SKU', 'codigo', '90px', 'left', '330px')}
-                        {renderSortableHeader('Cód. Forn.', 'fornecedor_codigo', '110px', 'left', '420px')}
-                        {renderSortableHeader('Emb.', 'embalagem_qtd', '60px', 'right', '530px')}
+                        {renderSortableHeader('Produto', 'nome', '320px', 'left', '50px')}
+                        {renderSortableHeader('SKU', 'codigo', '90px', 'left', '370px')}
+                        {renderSortableHeader('Cód. Forn.', 'fornecedor_codigo', '110px', 'left', '460px')}
+                        {renderSortableHeader('Emb.', 'embalagem_qtd', '60px', 'right', '570px')}
 
                         {/* Scrolling Columns */}
-                        <th className="px-3 py-2 text-right min-w-[70px] w-[70px] align-bottom sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]" title="Lead Time (dias de entrega do fornecedor)">LT</th>
+                        <th className="px-3 py-2 text-right min-w-[70px] w-[70px] align-middle sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]" title="Lead Time (dias de entrega do fornecedor)">LT</th>
                         {renderSortableHeader('Estoque', 'disponivel', '85px', 'right')}
                         {renderSortableHeader('Rupt.', 'diasAteRuptura', '70px', 'right')}
                         {renderSortableHeader('Cons. Per.', 'consumo_periodo', '85px', 'right')}
                         {renderSortableHeader('Cons. Mês', 'consumo_mensal', '85px', 'right')}
                         {renderSortableHeader('Sugestão', 'sugestao_base', '85px', 'right')}
                         {renderSortableHeader('Pedido', 'sugestao_ajustada', '90px', 'right')}
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Custo</th>
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Total</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[180px] w-[180px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Obs. (PDF)</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[100px] w-[100px] align-bottom !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
+                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Custo</th>
+                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Total</th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[180px] w-[180px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Obs. (PDF)</th>
+                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[100px] w-[100px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
                     </tr>
                 </thead>
                 <tbody className="tbody-divider">
@@ -259,10 +259,17 @@ export function ProductTable({
                         if (item.type === 'manual') {
                             const m = item.data;
                             const isEditing = editingItemId === m.id;
+                            const isSelected = selectedIds[m.id];
+
+                            // Manual items don't have complex warning logic yet, but valid to have selection style
+                            let stickyDataClass = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
+                            if (isSelected) {
+                                stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
+                            }
 
                             return (
-                                <tr key={`manual-item-${m.id}`} className="align-middle manual-row bg-amber-50/30 dark:bg-amber-900/10">
-                                    <td className="px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm">
+                                <tr key={`manual-item-${m.id}`} className={`align-middle manual-row ${isSelected ? 'table-row-selected' : 'bg-amber-50/30 dark:bg-amber-900/10'}`}>
+                                    <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell ${stickyDataClass}`}>
                                         <button
                                             type="button"
                                             role="checkbox"
@@ -274,7 +281,7 @@ export function ProductTable({
                                             <span className="sr-only">{selectedIds[m.id] ? 'Desmarcar' : 'Selecionar'} item manual</span>
                                         </button>
                                     </td>
-                                    <td className="px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
+                                    <td className={`px-3 py-2 sticky left-[50px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '320px', minWidth: '320px', maxWidth: '320px' }}>
                                         {isEditing ? (
                                             <input
                                                 type="text"
@@ -290,8 +297,8 @@ export function ProductTable({
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[330px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
-                                    <td className="px-3 py-2 sticky left-[420px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                    <td className="px-3 py-2 text-center text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] sticky left-[370px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>—</td>
+                                    <td className="px-3 py-2 sticky left-[460px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                         {isEditing ? (
                                             <input
                                                 type="text"
@@ -305,7 +312,7 @@ export function ProductTable({
                                         )}
                                     </td>
                                     <td colSpan={7} className="text-center text-[var(--color-neutral-300)] dark:text-[var(--color-neutral-600)]">—</td>
-                                    <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[530px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                    <td className="px-3 py-2 font-semibold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-right sticky left-[570px] z-10 sticky-cell dark:bg-[var(--color-neutral-900)]/95 backdrop-blur-sm" style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                         {isEditing ? (
                                             <input
                                                 type="number"
@@ -394,29 +401,31 @@ export function ProductTable({
                         const isWarning = p.curvaABC === 'A' && p.diasAteRuptura !== null && p.diasAteRuptura <= 7;
 
                         // Definir estilo da linha baseado em alertas
-                        let rowClass = 'align-middle transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800';
-                        if (selectedIds[p.id_produto_tiny]) {
-                            rowClass = 'align-middle transition-all duration-200 table-row-selected';
-                        } else if (isWarning) {
-                            // Gradiente vermelho para Curva A com risco de ruptura
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-50 dark:border-rose-500/20';
-                        } else if (isUrgent) {
-                            // Gradiente vermelho para ruptura iminente (geral)
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent border-b border-rose-50 dark:border-rose-500/20';
-                        } else if (p.alerta_embalagem) {
-                            // Gradiente amarelo para alerta de embalagem
-                            rowClass = 'align-middle transition-all duration-200 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-500/10 dark:to-transparent border-b border-amber-50 dark:border-amber-500/20';
-                        } else if (virtualRow.index % 2 === 0) {
-                            rowClass = 'align-middle transition-all duration-200 table-row-even dark:bg-white/[0.02] border-b border-slate-100 dark:border-slate-800';
-                        } else {
-                            rowClass = 'align-middle transition-all duration-200 bg-[var(--color-neutral-50)]/40 dark:bg-[var(--color-neutral-800)]/20 hover:bg-[var(--color-neutral-100)]/40 dark:hover:bg-slate-700/20 border-b border-slate-100 dark:border-slate-800';
+                        // Definir estilo da linha baseado em alertas
+                        const isSelected = selectedIds[p.id_produto_tiny];
+                        let rowClass = `app-table-row transition-all duration-200 ${isSelected ? 'table-row-selected' : ''}`;
+
+                        if (!isSelected) {
+                            if (isWarning) {
+                                // Gradiente vermelho para Curva A com risco de ruptura
+                                rowClass += ' bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent';
+                            } else if (isUrgent) {
+                                // Gradiente vermelho para ruptura iminente (geral)
+                                rowClass += ' bg-gradient-to-r from-rose-50 to-transparent dark:from-rose-500/10 dark:to-transparent';
+                            } else if (p.alerta_embalagem) {
+                                // Gradiente amarelo para alerta de embalagem
+                                rowClass += ' bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-500/10 dark:to-transparent';
+                            } else if (virtualRow.index % 2 === 0) {
+                                // rowClass += ' table-row-even'; // app-table-row already handles hover/stripes if configured, but keeping even/odd logic
+                                rowClass += ' dark:bg-white/[0.02]';
+                            }
                         }
 
 
                         // Definir background específico para células sticky em linhas de alerta
                         // Cores OPACAS para esconder o conteúdo que rola por baixo
                         // Usamos !important para garantir override sobre a classe .sticky-cell
-                        let stickyDataClass = 'sticky-cell';
+                        let stickyDataClass = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
                         if (selectedIds[p.id_produto_tiny]) {
                             // Linha selecionada - Teal claro OPACO (substitui primary-subtle que é transparente)
                             stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
@@ -444,9 +453,9 @@ export function ProductTable({
                                         </span>
                                     </button>
                                 </td>
-                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
-                                    <div className="flex items-center gap-2">
-                                        <div className="relative w-10 h-10 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
+                                <td className={`px-3 py-2 sticky left-[50px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '320px', minWidth: '320px', maxWidth: '320px' }}>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative w-14 h-14 rounded-lg bg-white/70 dark:bg-white/5 border border-white/60 dark:border-white/10 overflow-hidden flex-shrink-0 shadow-sm">
                                             {p.imagem_url ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img src={p.imagem_url} alt={p.nome ?? 'Produto'} className="w-full h-full object-cover" />
@@ -456,7 +465,7 @@ export function ProductTable({
                                         </div>
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-semibold text-[var(--color-neutral-900)] dark:text-white select-text font-display truncate text-xs" title={p.nome || ''}>{p.nome || 'Sem nome'}</span>
+                                                <span className="cell-text-name truncate max-w-[180px]" title={p.nome || ''}>{p.nome || 'Sem nome'}</span>
                                                 <span className={`abc-badge-inline ${p.curvaABC === 'A'
                                                     ? 'abc-badge-a-inline'
                                                     : p.curvaABC === 'B'
@@ -468,11 +477,11 @@ export function ProductTable({
                                         </div>
                                     </div>
                                 </td>
-                                <td className={`px-3 py-2 text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-300)] text-xs select-all truncate sticky left-[330px] z-10 backdrop-blur-sm ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
-                                <td className={`px-3 py-2 sticky left-[420px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                <td className={`px-3 py-2 cell-text-code select-all truncate sticky left-[370px] z-10 ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
+                                <td className={`px-3 py-2 sticky left-[460px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
                                     <div className="flex flex-col gap-0.5 w-full min-w-0">
                                         <input
-                                            className="app-input h-7 text-xs px-2"
+                                            className="app-input h-8 text-sm px-2"
                                             value={p.fornecedor_codigo || ''}
                                             onChange={(e) => onUpdateFornecedor(p.id_produto_tiny, e.target.value)}
                                             placeholder="Cód."
@@ -485,11 +494,11 @@ export function ProductTable({
                                         </p>
                                     </div>
                                 </td>
-                                <td className={`px-3 py-2 text-right sticky left-[530px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                <td className={`px-3 py-2 text-right sticky left-[570px] z-10 backdrop-blur-sm ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
                                     <input
                                         type="number"
                                         min={1}
-                                        className="app-input app-input-editable w-full h-7 text-xs px-1 text-center"
+                                        className="app-input app-input-editable w-full h-8 text-sm px-1 text-center"
                                         value={p.embalagem_qtd}
                                         onChange={(e) => onUpdateEmbalagem(p.id_produto_tiny, Number(e.target.value))}
                                     />
@@ -499,7 +508,7 @@ export function ProductTable({
                                         type="number"
                                         min={0}
                                         max={365}
-                                        className={`app-input app-input-editable w-full h-7 text-xs px-1 text-center ${p.isDefaultLeadTime ? 'text-[var(--color-neutral-400)] italic' : ''}`}
+                                        className={`app-input app-input-editable w-full h-8 text-sm px-1 text-center ${p.isDefaultLeadTime ? 'text-[var(--color-neutral-400)] italic' : ''}`}
                                         value={p.lead_time_dias ?? ''}
                                         placeholder="—"
                                         onChange={(e) => onUpdateLeadTime(p.id_produto_tiny, Number(e.target.value))}
@@ -560,7 +569,7 @@ export function ProductTable({
                                             type="number"
                                             min={0}
                                             step={Math.max(1, p.embalagem_qtd)}
-                                            className={`app-input w-full h-8 text-right font-semibold text-sm px-2 ${p.precisaRepor
+                                            className={`app-input w-full h-9 text-right font-semibold text-sm px-2 ${p.precisaRepor
                                                 ? 'text-[var(--color-success)] dark:text-[var(--color-success-light)] bg-[var(--color-success-soft)] '
                                                 : 'text-[var(--color-neutral-500)] dark:text-[var(--color-neutral-400)] opacity-80'
                                                 }`}
@@ -573,19 +582,19 @@ export function ProductTable({
                                         )}
                                     </div>
                                 </td>
-                                <td className="px-3 py-2 text-right font-medium text-[var(--color-neutral-600)] dark:text-[var(--color-neutral-400)] text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                <td className="px-3 py-2 text-right font-medium cell-text-price truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
                                     {p.preco_custo > 0
                                         ? p.preco_custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                         : '-'}
                                 </td>
-                                <td className="px-3 py-2 text-right font-bold text-[var(--color-success)] dark:text-[var(--color-success-light)] text-xs truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                <td className="px-3 py-2 text-right font-bold cell-text-price text-[var(--color-success)] dark:text-[var(--color-success-light)] truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
                                     {p.total_valor_calculado > 0
                                         ? p.total_valor_calculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                         : '-'}
                                 </td>
                                 <td className="px-3 py-2" style={{ width: '220px', minWidth: '220px', maxWidth: '220px' }}>
                                     <textarea
-                                        className="app-input w-full min-h-[40px] h-10 text-xs px-4 py-2 resize-y"
+                                        className="app-input w-full min-h-[40px] h-10 text-sm px-4 py-2 resize-y"
                                         value={p.observacao_compras ?? ''}
                                         onChange={(e) => onUpdateObservacao(p.id_produto_tiny, e.target.value)}
                                         placeholder="Obs..."

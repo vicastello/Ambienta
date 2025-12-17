@@ -360,8 +360,10 @@
 
     /* ===== GLASSMORPHISM TOKENS ===== */
     :root {
-        --glass-surface-light: rgba(255, 255, 255, 0.7);
-        --glass-surface-dark: rgba(255, 255, 255, 0.8);
+        --glass-surface-light: rgba(255, 255, 255, 0.3);
+        /* Reduced to 0.3 for high translucency */
+        --glass-surface-dark: rgba(255, 255, 255, 0.6);
+        /* Reduced to 0.6 */
         --glass-border-light: rgba(255, 255, 255, 0.6);
         --glass-shine: rgba(255, 255, 255, 0.4);
         --glass-shadow-color: rgba(0, 0, 0, 0.05);
@@ -477,7 +479,7 @@
         width: 100%;
         padding: 0.5rem 1rem;
         border-radius: 9999px;
-        background: rgba(255, 255, 255, 0.5);
+        background: rgba(255, 255, 255, 0.25);
         /* Mais translúcido */
         border: 1px solid var(--glass-border-light);
         font-size: 0.875rem;

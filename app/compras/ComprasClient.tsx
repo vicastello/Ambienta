@@ -1644,7 +1644,7 @@ export default function ComprasClient() {
           <div className="rounded-[24px] glass-panel p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Toolbar de Controle Unificada */}
             <div className="flex flex-col gap-3 shrink-0 mb-3">
-              <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px] glass-panel">
+              <div className="relative z-[60] flex flex-wrap items-end gap-4 p-4 rounded-[24px]">
 
                 {/* 1. Identificação */}
                 <div className="w-full sm:w-[220px] shrink-0">
