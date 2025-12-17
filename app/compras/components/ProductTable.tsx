@@ -303,6 +303,10 @@ export function ProductTable({
                         (parentRef as React.MutableRefObject<HTMLElement | null>).current = viewport;
                     }
                 },
+                scroll: () => {
+                    // Force virtualizer to recalculate visible items on scroll
+                    rowVirtualizer.measure();
+                },
             }}
             defer
             className="h-full"
