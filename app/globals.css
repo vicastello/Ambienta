@@ -1339,12 +1339,10 @@
 }
 
 /* Overlay Scrollbars - Aparecem por cima do conteúdo */
+/* Em macOS com "Show scroll bars: When scrolling", funciona como overlay nativo */
 .table-container {
   scrollbar-width: thin;
   scrollbar-color: rgba(100, 116, 139, 0.3) transparent;
-  /* Force scrollbar to always show to prevent layout shift */
-  overflow-y: scroll !important;
-  overflow-x: auto !important;
 }
 
 .table-container::-webkit-scrollbar {
