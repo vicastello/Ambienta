@@ -631,6 +631,11 @@ export function ProductTable({
                                         <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_mensal.toFixed(0)}</td>
                                         <td className="px-3 py-2 text-right" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
                                             <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white text-xs">{p.sugestao_base.toFixed(0)}</div>
+                                            {Math.ceil(p.quantidadeNecessaria) > 0 && Math.ceil(p.quantidadeNecessaria) !== p.sugestao_base && (
+                                                <div className="text-[9px] text-[var(--color-neutral-500)] leading-none mt-0.5" title="Quantidade real necessária sem arredondamento de embalagem">
+                                                    (real: {Math.ceil(p.quantidadeNecessaria)})
+                                                </div>
+                                            )}
                                             {p.alerta_embalagem && p.precisaRepor && (
                                                 <div className="text-[9px] text-table-warning leading-none mt-0.5" title="Abaixo do lote">Lote</div>
                                             )}
