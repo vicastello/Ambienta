@@ -1778,18 +1778,7 @@ export default function ComprasClient() {
                 </div>
 
                 <div className="flex items-center gap-4 shrink-0">
-                  {/* Card de Totais Compacto */}
-                  <div className="flex items-center gap-4 px-4 py-2 rounded-xl glass-panel">
-                    <div className="flex flex-col items-end">
-                      <span className="text-[10px] text-slate-500 font-semibold uppercase">Qtd</span>
-                      <span className="text-sm font-bold text-slate-900 dark:text-white leading-none">{totalCompra.toLocaleString('pt-BR')}</span>
-                    </div>
-                    <div className="w-px h-6 bg-slate-300 dark:bg-white/10" />
-                    <div className="flex flex-col items-end">
-                      <span className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-semibold uppercase">Total</span>
-                      <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 leading-none">{totalValorCompra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                    </div>
-                  </div>
+
 
                   {/* Botões View Mode */}
                   <div className="flex items-center gap-1 p-1 rounded-xl glass-panel">
