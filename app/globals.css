@@ -603,20 +603,16 @@
   }
 
   :root.dark .glass-row {
-    border: 1px solid var(--dark-card-border) !important;
-    background: var(--surface-card-bg) !important;
+    border: 1px solid var(--dark-card-border);
+    background: var(--surface-card-bg);
     box-shadow: var(--dark-card-shadow);
   }
 
   /* Força o mesmo look em qualquer card/painel/row no dark mode */
-  :root.dark .glass-panel,
   :root.dark .glass-tint,
-  :root.dark .glass-row,
   :root.dark .app-card,
   :root.dark .product-card,
-  :root.dark [class*="glass-panel"],
   :root.dark [class*="glass-tint"],
-  :root.dark [class*="glass-row"],
   :root.dark [class*="inner-card"],
   :root.dark [class*="card-inner"] {
     background: var(--surface-card-bg) !important;
