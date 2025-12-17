@@ -483,15 +483,60 @@ export default function ComprasClient() {
       return;
     }
 
-    // Auto-select items with positive suggestion if no previous selection exists
+
+    // Detectar novos itens que devem ser auto-selecionados (sugestão > 0)
     const suggestionsToSelect = dados
       .filter(d => d.sugestao_ajustada > 0)
       .map(d => d.id_produto_tiny);
 
-    if (suggestionsToSelect.length > 0) {
-      const autoSelection = suggestionsToSelect.reduce((acc, id) => ({ ...acc, [id]: true }), {});
-      setSelectedIds(autoSelection);
-      setInitialSelectedIds(autoSelection); // Snapshot para detectar modificações manuais
+    // Converter para mapa para facilitar lookup
+    const newAutoSelection: Record<number, boolean> = {};
+    for (const id of suggestionsToSelect) {
+      newAutoSelection[id] = true;
+    }
+
+    // Lógica de Merge Inteligente:
+    // 1. Identificar o que o usuário ADICIONOU manualmente (estava false no snapshot, mas true no atual)
+    // 2. Identificar o que o usuário REMOVEU manualmente (estava true no snapshot, mas false no atual)
+    // 3. Aplicar essas diferenças sobre o NOVO conjunto de sugestões
+
+    if (!selectionLoadedRef.current) {
+      // Primeira carga: aceita o padrão do sistema
+      setSelectedIds(newAutoSelection);
+      setInitialSelectedIds(newAutoSelection);
+      selectionLoadedRef.current = true;
+    } else {
+      // Cargas subsequentes (mudança de filtro/período): Preservar intenção do usuário
+      setSelectedIds((prevSelected) => {
+        const nextSelected = { ...newAutoSelection }; // Começa com o novo padrão sugerido
+
+        // Aplicar overrides do usuário baseados na diferença entre o estado ATUAL e o SNAPSHOT ANTERIOR
+        // Isso assume que 'initialSelectedIds' continha o estado "padrão" da ultima renderização
+        const currentIds = Object.keys(prevSelected).map(Number);
+        const previousSnapshotIds = Object.keys(initialSelectedIds).map(Number); // Snapshot da ultima vez que carregou
+
+        // Set de todos os IDs relevantes para iterar
+        const allRelevantIds = new Set([...currentIds, ...previousSnapshotIds]);
+
+        for (const idAsString of Object.keys(prevSelected)) {
+          const id = Number(idAsString);
+          const isSelectedNow = prevSelected[id];
+          const wasSelectedInSnapshot = initialSelectedIds[id];
+
+          // Se usuário MARCOU manualmente (não estava no snapshot, mas está agora)
+          if (isSelectedNow && !wasSelectedInSnapshot) {
+            nextSelected[id] = true;
+          }
+          // Se usuário DESMARCOU manualmente (estava no snapshot, mas não está agora)
+          if (!isSelectedNow && wasSelectedInSnapshot) {
+            delete nextSelected[id];
+          }
+        }
+
+        return nextSelected;
+      });
+      // Atualizar o snapshot para o novo padrão (sem os overrides manuais), para futuras comparações
+      setInitialSelectedIds(newAutoSelection);
     }
 
     const validIds = new Set(dados.map((item) => item.id_produto_tiny));
@@ -521,7 +566,8 @@ export default function ComprasClient() {
       }
       return changed ? next : prev;
     });
-  }, [dados]);
+  }, [dados]); // Removemos selectedIds e initialSelectedIds das dependências para evitar loop, usamos functional update
+
 
   const fornecedorOptions = useMemo<FornecedorOption[]>(() => {
     const map = new Map<string, FornecedorOption>();
@@ -699,6 +745,7 @@ export default function ComprasClient() {
         coberturaAtualDias,
         precisaRepor,
         quantidadeNecessaria,
+        sugestao_base: quantidadeFinal, // Override dynamic calculation
         sugestao_calculada: quantidadeFinal,
         sugestao_ajustada: quantidadeFinalAjustada,
         alerta_embalagem: alerta,
