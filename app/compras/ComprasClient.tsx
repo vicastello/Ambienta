@@ -1890,6 +1890,7 @@ export default function ComprasClient() {
                   onAddManualItem={handleAddManualItem}
                   onEditManualItem={handleEditManualItem}
                   onDeleteManualItem={handleDeleteManualItem}
+                  isLoading={loading}
                 />
               </div>
             </div>
