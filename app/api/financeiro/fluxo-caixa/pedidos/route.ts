@@ -53,6 +53,15 @@ export async function GET(request: NextRequest) {
         const statusPagamento = searchParams.get('statusPagamento') || 'todos'; // todos, pagos, pendentes
         const marketplace = searchParams.get('marketplace') || 'todos';
 
+        // Debug logging
+        console.log('[CashFlowAPI] Filters:', {
+            dataInicio,
+            dataFim,
+            statusPagamento,
+            marketplace,
+            fullUrl: request.url
+        });
+
         // Helper to apply filters
         const applyFilters = (query: any) => {
             // data_criacao is type DATE (not TIMESTAMPTZ), so we compare with plain dates

@@ -35,33 +35,51 @@ export function parseValorTiny(valor: string | number | null): number {
 }
 
 // Extrai yyyy-mm-dd de uma data válida, senão null
+// IMPORTANT: This function extracts the DATE portion as-is from the input,
+// without any timezone conversion. Tiny sends dates in Brazil time, and we
+// want to store the Brazil date, not convert to UTC which could shift the day.
 export function extrairDataISO(dataStr: string | null): string | null {
   if (!dataStr) return null;
   const raw = String(dataStr).trim();
   if (!raw) return null;
 
   // 1) ISO-like: 2025-11-10 or 2025-11-10T12:34:56[Z]
+  // Just extract the date portion directly - no Date object conversion!
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-    const d = new Date(raw);
-    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    const datePart = raw.slice(0, 10);
+    // Validate it's a real date
+    const [yyyy, mm, dd] = datePart.split('-').map(Number);
+    if (yyyy >= 2000 && yyyy <= 2100 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      return datePart;
+    }
   }
 
   // 2) dd/MM/yyyy HH:mm(:ss)? or dd/MM/yyyy
+  // Extract directly without Date conversion to avoid timezone issues
   const m = raw.match(/^([0-3]?\d)\/([0-1]?\d)\/(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m) {
-    const dd = Number(m[1]);
-    const MM = Number(m[2]);
-    const yyyy = Number(m[3]);
-    const HH = m[4] ? Number(m[4]) : 0;
-    const mm = m[5] ? Number(m[5]) : 0;
-    const ss = m[6] ? Number(m[6]) : 0;
-    const d = new Date(yyyy, MM - 1, dd, HH, mm, ss);
-    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    const dd = m[1].padStart(2, '0');
+    const MM = m[2].padStart(2, '0');
+    const yyyy = m[3];
+    // Return as YYYY-MM-DD
+    return `${yyyy}-${MM}-${dd}`;
   }
 
-  // 3) Fallback Date parser (último recurso)
-  const d = new Date(raw);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  // 3) Last resort: try to parse with Date but be careful
+  // Only use this for unusual formats - extract local date, not UTC
+  try {
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) {
+      // Use local date components to avoid timezone shift
+      const yyyy = d.getFullYear();
+      const MM = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${MM}-${dd}`;
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
   return null;
 }
 
@@ -152,13 +170,13 @@ export const TODAS_SITUACOES = [
 // Extrai valor de frete do raw data do Tiny
 export function extrairFreteFromRaw(raw: any): number {
   // Prioridade: valorFrete direto > transportador.valorFrete > transportador.valor_frete
-  const frete = 
+  const frete =
     raw?.valorFrete ??
     raw?.transportador?.valorFrete ??
     raw?.transportador?.valor_frete ??
     raw?.valor_frete ??
     null;
-  
+
   return parseValorTiny(frete);
 }
 
