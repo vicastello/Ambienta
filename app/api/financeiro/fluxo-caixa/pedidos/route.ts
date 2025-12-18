@@ -55,18 +55,20 @@ export async function GET(request: NextRequest) {
 
         // Helper to apply filters
         const applyFilters = (query: any) => {
-            // For date filters, use inclusive ranges that work across timezones
-            // The database stores timestamps in UTC, but we want to filter by local date
+            // Brazil timezone is UTC-3. When user selects a date, we need to match
+            // records created on that day in Brazil time.
+            // Example: User selects 2024-12-16
+            // - Start: 2024-12-16T00:00:00-03:00 = 2024-12-16T03:00:00Z
+            // - End:   2024-12-17T00:00:00-03:00 = 2024-12-17T03:00:00Z (exclusive)
             if (dataInicio) {
-                // Start from beginning of start date (inclusive)
-                query = query.gte('data_criacao', `${dataInicio}T00:00:00`);
+                // Start of day in Brazil time
+                query = query.gte('data_criacao', `${dataInicio}T00:00:00-03:00`);
             }
             if (dataFim) {
-                // Include full end date by using next day as exclusive upper bound
-                const endDate = new Date(dataFim);
+                // End of day in Brazil time = start of next day (exclusive)
+                const endDate = new Date(`${dataFim}T00:00:00-03:00`);
                 endDate.setDate(endDate.getDate() + 1);
-                const nextDay = endDate.toISOString().split('T')[0];
-                query = query.lt('data_criacao', `${nextDay}T00:00:00`);
+                query = query.lt('data_criacao', endDate.toISOString());
             }
 
             // Default filter: ignore cancelled (code 2)
