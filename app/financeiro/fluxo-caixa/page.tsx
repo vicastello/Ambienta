@@ -17,6 +17,7 @@ import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
 import { useOverdueNotifications } from './hooks/useOverdueNotifications';
 import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
 import { FinancialDashboard } from './components/FinancialDashboard';
+import { ReportModal } from './components/ReportModal';
 import { cn } from '@/lib/utils';
 
 type FluxoCaixaData = {
@@ -142,6 +143,7 @@ function FluxoCaixaContent() {
 
                     {/* Action Buttons */}
                     <div className="flex gap-3">
+                        <ReportModal />
                         <FluxoCaixaSettings />
                         <BankReconciliationModal />
                         <RecurringEntriesModal />
