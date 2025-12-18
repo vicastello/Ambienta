@@ -236,42 +236,93 @@ function AlertBanner({ orders }: { orders: Order[] }) {
     );
 }
 
-// Selection Action Bar Component
+// Selection Action Bar Component with detailed totals
 function SelectionActionBar({
-    selectedCount,
-    selectedTotal,
+    selectedOrders,
     onClearSelection,
     onMarkAsPaid,
     onExportCSV,
     isProcessing
 }: {
-    selectedCount: number;
-    selectedTotal: number;
+    selectedOrders: Order[];
     onClearSelection: () => void;
     onMarkAsPaid: () => void;
     onExportCSV: () => void;
     isProcessing: boolean;
 }) {
-    if (selectedCount === 0) return null;
+    if (selectedOrders.length === 0) return null;
+
+    // Calculate detailed totals by status
+    const totals = selectedOrders.reduce(
+        (acc, order) => {
+            const value = order.valor || 0;
+            acc.total += value;
+            if (order.status_pagamento === 'pago') {
+                acc.paidCount++;
+                acc.paidTotal += value;
+            } else if (order.status_pagamento === 'atrasado') {
+                acc.overdueCount++;
+                acc.overdueTotal += value;
+            } else {
+                acc.pendingCount++;
+                acc.pendingTotal += value;
+            }
+            return acc;
+        },
+        { total: 0, paidCount: 0, paidTotal: 0, pendingCount: 0, pendingTotal: 0, overdueCount: 0, overdueTotal: 0 }
+    );
+
+    const unpaidCount = totals.pendingCount + totals.overdueCount;
 
     return (
-        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 rounded-2xl bg-primary-500/10 dark:bg-primary-500/20 border border-primary-500/30 backdrop-blur-sm animate-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-3">
+        <div className="sticky top-0 z-10 p-4 rounded-2xl bg-primary-500/10 dark:bg-primary-500/20 border border-primary-500/30 backdrop-blur-sm animate-in slide-in-from-top-2 duration-200">
+            {/* Top row: Count and totals */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                     <SquareCheck className="w-5 h-5 text-primary-500" />
-                    <span className="font-medium text-primary-700 dark:text-primary-300">
-                        {selectedCount} selecionado{selectedCount > 1 ? 's' : ''}
+                    <span className="font-bold text-lg text-primary-700 dark:text-primary-300">
+                        {selectedOrders.length}
+                    </span>
+                    <span className="text-sm text-primary-600 dark:text-primary-400">
+                        selecionado{selectedOrders.length > 1 ? 's' : ''}
+                    </span>
+                    <span className="text-slate-400 mx-1">•</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                        {formatCurrency(totals.total)}
                     </span>
                 </div>
-                <span className="text-sm text-primary-600 dark:text-primary-400">
-                    Total: {formatCurrency(selectedTotal)}
-                </span>
+
+                {/* Status breakdown badges */}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                    {totals.pendingCount > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                            <Clock className="w-3.5 h-3.5" />
+                            {totals.pendingCount} pendente{totals.pendingCount > 1 ? 's' : ''}:
+                            <strong>{formatCurrency(totals.pendingTotal)}</strong>
+                        </span>
+                    )}
+                    {totals.overdueCount > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-400">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {totals.overdueCount} atrasado{totals.overdueCount > 1 ? 's' : ''}:
+                            <strong>{formatCurrency(totals.overdueTotal)}</strong>
+                        </span>
+                    )}
+                    {totals.paidCount > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            {totals.paidCount} pago{totals.paidCount > 1 ? 's' : ''}:
+                            <strong>{formatCurrency(totals.paidTotal)}</strong>
+                        </span>
+                    )}
+                </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Bottom row: Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-primary-500/20">
                 <button
                     onClick={onMarkAsPaid}
-                    disabled={isProcessing}
+                    disabled={isProcessing || unpaidCount === 0}
                     className={cn(
                         "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium",
                         "bg-emerald-500 hover:bg-emerald-600 text-white",
@@ -284,7 +335,7 @@ function SelectionActionBar({
                     ) : (
                         <CreditCard className="w-4 h-4" />
                     )}
-                    Marcar como Pago
+                    Marcar como Pago {unpaidCount > 0 && `(${unpaidCount})`}
                 </button>
 
                 <button
@@ -299,7 +350,7 @@ function SelectionActionBar({
                     )}
                 >
                     <Download className="w-4 h-4" />
-                    Exportar CSV
+                    Exportar
                 </button>
 
                 <button
@@ -543,10 +594,8 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
 
     const clearSelection = () => setSelectedIds(new Set());
 
-    const selectedTotal = useMemo(() => {
-        return orders
-            .filter(o => selectedIds.has(o.id))
-            .reduce((sum, o) => sum + o.valor, 0);
+    const selectedOrders = useMemo(() => {
+        return orders.filter(o => selectedIds.has(o.id));
     }, [orders, selectedIds]);
 
     // Action handlers
@@ -653,8 +702,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
 
             {/* Selection Action Bar */}
             <SelectionActionBar
-                selectedCount={selectedIds.size}
-                selectedTotal={selectedTotal}
+                selectedOrders={selectedOrders}
                 onClearSelection={clearSelection}
                 onMarkAsPaid={handleMarkAsPaid}
                 onExportCSV={handleExportCSV}
