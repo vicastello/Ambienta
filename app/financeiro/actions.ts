@@ -4,6 +4,9 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
+// Cast to any for tags column until types are synced
+const db = supabaseAdmin as any;
+
 const EntrySchema = z.object({
     type: z.enum(['income', 'expense']),
     amount: z.number().positive(),
@@ -13,6 +16,7 @@ const EntrySchema = z.object({
     due_date: z.string().date(), // YYYY-MM-DD
     competence_date: z.string().date(), // YYYY-MM-DD
     status: z.enum(['pending', 'confirmed', 'overdue', 'cancelled']).default('pending'),
+    tags: z.array(z.string()).default([]),
 });
 
 export type CreateManualEntryData = z.infer<typeof EntrySchema>;
@@ -23,7 +27,7 @@ export type CreateManualEntryData = z.infer<typeof EntrySchema>;
 export async function createManualEntry(data: CreateManualEntryData) {
     const parsed = EntrySchema.parse(data);
 
-    const { error } = await supabaseAdmin
+    const { error } = await db
         .from('cash_flow_entries')
         .insert({
             source: 'manual',
@@ -36,6 +40,7 @@ export async function createManualEntry(data: CreateManualEntryData) {
             due_date: parsed.due_date,
             competence_date: parsed.competence_date,
             status: parsed.status,
+            tags: parsed.tags,
         });
 
     if (error) {
