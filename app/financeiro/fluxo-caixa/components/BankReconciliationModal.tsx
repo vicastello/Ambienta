@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Landmark, Upload, Loader2, CheckCircle2, AlertCircle, X, ArrowRight, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Papa from 'papaparse';
+import { parseOFX, isValidOFX, ofxToCSVFormat } from '../utils/ofxParser';
 
 // Types for bank statement entries
 type BankEntry = {
@@ -109,42 +110,82 @@ export function BankReconciliationModal() {
         setLoading(true);
         setError(null);
 
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
-            complete: (results) => {
-                if (results.errors.length) {
-                    setError(`Erro ao ler CSV: ${results.errors[0].message}`);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const content = event.target?.result as string;
+            const fileName = file.name.toLowerCase();
+
+            // Check if it's an OFX/QFX file
+            if (fileName.endsWith('.ofx') || fileName.endsWith('.qfx') || isValidOFX(content)) {
+                try {
+                    const statement = parseOFX(content);
+                    const { headers, rows } = ofxToCSVFormat(statement);
+
+                    // Convert to object array format
+                    const data = rows.map(row => {
+                        const obj: Record<string, any> = {};
+                        headers.forEach((h, i) => obj[h] = row[i]);
+                        return obj;
+                    });
+
+                    setRawData(data);
+                    setHeaders(headers);
+
+                    // Auto-set columns for OFX
+                    setDateColumn('Data');
+                    setDescColumn('Descrição');
+                    setAmountColumn('Valor');
+                    setCreditColumn('');
+                    setDebitColumn('');
+
+                    setStep('mapping');
                     setLoading(false);
-                    return;
-                }
-
-                const data = results.data as Record<string, any>[];
-                if (!data.length) {
-                    setError('Arquivo vazio ou sem dados válidos');
+                } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Erro ao processar arquivo OFX');
                     setLoading(false);
-                    return;
                 }
+                return;
+            }
 
-                const headers = Object.keys(data[0]);
-                setRawData(data);
-                setHeaders(headers);
+            // CSV parsing
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.errors.length) {
+                        setError(`Erro ao ler CSV: ${results.errors[0].message}`);
+                        setLoading(false);
+                        return;
+                    }
 
-                // Auto-detect columns
-                setDateColumn(findColumn(headers, DATE_COLUMNS) || '');
-                setDescColumn(findColumn(headers, DESC_COLUMNS) || '');
-                setAmountColumn(findColumn(headers, AMOUNT_COLUMNS) || '');
-                setCreditColumn(findColumn(headers, CREDIT_COLUMNS) || '');
-                setDebitColumn(findColumn(headers, DEBIT_COLUMNS) || '');
+                    const data = results.data as Record<string, any>[];
+                    if (!data.length) {
+                        setError('Arquivo vazio ou sem dados válidos');
+                        setLoading(false);
+                        return;
+                    }
 
-                setStep('mapping');
-                setLoading(false);
-            },
-            error: (error) => {
-                setError(`Erro ao processar arquivo: ${error.message}`);
-                setLoading(false);
-            },
-        });
+                    const headers = Object.keys(data[0]);
+                    setRawData(data);
+                    setHeaders(headers);
+
+                    // Auto-detect columns
+                    setDateColumn(findColumn(headers, DATE_COLUMNS) || '');
+                    setDescColumn(findColumn(headers, DESC_COLUMNS) || '');
+                    setAmountColumn(findColumn(headers, AMOUNT_COLUMNS) || '');
+                    setCreditColumn(findColumn(headers, CREDIT_COLUMNS) || '');
+                    setDebitColumn(findColumn(headers, DEBIT_COLUMNS) || '');
+
+                    setStep('mapping');
+                    setLoading(false);
+                },
+                error: (error) => {
+                    setError(`Erro ao processar arquivo: ${error.message}`);
+                    setLoading(false);
+                },
+            });
+        };
+        reader.readAsText(file);
     }, []);
 
     const handleProceedToMatching = async () => {
@@ -401,14 +442,14 @@ export function BankReconciliationModal() {
                         )}>
                             <Upload className="w-10 h-10 text-slate-400 mb-3" />
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                                Arraste o arquivo CSV ou clique para selecionar
+                                Arraste o arquivo ou clique para selecionar
                             </span>
                             <span className="text-xs text-slate-400 mt-1">
-                                Formatos: Itaú, Bradesco, Nubank, Inter, etc.
+                                Formatos: CSV, OFX, QFX (Itaú, Bradesco, Nubank, Inter, etc.)
                             </span>
                             <input
                                 type="file"
-                                accept=".csv"
+                                accept=".csv,.ofx,.qfx"
                                 className="hidden"
                                 onChange={handleFileUpload}
                                 disabled={loading}
