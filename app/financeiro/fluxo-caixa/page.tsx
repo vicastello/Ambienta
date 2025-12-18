@@ -10,6 +10,7 @@ import { ReceivablesTable } from './components/ReceivablesTable';
 import { ReceivablesSummary } from './components/ReceivablesSummary';
 import { ManualEntryModal } from './components/ManualEntryModal';
 import { RecurringEntriesModal } from './components/RecurringEntriesModal';
+import { BankReconciliationModal } from './components/BankReconciliationModal';
 import { CashFlowEvolutionChart } from './components/CashFlowEvolutionChart';
 import { useSearchParams } from 'next/navigation';
 import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
@@ -103,6 +104,7 @@ function FluxoCaixaContent() {
             {/* Header and Filters */}
             <div className="flex flex-col gap-6">
                 <div className="flex justify-end gap-3">
+                    <BankReconciliationModal />
                     <RecurringEntriesModal />
                     <ManualEntryModal />
                     <Link
