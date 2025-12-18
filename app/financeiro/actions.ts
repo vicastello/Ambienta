@@ -17,6 +17,11 @@ const EntrySchema = z.object({
     competence_date: z.string().date(), // YYYY-MM-DD
     status: z.enum(['pending', 'confirmed', 'overdue', 'cancelled']).default('pending'),
     tags: z.array(z.string()).default([]),
+    // New fields
+    entity_name: z.string().optional(),
+    entity_type: z.enum(['client', 'supplier', 'employee', 'bank', 'government', 'other']).optional(),
+    category_id: z.string().uuid().optional(),
+    cost_center: z.string().optional(),
 });
 
 export type CreateManualEntryData = z.infer<typeof EntrySchema>;
@@ -41,6 +46,11 @@ export async function createManualEntry(data: CreateManualEntryData) {
             competence_date: parsed.competence_date,
             status: parsed.status,
             tags: parsed.tags,
+            // New fields
+            entity_name: parsed.entity_name || null,
+            entity_type: parsed.entity_type || null,
+            category_id: parsed.category_id || null,
+            cost_center: parsed.cost_center || null,
         });
 
     if (error) {

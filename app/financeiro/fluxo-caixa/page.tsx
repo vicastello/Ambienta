@@ -15,6 +15,7 @@ import { CashFlowEvolutionChart } from './components/CashFlowEvolutionChart';
 import { useSearchParams } from 'next/navigation';
 import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
 import { useOverdueNotifications } from './hooks/useOverdueNotifications';
+import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
 
 type FluxoCaixaData = {
     periodo: { inicio: string; fim: string };
@@ -108,6 +109,7 @@ function FluxoCaixaContent() {
             {/* Header and Filters */}
             <div className="flex flex-col gap-6">
                 <div className="flex justify-end gap-3">
+                    <FluxoCaixaSettings />
                     <BankReconciliationModal />
                     <RecurringEntriesModal />
                     <ManualEntryModal />

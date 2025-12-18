@@ -1,19 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
-import { Plus, Loader2, X, Tag } from 'lucide-react';
+import { Plus, Loader2, X, Tag, User, Building, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
 import { createManualEntry, CreateManualEntryData } from '../../actions';
+import { cn } from '@/lib/utils';
 
-const SUGGESTED_TAGS = ['Fixo', 'Variável', 'Urgente', 'Recorrente', 'Operacional', 'Pessoal'];
+type Category = {
+    id: string;
+    name: string;
+    type: 'income' | 'expense' | 'both';
+    color: string;
+    icon: string;
+};
+
+const SUGGESTED_TAGS = ['Fixo', 'Variável', 'Urgente', 'Operacional', 'Pessoal'];
+
+const ENTITY_TYPES = [
+    { value: 'client', label: 'Cliente', icon: User },
+    { value: 'supplier', label: 'Fornecedor', icon: Building },
+    { value: 'other', label: 'Outro', icon: User },
+];
 
 export function ManualEntryModal() {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [tagInput, setTagInput] = useState('');
+    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [loadingCategories, setLoadingCategories] = useState(false);
 
-    const [formData, setFormData] = useState<CreateManualEntryData>({
+    // Recurrence state
+    const [isRecurring, setIsRecurring] = useState(false);
+    const [frequency, setFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly');
+    const [dayOfMonth, setDayOfMonth] = useState(5);
+
+    const [formData, setFormData] = useState<CreateManualEntryData & {
+        entity_name?: string;
+        entity_type?: string;
+        category_id?: string;
+        cost_center?: string;
+    }>({
         type: 'expense',
         description: '',
         category: 'Custos Fixos',
@@ -23,7 +51,31 @@ export function ManualEntryModal() {
         competence_date: new Date().toISOString().split('T')[0],
         status: 'pending',
         tags: [],
+        entity_name: '',
+        entity_type: undefined,
+        category_id: '',
+        cost_center: '',
     });
+
+    // Fetch categories when modal opens
+    const fetchCategories = useCallback(async () => {
+        setLoadingCategories(true);
+        try {
+            const res = await fetch(`/api/financeiro/categories?type=${formData.type}`);
+            const data = await res.json();
+            setCategories(data.categories || []);
+        } catch {
+            console.error('Error loading categories');
+        } finally {
+            setLoadingCategories(false);
+        }
+    }, [formData.type]);
+
+    useEffect(() => {
+        if (open) {
+            fetchCategories();
+        }
+    }, [open, fetchCategories]);
 
     const addTag = (tag: string) => {
         const trimmed = tag.trim();
@@ -52,27 +104,65 @@ export function ManualEntryModal() {
         setLoading(true);
 
         try {
-            await createManualEntry(formData);
+            // Get category name from selected category_id
+            const selectedCategory = categories.find(c => c.id === formData.category_id);
+            const entryData = {
+                ...formData,
+                category: selectedCategory?.name || formData.category,
+            };
+
+            await createManualEntry(entryData);
+
+            // If recurring, also create the recurring entry
+            if (isRecurring) {
+                await fetch('/api/financeiro/recurring-entries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: formData.type,
+                        description: formData.description,
+                        amount: formData.amount,
+                        category: selectedCategory?.name || formData.category,
+                        frequency,
+                        day_of_month: dayOfMonth,
+                        entity_name: formData.entity_name,
+                    }),
+                });
+            }
+
             setOpen(false);
-            // Reset form
-            setFormData({
-                type: 'expense',
-                description: '',
-                category: 'Custos Fixos',
-                subcategory: '',
-                amount: 0,
-                due_date: new Date().toISOString().split('T')[0],
-                competence_date: new Date().toISOString().split('T')[0],
-                status: 'pending',
-                tags: [],
-            });
-            setTagInput('');
+            resetForm();
         } catch (err: any) {
             setError(err.message || 'Erro ao salvar.');
         } finally {
             setLoading(false);
         }
     };
+
+    const resetForm = () => {
+        setFormData({
+            type: 'expense',
+            description: '',
+            category: 'Custos Fixos',
+            subcategory: '',
+            amount: 0,
+            due_date: new Date().toISOString().split('T')[0],
+            competence_date: new Date().toISOString().split('T')[0],
+            status: 'pending',
+            tags: [],
+            entity_name: '',
+            entity_type: undefined,
+            category_id: '',
+            cost_center: '',
+        });
+        setTagInput('');
+        setIsRecurring(false);
+        setShowAdvanced(false);
+    };
+
+    const filteredCategories = categories.filter(c =>
+        c.type === formData.type || c.type === 'both'
+    );
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -82,7 +172,7 @@ export function ManualEntryModal() {
                     Novo Lançamento
                 </button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Novo Lançamento Manual</DialogTitle>
                 </DialogHeader>
@@ -92,21 +182,25 @@ export function ManualEntryModal() {
                     <div className="grid grid-cols-2 gap-4">
                         <button
                             type="button"
-                            className={`p-2 rounded-lg border text-sm font-medium transition-colors ${formData.type === 'income'
-                                ? 'bg-emerald-100 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30'
-                                : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10'
-                                }`}
-                            onClick={() => setFormData({ ...formData, type: 'income' })}
+                            className={cn(
+                                "p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                                formData.type === 'income'
+                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10'
+                            )}
+                            onClick={() => setFormData({ ...formData, type: 'income', category_id: '' })}
                         >
                             Receita
                         </button>
                         <button
                             type="button"
-                            className={`p-2 rounded-lg border text-sm font-medium transition-colors ${formData.type === 'expense'
-                                ? 'bg-rose-100 border-rose-500 text-rose-700 dark:bg-rose-900/30'
-                                : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10'
-                                }`}
-                            onClick={() => setFormData({ ...formData, type: 'expense' })}
+                            className={cn(
+                                "p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                                formData.type === 'expense'
+                                    ? 'bg-rose-50 border-rose-500 text-rose-700 dark:bg-rose-900/30'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-white/5 dark:border-white/10'
+                            )}
+                            onClick={() => setFormData({ ...formData, type: 'expense', category_id: '' })}
                         >
                             Despesa
                         </button>
@@ -115,109 +209,244 @@ export function ManualEntryModal() {
                     {/* Descrição */}
                     <div>
                         <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                            Descrição
+                            Descrição *
                         </label>
                         <input
                             type="text"
                             required
-                            className="w-full rounded-lg border-slate-200 dark:border-white/10 bg-transparent"
+                            className="app-input w-full"
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            placeholder="Ex: Aluguel, Luz, Retirada..."
+                            placeholder="Ex: Aluguel, Luz, Venda..."
                         />
                     </div>
 
-                    {/* Valor */}
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                            Valor (R$)
-                        </label>
-                        <input
-                            type="number"
-                            required
-                            min="0.01"
-                            step="0.01"
-                            className="w-full rounded-lg border-slate-200 dark:border-white/10 bg-transparent"
-                            value={formData.amount}
-                            onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                        />
-                    </div>
-
+                    {/* Valor e Data */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                Data Vencimento
+                                Valor (R$) *
+                            </label>
+                            <input
+                                type="number"
+                                required
+                                min="0.01"
+                                step="0.01"
+                                className="app-input w-full"
+                                value={formData.amount || ''}
+                                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                                Vencimento *
                             </label>
                             <input
                                 type="date"
                                 required
-                                className="w-full rounded-lg border-slate-200 dark:border-white/10 bg-transparent"
+                                className="app-input w-full"
                                 value={formData.due_date}
                                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
                             />
                         </div>
+                    </div>
+
+                    {/* Categoria */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                            Categoria
+                        </label>
+                        <select
+                            className="app-input w-full"
+                            value={formData.category_id}
+                            onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                            disabled={loadingCategories}
+                        >
+                            <option value="">Selecione...</option>
+                            {filteredCategories.map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                    {cat.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Cliente/Fornecedor */}
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="col-span-2">
+                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                                <User className="w-3.5 h-3.5 inline mr-1" />
+                                Cliente/Fornecedor
+                            </label>
+                            <input
+                                type="text"
+                                className="app-input w-full"
+                                value={formData.entity_name}
+                                onChange={(e) => setFormData({ ...formData, entity_name: e.target.value })}
+                                placeholder="Nome..."
+                            />
+                        </div>
                         <div>
                             <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                Status
+                                Tipo
                             </label>
                             <select
-                                className="w-full rounded-lg border-slate-200 dark:border-white/10 bg-transparent"
-                                value={formData.status}
-                                onChange={(e) =>
-                                    setFormData({ ...formData, status: e.target.value as any })
-                                }
+                                className="app-input w-full"
+                                value={formData.entity_type}
+                                onChange={(e) => setFormData({ ...formData, entity_type: e.target.value as any || undefined })}
                             >
-                                <option value="pending">Pendente</option>
-                                <option value="confirmed">Pago/Recebido</option>
+                                <option value="">-</option>
+                                {ENTITY_TYPES.map((et) => (
+                                    <option key={et.value} value={et.value}>{et.label}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
 
-                    {/* Tags */}
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                            <Tag className="w-3.5 h-3.5 inline mr-1" />
-                            Tags
-                        </label>
-                        <div className="flex flex-wrap items-center gap-1.5 p-2 min-h-[42px] rounded-lg border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20">
-                            {formData.tags.map(tag => (
+                    {/* Recorrência Toggle */}
+                    <div className="p-3 rounded-xl glass-panel border border-white/20">
+                        <label className="flex items-center justify-between cursor-pointer">
+                            <span className="flex items-center gap-2 text-sm font-medium">
+                                <Repeat className="w-4 h-4 text-primary-500" />
+                                Tornar recorrente
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setIsRecurring(!isRecurring)}
+                                className={cn(
+                                    "w-12 h-6 rounded-full transition-colors relative",
+                                    isRecurring ? "bg-primary-500" : "bg-slate-300 dark:bg-slate-600"
+                                )}
+                            >
                                 <span
-                                    key={tag}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium"
-                                >
-                                    {tag}
-                                    <button
-                                        type="button"
-                                        onClick={() => removeTag(tag)}
-                                        className="hover:text-primary-900"
+                                    className={cn(
+                                        "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
+                                        isRecurring ? "translate-x-7" : "translate-x-1"
+                                    )}
+                                />
+                            </button>
+                        </label>
+
+                        {isRecurring && (
+                            <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Frequência</label>
+                                    <select
+                                        className="app-input w-full text-sm"
+                                        value={frequency}
+                                        onChange={(e) => setFrequency(e.target.value as any)}
                                     >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </span>
-                            ))}
-                            <input
-                                type="text"
-                                value={tagInput}
-                                onChange={(e) => setTagInput(e.target.value)}
-                                onKeyDown={handleTagKeyDown}
-                                placeholder={formData.tags.length === 0 ? "Digite e pressione Enter..." : ""}
-                                className="flex-1 min-w-[100px] bg-transparent border-0 focus:ring-0 text-sm p-0"
-                            />
-                        </div>
-                        {/* Sugestões */}
-                        <div className="flex flex-wrap gap-1 mt-2">
-                            {SUGGESTED_TAGS.filter(t => !formData.tags.includes(t)).slice(0, 4).map(tag => (
-                                <button
-                                    key={tag}
-                                    type="button"
-                                    onClick={() => addTag(tag)}
-                                    className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
-                                >
-                                    + {tag}
-                                </button>
-                            ))}
-                        </div>
+                                        <option value="monthly">Mensal</option>
+                                        <option value="weekly">Semanal</option>
+                                        <option value="yearly">Anual</option>
+                                    </select>
+                                </div>
+                                {frequency === 'monthly' && (
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">Dia do mês</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="31"
+                                            className="app-input w-full text-sm"
+                                            value={dayOfMonth}
+                                            onChange={(e) => setDayOfMonth(parseInt(e.target.value) || 5)}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
+
+                    {/* Advanced Section Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+                    >
+                        {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        {showAdvanced ? 'Menos opções' : 'Mais opções'}
+                    </button>
+
+                    {showAdvanced && (
+                        <>
+                            {/* Status */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                                        Status
+                                    </label>
+                                    <select
+                                        className="app-input w-full"
+                                        value={formData.status}
+                                        onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                                    >
+                                        <option value="pending">Pendente</option>
+                                        <option value="confirmed">Pago/Recebido</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                                        Centro de Custo
+                                    </label>
+                                    <select
+                                        className="app-input w-full"
+                                        value={formData.cost_center}
+                                        onChange={(e) => setFormData({ ...formData, cost_center: e.target.value })}
+                                    >
+                                        <option value="">-</option>
+                                        <option value="Operações">Operações</option>
+                                        <option value="Marketing">Marketing</option>
+                                        <option value="Tecnologia">Tecnologia</option>
+                                        <option value="RH">RH</option>
+                                        <option value="Administrativo">Administrativo</option>
+                                        <option value="Comercial">Comercial</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Tags */}
+                            <div>
+                                <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                                    <Tag className="w-3.5 h-3.5 inline mr-1" />
+                                    Tags
+                                </label>
+                                <div className="flex flex-wrap items-center gap-1.5 p-2 min-h-[42px] rounded-lg border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20">
+                                    {formData.tags.map(tag => (
+                                        <span
+                                            key={tag}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium"
+                                        >
+                                            {tag}
+                                            <button type="button" onClick={() => removeTag(tag)} className="hover:text-primary-900">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    <input
+                                        type="text"
+                                        value={tagInput}
+                                        onChange={(e) => setTagInput(e.target.value)}
+                                        onKeyDown={handleTagKeyDown}
+                                        placeholder={formData.tags.length === 0 ? "Digite e pressione Enter..." : ""}
+                                        className="flex-1 min-w-[100px] bg-transparent border-0 focus:ring-0 text-sm p-0"
+                                    />
+                                </div>
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {SUGGESTED_TAGS.filter(t => !formData.tags.includes(t)).slice(0, 4).map(tag => (
+                                        <button
+                                            key={tag}
+                                            type="button"
+                                            onClick={() => addTag(tag)}
+                                            className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200 transition-colors"
+                                        >
+                                            + {tag}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     {error && <p className="text-sm text-rose-500">{error}</p>}
 
@@ -236,4 +465,3 @@ export function ManualEntryModal() {
         </Dialog>
     );
 }
-
