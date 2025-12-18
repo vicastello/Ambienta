@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { AlertCircle, Upload } from 'lucide-react';
+import { AlertCircle, Upload, LayoutGrid, Table2 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { FluxoCaixaTimeline } from './components/FluxoCaixaTimeline';
 import { ReceivablesHeader } from './components/ReceivablesHeader';
@@ -16,6 +16,8 @@ import { useSearchParams } from 'next/navigation';
 import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
 import { useOverdueNotifications } from './hooks/useOverdueNotifications';
 import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
+import { FinancialDashboard } from './components/FinancialDashboard';
+import { cn } from '@/lib/utils';
 
 type FluxoCaixaData = {
     periodo: { inicio: string; fim: string };
@@ -75,6 +77,7 @@ function FluxoCaixaContent() {
     const [data, setData] = useState<FluxoCaixaData | null>(null);
     const [legacyLoading, setLegacyLoading] = useState(true);
     const [legacyError, setLegacyError] = useState<string | null>(null);
+    const [activeView, setActiveView] = useState<'table' | 'dashboard'>('table');
 
     // Use cached data fetching hook for receivables
     const { data: receivablesData, loading: receivablesLoading, isFromCache } = useFluxoCaixaData(searchParams);
@@ -108,41 +111,82 @@ function FluxoCaixaContent() {
         <div className="space-y-6 pb-6">
             {/* Header and Filters */}
             <div className="flex flex-col gap-6">
-                <div className="flex justify-end gap-3">
-                    <FluxoCaixaSettings />
-                    <BankReconciliationModal />
-                    <RecurringEntriesModal />
-                    <ManualEntryModal />
-                    <Link
-                        href="/financeiro/importar-pagamentos"
-                        className="app-btn-primary inline-flex items-center gap-2 whitespace-nowrap"
-                    >
-                        <Upload className="w-4 h-4" />
-                        Importar Pagamentos
-                    </Link>
+                <div className="flex items-center justify-between gap-3">
+                    {/* View Toggle */}
+                    <div className="flex items-center p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800">
+                        <button
+                            onClick={() => setActiveView('table')}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                                activeView === 'table'
+                                    ? "bg-primary-500 text-white"
+                                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            )}
+                        >
+                            <Table2 className="w-4 h-4" />
+                            Tabela
+                        </button>
+                        <button
+                            onClick={() => setActiveView('dashboard')}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                                activeView === 'dashboard'
+                                    ? "bg-primary-500 text-white"
+                                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                            )}
+                        >
+                            <LayoutGrid className="w-4 h-4" />
+                            Dashboard
+                        </button>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3">
+                        <FluxoCaixaSettings />
+                        <BankReconciliationModal />
+                        <RecurringEntriesModal />
+                        <ManualEntryModal />
+                        <Link
+                            href="/financeiro/importar-pagamentos"
+                            className="app-btn-primary inline-flex items-center gap-2 whitespace-nowrap"
+                        >
+                            <Upload className="w-4 h-4" />
+                            Importar
+                        </Link>
+                    </div>
                 </div>
 
-                <ReceivablesHeader />
+                {activeView === 'table' && <ReceivablesHeader />}
             </div>
 
-            {/* Summary Cards */}
-            <ReceivablesSummary
-                summary={receivablesData.meta?.summary || null}
-                loading={receivablesLoading}
-            />
+            {/* Dashboard View */}
+            {activeView === 'dashboard' && (
+                <FinancialDashboard />
+            )}
 
-            {/* Evolution Chart */}
-            <CashFlowEvolutionChart
-                orders={receivablesData.orders}
-                loading={receivablesLoading}
-            />
+            {/* Table View */}
+            {activeView === 'table' && (
+                <>
+                    {/* Summary Cards */}
+                    <ReceivablesSummary
+                        summary={receivablesData.meta?.summary || null}
+                        loading={receivablesLoading}
+                    />
 
-            {/* Tabela de Recebíveis */}
-            <ReceivablesTable
-                orders={receivablesData.orders}
-                meta={receivablesData.meta}
-                loading={receivablesLoading}
-            />
+                    {/* Evolution Chart */}
+                    <CashFlowEvolutionChart
+                        orders={receivablesData.orders}
+                        loading={receivablesLoading}
+                    />
+
+                    {/* Tabela de Recebíveis */}
+                    <ReceivablesTable
+                        orders={receivablesData.orders}
+                        meta={receivablesData.meta}
+                        loading={receivablesLoading}
+                    />
+                </>
+            )}
 
             {/* Legacy Section: Timeline & Projeção */}
             {/* Conditionally rendered without blocking the whole page */}
