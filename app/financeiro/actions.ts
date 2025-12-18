@@ -116,3 +116,32 @@ export async function listManualEntries() {
 
     return data || [];
 }
+
+/**
+ * Marks multiple tiny_orders as paid (for ReceivablesTable mass action)
+ */
+export async function markOrdersAsPaid(orderIds: number[]) {
+    if (!orderIds.length) {
+        throw new Error('Nenhum pedido selecionado.');
+    }
+
+    const now = new Date().toISOString();
+
+    const { error, count } = await supabaseAdmin
+        .from('tiny_orders')
+        .update({
+            payment_received: true,
+            payment_received_at: now,
+        })
+        .in('id', orderIds);
+
+    if (error) {
+        console.error('Error marking orders as paid:', error);
+        throw new Error('Falha ao marcar pedidos como pagos.');
+    }
+
+    revalidatePath('/financeiro/fluxo-caixa');
+
+    return { updatedCount: count ?? orderIds.length };
+}
+

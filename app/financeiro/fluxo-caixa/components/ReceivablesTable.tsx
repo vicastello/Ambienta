@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -12,6 +12,7 @@ import {
     ExternalLink, Calendar, User, Hash, MapPin, FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { markOrdersAsPaid } from '@/app/financeiro/actions';
 
 interface Order {
     id: number;
@@ -473,6 +474,34 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [isProcessing, setIsProcessing] = useState(false);
     const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // ⌘K or Ctrl+K: Focus search
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            }
+            // ⌘E or Ctrl+E: Export CSV (if items selected)
+            if ((e.metaKey || e.ctrlKey) && e.key === 'e' && selectedIds.size > 0) {
+                e.preventDefault();
+                handleExportCSV();
+            }
+            // Escape: Close drawer or clear selection
+            if (e.key === 'Escape') {
+                if (detailOrder) {
+                    setDetailOrder(null);
+                } else if (selectedIds.size > 0) {
+                    clearSelection();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedIds.size, detailOrder]);
 
     const handlePageChange = (newPage: number) => {
         const params = new URLSearchParams(searchParams.toString());
@@ -523,13 +552,13 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
     const handleMarkAsPaid = async () => {
         setIsProcessing(true);
         try {
-            // TODO: Implement API call to mark orders as paid
-            console.log('Marking as paid:', Array.from(selectedIds));
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
+            const orderIds = Array.from(selectedIds);
+            await markOrdersAsPaid(orderIds);
             clearSelection();
             router.refresh();
         } catch (error) {
             console.error('Error marking as paid:', error);
+            alert('Erro ao marcar pedidos como pagos. Tente novamente.');
         } finally {
             setIsProcessing(false);
         }
@@ -632,8 +661,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
             <div className="relative max-w-md">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
+                    ref={searchInputRef}
                     type="text"
-                    placeholder="Buscar por cliente, pedido ou canal..."
+                    placeholder="Buscar por cliente, pedido ou canal... (⌘K)"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className={cn(
