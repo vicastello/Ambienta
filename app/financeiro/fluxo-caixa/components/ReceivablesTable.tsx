@@ -9,7 +9,7 @@ import {
     ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
     CheckCircle2, Clock, AlertTriangle, XCircle, Bell,
     Check, Download, CreditCard, SquareCheck, Square, Minus,
-    ExternalLink, Calendar, User, Hash, MapPin, FileText
+    ExternalLink, Calendar, User, Hash, MapPin, FileText, Edit2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { markOrdersAsPaid } from '@/app/financeiro/actions';
@@ -467,6 +467,10 @@ function OrderDetailDrawer({
                                 Ações Rápidas
                             </h3>
                             <div className="flex flex-wrap gap-2">
+                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-800/30 transition-colors font-medium">
+                                    <Edit2 className="w-4 h-4" />
+                                    Editar Entradas
+                                </button>
                                 <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                                     <ExternalLink className="w-4 h-4" />
                                     Ver no Tiny
