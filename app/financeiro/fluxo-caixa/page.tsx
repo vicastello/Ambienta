@@ -9,6 +9,7 @@ import { ReceivablesHeader } from './components/ReceivablesHeader';
 import { ReceivablesTable } from './components/ReceivablesTable';
 import { ReceivablesSummary } from './components/ReceivablesSummary';
 import { ManualEntryModal } from './components/ManualEntryModal';
+import { CashFlowEvolutionChart } from './components/CashFlowEvolutionChart';
 import { useSearchParams } from 'next/navigation';
 
 type FluxoCaixaData = {
@@ -150,6 +151,12 @@ function FluxoCaixaContent() {
             {/* Summary Cards */}
             <ReceivablesSummary
                 summary={receivablesData.meta?.summary || null}
+                loading={receivablesLoading}
+            />
+
+            {/* Evolution Chart */}
+            <CashFlowEvolutionChart
+                orders={receivablesData.orders}
                 loading={receivablesLoading}
             />
 
