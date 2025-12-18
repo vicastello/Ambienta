@@ -1,18 +1,19 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, Filter, Calendar as CalendarIcon, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Filter, Calendar as CalendarIcon, CheckCircle2, Clock, AlertTriangle, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
-// Assuming you might have some UI components, using native select/inputs for now to keep it simple & fast
-// or use the glassmorphism styles
+
+const STATUS_OPTIONS = [
+    { value: 'todos', label: 'Todos', icon: List, color: 'text-slate-500' },
+    { value: 'pagos', label: 'Pagos', icon: CheckCircle2, color: 'text-emerald-500' },
+    { value: 'pendentes', label: 'Pendentes', icon: Clock, color: 'text-amber-500' },
+    { value: 'atrasados', label: 'Atrasados', icon: AlertTriangle, color: 'text-rose-500' },
+];
 
 export function ReceivablesHeader() {
     const router = useRouter();
     const searchParams = useSearchParams();
-
-    // Local state for filters to avoid constant URL updates on typing (if we had text search)
-    // For selects, we can update immediately
 
     // Status Filter
     const currentStatus = searchParams.get('statusPagamento') || 'todos';
@@ -45,22 +46,27 @@ export function ReceivablesHeader() {
                     </p>
                 </div>
 
-                {/* Global Status Tabs */}
-                <div className="flex items-center p-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
-                    {['todos', 'pagos', 'pendentes'].map((status) => (
-                        <button
-                            key={status}
-                            onClick={() => updateFilter('statusPagamento', status)}
-                            className={cn(
-                                "px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                                currentStatus === status
-                                    ? "bg-primary-500 text-white shadow-sm"
-                                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-                            )}
-                        >
-                            {status.charAt(0).toUpperCase() + status.slice(1)}
-                        </button>
-                    ))}
+                {/* Quick Status Filters */}
+                <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800">
+                    {STATUS_OPTIONS.map((status) => {
+                        const Icon = status.icon;
+                        const isActive = currentStatus === status.value;
+                        return (
+                            <button
+                                key={status.value}
+                                onClick={() => updateFilter('statusPagamento', status.value)}
+                                className={cn(
+                                    "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
+                                    isActive
+                                        ? "bg-primary-500 text-white shadow-sm"
+                                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                )}
+                            >
+                                <Icon className={cn("w-4 h-4", !isActive && status.color)} />
+                                <span className="hidden sm:inline">{status.label}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
