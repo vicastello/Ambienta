@@ -18,6 +18,7 @@ import { useOverdueNotifications } from './hooks/useOverdueNotifications';
 import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
 import { FinancialDashboard } from './components/FinancialDashboard';
 import { ReportModal } from './components/ReportModal';
+import { InstallmentModal } from './components/InstallmentModal';
 import { cn } from '@/lib/utils';
 
 type FluxoCaixaData = {
@@ -147,6 +148,7 @@ function FluxoCaixaContent() {
                         <FluxoCaixaSettings />
                         <BankReconciliationModal />
                         <RecurringEntriesModal />
+                        <InstallmentModal />
                         <ManualEntryModal />
                         <Link
                             href="/financeiro/importar-pagamentos"
