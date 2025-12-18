@@ -5,8 +5,8 @@ const AUTH_URL =
   "https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth";
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.TINY_CLIENT_ID;
-  const redirectUri = process.env.TINY_REDIRECT_URI;
+  const clientId = process.env.TINY_CLIENT_ID?.trim();
+  const redirectUri = process.env.TINY_REDIRECT_URI?.trim();
 
   if (!clientId || !redirectUri) {
     return NextResponse.json(

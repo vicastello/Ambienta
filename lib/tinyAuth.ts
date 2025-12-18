@@ -2,8 +2,8 @@
 import { supabaseAdmin } from './supabaseAdmin';
 
 const TOKEN_URL = process.env.TINY_TOKEN_URL ?? 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';
-const CLIENT_ID = process.env.TINY_CLIENT_ID;
-const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET;
+const CLIENT_ID = process.env.TINY_CLIENT_ID?.trim();
+const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET?.trim();
 
 export async function getAccessTokenFromDbOrRefresh(): Promise<string> {
   // read tokens row

@@ -11,8 +11,8 @@ type TinyTokenResponse = {
 };
 
 const TOKEN_URL = process.env.TINY_TOKEN_URL ?? 'https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token';
-const CLIENT_ID = process.env.TINY_CLIENT_ID;
-const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET;
+const CLIENT_ID = process.env.TINY_CLIENT_ID?.trim();
+const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET?.trim();
 
 /**
  * GET /api/admin/cron/refresh-tiny-token
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     // Verificar secret para segurança
     const authHeader = request.headers.get('authorization');
     const expectedSecret = process.env.CRON_SECRET;
-    
+
     if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -47,15 +47,15 @@ export async function GET(request: Request) {
 
     if (tokenErr) {
       console.error('[cron-refresh] erro ao ler tiny_tokens', tokenErr);
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Erro ao ler tokens' 
+      return NextResponse.json({
+        success: false,
+        error: 'Erro ao ler tokens'
       }, { status: 500 });
     }
 
     if (!tokenRow || !tokenRow.refresh_token) {
       console.log('[cron-refresh] Nenhum refresh_token encontrado, pulando...');
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: true,
         skipped: true,
         reason: 'Nenhum refresh_token configurado'
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     if (!needsRefresh) {
       const expiresIn = Math.floor(expiresInMs / 1000 / 60);
       console.log(`[cron-refresh] Token ainda válido por ${expiresIn} minutos, pulando...`);
-      return NextResponse.json({ 
+      return NextResponse.json({
         success: true,
         skipped: true,
         reason: 'Token ainda válido',
@@ -82,15 +82,15 @@ export async function GET(request: Request) {
 
     if (!CLIENT_ID || !CLIENT_SECRET) {
       console.error('[cron-refresh] CLIENT_ID ou CLIENT_SECRET não configurados');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Credenciais não configuradas' 
+      return NextResponse.json({
+        success: false,
+        error: 'Credenciais não configuradas'
       }, { status: 500 });
     }
 
     // 3. Renovar token
     console.log('[cron-refresh] Renovando token...');
-    
+
     const body = new URLSearchParams();
     body.set('grant_type', 'refresh_token');
     body.set('client_id', CLIENT_ID);
@@ -99,18 +99,18 @@ export async function GET(request: Request) {
 
     const res = await fetch(TOKEN_URL, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/x-www-form-urlencoded', 
-        Accept: 'application/json' 
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json'
       },
       body,
     });
 
     const text = await res.text();
-    
+
     if (!res.ok) {
       console.error('[cron-refresh] Erro ao renovar:', res.status, text);
-      
+
       await supabaseAdmin.from('sync_logs').insert({
         job_id: null,
         level: 'error',
@@ -118,8 +118,8 @@ export async function GET(request: Request) {
         meta: { status: res.status, response: text }
       });
 
-      return NextResponse.json({ 
-        success: false, 
+      return NextResponse.json({
+        success: false,
         error: `Erro ao renovar token: ${res.status}`,
         needsReauth: res.status === 400 || res.status === 401
       }, { status: 500 });
@@ -130,9 +130,9 @@ export async function GET(request: Request) {
       parsed = JSON.parse(text);
     } catch (e) {
       console.error('[cron-refresh] Resposta inválida:', text);
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Resposta inválida' 
+      return NextResponse.json({
+        success: false,
+        error: 'Resposta inválida'
       }, { status: 500 });
     }
 
@@ -168,9 +168,9 @@ export async function GET(request: Request) {
 
     if (updateErr) {
       console.error('[cron-refresh] Erro ao salvar:', updateErr);
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Erro ao salvar tokens' 
+      return NextResponse.json({
+        success: false,
+        error: 'Erro ao salvar tokens'
       }, { status: 500 });
     }
 
@@ -179,16 +179,16 @@ export async function GET(request: Request) {
       job_id: null,
       level: 'info',
       message: 'Token Tiny renovado automaticamente pelo cron',
-      meta: { 
-          expires_in: expiresInSeconds,
+      meta: {
+        expires_in: expiresInSeconds,
         expires_at: new Date(expiresAt).toISOString()
       }
     });
 
     console.log('[cron-refresh] Token renovado com sucesso!');
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: 'Token renovado automaticamente',
       expires_at: new Date(expiresAt).toISOString(),
       expires_in_hours: expiresInSeconds > 0 ? Math.floor(expiresInSeconds / 3600) : null
@@ -197,7 +197,7 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     console.error('[cron-refresh] Erro inesperado:', error);
     const message = getErrorMessage(error) || 'Erro desconhecido';
-    
+
     await supabaseAdmin.from('sync_logs').insert({
       job_id: null,
       level: 'error',
@@ -205,9 +205,9 @@ export async function GET(request: Request) {
       meta: { error: message }
     });
 
-    return NextResponse.json({ 
-      success: false, 
-      error: message 
+    return NextResponse.json({
+      success: false,
+      error: message
     }, { status: 500 });
   }
 }

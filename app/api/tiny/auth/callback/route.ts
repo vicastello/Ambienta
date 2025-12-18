@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const clientId = process.env.TINY_CLIENT_ID;
-  const clientSecret = process.env.TINY_CLIENT_SECRET;
-  const redirectUri = process.env.TINY_REDIRECT_URI;
+  const clientId = process.env.TINY_CLIENT_ID?.trim();
+  const clientSecret = process.env.TINY_CLIENT_SECRET?.trim();
+  const redirectUri = process.env.TINY_REDIRECT_URI?.trim();
 
   if (!clientId || !clientSecret || !redirectUri) {
     return NextResponse.json(
@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
         },
         { onConflict: 'id' }
       );
-    
+
     if (error) {
       console.error('[Tiny OAuth callback] ❌ Erro ao salvar tokens no DB:', error);
       response.cookies.set('oauth_error', `DB Error: ${error.message}`, {
