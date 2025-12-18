@@ -9,11 +9,12 @@ import {
     ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
     CheckCircle2, Clock, AlertTriangle, XCircle, Bell,
     Check, Download, CreditCard, SquareCheck, Square, Minus,
-    ExternalLink, Calendar, User, Hash, MapPin, FileText, Edit2
+    ExternalLink, Calendar, User, Hash, MapPin, FileText, Edit2, Tag, Plus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { markOrdersAsPaid } from '@/app/financeiro/actions';
 import { useDebounce } from '@/hooks/useDebounce';
+import { EntryEditModal } from './EntryEditModal';
 
 interface Order {
     id: number;
@@ -368,10 +369,12 @@ function SelectionActionBar({
 // Order Detail Drawer Component
 function OrderDetailDrawer({
     order,
-    onClose
+    onClose,
+    onMarkAsPaid
 }: {
     order: Order | null;
     onClose: () => void;
+    onMarkAsPaid: (order: Order) => void;
 }) {
     if (!order) return null;
 
@@ -379,6 +382,11 @@ function OrderDetailDrawer({
     const StatusIcon = status.icon;
     const marketplaceBadge = getMarketplaceBadge(order.canal);
     const BadgeIcon = marketplaceBadge.icon;
+
+    // Construct Tiny URL (approximate based on standard Tiny routes)
+    const tinyUrl = `https://erp.tiny.com.br/vendas#edit/${order.tiny_id}`;
+    // Construct or extract NF Link if available
+    const nfLink = order.marketplace_info?.nfe_link || order.marketplace_info?.link_nfe;
 
     return (
         <>
@@ -467,18 +475,46 @@ function OrderDetailDrawer({
                                 Ações Rápidas
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-200 dark:hover:bg-primary-800/30 transition-colors font-medium">
-                                    <Edit2 className="w-4 h-4" />
-                                    Editar Entradas
+                                <button
+                                    onClick={() => onMarkAsPaid(order)}
+                                    disabled={order.status_pagamento === 'pago'}
+                                    className={cn(
+                                        "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                                        order.status_pagamento === 'pago'
+                                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 cursor-default"
+                                            : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-800/30"
+                                    )}
+                                >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    {order.status_pagamento === 'pago' ? 'Pago' : 'Marcar como Pago'}
                                 </button>
-                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+
+                                <a
+                                    href={tinyUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-700 dark:text-slate-300"
+                                >
                                     <ExternalLink className="w-4 h-4" />
                                     Ver no Tiny
-                                </button>
-                                <button className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                                    <FileText className="w-4 h-4" />
-                                    Ver NF-e
-                                </button>
+                                </a>
+
+                                {nfLink ? (
+                                    <a
+                                        href={nfLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-700 dark:text-slate-300"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Ver NF-e
+                                    </a>
+                                ) : (
+                                    <button disabled className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-50 dark:bg-slate-800/50 text-slate-400 cursor-not-allowed">
+                                        <FileText className="w-4 h-4" />
+                                        Sem NF-e
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -530,7 +566,105 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [isProcessing, setIsProcessing] = useState(false);
     const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+    const [editOrderId, setEditOrderId] = useState<string | null>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+
+    // Tags state - persisted to database
+    const [orderTags, setOrderTags] = useState<Map<number, string[]>>(new Map());
+    const [availableTags, setAvailableTags] = useState<{ name: string; color: string }[]>([]);
+    const [tagInputId, setTagInputId] = useState<number | null>(null);
+    const [newTagValue, setNewTagValue] = useState('');
+    const [loadingTags, setLoadingTags] = useState(false);
+
+    // Fetch available tags on mount
+    useEffect(() => {
+        const fetchAvailableTags = async () => {
+            try {
+                const res = await fetch('/api/financeiro/tags');
+                const data = await res.json();
+                setAvailableTags(data.tags || []);
+            } catch (error) {
+                console.error('Error fetching available tags:', error);
+            }
+        };
+        fetchAvailableTags();
+    }, []);
+
+    // Fetch tags for current orders when orders change
+    useEffect(() => {
+        const fetchOrderTags = async () => {
+            if (orders.length === 0) return;
+            setLoadingTags(true);
+            try {
+                const newMap = new Map<number, string[]>();
+                // Fetch tags for all orders in parallel
+                await Promise.all(orders.slice(0, 50).map(async (order) => {
+                    const res = await fetch(`/api/financeiro/tags?orderId=${order.id}`);
+                    const data = await res.json();
+                    if (data.tags?.length) {
+                        newMap.set(order.id, data.tags);
+                    }
+                }));
+                setOrderTags(newMap);
+            } catch (error) {
+                console.error('Error fetching order tags:', error);
+            } finally {
+                setLoadingTags(false);
+            }
+        };
+        fetchOrderTags();
+    }, [orders]);
+
+    const addTagToOrder = async (orderId: number, tag: string) => {
+        const trimmed = tag.trim();
+        if (!trimmed) return;
+
+        // Optimistic update
+        setOrderTags(prev => {
+            const newMap = new Map(prev);
+            const existing = newMap.get(orderId) || [];
+            if (!existing.includes(trimmed)) {
+                newMap.set(orderId, [...existing, trimmed]);
+            }
+            return newMap;
+        });
+        setNewTagValue('');
+        setTagInputId(null);
+
+        // Persist to API
+        try {
+            await fetch('/api/financeiro/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId, tagName: trimmed })
+            });
+            // Refresh available tags
+            const res = await fetch('/api/financeiro/tags');
+            const data = await res.json();
+            setAvailableTags(data.tags || []);
+        } catch (error) {
+            console.error('Error adding tag:', error);
+        }
+    };
+
+    const removeTagFromOrder = async (orderId: number, tag: string) => {
+        // Optimistic update
+        setOrderTags(prev => {
+            const newMap = new Map(prev);
+            const existing = newMap.get(orderId) || [];
+            newMap.set(orderId, existing.filter(t => t !== tag));
+            return newMap;
+        });
+
+        // Persist to API
+        try {
+            await fetch(`/api/financeiro/tags?orderId=${orderId}&tagName=${encodeURIComponent(tag)}`, {
+                method: 'DELETE'
+            });
+        } catch (error) {
+            console.error('Error removing tag:', error);
+        }
+    };
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -811,6 +945,10 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                     onSort={handleSort}
                                     align="right"
                                 />
+                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">
+                                    <Tag className="w-4 h-4 inline mr-1" />
+                                    Tags
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/10 dark:divide-white/5">
@@ -905,6 +1043,63 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                     : formatDate(order.vencimento_estimado)
                                                 }
                                             </td>
+                                            {/* Tags Cell */}
+                                            <td className="py-4 px-6">
+                                                <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
+                                                    {(orderTags.get(order.id) || []).map((tag, idx) => (
+                                                        <span
+                                                            key={idx}
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                                                        >
+                                                            {tag}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    removeTagFromOrder(order.id, tag);
+                                                                }}
+                                                                className="hover:bg-primary-200 dark:hover:bg-primary-800 rounded-full p-0.5"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                    {tagInputId === order.id ? (
+                                                        <input
+                                                            autoFocus
+                                                            className="w-16 px-1 py-0.5 text-xs rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-slate-800"
+                                                            value={newTagValue}
+                                                            onChange={(e) => setNewTagValue(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    addTagToOrder(order.id, newTagValue);
+                                                                } else if (e.key === 'Escape') {
+                                                                    setTagInputId(null);
+                                                                    setNewTagValue('');
+                                                                }
+                                                            }}
+                                                            onBlur={() => {
+                                                                if (newTagValue.trim()) {
+                                                                    addTagToOrder(order.id, newTagValue);
+                                                                } else {
+                                                                    setTagInputId(null);
+                                                                }
+                                                            }}
+                                                            placeholder="tag..."
+                                                        />
+                                                    ) : (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setTagInputId(order.id);
+                                                            }}
+                                                            className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
+                                                            title="Adicionar tag"
+                                                        >
+                                                            <Plus className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
                                         </tr>
                                     );
                                 })
@@ -938,7 +1133,23 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
             </div>
 
             {/* Order Detail Drawer */}
-            <OrderDetailDrawer order={detailOrder} onClose={() => setDetailOrder(null)} />
+            <OrderDetailDrawer
+                order={detailOrder}
+                onClose={() => setDetailOrder(null)}
+                onMarkAsPaid={async (order) => {
+                    setIsProcessing(true);
+                    try {
+                        await markOrdersAsPaid([order.id]);
+                        setDetailOrder(null);
+                        router.refresh();
+                    } catch (error) {
+                        console.error('Error marking as paid:', error);
+                        alert('Erro ao marcar pedido como pago.');
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }}
+            />
         </div>
     );
 }

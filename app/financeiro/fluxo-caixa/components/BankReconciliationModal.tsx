@@ -80,8 +80,18 @@ function parseAmount(value: string | number): number {
     return parseFloat(cleaned) || 0;
 }
 
-export function BankReconciliationModal() {
-    const [open, setOpen] = useState(false);
+
+interface BankReconciliationModalProps {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+}
+
+export function BankReconciliationModal({ open: externalOpen, onOpenChange: externalOnOpenChange }: BankReconciliationModalProps) {
+    const [internalOpen, setInternalOpen] = useState(false);
+
+    // Use external state if provided, otherwise internal
+    const open = externalOpen !== undefined ? externalOpen : internalOpen;
+    const setOpen = externalOnOpenChange || setInternalOpen;
     const [step, setStep] = useState<'upload' | 'mapping' | 'matching' | 'review'>('upload');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -380,10 +390,12 @@ export function BankReconciliationModal() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <button className="app-btn-secondary inline-flex items-center gap-2">
-                    <Landmark className="w-4 h-4" />
-                    Conciliação
-                </button>
+                {!externalOnOpenChange && (
+                    <button className="app-btn-secondary inline-flex items-center gap-2">
+                        <Landmark className="w-4 h-4" />
+                        Conciliação
+                    </button>
+                )}
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>

@@ -142,9 +142,15 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
     const handleCardClick = (status: string | null) => {
         const params = new URLSearchParams(searchParams.toString());
         if (status) {
-            params.set('status', status);
+            // Map filterValue to API statusPagamento values
+            let apiValue = status;
+            if (status === 'pago') apiValue = 'pagos';
+            else if (status === 'pendente') apiValue = 'pendentes';
+            else if (status === 'atrasado') apiValue = 'pendentes'; // atrasado is within pendentes
+
+            params.set('statusPagamento', apiValue);
         } else {
-            params.delete('status');
+            params.delete('statusPagamento');
         }
         params.delete('page');
         router.push(`?${params.toString()}`);
@@ -168,7 +174,12 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
         );
     }
 
-    const currentStatus = searchParams.get('status');
+    const currentStatusPagamento = searchParams.get('statusPagamento');
+
+    // Convert back to internal filterValue for UI state
+    const currentStatus = currentStatusPagamento === 'pagos' ? 'pago'
+        : currentStatusPagamento === 'pendentes' ? 'pendente' // could be pendente or atrasado, we'll simplify
+            : null;
 
     const cards = [
         {

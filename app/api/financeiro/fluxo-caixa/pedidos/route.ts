@@ -55,11 +55,18 @@ export async function GET(request: NextRequest) {
 
         // Helper to apply filters
         const applyFilters = (query: any) => {
+            // For date filters, use inclusive ranges that work across timezones
+            // The database stores timestamps in UTC, but we want to filter by local date
             if (dataInicio) {
+                // Start from beginning of start date (inclusive)
                 query = query.gte('data_criacao', `${dataInicio}T00:00:00`);
             }
             if (dataFim) {
-                query = query.lte('data_criacao', `${dataFim}T23:59:59`);
+                // Include full end date by using next day as exclusive upper bound
+                const endDate = new Date(dataFim);
+                endDate.setDate(endDate.getDate() + 1);
+                const nextDay = endDate.toISOString().split('T')[0];
+                query = query.lt('data_criacao', `${nextDay}T00:00:00`);
             }
 
             // Default filter: ignore cancelled (code 2)

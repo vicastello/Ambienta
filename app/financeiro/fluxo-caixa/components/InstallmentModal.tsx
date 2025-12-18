@@ -30,9 +30,13 @@ const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };
 
-export function InstallmentModal() {
+export function InstallmentModal({ open: externalOpen, onOpenChange: externalOnOpenChange }: { open?: boolean; onOpenChange?: (v: boolean) => void }) {
     const router = useRouter();
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+
+    // Use external state if provided, otherwise internal
+    const open = externalOpen !== undefined ? externalOpen : internalOpen;
+    const setOpen = externalOnOpenChange || setInternalOpen;
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -136,10 +140,12 @@ export function InstallmentModal() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <button className="app-btn-secondary inline-flex items-center gap-2">
-                    <CreditCard className="w-4 h-4" />
-                    Parcelamento
-                </button>
+                {!externalOnOpenChange && (
+                    <button className="app-btn-secondary inline-flex items-center gap-2">
+                        <CreditCard className="w-4 h-4" />
+                        Parcelamento
+                    </button>
+                )}
             </DialogTrigger>
             <DialogContent className="max-w-md">
                 <DialogHeader>

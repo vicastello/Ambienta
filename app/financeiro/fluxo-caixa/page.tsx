@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { FluxoCaixaTimeline } from './components/FluxoCaixaTimeline';
 import { ReceivablesHeader } from './components/ReceivablesHeader';
 import { ReceivablesTable } from './components/ReceivablesTable';
+import { ManualEntriesTable } from './components/ManualEntriesTable';
 import { ReceivablesSummary } from './components/ReceivablesSummary';
 import { ManualEntryModal } from './components/ManualEntryModal';
 import { RecurringEntriesModal } from './components/RecurringEntriesModal';
@@ -18,10 +19,10 @@ import { useOverdueNotifications } from './hooks/useOverdueNotifications';
 import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
 import { FinancialDashboard } from './components/FinancialDashboard';
 import { ReportModal } from './components/ReportModal';
-import { InstallmentModal } from './components/InstallmentModal';
 import { AlertBell } from './components/AlertBell';
 import { BudgetManager } from './components/BudgetManager';
 import { AutomationRulesManager } from './components/AutomationRulesManager';
+import { ActionsDropdown } from './components/ActionsDropdown';
 import { cn } from '@/lib/utils';
 
 type FluxoCaixaData = {
@@ -148,21 +149,17 @@ function FluxoCaixaContent() {
                     {/* Action Buttons */}
                     <div className="flex gap-3 items-center flex-wrap">
                         <AlertBell />
+
+                        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
                         <ReportModal />
                         <BudgetManager />
                         <AutomationRulesManager />
                         <FluxoCaixaSettings />
-                        <BankReconciliationModal />
-                        <RecurringEntriesModal />
-                        <InstallmentModal />
-                        <ManualEntryModal />
-                        <Link
-                            href="/financeiro/importar-pagamentos"
-                            className="app-btn-primary inline-flex items-center gap-2 whitespace-nowrap"
-                        >
-                            <Upload className="w-4 h-4" />
-                            Importar
-                        </Link>
+
+                        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+
+                        <ActionsDropdown />
                     </div>
                 </div>
 
@@ -195,6 +192,9 @@ function FluxoCaixaContent() {
                         meta={receivablesData.meta}
                         loading={receivablesLoading}
                     />
+
+                    {/* Tabela de Lançamentos Manuais */}
+                    <ManualEntriesTable />
                 </>
             )}
 

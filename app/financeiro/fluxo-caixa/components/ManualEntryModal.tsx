@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import { Plus, Loader2, X, Tag, User, Building, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
 import { createManualEntry, CreateManualEntryData } from '../../actions';
@@ -22,8 +22,19 @@ const ENTITY_TYPES = [
     { value: 'other', label: 'Outro', icon: User },
 ];
 
-export function ManualEntryModal() {
-    const [open, setOpen] = useState(false);
+
+interface ManualEntryModalProps {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+}
+
+export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnOpenChange }: ManualEntryModalProps) {
+    const [internalOpen, setInternalOpen] = useState(false);
+
+    // Use external state if provided, otherwise internal
+    const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
+    const setIsOpen = externalOnOpenChange || setInternalOpen;
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [tagInput, setTagInput] = useState('');
@@ -35,6 +46,17 @@ export function ManualEntryModal() {
     const [isRecurring, setIsRecurring] = useState(false);
     const [frequency, setFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly');
     const [dayOfMonth, setDayOfMonth] = useState(5);
+
+    // Installment (Parcelamento) state
+    const [isInstallment, setIsInstallment] = useState(false);
+    const [installmentCount, setInstallmentCount] = useState(3);
+    const [installmentInterval, setInstallmentInterval] = useState<'monthly' | 'weekly'>('monthly');
+
+    // Entity autocomplete state
+    const [entitySuggestions, setEntitySuggestions] = useState<{ name: string; type: string | null }[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const entityInputRef = useRef<HTMLInputElement>(null);
 
     const [formData, setFormData] = useState<CreateManualEntryData & {
         entity_name?: string;
@@ -72,10 +94,34 @@ export function ManualEntryModal() {
     }, [formData.type]);
 
     useEffect(() => {
-        if (open) {
+        if (isOpen) {
             fetchCategories();
         }
-    }, [open, fetchCategories]);
+    }, [isOpen, fetchCategories]);
+
+    // Fetch entity suggestions with debounce
+    useEffect(() => {
+        const query = formData.entity_name?.trim() || '';
+        if (query.length < 2) {
+            setEntitySuggestions([]);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setLoadingSuggestions(true);
+            try {
+                const res = await fetch(`/api/financeiro/entities?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                setEntitySuggestions(data.suggestions || []);
+            } catch {
+                console.error('Error loading entity suggestions');
+            } finally {
+                setLoadingSuggestions(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [formData.entity_name]);
 
     const addTag = (tag: string) => {
         const trimmed = tag.trim();
@@ -130,7 +176,7 @@ export function ManualEntryModal() {
                 });
             }
 
-            setOpen(false);
+            setIsOpen(false);
             resetForm();
         } catch (err: any) {
             setError(err.message || 'Erro ao salvar.');
@@ -165,14 +211,16 @@ export function ManualEntryModal() {
     );
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-                <button className="app-btn-secondary inline-flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    Novo Lançamento
-                </button>
+                {!externalOnOpenChange && (
+                    <button className="app-btn-secondary inline-flex items-center gap-2">
+                        <Plus className="w-4 h-4" />
+                        Novo Lançamento
+                    </button>
+                )}
             </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Novo Lançamento Manual</DialogTitle>
                 </DialogHeader>
@@ -273,18 +321,54 @@ export function ManualEntryModal() {
 
                     {/* Cliente/Fornecedor */}
                     <div className="grid grid-cols-3 gap-4">
-                        <div className="col-span-2">
+                        <div className="col-span-2 relative">
                             <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
                                 <User className="w-3.5 h-3.5 inline mr-1" />
                                 Cliente/Fornecedor
                             </label>
                             <input
+                                ref={entityInputRef}
                                 type="text"
                                 className="app-input w-full"
                                 value={formData.entity_name}
-                                onChange={(e) => setFormData({ ...formData, entity_name: e.target.value })}
-                                placeholder="Nome..."
+                                onChange={(e) => {
+                                    setFormData({ ...formData, entity_name: e.target.value });
+                                    setShowSuggestions(true);
+                                }}
+                                onFocus={() => setShowSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                placeholder="Digite para buscar..."
+                                autoComplete="off"
                             />
+                            {/* Autocomplete dropdown */}
+                            {showSuggestions && entitySuggestions.length > 0 && (
+                                <div className="absolute z-50 w-full mt-1 app-dropdown-content max-h-48 overflow-y-auto">
+                                    {entitySuggestions.map((s, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            className="app-dropdown-item w-full text-left"
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                setFormData({
+                                                    ...formData,
+                                                    entity_name: s.name,
+                                                    entity_type: (s.type as 'client' | 'supplier' | 'other' | undefined) || formData.entity_type
+                                                });
+                                                setShowSuggestions(false);
+                                            }}
+                                        >
+                                            <User className="w-3.5 h-3.5 text-slate-400" />
+                                            {s.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {loadingSuggestions && (
+                                <div className="absolute right-3 top-9">
+                                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                </div>
+                            )}
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
@@ -313,18 +397,9 @@ export function ManualEntryModal() {
                             <button
                                 type="button"
                                 onClick={() => setIsRecurring(!isRecurring)}
-                                className={cn(
-                                    "w-12 h-6 rounded-full transition-colors relative",
-                                    isRecurring ? "bg-primary-500" : "bg-slate-300 dark:bg-slate-600"
-                                )}
-                            >
-                                <span
-                                    className={cn(
-                                        "absolute top-1 w-4 h-4 bg-white rounded-full transition-transform",
-                                        isRecurring ? "translate-x-7" : "translate-x-1"
-                                    )}
-                                />
-                            </button>
+                                className={cn("app-toggle", isRecurring && "active")}
+                                aria-pressed={isRecurring}
+                            />
                         </label>
 
                         {isRecurring && (
@@ -354,6 +429,57 @@ export function ManualEntryModal() {
                                         />
                                     </div>
                                 )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Parcelamento Toggle */}
+                    <div className={cn(
+                        "p-3 rounded-xl glass-panel border border-white/20",
+                        isRecurring && "opacity-50 pointer-events-none"
+                    )}>
+                        <label className="flex items-center justify-between cursor-pointer">
+                            <span className="flex items-center gap-2 text-sm font-medium">
+                                <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                                    <path d="M3 10h18" />
+                                    <path d="M8 4v6" />
+                                    <path d="M16 4v6" />
+                                </svg>
+                                Parcelar
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => !isRecurring && setIsInstallment(!isInstallment)}
+                                className={cn("app-toggle", isInstallment && "active")}
+                                aria-pressed={isInstallment}
+                            />
+                        </label>
+
+                        {isInstallment && (
+                            <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Nº de Parcelas</label>
+                                    <input
+                                        type="number"
+                                        min="2"
+                                        max="60"
+                                        className="app-input w-full text-sm"
+                                        value={installmentCount}
+                                        onChange={(e) => setInstallmentCount(parseInt(e.target.value) || 3)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-500 mb-1">Intervalo</label>
+                                    <select
+                                        className="app-input w-full text-sm"
+                                        value={installmentInterval}
+                                        onChange={(e) => setInstallmentInterval(e.target.value as any)}
+                                    >
+                                        <option value="monthly">Mensal</option>
+                                        <option value="weekly">Semanal</option>
+                                    </select>
+                                </div>
                             </div>
                         )}
                     </div>

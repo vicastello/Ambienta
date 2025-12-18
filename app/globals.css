@@ -939,11 +939,6 @@
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   }
 
-  /* Ajuste para dark mode: mantém herança de cor via currentColor */
-  :root.dark select.app-input {
-    /* sem mudanças específicas necessárias; currentColor resolve */
-  }
-
   /* Esconde barras de rolagem visíveis no mobile, mantendo o scroll */
   @media (max-width: 768px) {
     * {
@@ -979,6 +974,223 @@
 
   .app-btn-primary:active {
     transform: translateY(0);
+  }
+
+  /* Button secundário (outline) */
+  .app-btn-secondary {
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    border-radius: 9999px;
+    padding: 0.65rem 1.25rem;
+    font-weight: 500;
+    font-family: var(--font-inter), sans-serif;
+    font-size: 0.875rem;
+    border: 1px solid var(--btn-border);
+    cursor: pointer;
+    transition: all 200ms ease;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .app-btn-secondary:hover {
+    background-color: var(--btn-bg-hover);
+    border-color: var(--btn-border-hover);
+  }
+
+  .app-btn-secondary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Dropdown Menu Tokens */
+  .app-dropdown-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 1rem;
+    padding: 0.5rem;
+    min-width: 12rem;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  :root.dark .app-dropdown-content {
+    background: linear-gradient(165deg, rgba(24, 28, 42, 0.98), rgba(14, 18, 28, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .app-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .app-dropdown-item:hover,
+  .app-dropdown-item:focus {
+    background: rgba(0, 156, 166, 0.08);
+  }
+
+  :root.dark .app-dropdown-item:hover,
+  :root.dark .app-dropdown-item:focus {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .app-dropdown-separator {
+    height: 1px;
+    margin: 0.5rem 0;
+    background: var(--border-subtle);
+  }
+
+  .app-dropdown-label {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  /* Calendar Date Picker Tokens */
+  .app-calendar {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 1rem;
+    padding: 1rem;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  :root.dark .app-calendar {
+    background: linear-gradient(165deg, rgba(24, 28, 42, 0.98), rgba(14, 18, 28, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .app-calendar-day {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background-color 150ms ease, color 150ms ease;
+    color: var(--text-main);
+  }
+
+  .app-calendar-day:hover {
+    background: rgba(0, 156, 166, 0.1);
+  }
+
+  .app-calendar-day.selected {
+    background: var(--accent);
+    color: white;
+  }
+
+  .app-calendar-day.today {
+    border: 1px solid var(--accent);
+  }
+
+  .app-calendar-day.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .app-calendar-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .app-calendar-nav button {
+    padding: 0.4rem;
+    border-radius: 0.5rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .app-calendar-nav button:hover {
+    background: rgba(0, 156, 166, 0.1);
+    color: var(--accent);
+  }
+
+  .app-calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.25rem;
+    margin-bottom: 0.25rem;
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  /* Toggle Switch Token */
+  .app-toggle {
+    position: relative;
+    width: 2.75rem;
+    height: 1.5rem;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: all 200ms ease;
+    flex-shrink: 0;
+  }
+
+  .app-toggle:hover {
+    border-color: var(--btn-border-hover);
+  }
+
+  .app-toggle::after {
+    content: '';
+    position: absolute;
+    top: 0.1875rem;
+    left: 0.1875rem;
+    width: 1rem;
+    height: 1rem;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .app-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .app-toggle.active::after {
+    left: calc(100% - 1.1875rem);
+    background: white;
+  }
+
+  :root.dark .app-toggle {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  :root.dark .app-toggle::after {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  :root.dark .app-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  :root.dark .app-toggle.active::after {
+    background: white;
   }
 
   /* Badge / Pill para status */

@@ -352,8 +352,17 @@ function RecurringEntryCard({
     );
 }
 
-export function RecurringEntriesModal() {
-    const [isOpen, setIsOpen] = useState(false);
+
+interface RecurringEntriesModalProps {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+}
+
+export function RecurringEntriesModal({ open: externalOpen, onOpenChange: externalOnOpenChange }: RecurringEntriesModalProps) {
+    const [internalOpen, setInternalOpen] = useState(false);
+
+    const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
+    const setIsOpen = externalOnOpenChange || setInternalOpen;
     const [entries, setEntries] = useState<RecurringEntry[]>([]);
     const [loading, setLoading] = useState(false);
     const [isAdding, setIsAdding] = useState(false);
@@ -396,13 +405,15 @@ export function RecurringEntriesModal() {
     return (
         <>
             {/* Trigger Button */}
-            <button
-                onClick={() => setIsOpen(true)}
-                className="app-btn-secondary inline-flex items-center gap-2 whitespace-nowrap"
-            >
-                <Repeat className="w-4 h-4" />
-                Recorrências
-            </button>
+            {!externalOnOpenChange && (
+                <button
+                    onClick={() => setIsOpen(true)}
+                    className="app-btn-secondary inline-flex items-center gap-2 whitespace-nowrap"
+                >
+                    <Repeat className="w-4 h-4" />
+                    Recorrências
+                </button>
+            )}
 
             {/* Modal */}
             {isOpen && (

@@ -60,22 +60,53 @@ const COST_CENTERS = [
 ];
 
 export function EntryEditModal({
-    entry,
+    entry: initialEntry,
+    entryId,
     isOpen,
     onClose,
     onSaved,
 }: {
-    entry: CashFlowEntry | null;
+    entry?: CashFlowEntry | null;
+    entryId?: string;
     isOpen: boolean;
     onClose: () => void;
     onSaved?: () => void;
 }) {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [fetching, setFetching] = useState(false);
+    const [entry, setEntry] = useState<CashFlowEntry | null>(initialEntry || null);
+
+    // Update local entry when prop changes
+    useEffect(() => {
+        if (initialEntry) setEntry(initialEntry);
+    }, [initialEntry]);
+
     const [deleting, setDeleting] = useState(false);
     const [categories, setCategories] = useState<Category[]>([]);
     const [formData, setFormData] = useState<Partial<CashFlowEntry>>({});
     const [tagInput, setTagInput] = useState('');
+
+    // Fetch entry if only ID is provided
+    useEffect(() => {
+        if (isOpen && !initialEntry && entryId) {
+            setFetching(true);
+            fetch(`/api/financeiro/fluxo-caixa/entries/${entryId}`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Entry not found');
+                    return res.json();
+                })
+                .then(data => {
+                    setEntry(data);
+                })
+                .catch(err => {
+                    console.error(err);
+                    toast.error('Erro ao carregar lançamento');
+                    onClose();
+                })
+                .finally(() => setFetching(false));
+        }
+    }, [isOpen, initialEntry, entryId, onClose]);
 
     // Load categories
     const fetchCategories = useCallback(async () => {
@@ -209,6 +240,23 @@ export function EntryEditModal({
         c.type === formData.type || c.type === 'both'
     );
 
+    if (!entry && !fetching) return null;
+    if (fetching) {
+        return (
+            <Dialog open={isOpen} onOpenChange={onClose}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Carregando...</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex items-center justify-center p-8">
+                        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+                    </div>
+                </DialogContent>
+            </Dialog>
+        );
+    }
+
+    // Safety check if fetching failed or entry is still null
     if (!entry) return null;
 
     const isManual = entry.source === 'manual';
