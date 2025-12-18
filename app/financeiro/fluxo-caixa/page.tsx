@@ -19,6 +19,7 @@ import { FluxoCaixaSettings } from './components/FluxoCaixaSettings';
 import { FinancialDashboard } from './components/FinancialDashboard';
 import { ReportModal } from './components/ReportModal';
 import { InstallmentModal } from './components/InstallmentModal';
+import { AlertBell } from './components/AlertBell';
 import { cn } from '@/lib/utils';
 
 type FluxoCaixaData = {
@@ -143,7 +144,8 @@ function FluxoCaixaContent() {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 items-center">
+                        <AlertBell />
                         <ReportModal />
                         <FluxoCaixaSettings />
                         <BankReconciliationModal />
