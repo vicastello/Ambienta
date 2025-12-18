@@ -14,6 +14,7 @@ import { BankReconciliationModal } from './components/BankReconciliationModal';
 import { CashFlowEvolutionChart } from './components/CashFlowEvolutionChart';
 import { useSearchParams } from 'next/navigation';
 import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
+import { useOverdueNotifications } from './hooks/useOverdueNotifications';
 
 type FluxoCaixaData = {
     periodo: { inicio: string; fim: string };
@@ -76,6 +77,9 @@ function FluxoCaixaContent() {
 
     // Use cached data fetching hook for receivables
     const { data: receivablesData, loading: receivablesLoading, isFromCache } = useFluxoCaixaData(searchParams);
+
+    // Show toast notifications for overdue/due-today orders
+    useOverdueNotifications(receivablesData.orders, receivablesLoading);
 
     // Effect: Fetch Legacy Data
     useEffect(() => {
