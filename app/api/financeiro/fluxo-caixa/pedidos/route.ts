@@ -3,6 +3,41 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
+// Marketplace-specific due date rules (days after order creation)
+const MARKETPLACE_DUE_DAYS: Record<string, number> = {
+    'shopee': 14,      // Shopee: D+14
+    'mercado': 15,     // Mercado Livre: D+15
+    'meli': 15,        // Mercado Livre (alias): D+15
+    'magalu': 30,      // Magalu: D+30
+    'magazine': 30,    // Magalu (alias): D+30
+    'default': 30,     // Outros canais: D+30
+};
+
+/**
+ * Calculate due date based on marketplace channel
+ */
+function getDueDays(canal: string | null): number {
+    if (!canal) return MARKETPLACE_DUE_DAYS.default;
+    const lowerCanal = canal.toLowerCase();
+
+    for (const [key, days] of Object.entries(MARKETPLACE_DUE_DAYS)) {
+        if (key !== 'default' && lowerCanal.includes(key)) {
+            return days;
+        }
+    }
+    return MARKETPLACE_DUE_DAYS.default;
+}
+
+/**
+ * Calculate due date for an order
+ */
+function calculateDueDate(orderDate: Date, canal: string | null): Date {
+    const dueDays = getDueDays(canal);
+    const dueDate = new Date(orderDate);
+    dueDate.setDate(dueDate.getDate() + dueDays);
+    return dueDate;
+}
+
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
@@ -70,10 +105,10 @@ export async function GET(request: NextRequest) {
         listQuery = listQuery.range(offset, offset + limit - 1);
 
         // 2. Summary Query (All matching rows for aggregation)
-        // We only need fields relevant for calculation: payment status, value, date
+        // We only need fields relevant for calculation: payment status, value, date, canal
         let summaryQuery = supabaseAdmin
             .from('tiny_orders')
-            .select('valor_total_pedido, valor, payment_received, data_criacao');
+            .select('valor_total_pedido, valor, payment_received, data_criacao, canal');
 
         summaryQuery = applyFilters(summaryQuery);
 
@@ -92,16 +127,23 @@ export async function GET(request: NextRequest) {
             throw summaryRes.error;
         }
 
+        const today = new Date();
+
         // Processing List
         const orders = listRes.data.map(order => {
             let financialStatus = 'pendente';
+            let vencimentoEstimado: string | null = null;
+
             if (order.payment_received) {
                 financialStatus = 'pago';
             } else {
                 const orderDate = new Date(order.data_criacao || new Date());
-                const dueDate = new Date(orderDate);
-                dueDate.setDate(dueDate.getDate() + 30); // Default rule D+30
-                if (new Date() > dueDate) financialStatus = 'atrasado';
+                const dueDate = calculateDueDate(orderDate, order.canal);
+                vencimentoEstimado = dueDate.toISOString();
+
+                if (today > dueDate) {
+                    financialStatus = 'atrasado';
+                }
             }
 
             return {
@@ -112,6 +154,7 @@ export async function GET(request: NextRequest) {
                 valor: order.valor_total_pedido ?? order.valor ?? 0,
                 data_pedido: order.data_criacao,
                 data_faturamento: order.tiny_data_faturamento,
+                vencimento_estimado: vencimentoEstimado,
                 status_pagamento: financialStatus,
                 data_pagamento: order.payment_received_at,
                 canal: order.canal,
@@ -127,7 +170,6 @@ export async function GET(request: NextRequest) {
             total: 0
         };
 
-        const today = new Date();
         summaryRes.data.forEach((o: any) => {
             const valor = o.valor_total_pedido ?? o.valor ?? 0;
             summary.total += valor;
@@ -136,8 +178,7 @@ export async function GET(request: NextRequest) {
                 summary.recebido += valor;
             } else {
                 const orderDate = new Date(o.data_criacao || new Date());
-                const dueDate = new Date(orderDate);
-                dueDate.setDate(dueDate.getDate() + 30); // Default rule D+30
+                const dueDate = calculateDueDate(orderDate, o.canal);
 
                 if (today > dueDate) {
                     summary.atrasado += valor;
@@ -154,7 +195,8 @@ export async function GET(request: NextRequest) {
                 page,
                 limit,
                 totalPages: listRes.count ? Math.ceil(listRes.count / limit) : 0,
-                summary // Include the calculated summary
+                summary, // Include the calculated summary
+                dueDateRules: MARKETPLACE_DUE_DAYS // Expose rules for client info
             }
         });
 
@@ -163,3 +205,4 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Erro interno: ' + error.message }, { status: 500 });
     }
 }
+

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { markOrdersAsPaid } from '@/app/financeiro/actions';
+import { useDebounce } from '@/hooks/useDebounce';
 
 interface Order {
     id: number;
@@ -585,13 +586,16 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         link.click();
     };
 
+    // Debounce search term for performance
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
     // Client-side filtering and sorting
     const processedOrders = useMemo(() => {
         let result = [...orders];
 
-        // Filter by search term
-        if (searchTerm.trim()) {
-            const term = searchTerm.toLowerCase();
+        // Filter by debounced search term
+        if (debouncedSearchTerm.trim()) {
+            const term = debouncedSearchTerm.toLowerCase();
             result = result.filter(order =>
                 order.cliente?.toLowerCase().includes(term) ||
                 order.numero_pedido?.toString().includes(term) ||
@@ -624,7 +628,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         }
 
         return result;
-    }, [orders, searchTerm, sortField, sortDirection]);
+    }, [orders, debouncedSearchTerm, sortField, sortDirection]);
 
     const pendingOrders = useMemo(() =>
         processedOrders.filter(o => o.status_pagamento !== 'pago'),
