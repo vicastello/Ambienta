@@ -83,29 +83,37 @@ export function ReceivablesHeader() {
         router.push(`?${params.toString()}`);
     };
 
+    // Helper to format date in local timezone (YYYY-MM-DD)
+    const formatLocalDate = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     const applyPeriodPreset = (preset: string) => {
         const params = new URLSearchParams(searchParams.toString());
         const now = new Date();
         let start = '', end = '';
 
         if (preset === 'hoje') {
-            start = end = now.toISOString().split('T')[0];
+            start = end = formatLocalDate(now);
         } else if (preset === 'semana') {
             const dayOfWeek = now.getDay();
             const startOfWeek = new Date(now);
             startOfWeek.setDate(now.getDate() - dayOfWeek);
             const endOfWeek = new Date(startOfWeek);
             endOfWeek.setDate(startOfWeek.getDate() + 6);
-            start = startOfWeek.toISOString().split('T')[0];
-            end = endOfWeek.toISOString().split('T')[0];
+            start = formatLocalDate(startOfWeek);
+            end = formatLocalDate(endOfWeek);
         } else if (preset === 'mes') {
-            start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+            start = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+            end = formatLocalDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
         } else if (preset === 'ultimos30') {
             const thirtyDaysAgo = new Date(now);
             thirtyDaysAgo.setDate(now.getDate() - 30);
-            start = thirtyDaysAgo.toISOString().split('T')[0];
-            end = now.toISOString().split('T')[0];
+            start = formatLocalDate(thirtyDaysAgo);
+            end = formatLocalDate(now);
         }
 
         if (start) params.set('dataInicio', start);
