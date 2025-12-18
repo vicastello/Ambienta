@@ -55,20 +55,13 @@ export async function GET(request: NextRequest) {
 
         // Helper to apply filters
         const applyFilters = (query: any) => {
-            // Brazil timezone is UTC-3. When user selects a date, we need to match
-            // records created on that day in Brazil time.
-            // Example: User selects 2024-12-16
-            // - Start: 2024-12-16T00:00:00-03:00 = 2024-12-16T03:00:00Z
-            // - End:   2024-12-17T00:00:00-03:00 = 2024-12-17T03:00:00Z (exclusive)
+            // data_criacao is type DATE (not TIMESTAMPTZ), so we compare with plain dates
+            // The frontend sends dates in YYYY-MM-DD format from local timezone
             if (dataInicio) {
-                // Start of day in Brazil time
-                query = query.gte('data_criacao', `${dataInicio}T00:00:00-03:00`);
+                query = query.gte('data_criacao', dataInicio);
             }
             if (dataFim) {
-                // End of day in Brazil time = start of next day (exclusive)
-                const endDate = new Date(`${dataFim}T00:00:00-03:00`);
-                endDate.setDate(endDate.getDate() + 1);
-                query = query.lt('data_criacao', endDate.toISOString());
+                query = query.lte('data_criacao', dataFim);
             }
 
             // Default filter: ignore cancelled (code 2)
