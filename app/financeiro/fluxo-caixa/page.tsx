@@ -12,6 +12,7 @@ import { ManualEntryModal } from './components/ManualEntryModal';
 import { RecurringEntriesModal } from './components/RecurringEntriesModal';
 import { CashFlowEvolutionChart } from './components/CashFlowEvolutionChart';
 import { useSearchParams } from 'next/navigation';
+import { useFluxoCaixaData } from './hooks/useFluxoCaixaData';
 
 type FluxoCaixaData = {
     periodo: { inicio: string; fim: string };
@@ -72,23 +73,8 @@ function FluxoCaixaContent() {
     const [legacyLoading, setLegacyLoading] = useState(true);
     const [legacyError, setLegacyError] = useState<string | null>(null);
 
-    // State for Receivables Data
-    const [receivablesData, setReceivablesData] = useState<{
-        orders: any[];
-        meta: {
-            total: number;
-            page: number;
-            limit: number;
-            totalPages: number;
-            summary: {
-                recebido: number;
-                pendente: number;
-                atrasado: number;
-                total: number;
-            };
-        } | null;
-    }>({ orders: [], meta: null });
-    const [receivablesLoading, setReceivablesLoading] = useState(true);
+    // Use cached data fetching hook for receivables
+    const { data: receivablesData, loading: receivablesLoading, isFromCache } = useFluxoCaixaData(searchParams);
 
     // Effect: Fetch Legacy Data
     useEffect(() => {
@@ -111,25 +97,6 @@ function FluxoCaixaContent() {
             })
             .finally(() => setLegacyLoading(false));
     }, []);
-
-    // Effect: Fetch Receivables Data
-    useEffect(() => {
-        const fetchReceivables = async () => {
-            setReceivablesLoading(true);
-            try {
-                const params = new URLSearchParams(searchParams.toString());
-                const res = await fetch(`/api/financeiro/fluxo-caixa/pedidos?${params.toString()}`);
-                const jsonData = await res.json();
-                if (jsonData.error) throw new Error(jsonData.error);
-                setReceivablesData(jsonData);
-            } catch (err) {
-                console.error('Erro ao buscar recebíveis:', err);
-            } finally {
-                setReceivablesLoading(false);
-            }
-        };
-        fetchReceivables();
-    }, [searchParams]);
 
     return (
         <div className="space-y-6 pb-6">
