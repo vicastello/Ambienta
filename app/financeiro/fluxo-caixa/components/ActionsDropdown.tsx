@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
     Plus, ChevronDown, FileText, Repeat, CreditCard,
-    Upload, University, Tag
+    Upload, University
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -21,7 +21,6 @@ import { ManualEntryModal } from './ManualEntryModal';
 import { InstallmentModal } from './InstallmentModal';
 import { RecurringEntriesModal } from './RecurringEntriesModal';
 import { BankReconciliationModal } from './BankReconciliationModal';
-import { TagsManagerModal } from './TagsManagerModal';
 
 export function ActionsDropdown() {
     // We need to control modal states from here or pass triggers
@@ -44,13 +43,11 @@ export function ActionsDropdown() {
         installment: boolean;
         recurring: boolean;
         reconciliation: boolean;
-        tags: boolean;
     }>({
         manual: false,
         installment: false,
         recurring: false,
         reconciliation: false,
-        tags: false,
     });
 
     return (
@@ -123,16 +120,6 @@ export function ActionsDropdown() {
                         <span className="font-medium text-sm">Conciliação Bancária</span>
                     </DropdownMenuItem>
 
-                    <DropdownMenuItem
-                        onClick={() => setModalOpen(p => ({ ...p, tags: true }))}
-                        className="flex items-center gap-2 p-2 rounded-lg cursor-pointer focus:bg-indigo-50 dark:focus:bg-indigo-900/20 focus:text-indigo-600"
-                    >
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600">
-                            <Tag className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium text-sm">Gerenciar Tags</span>
-                    </DropdownMenuItem>
-
                     <DropdownMenuItem asChild>
                         <Link
                             href="/financeiro/importar-pagamentos"
@@ -180,11 +167,6 @@ export function ActionsDropdown() {
             <BankReconciliationModal
                 open={modalOpen.reconciliation}
                 onOpenChange={(v) => setModalOpen(p => ({ ...p, reconciliation: v }))}
-            />
-
-            <TagsManagerModal
-                open={modalOpen.tags}
-                onOpenChange={(v) => setModalOpen(p => ({ ...p, tags: v }))}
             />
         </>
     );

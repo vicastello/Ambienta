@@ -15,8 +15,15 @@ interface Order {
     status_pagamento: 'pago' | 'pendente' | 'atrasado';
 }
 
+interface Expense {
+    amount: number;
+    due_date: string;
+    status: 'pending' | 'confirmed';
+}
+
 interface CashFlowEvolutionChartProps {
     orders: Order[];
+    expenses?: Expense[];
     loading?: boolean;
 }
 
@@ -52,9 +59,9 @@ function CustomTooltip({ active, payload, label }: any) {
     );
 }
 
-export function CashFlowEvolutionChart({ orders, loading }: CashFlowEvolutionChartProps) {
+export function CashFlowEvolutionChart({ orders, expenses = [], loading }: CashFlowEvolutionChartProps) {
     const chartData = useMemo(() => {
-        if (!orders?.length) return [];
+        if (!orders?.length && !expenses?.length) return [];
 
         // Group by week for last 8 weeks
         const weeks: { start: Date; end: Date; label: string }[] = [];
@@ -71,9 +78,20 @@ export function CashFlowEvolutionChart({ orders, loading }: CashFlowEvolutionCha
         }
 
         return weeks.map(week => {
+            // Filter orders
             const weekOrders = orders.filter(order => {
-                const orderDate = parseISO(order.data_pedido);
+                if (!order.data_pedido) return false;
+                const orderDate = typeof order.data_pedido === 'string'
+                    ? parseISO(order.data_pedido)
+                    : new Date(order.data_pedido);
+
                 return orderDate >= week.start && orderDate <= week.end;
+            });
+
+            // Filter expenses
+            const weekExpenses = expenses.filter(exp => {
+                const expDate = parseISO(exp.due_date);
+                return expDate >= week.start && expDate <= week.end;
             });
 
             const recebido = weekOrders
@@ -88,15 +106,19 @@ export function CashFlowEvolutionChart({ orders, loading }: CashFlowEvolutionCha
                 .filter(o => o.status_pagamento === 'atrasado')
                 .reduce((sum, o) => sum + o.valor, 0);
 
+            const saidas = weekExpenses
+                .reduce((sum, e) => sum + Number(e.amount), 0);
+
             return {
                 label: week.label,
                 Recebido: recebido,
                 Pendente: pendente,
                 Atrasado: atrasado,
-                total: recebido + pendente + atrasado
+                Saídas: saidas,
+                total: recebido + pendente + atrasado + saidas
             };
         });
-    }, [orders]);
+    }, [orders, expenses]);
 
     if (loading) {
         return (
@@ -178,6 +200,12 @@ export function CashFlowEvolutionChart({ orders, loading }: CashFlowEvolutionCha
                         <Bar
                             dataKey="Atrasado"
                             fill="url(#barAtrasado)"
+                            radius={[4, 4, 0, 0]}
+                            maxBarSize={40}
+                        />
+                        <Bar
+                            dataKey="Saídas"
+                            fill="#a855f7" // Purple for expenses
                             radius={[4, 4, 0, 0]}
                             maxBarSize={40}
                         />

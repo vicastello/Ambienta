@@ -8,13 +8,19 @@ import {
     ChevronLeft, ChevronRight, Loader2, Search, X,
     ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
     CheckCircle2, Clock, AlertTriangle, XCircle, Bell,
-    Check, Download, CreditCard, SquareCheck, Square, Minus,
+    Check, Download, CreditCard, Circle, Minus,
     ExternalLink, Calendar, User, Hash, MapPin, FileText, Edit2, Tag, Plus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { markOrdersAsPaid } from '@/app/financeiro/actions';
+import { markOrdersAsPaid, markOrdersAsUnpaid } from '@/app/financeiro/actions';
 import { useDebounce } from '@/hooks/useDebounce';
 import { EntryEditModal } from './EntryEditModal';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface Order {
     id: number;
@@ -22,12 +28,25 @@ interface Order {
     numero_pedido: number;
     cliente: string;
     valor: number;
+    valor_total_pedido: number;
     data_pedido: string;
     vencimento_estimado: string | null;
     status_pagamento: 'pago' | 'pendente' | 'atrasado';
     data_pagamento: string | null;
     canal: string;
     marketplace_info: any;
+    valor_esperado?: number;
+    diferenca?: number;
+    fees_breakdown?: any;
+    fee_overrides?: {
+        commissionFee?: number;
+        fixedCost?: number;
+        campaignFee?: number;
+        shippingFee?: number;
+        otherFees?: number;
+        notes?: string;
+        usesFreeShipping?: boolean;
+    };
 }
 
 interface Meta {
@@ -56,6 +75,14 @@ const formatCurrency = (value: number) => {
 const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-';
     try {
+        // If it's a date-only string (YYYY-MM-DD), parse it without timezone shift
+        // new Date("2025-12-18") is interpreted as UTC, but we want local date
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            // Create date with local timezone by specifying year, month-1, day
+            return format(new Date(year, month - 1, day), 'dd/MM/yyyy', { locale: ptBR });
+        }
+        // For full ISO strings or other formats, parse normally
         return format(new Date(dateStr), 'dd/MM/yyyy', { locale: ptBR });
     } catch (e) {
         return dateStr;
@@ -276,11 +303,11 @@ function SelectionActionBar({
     const unpaidCount = totals.pendingCount + totals.overdueCount;
 
     return (
-        <div className="sticky top-0 z-10 p-4 rounded-2xl bg-primary-500/10 dark:bg-primary-500/20 border border-primary-500/30 backdrop-blur-sm animate-in slide-in-from-top-2 duration-200">
+        <div className="sticky top-0 z-10 p-4 rounded-2xl glass-panel glass-tint border border-primary-500/20 backdrop-blur-md animate-in slide-in-from-top-2 duration-200">
             {/* Top row: Count and totals */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                    <SquareCheck className="w-5 h-5 text-primary-500" />
+                    <CheckCircle2 className="w-4 h-4 text-primary-500" />
                     <span className="font-bold text-lg text-primary-700 dark:text-primary-300">
                         {selectedOrders.length}
                     </span>
@@ -320,16 +347,11 @@ function SelectionActionBar({
             </div>
 
             {/* Bottom row: Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-primary-500/20">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/20 dark:border-white/10">
                 <button
                     onClick={onMarkAsPaid}
                     disabled={isProcessing || unpaidCount === 0}
-                    className={cn(
-                        "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium",
-                        "bg-emerald-500 hover:bg-emerald-600 text-white",
-                        "disabled:opacity-50 disabled:cursor-not-allowed",
-                        "transition-colors"
-                    )}
+                    className="app-btn-success inline-flex items-center gap-2"
                 >
                     {isProcessing ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -383,8 +405,56 @@ function OrderDetailDrawer({
     const marketplaceBadge = getMarketplaceBadge(order.canal);
     const BadgeIcon = marketplaceBadge.icon;
 
+    const [isEditingFees, setIsEditingFees] = useState(false);
+    const [overrides, setOverrides] = useState(order.fee_overrides || {});
+    const [isSavingFees, setIsSavingFees] = useState(false);
+
+    const feesBreakdown = order.fees_breakdown;
+
+    const handleSaveManualFees = async () => {
+        setIsSavingFees(true);
+        try {
+            // Calculate new expected values locally to update UI immediately
+            const commission = overrides.commissionFee !== undefined ? Number(overrides.commissionFee) : (feesBreakdown?.commissionFee || 0);
+            const fixed = overrides.fixedCost !== undefined ? Number(overrides.fixedCost) : (feesBreakdown?.fixedCost || 0);
+            const campaign = overrides.campaignFee !== undefined ? Number(overrides.campaignFee) : (feesBreakdown?.campaignFee || 0);
+
+            const total = commission + fixed + campaign;
+            const gross = feesBreakdown?.grossValue || order.valor;
+            const newValorEsperado = gross - total;
+            const newDiferenca = order.valor - newValorEsperado;
+
+            const res = await fetch(`/api/financeiro/pedidos/${order.id}/fees`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fee_overrides: {
+                        ...overrides,
+                        usesFreeShipping: overrides.usesFreeShipping
+                    },
+                    valor_esperado: newValorEsperado,
+                    diferenca: newDiferenca
+                })
+            });
+
+            if (!res.ok) throw new Error('Failed to save fees');
+
+            // Update local order object
+            order.fee_overrides = overrides;
+            order.valor_esperado = newValorEsperado;
+            order.diferenca = newDiferenca;
+
+            setIsEditingFees(false);
+        } catch (error) {
+            console.error('Error saving manual fees:', error);
+            alert('Erro ao salvar ajustes de taxas.');
+        } finally {
+            setIsSavingFees(false);
+        }
+    };
+
     // Construct Tiny URL (approximate based on standard Tiny routes)
-    const tinyUrl = `https://erp.tiny.com.br/vendas#edit/${order.tiny_id}`;
+    const tinyUrl = `https://erp.olist.com/vendas#edit/${order.tiny_id}`;
     // Construct or extract NF Link if available
     const nfLink = order.marketplace_info?.nfe_link || order.marketplace_info?.link_nfe;
 
@@ -468,6 +538,95 @@ function OrderDetailDrawer({
                                 badge={marketplaceBadge}
                             />
                         </div>
+
+                        {/* Marketplace Fees Section */}
+                        {(feesBreakdown || isEditingFees) && (
+                            <div className="pt-6 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                                <div className="flex flex-col gap-1">
+                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                        <CreditCard className="w-4 h-4 text-primary-500" />
+                                        Detalhamento de Taxas
+                                    </h3>
+
+                                </div>
+                                <button
+                                    onClick={() => setIsEditingFees(!isEditingFees)}
+                                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                                >
+                                    {isEditingFees ? 'Cancelar' : 'Ajustar'}
+                                </button>
+
+                                <div className="glass-panel p-4 rounded-xl space-y-3">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <p className="text-xs text-slate-500 mb-1">Comissão</p>
+                                            {isEditingFees ? (
+                                                <input
+                                                    type="number"
+                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                                                    value={overrides.commissionFee ?? (feesBreakdown?.commissionFee || 0).toFixed(2)}
+                                                    onChange={(e) => setOverrides({ ...overrides, commissionFee: parseFloat(e.target.value) })}
+                                                />
+                                            ) : (
+                                                <p className="font-medium text-slate-900 dark:text-white">
+                                                    {formatCurrency(overrides.commissionFee ?? feesBreakdown?.commissionFee ?? 0)}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-500 mb-1">Custo Fixo</p>
+                                            {isEditingFees ? (
+                                                <input
+                                                    type="number"
+                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                                                    value={overrides.fixedCost ?? (feesBreakdown?.fixedCost || 0).toFixed(2)}
+                                                    onChange={(e) => setOverrides({ ...overrides, fixedCost: parseFloat(e.target.value) })}
+                                                />
+                                            ) : (
+                                                <p className="font-medium text-slate-900 dark:text-white">
+                                                    {formatCurrency(overrides.fixedCost ?? feesBreakdown?.fixedCost ?? 0)}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-500 mb-1">Campanhas</p>
+                                            {isEditingFees ? (
+                                                <input
+                                                    type="number"
+                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+                                                    value={overrides.campaignFee ?? (feesBreakdown?.campaignFee || 0).toFixed(2)}
+                                                    onChange={(e) => setOverrides({ ...overrides, campaignFee: parseFloat(e.target.value) })}
+                                                />
+                                            ) : (
+                                                <p className="font-medium text-slate-900 dark:text-white">
+                                                    {formatCurrency(overrides.campaignFee ?? feesBreakdown?.campaignFee ?? 0)}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-500 mb-1">Expectativa Líquida</p>
+                                            <p className="font-bold text-emerald-600 dark:text-emerald-400">
+                                                {formatCurrency((feesBreakdown?.grossValue || order.valor) - (
+                                                    (overrides.commissionFee ?? feesBreakdown?.commissionFee ?? 0) +
+                                                    (overrides.fixedCost ?? feesBreakdown?.fixedCost ?? 0) +
+                                                    (overrides.campaignFee ?? feesBreakdown?.campaignFee ?? 0)
+                                                ))}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {isEditingFees && (
+                                        <button
+                                            onClick={handleSaveManualFees}
+                                            disabled={isSavingFees}
+                                            className="w-full mt-2 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                        >
+                                            {isSavingFees ? 'Salvando...' : 'Salvar Alterações'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Quick Actions */}
                         <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -888,14 +1047,14 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                         title={allPendingSelected ? 'Desmarcar todos' : 'Selecionar todos pendentes'}
                                     >
                                         {allPendingSelected ? (
-                                            <SquareCheck className="w-5 h-5 text-primary-500" />
+                                            <CheckCircle2 className="w-4 h-4 text-primary-500" />
                                         ) : somePendingSelected ? (
                                             <div className="relative">
-                                                <Square className="w-5 h-5 text-slate-400" />
-                                                <Minus className="w-3 h-3 text-primary-500 absolute top-1 left-1" />
+                                                <Circle className="w-4 h-4 text-slate-400" />
+                                                <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
                                             </div>
                                         ) : (
-                                            <Square className="w-5 h-5 text-slate-400" />
+                                            <Circle className="w-4 h-4 text-slate-400" />
                                         )}
                                     </button>
                                 </th>
@@ -922,13 +1081,16 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                 />
                                 <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Canal</th>
                                 <SortableHeader
-                                    label="Valor"
+                                    label="Vlr. Pedido"
                                     field="valor"
                                     sortField={sortField}
                                     sortDirection={sortDirection}
                                     onSort={handleSort}
                                     align="right"
                                 />
+                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Esperado</th>
+                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Recebido</th>
+                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Diferença</th>
                                 <SortableHeader
                                     label="Status"
                                     field="status_pagamento"
@@ -954,7 +1116,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                         <tbody className="divide-y divide-white/10 dark:divide-white/5">
                             {processedOrders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="py-12 text-center text-slate-500">
+                                    <td colSpan={12} className="py-12 text-center text-slate-500">
                                         {searchTerm ? (
                                             <div className="flex flex-col items-center gap-2">
                                                 <Search className="w-8 h-8 text-slate-300" />
@@ -982,7 +1144,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                 "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer group",
                                                 order.status_pagamento === 'atrasado' && "bg-rose-50/50 dark:bg-rose-950/20",
                                                 order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10",
-                                                isSelected && "bg-primary-50/50 dark:bg-primary-950/20 ring-1 ring-primary-500/30"
+                                                isSelected && "bg-gradient-to-r from-primary-100/60 via-primary-50/40 to-transparent dark:from-primary-900/30 dark:via-primary-950/20 dark:to-transparent"
                                             )}
                                         >
                                             {/* Checkbox */}
@@ -993,9 +1155,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                         className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
                                                     >
                                                         {isSelected ? (
-                                                            <SquareCheck className="w-5 h-5 text-primary-500" />
+                                                            <CheckCircle2 className="w-4 h-4 text-primary-500" />
                                                         ) : (
-                                                            <Square className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
+                                                            <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
                                                         )}
                                                     </button>
                                                 )}
@@ -1025,17 +1187,69 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                     {marketplaceBadge.label}
                                                 </span>
                                             </td>
-                                            <td className="py-4 px-6 text-right font-semibold text-slate-700 dark:text-slate-200">
+                                            <td className="py-4 px-6 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
+                                                {formatCurrency(order.valor_original || order.valor)}
+                                            </td>
+                                            <td className="py-4 px-4 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
+                                                {order.valor_esperado ? formatCurrency(order.valor_esperado) : '-'}
+                                            </td>
+                                            <td className="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-200">
                                                 {formatCurrency(order.valor)}
                                             </td>
+                                            <td className="py-4 px-4 text-right text-xs">
+                                                {order.diferenca !== undefined ? (
+                                                    <span className={cn(
+                                                        "font-semibold",
+                                                        order.diferenca >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                                    )}>
+                                                        {formatCurrency(order.diferenca)}
+                                                    </span>
+                                                ) : '-'}
+                                            </td>
                                             <td className="py-4 px-6 text-center">
-                                                <span className={cn(
-                                                    "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium",
-                                                    status.bg, status.text
-                                                )}>
-                                                    <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
-                                                    {status.label}
-                                                </span>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className={cn(
+                                                                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
+                                                                "hover:ring-2 hover:ring-primary-500/30 transition-all",
+                                                                status.bg, status.text
+                                                            )}
+                                                        >
+                                                            <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
+                                                            {status.label}
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="center" className="min-w-[160px]">
+                                                        {order.status_pagamento !== 'pago' && (
+                                                            <DropdownMenuItem
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    await markOrdersAsPaid([order.id]);
+                                                                    router.refresh();
+                                                                }}
+                                                                className="flex items-center gap-2 text-emerald-600"
+                                                            >
+                                                                <CheckCircle2 className="w-4 h-4" />
+                                                                Marcar como Pago
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                        {order.status_pagamento === 'pago' && (
+                                                            <DropdownMenuItem
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    await markOrdersAsUnpaid([order.id]);
+                                                                    router.refresh();
+                                                                }}
+                                                                className="flex items-center gap-2 text-amber-600"
+                                                            >
+                                                                <Clock className="w-4 h-4" />
+                                                                Marcar como Pendente
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             </td>
                                             <td className="py-4 px-6 text-right text-slate-500 text-xs">
                                                 {order.status_pagamento === 'pago'

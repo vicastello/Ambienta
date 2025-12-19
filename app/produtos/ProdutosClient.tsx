@@ -1586,7 +1586,7 @@ export default function ProdutosClient() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-2xl font-bold text-[var(--color-neutral-900)] dark:text-white leading-snug break-words min-w-0 flex-1">{produtoEmFoco.nome}</h2>
                     <a
-                      href={`https://erp.tiny.com.br/produto/${produtoEmFoco.id_produto_tiny}`}
+                      href={`https://erp.olist.com/produto/${produtoEmFoco.id_produto_tiny}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       title="Ver produto no Tiny"

@@ -8,6 +8,13 @@ type ReceivablesSummary = {
     pendente: number;
     atrasado: number;
     total: number;
+    sparklines?: {
+        total: number[];
+        recebido: number[];
+        pendente: number[];
+        atrasado: number[];
+        saidas: number[];
+    };
 };
 
 type ReceivablesMeta = {
@@ -34,6 +41,8 @@ type Order = {
 
 type ReceivablesData = {
     orders: any[];  // Use any[] for compatibility with existing components
+    chartOrders: any[]; // Unpaginated orders for chart
+    expenses: any[]; // Manual entries (expenses)
     meta: ReceivablesMeta | null;
 };
 
@@ -52,7 +61,7 @@ const CACHE_TTL_MS = 60_000; // 1 minute
  * Custom hook for fetching Fluxo de Caixa receivables data with stale-while-revalidate caching
  */
 export function useFluxoCaixaData(searchParams: URLSearchParams): UseFluxoCaixaDataReturn {
-    const [data, setData] = useState<ReceivablesData>({ orders: [], meta: null });
+    const [data, setData] = useState<ReceivablesData>({ orders: [], chartOrders: [], expenses: [], meta: null });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isFromCache, setIsFromCache] = useState(false);

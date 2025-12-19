@@ -72,6 +72,24 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
+        // Safeguard: Limit batch size to prevent timeout
+        const MAX_BATCH_SIZE = 500;
+        if (parseResult.payments.length > MAX_BATCH_SIZE) {
+            await supabaseAdmin
+                .from('payment_upload_batches')
+                .update({
+                    status: 'failed',
+                    error_message: `Arquivo muito grande: ${parseResult.payments.length} registros. Limite: ${MAX_BATCH_SIZE}. Por favor, divida o arquivo em períodos menores.`,
+                })
+                .eq('id', batch.id);
+
+            return NextResponse.json({
+                success: false,
+                batchId: batch.id,
+                errors: [`Arquivo com ${parseResult.payments.length} pagamentos excede o limite de ${MAX_BATCH_SIZE}. Divida em arquivos menores.`],
+            }, { status: 400 });
+        }
+
         // 3. Process payments with deduplication
         let rowsProcessed = 0;
         let rowsSkipped = 0;
@@ -81,47 +99,76 @@ export async function POST(request: NextRequest) {
         for (const payment of parseResult.payments) {
             rowsProcessed++;
 
-            // Check for duplicate
+            // Check for existing payment (using maybeSingle to handle not found gracefully)
             const { data: existing } = await supabaseAdmin
                 .from('marketplace_payments')
-                .select('id')
+                .select('id, tiny_order_id')
                 .eq('marketplace', marketplace)
                 .eq('marketplace_order_id', payment.marketplaceOrderId)
-                .single();
+                .maybeSingle();
+
+            let paymentId: string;
 
             if (existing) {
-                rowsSkipped++;
-                continue;
+                // Update existing payment (Corrects values if re-importing)
+                const { error: updateError } = await supabaseAdmin
+                    .from('marketplace_payments')
+                    .update({
+                        upload_batch_id: batch.id,
+                        payment_date: payment.paymentDate,
+                        settlement_date: payment.settlementDate,
+                        gross_amount: payment.grossAmount,
+                        net_amount: payment.netAmount,
+                        fees: payment.fees,
+                        discount: payment.discount,
+                        status: payment.status,
+                        payment_method: payment.paymentMethod,
+                        raw_data: payment.rawData,
+                    })
+                    .eq('id', existing.id);
+
+                if (updateError) {
+                    console.error('[PaymentUpload] Error updating payment:', updateError);
+                    continue;
+                }
+                paymentId = existing.id;
+
+                // If already matched, verify consistency but skip full re-match logic
+                if (existing.tiny_order_id) {
+                    rowsMatched++;
+                    continue;
+                }
+            } else {
+                // Insert new payment
+                const { data: insertedPayment, error: insertError } = await supabaseAdmin
+                    .from('marketplace_payments')
+                    .insert({
+                        marketplace,
+                        upload_batch_id: batch.id,
+                        marketplace_order_id: payment.marketplaceOrderId,
+                        payment_date: payment.paymentDate,
+                        settlement_date: payment.settlementDate,
+                        gross_amount: payment.grossAmount,
+                        net_amount: payment.netAmount,
+                        fees: payment.fees,
+                        discount: payment.discount,
+                        status: payment.status,
+                        payment_method: payment.paymentMethod,
+                        raw_data: payment.rawData,
+                    })
+                    .select()
+                    .single();
+
+                if (insertError) {
+                    console.error('[PaymentUpload] Error inserting payment:', insertError);
+                    continue;
+                }
+                paymentId = insertedPayment.id;
             }
 
-            // Insert payment
-            const { data: insertedPayment, error: insertError } = await supabaseAdmin
-                .from('marketplace_payments')
-                .insert({
-                    marketplace,
-                    upload_batch_id: batch.id,
-                    marketplace_order_id: payment.marketplaceOrderId,
-                    payment_date: payment.paymentDate,
-                    settlement_date: payment.settlementDate,
-                    gross_amount: payment.grossAmount,
-                    net_amount: payment.netAmount,
-                    fees: payment.fees,
-                    discount: payment.discount,
-                    status: payment.status,
-                    payment_method: payment.paymentMethod,
-                    raw_data: payment.rawData,
-                })
-                .select()
-                .single();
-
-            if (insertError) {
-                console.error('[PaymentUpload] Error inserting payment:', insertError);
-                continue;
-            }
-
-            // 4. Try to match with Tiny order
+            // 4. Try to match with Tiny order (for new or unmatched existing records)
             const matched = await matchPaymentWithTinyOrder(
-                insertedPayment.id,
+                paymentId,
                 marketplace,
                 payment.marketplaceOrderId
             );

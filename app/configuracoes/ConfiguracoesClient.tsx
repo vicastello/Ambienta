@@ -770,7 +770,7 @@ export default function ConfiguracoesClient() {
       hadError = true;
       setActionError(
         getErrorMessage(error) ||
-          "Erro ao sincronizar produtos automaticamente",
+        "Erro ao sincronizar produtos automaticamente",
       );
     }
 
@@ -788,7 +788,7 @@ export default function ConfiguracoesClient() {
 
   const triggerPostSyncEnrichment = useCallback(() => {
     postSyncQueueRef.current = postSyncQueueRef.current
-      .catch(() => {})
+      .catch(() => { })
       .then(runPostSyncWork);
     return postSyncQueueRef.current;
   }, [runPostSyncWork]);
@@ -1275,11 +1275,10 @@ export default function ConfiguracoesClient() {
               <button
                 onClick={runManualPipeline}
                 disabled={pipelineRunning}
-                className={`inline-flex items-center justify-center w-full px-4 py-2 rounded-full text-sm font-semibold text-white transition ${
-                  pipelineRunning
+                className={`inline-flex items-center justify-center w-full px-4 py-2 rounded-full text-sm font-semibold text-white transition ${pipelineRunning
                     ? "bg-slate-400 cursor-wait"
                     : "bg-slate-900 hover:bg-slate-800"
-                }`}
+                  }`}
               >
                 {pipelineRunning
                   ? "Executando pipeline..."
@@ -1301,11 +1300,10 @@ export default function ConfiguracoesClient() {
                           {label}
                         </span>
                         <span
-                          className={`px-2 py-1 rounded-full ${
-                            stepOk
+                          className={`px-2 py-1 rounded-full ${stepOk
                               ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
                               : "bg-red-50 text-red-700 border border-red-100"
-                          }`}
+                            }`}
                         >
                           {stepOk ? "OK" : "Erro"}
                         </span>
@@ -1453,11 +1451,10 @@ export default function ConfiguracoesClient() {
               <button
                 onClick={saveCronSettings}
                 disabled={!cronFormReady || cronSettingsSaving}
-                className={`inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold transition ${
-                  !cronFormReady || cronSettingsSaving
+                className={`inline-flex items-center justify-center px-4 py-2 rounded-full text-sm font-semibold transition ${!cronFormReady || cronSettingsSaving
                     ? "bg-slate-400 text-white cursor-not-allowed"
                     : "bg-slate-900 text-white hover:bg-slate-800"
-                }`}
+                  }`}
               >
                 {cronSettingsSaving
                   ? "Salvando configurações..."
@@ -1624,15 +1621,15 @@ export default function ConfiguracoesClient() {
                   <p className="text-xs text-slate-500">
                     {cell.successesCount + cell.errorsCount > 0
                       ? [
-                          cell.successesCount > 0
-                            ? `${cell.successesCount} sucesso${cell.successesCount > 1 ? "s" : ""}`
-                            : null,
-                          cell.errorsCount > 0
-                            ? `${cell.errorsCount} erro${cell.errorsCount > 1 ? "s" : ""}`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")
+                        cell.successesCount > 0
+                          ? `${cell.successesCount} sucesso${cell.successesCount > 1 ? "s" : ""}`
+                          : null,
+                        cell.errorsCount > 0
+                          ? `${cell.errorsCount} erro${cell.errorsCount > 1 ? "s" : ""}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
                       : "Sem execuções registradas"}
                   </p>
                   <p
@@ -1965,11 +1962,10 @@ export default function ConfiguracoesClient() {
                 <button
                   key={value}
                   onClick={() => setLogFilter(value)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border border-slate-200 ${
-                    logFilter === value
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border ${logFilter === value
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "border-transparent text-slate-600 hover:bg-slate-100"
+                    }`}
                 >
                   {label}
                 </button>

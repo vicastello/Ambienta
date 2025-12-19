@@ -4,6 +4,7 @@ import { ArrowUpCircle, AlertCircle, Clock, Wallet, TrendingUp, TrendingDown, Ca
 import { cn } from '@/lib/utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo } from 'react';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
 interface ReceivablesSummaryProps {
     summary: {
@@ -11,6 +12,19 @@ interface ReceivablesSummaryProps {
         pendente: number;
         atrasado: number;
         total: number;
+        expenses?: {
+            total: number;
+            paid: number;
+            pending: number;
+            overdue: number;
+        };
+        sparklines?: {
+            total: number[];
+            recebido: number[];
+            pendente: number[];
+            atrasado: number[];
+            saidas: number[];
+        };
     } | null;
     loading?: boolean;
 }
@@ -28,35 +42,28 @@ const formatCompact = (value: number) => {
     return value.toFixed(0);
 };
 
-// Simple sparkline component
+// Simple sparkline component using Recharts
 function MiniSparkline({ data, color }: { data: number[]; color: string }) {
-    const max = Math.max(...data, 1);
-    const min = Math.min(...data, 0);
-    const range = max - min || 1;
+    const chartData = useMemo(() => data.map((val, i) => ({ i, val })), [data]);
 
-    const points = data.map((value, index) => {
-        const x = (index / (data.length - 1)) * 100;
-        const y = 100 - ((value - min) / range) * 100;
-        return `${x},${y}`;
-    }).join(' ');
-
-    const isPositive = data[data.length - 1] >= data[0];
+    // Don't render if no variations
+    if (data.every(v => v === 0)) return null;
 
     return (
-        <svg
-            className="w-16 h-6 opacity-60"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-        >
-            <polyline
-                fill="none"
-                stroke={color}
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={points}
-            />
-        </svg>
+        <div className="w-20 h-8 opacity-80" onClick={(e) => e.stopPropagation()}>
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                    <Line
+                        type="monotone"
+                        dataKey="val"
+                        stroke={color}
+                        strokeWidth={1}
+                        dot={false}
+                        isAnimationActive={true}
+                    />
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
     );
 }
 
@@ -156,18 +163,19 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
         router.push(`?${params.toString()}`);
     };
 
-    // Generate mock sparkline data for each card
+    // Use real sparkline data from API or fall back to empty array
     const sparklineData = useMemo(() => ({
-        total: [45, 52, 48, 65, 72, 68, 85],
-        recebido: [20, 32, 28, 45, 55, 48, 65],
-        pendente: [25, 20, 35, 28, 22, 30, 25],
-        atrasado: [5, 8, 6, 10, 8, 12, 10],
-    }), []);
+        total: summary?.sparklines?.total || [],
+        recebido: summary?.sparklines?.recebido || [],
+        pendente: summary?.sparklines?.pendente || [],
+        atrasado: summary?.sparklines?.atrasado || [],
+        saidas: summary?.sparklines?.saidas || [],
+    }), [summary]);
 
     if (loading || !summary) {
         return (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((i) => (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {[1, 2, 3, 4, 5].map((i) => (
                     <div key={i} className="h-32 rounded-[28px] glass-panel glass-tint border border-white/40 dark:border-white/10 animate-pulse bg-white/5" />
                 ))}
             </div>
@@ -190,7 +198,7 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
             bgGradient: 'from-slate-500/10 to-slate-600/5',
             borderColor: 'border-slate-300/50 dark:border-slate-500/30',
             valueColor: 'text-slate-700 dark:text-slate-200',
-            subtext: 'Soma de todos os pedidos',
+            subtext: 'Saldo (Entradas - Saídas)',
             filterValue: null,
             sparkline: sparklineData.total,
             sparklineColor: '#64748b',
@@ -233,20 +241,33 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
             filterValue: 'atrasado',
             sparkline: sparklineData.atrasado,
             sparklineColor: '#ef4444',
+        },
+        {
+            label: 'Saídas (Despesas)',
+            value: summary.expenses?.total ?? 0,
+            icon: TrendingDown,
+            iconColor: 'text-purple-500',
+            bgGradient: 'from-purple-500/15 to-purple-600/5',
+            borderColor: 'border-purple-300/50 dark:border-purple-500/30',
+            valueColor: 'text-purple-600 dark:text-purple-400',
+            subtext: `Pendente: ${summary.expenses ? formatBRL(summary.expenses.pending + summary.expenses.overdue) : 'R$ 0,00'}`,
+            filterValue: 'expense',
+            sparkline: sparklineData.saidas,
+            sparklineColor: '#a855f7',
         }
     ];
 
     return (
         <div className="space-y-4">
             {/* Main summary cards */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {cards.map((card, idx) => {
                     const Icon = card.icon;
                     const isActive = currentStatus === card.filterValue || (currentStatus === null && card.filterValue === null);
                     return (
                         <button
                             key={idx}
-                            onClick={() => handleCardClick(card.filterValue)}
+                            onClick={() => card.filterValue !== 'expense' && handleCardClick(card.filterValue)}
                             className={cn(
                                 "rounded-[28px] p-5 flex flex-col justify-between text-left transition-all duration-200",
                                 "bg-gradient-to-br border",
@@ -258,6 +279,7 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
                                 isActive && card.filterValue === 'pendente' && "ring-amber-500",
                                 isActive && card.filterValue === 'atrasado' && "ring-rose-500",
                                 isActive && card.filterValue === null && "ring-slate-400",
+                                card.filterValue === 'expense' && "cursor-default active:scale-100 hover:scale-100 hover:shadow-none"
                             )}
                         >
                             <div>

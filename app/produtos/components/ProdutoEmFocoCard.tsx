@@ -210,7 +210,7 @@ const ProdutoEmFocoCardComponent = ({
                   <h2 className="flex items-center gap-2 text-base md:text-lg font-semibold text-slate-900 dark:text-white leading-snug">
                     <span className="line-clamp-2">{produto.nome}</span>
                     <a
-                      href={`https://erp.tiny.com.br/produto/${produto.id_produto_tiny}`}
+                      href={`https://erp.olist.com/produto/${produto.id_produto_tiny}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-slate-400 hover:text-slate-600 dark:text-slate-300"
@@ -343,7 +343,7 @@ const ProdutoEmFocoCardComponent = ({
                 </button>
 
                 <a
-                  href={`https://erp.tiny.com.br/produto/${produto.id_produto_tiny}`}
+                  href={`https://erp.olist.com/produto/${produto.id_produto_tiny}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-full w-9 h-9 p-0 bg-[#009CA6]/10 dark:bg-[#007982]/20 border border-[#009CA6]/20/80 dark:border-[#009CA6]/30 text-[#007982] dark:text-[#00B5C3] hover:bg-[#009CA6]/20/80 dark:hover:bg-[#007982]/30 transition shadow-none"

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
-import { Plus, Loader2, X, Tag, User, Building, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
+import { AppDatePicker } from '@/components/ui/AppDatePicker';
+import { AppSelect } from '@/components/ui/AppSelect';
+import { Plus, Loader2, X, Tag, User, Building, Repeat, ChevronDown, ChevronUp, DollarSign, Calendar } from 'lucide-react';
 import { createManualEntry, CreateManualEntryData } from '../../actions';
 import { cn } from '@/lib/utils';
 
@@ -63,14 +65,16 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
         entity_type?: string;
         category_id?: string;
         cost_center?: string;
+        paid_date?: string;
     }>({
-        type: 'expense',
+        type: 'income',
         description: '',
         category: 'Custos Fixos',
         subcategory: '',
         amount: 0,
         due_date: new Date().toISOString().split('T')[0],
         competence_date: new Date().toISOString().split('T')[0],
+        paid_date: '',
         status: 'pending',
         tags: [],
         entity_name: '',
@@ -220,14 +224,14 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                     </button>
                 )}
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-visible">
                 <DialogHeader>
                     <DialogTitle>Novo Lançamento Manual</DialogTitle>
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-                    {/* Tipo */}
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Tipo Receita/Despesa */}
+                    <div className="grid grid-cols-2 gap-3">
                         <button
                             type="button"
                             className={cn(
@@ -254,11 +258,9 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                         </button>
                     </div>
 
-                    {/* Descrição */}
+                    {/* Row 1: Descrição (full width) */}
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                            Descrição *
-                        </label>
+                        <label className="block text-sm font-medium mb-1">Descrição *</label>
                         <input
                             type="text"
                             required
@@ -269,61 +271,60 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                         />
                     </div>
 
-                    {/* Valor e Data */}
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Row 2: Valor / Status / Vencimento / Pagamento (4 cols) */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div>
-                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                Valor (R$) *
+                            <label className="block text-sm font-medium mb-1">
+                                <DollarSign className="w-3.5 h-3.5 inline mr-1 text-slate-500 dark:text-slate-400" />
+                                Valor *
                             </label>
                             <input
-                                type="number"
+                                type="text"
+                                inputMode="decimal"
                                 required
-                                min="0.01"
-                                step="0.01"
+                                value={formData.amount ? `R$ ${formData.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00'}
+                                onChange={(e) => {
+                                    const value = e.target.value.replace(/[^\d,]/g, '').replace(',', '.');
+                                    setFormData({ ...formData, amount: parseFloat(value) || 0 });
+                                }}
                                 className="app-input w-full"
-                                value={formData.amount || ''}
-                                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
+                            <label className="block text-sm font-medium mb-1">Status</label>
+                            <AppSelect
+                                value={formData.status || 'pending'}
+                                onChange={(v) => setFormData({ ...formData, status: v as any })}
+                                options={[
+                                    { value: 'pending', label: 'Pendente' },
+                                    { value: 'confirmed', label: 'Pago/Recebido' },
+                                ]}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">
+                                <Calendar className="w-3.5 h-3.5 inline mr-1 text-slate-500 dark:text-slate-400" />
                                 Vencimento *
                             </label>
-                            <input
-                                type="date"
-                                required
-                                className="app-input w-full"
+                            <AppDatePicker
                                 value={formData.due_date}
-                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                                onChange={(v) => setFormData({ ...formData, due_date: v })}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Pagamento</label>
+                            <AppDatePicker
+                                value={formData.paid_date || ''}
+                                onChange={(v) => setFormData({ ...formData, paid_date: v })}
                             />
                         </div>
                     </div>
 
-                    {/* Categoria */}
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                            Categoria
-                        </label>
-                        <select
-                            className="app-input w-full"
-                            value={formData.category_id}
-                            onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                            disabled={loadingCategories}
-                        >
-                            <option value="">Selecione...</option>
-                            {filteredCategories.map((cat) => (
-                                <option key={cat.id} value={cat.id}>
-                                    {cat.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Cliente/Fornecedor */}
-                    <div className="grid grid-cols-3 gap-4">
-                        <div className="col-span-2 relative">
-                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                <User className="w-3.5 h-3.5 inline mr-1" />
+                    {/* Row 3: Cliente/Fornecedor / Tipo / Categoria (3 cols) */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div className="relative">
+                            <label className="block text-sm font-medium mb-1">
+                                <User className="w-3.5 h-3.5 inline mr-1 text-slate-500 dark:text-slate-400" />
                                 Cliente/Fornecedor
                             </label>
                             <input
@@ -342,12 +343,12 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                             />
                             {/* Autocomplete dropdown */}
                             {showSuggestions && entitySuggestions.length > 0 && (
-                                <div className="absolute z-50 w-full mt-1 app-dropdown-content max-h-48 overflow-y-auto">
+                                <div className="absolute z-50 w-full mt-1 rounded-xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/50 dark:border-white/10 shadow-xl max-h-48 overflow-y-auto">
                                     {entitySuggestions.map((s, idx) => (
                                         <button
                                             key={idx}
                                             type="button"
-                                            className="app-dropdown-item w-full text-left"
+                                            className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors border-0 bg-transparent"
                                             onMouseDown={(e) => {
                                                 e.preventDefault();
                                                 setFormData({
@@ -371,20 +372,84 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                             )}
                         </div>
                         <div>
-                            <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                Tipo
-                            </label>
-                            <select
-                                className="app-input w-full"
-                                value={formData.entity_type}
-                                onChange={(e) => setFormData({ ...formData, entity_type: e.target.value as any || undefined })}
-                            >
-                                <option value="">-</option>
-                                {ENTITY_TYPES.map((et) => (
-                                    <option key={et.value} value={et.value}>{et.label}</option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-medium mb-1">Tipo</label>
+                            <AppSelect
+                                value={formData.entity_type || ''}
+                                onChange={(v) => setFormData({ ...formData, entity_type: v as any || undefined })}
+                                options={[{ value: '', label: '-' }, ...ENTITY_TYPES.map(et => ({ value: et.value, label: et.label }))]}
+                            />
                         </div>
+                        <div className="col-span-2 md:col-span-1">
+                            <label className="block text-sm font-medium mb-1">
+                                <Building className="w-3.5 h-3.5 inline mr-1 text-slate-500 dark:text-slate-400" />
+                                Centro de Custo
+                            </label>
+                            <AppSelect
+                                value={formData.cost_center || ''}
+                                onChange={(v) => setFormData({ ...formData, cost_center: v })}
+                                options={[
+                                    { value: '', label: '-' },
+                                    { value: 'Operações', label: 'Operações' },
+                                    { value: 'Marketing', label: 'Marketing' },
+                                    { value: 'Tecnologia', label: 'Tecnologia' },
+                                    { value: 'RH', label: 'RH' },
+                                    { value: 'Administrativo', label: 'Administrativo' },
+                                    { value: 'Comercial', label: 'Comercial' },
+                                ]}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Row 4: Categoria / Tags */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">
+                                <Tag className="w-3.5 h-3.5 inline mr-1 text-slate-500 dark:text-slate-400" />
+                                Categoria
+                            </label>
+                            <AppSelect
+                                value={formData.category_id || ''}
+                                onChange={(v) => setFormData({ ...formData, category_id: v })}
+                                options={[{ value: '', label: 'Selecione...' }, ...filteredCategories.map(cat => ({ value: cat.id, label: cat.name }))]}
+                                disabled={loadingCategories}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Tags</label>
+                            <div className="flex flex-wrap items-center gap-1.5 py-[0.75rem] px-4 rounded-3xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20">
+                                {formData.tags.map(tag => (
+                                    <span
+                                        key={tag}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium"
+                                    >
+                                        {tag}
+                                        <button type="button" onClick={() => removeTag(tag)} className="hover:text-primary-900">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </span>
+                                ))}
+                                <input
+                                    type="text"
+                                    value={tagInput}
+                                    onChange={(e) => setTagInput(e.target.value)}
+                                    onKeyDown={handleTagKeyDown}
+                                    placeholder={formData.tags.length === 0 ? "+ tag" : ""}
+                                    className="flex-1 min-w-[80px] bg-transparent border-0 focus:ring-0 text-sm p-0"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Row 5: Observações */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1">Observações</label>
+                        <textarea
+                            value={formData.notes || ''}
+                            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                            rows={2}
+                            placeholder="Notas internas..."
+                            className="app-input w-full resize-none"
+                        />
                     </div>
 
                     {/* Recorrência Toggle */}
@@ -406,15 +471,15 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                             <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs text-slate-500 mb-1">Frequência</label>
-                                    <select
-                                        className="app-input w-full text-sm"
+                                    <AppSelect
                                         value={frequency}
-                                        onChange={(e) => setFrequency(e.target.value as any)}
-                                    >
-                                        <option value="monthly">Mensal</option>
-                                        <option value="weekly">Semanal</option>
-                                        <option value="yearly">Anual</option>
-                                    </select>
+                                        onChange={(v) => setFrequency(v as any)}
+                                        options={[
+                                            { value: 'monthly', label: 'Mensal' },
+                                            { value: 'weekly', label: 'Semanal' },
+                                            { value: 'yearly', label: 'Anual' },
+                                        ]}
+                                    />
                                 </div>
                                 {frequency === 'monthly' && (
                                     <div>
@@ -484,95 +549,9 @@ export function ManualEntryModal({ open: externalOpen, onOpenChange: externalOnO
                         )}
                     </div>
 
-                    {/* Advanced Section Toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setShowAdvanced(!showAdvanced)}
-                        className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 transition-colors"
-                    >
-                        {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        {showAdvanced ? 'Menos opções' : 'Mais opções'}
-                    </button>
 
-                    {showAdvanced && (
-                        <>
-                            {/* Status */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                        Status
-                                    </label>
-                                    <select
-                                        className="app-input w-full"
-                                        value={formData.status}
-                                        onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                                    >
-                                        <option value="pending">Pendente</option>
-                                        <option value="confirmed">Pago/Recebido</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                        Centro de Custo
-                                    </label>
-                                    <select
-                                        className="app-input w-full"
-                                        value={formData.cost_center}
-                                        onChange={(e) => setFormData({ ...formData, cost_center: e.target.value })}
-                                    >
-                                        <option value="">-</option>
-                                        <option value="Operações">Operações</option>
-                                        <option value="Marketing">Marketing</option>
-                                        <option value="Tecnologia">Tecnologia</option>
-                                        <option value="RH">RH</option>
-                                        <option value="Administrativo">Administrativo</option>
-                                        <option value="Comercial">Comercial</option>
-                                    </select>
-                                </div>
-                            </div>
 
-                            {/* Tags */}
-                            <div>
-                                <label className="block text-sm font-medium mb-1 text-slate-600 dark:text-slate-300">
-                                    <Tag className="w-3.5 h-3.5 inline mr-1" />
-                                    Tags
-                                </label>
-                                <div className="flex flex-wrap items-center gap-1.5 p-2 min-h-[42px] rounded-lg border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-black/20">
-                                    {formData.tags.map(tag => (
-                                        <span
-                                            key={tag}
-                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 text-xs font-medium"
-                                        >
-                                            {tag}
-                                            <button type="button" onClick={() => removeTag(tag)} className="hover:text-primary-900">
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </span>
-                                    ))}
-                                    <input
-                                        type="text"
-                                        value={tagInput}
-                                        onChange={(e) => setTagInput(e.target.value)}
-                                        onKeyDown={handleTagKeyDown}
-                                        placeholder={formData.tags.length === 0 ? "Digite e pressione Enter..." : ""}
-                                        className="flex-1 min-w-[100px] bg-transparent border-0 focus:ring-0 text-sm p-0"
-                                    />
-                                </div>
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                    {SUGGESTED_TAGS.filter(t => !formData.tags.includes(t)).slice(0, 4).map(tag => (
-                                        <button
-                                            key={tag}
-                                            type="button"
-                                            onClick={() => addTag(tag)}
-                                            className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-200 transition-colors"
-                                        >
-                                            + {tag}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
+
 
                     {error && <p className="text-sm text-rose-500">{error}</p>}
 

@@ -3,16 +3,18 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog';
 import {
-    Settings, Tag, Columns, Bell, Download, Store,
-    X, Loader2, Check, RefreshCw
+    Settings, Tag, Columns, Bell, Download, Store, Palette,
+    X, Loader2, Check, RefreshCw, Plus, Trash2, Edit2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CategoriesManager } from './CategoriesManager';
+import { toast } from 'sonner';
 
-type Tab = 'categories' | 'columns' | 'marketplace' | 'notifications' | 'export';
+type Tab = 'categories' | 'tags' | 'columns' | 'marketplace' | 'notifications' | 'export';
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
     { id: 'categories', label: 'Categorias', icon: Tag },
+    { id: 'tags', label: 'Tags', icon: Palette },
     { id: 'columns', label: 'Colunas', icon: Columns },
     { id: 'marketplace', label: 'Marketplace', icon: Store },
     { id: 'notifications', label: 'Notificações', icon: Bell },
@@ -266,6 +268,202 @@ function ExportTab({
     );
 }
 
+// Tags Tab - inline implementation
+const TAG_COLORS = [
+    '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
+    '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#64748b'
+];
+
+interface AvailableTag {
+    id: string;
+    name: string;
+    color: string;
+    usage_count: number;
+}
+
+function TagsTab() {
+    const [tags, setTags] = useState<AvailableTag[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [newTagName, setNewTagName] = useState('');
+    const [newTagColor, setNewTagColor] = useState(TAG_COLORS[0]);
+    const [editName, setEditName] = useState('');
+    const [editColor, setEditColor] = useState('');
+
+    const fetchTags = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch('/api/financeiro/tags');
+            const data = await res.json();
+            setTags(data.tags || []);
+        } catch (error) {
+            toast.error('Erro ao carregar tags');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchTags();
+    }, []);
+
+    const handleCreate = async () => {
+        if (!newTagName.trim()) return;
+        setCreating(true);
+        try {
+            const res = await fetch('/api/financeiro/tags/manage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newTagName.trim(), color: newTagColor })
+            });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Tag criada');
+            setNewTagName('');
+            setNewTagColor(TAG_COLORS[0]);
+            fetchTags();
+        } catch {
+            toast.error('Erro ao criar tag');
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const handleUpdate = async (id: string) => {
+        if (!editName.trim()) return;
+        try {
+            const res = await fetch('/api/financeiro/tags/manage', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, name: editName.trim(), color: editColor })
+            });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Tag atualizada');
+            setEditingId(null);
+            fetchTags();
+        } catch {
+            toast.error('Erro ao atualizar tag');
+        }
+    };
+
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`Excluir "${name}"? Será removida de todos os pedidos.`)) return;
+        try {
+            const res = await fetch(`/api/financeiro/tags/manage?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Tag excluída');
+            fetchTags();
+        } catch {
+            toast.error('Erro ao excluir tag');
+        }
+    };
+
+    const startEdit = (tag: AvailableTag) => {
+        setEditingId(tag.id);
+        setEditName(tag.name);
+        setEditColor(tag.color);
+    };
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+                Gerencie as tags disponíveis para categorizar pedidos:
+            </p>
+
+            {/* Create New Tag */}
+            <div className="p-4 rounded-xl glass-panel border border-white/20 space-y-3">
+                <label className="block text-sm font-medium">Nova Tag</label>
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        className="app-input flex-1"
+                        placeholder="Nome da tag..."
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                    />
+                    <button
+                        onClick={handleCreate}
+                        disabled={creating || !newTagName.trim()}
+                        className="app-btn-primary px-3"
+                    >
+                        {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    </button>
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                    {TAG_COLORS.map((color) => (
+                        <button
+                            key={color}
+                            onClick={() => setNewTagColor(color)}
+                            className={cn(
+                                "w-6 h-6 rounded-full transition-all",
+                                newTagColor === color && "ring-2 ring-offset-2 ring-primary-500"
+                            )}
+                            style={{ backgroundColor: color }}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* Tags List */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+                {loading ? (
+                    <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+                    </div>
+                ) : tags.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">Nenhuma tag criada ainda</div>
+                ) : (
+                    tags.map((tag) => (
+                        <div key={tag.id} className="flex items-center gap-3 p-3 rounded-xl glass-panel border border-white/20 group">
+                            {editingId === tag.id ? (
+                                <>
+                                    <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: editColor }} />
+                                    <input
+                                        type="text"
+                                        className="app-input flex-1 text-sm py-1"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-1">
+                                        {TAG_COLORS.slice(0, 5).map((c) => (
+                                            <button
+                                                key={c}
+                                                onClick={() => setEditColor(c)}
+                                                className={cn("w-4 h-4 rounded-full", editColor === c && "ring-1 ring-white")}
+                                                style={{ backgroundColor: c }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <button onClick={() => handleUpdate(tag.id)} className="p-1 rounded hover:bg-emerald-500/20 text-emerald-500">
+                                        <Check className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => setEditingId(null)} className="p-1 rounded hover:bg-slate-500/20 text-slate-400">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                                    <span className="flex-1 text-sm font-medium">{tag.name}</span>
+                                    <span className="text-xs text-slate-400">{tag.usage_count} uso{tag.usage_count !== 1 ? 's' : ''}</span>
+                                    <button onClick={() => startEdit(tag)} className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-slate-500/20 text-slate-400 transition-opacity">
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDelete(tag.id, tag.name)} className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-rose-500 transition-opacity">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+}
+
 export function FluxoCaixaSettings() {
     const [open, setOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<Tab>('categories');
@@ -352,6 +550,7 @@ export function FluxoCaixaSettings() {
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto pr-2">
                         {activeTab === 'categories' && <CategoriesManager />}
+                        {activeTab === 'tags' && <TagsTab />}
                         {activeTab === 'columns' && (
                             <ColumnsTab preferences={preferences} onChange={handleChange} />
                         )}

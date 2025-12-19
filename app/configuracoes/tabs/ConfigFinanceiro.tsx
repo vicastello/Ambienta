@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
-import { Save, RotateCcw, TrendingUp, DollarSign } from 'lucide-react';
+import { Save, RotateCcw, TrendingUp, DollarSign, Percent, ArrowRight } from 'lucide-react';
 
 const DEFAULT_MARGEM_BRUTA = 37;
 const DEFAULT_DESPESAS_OP = 17;
@@ -50,6 +51,28 @@ export default function ConfigFinanceiro() {
 
     return (
         <div className="space-y-8">
+            {/* Marketplace Fees Link */}
+            <Link href="/configuracoes/taxas-marketplace">
+                <div className="glass-panel p-6 rounded-2xl border border-white/20 dark:border-white/10 hover:border-accent/50 transition-all cursor-pointer group">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 rounded-xl bg-accent/10 group-hover:bg-accent/20 transition-colors">
+                                <Percent className="w-6 h-6 text-accent" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-main group-hover:text-accent transition-colors">
+                                    Taxas de Marketplace
+                                </h3>
+                                <p className="text-sm text-muted">
+                                    Configure taxas e custos da Shopee, Mercado Livre e Magalu
+                                </p>
+                            </div>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-muted group-hover:text-accent group-hover:translate-x-1 transition-all" />
+                    </div>
+                </div>
+            </Link>
+
             {/* Margem Bruta */}
             <div>
                 <div className="flex items-center gap-3 mb-3">

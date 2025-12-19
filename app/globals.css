@@ -935,8 +935,54 @@
     background-repeat: no-repeat;
     background-position: right 1rem center;
     background-size: 1rem 1rem;
-    /* seta SVG que usa currentColor para herdar cor do texto */
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    /* seta SVG para modo claro */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  select.app-input:hover {
+    background-color: rgba(255, 255, 255, 0.45);
+    border-color: var(--accent);
+  }
+
+  :root.dark select.app-input {
+    /* seta SVG para modo escuro */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  }
+
+  :root.dark select.app-input:hover {
+    background-color: rgba(30, 41, 59, 0.8);
+    border-color: var(--accent);
+  }
+
+  /* Date input styling */
+  input[type="date"].app-input {
+    cursor: pointer;
+  }
+
+  input[type="date"].app-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 4px;
+    transition: all 150ms ease;
+    filter: none;
+    opacity: 0.6;
+  }
+
+  input[type="date"].app-input::-webkit-calendar-picker-indicator:hover {
+    background: rgba(var(--color-primary-rgb), 0.1);
+    opacity: 1;
+  }
+
+  :root.dark input[type="date"].app-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    opacity: 0.7;
+  }
+
+  :root.dark input[type="date"].app-input::-webkit-calendar-picker-indicator:hover {
+    background: rgba(var(--color-primary-rgb), 0.2);
+    opacity: 1;
   }
 
   /* Esconde barras de rolagem visíveis no mobile, mantendo o scroll */
@@ -974,6 +1020,47 @@
 
   .app-btn-primary:active {
     transform: translateY(0);
+  }
+
+  /* Button de sucesso (ações de confirmação) */
+  .app-btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border-radius: 0.75rem;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    cursor: pointer;
+    transition: all 200ms ease;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+  }
+
+  .app-btn-success:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  }
+
+  .app-btn-success:active {
+    transform: translateY(0);
+  }
+
+  .app-btn-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  :is(.dark) .app-btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    box-shadow: 0 2px 12px rgba(16, 185, 129, 0.4);
+  }
+
+  :is(.dark) .app-btn-success:hover {
+    background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    box-shadow: 0 4px 16px rgba(52, 211, 153, 0.5);
   }
 
   /* Button secundário (outline) */

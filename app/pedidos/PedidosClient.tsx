@@ -464,7 +464,7 @@ export default function PedidosClient() {
               <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Atualizar lista
             </button>
             <a
-              href="https://erp.tiny.com.br/vendas#list"
+              href="https://erp.olist.com/vendas#list"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-full bg-[var(--accent)] text-white px-4 py-2 text-sm font-semibold"
@@ -668,7 +668,7 @@ const OrderMobileCard = memo(function OrderMobileCard({ order }: OrderCardProps)
               <p className="font-semibold text-[var(--text-main)] truncate flex items-center gap-2">
                 #{order.numeroPedido ?? order.tinyId}
                 <a
-                  href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
+                  href={`https://erp.olist.com/vendas#edit/${order.tinyId}`}
                   target="_blank"
                   rel="noreferrer"
                   className="text-[var(--accent)] hover:underline shrink-0"
@@ -760,7 +760,7 @@ const OrderDesktopRow = memo(function OrderDesktopRow({ order }: OrderCardProps)
             <p className="font-semibold text-[var(--text-main)] flex items-center gap-2">
               #{order.numeroPedido ?? order.tinyId}
               <a
-                href={`https://erp.tiny.com.br/vendas#edit/${order.tinyId}`}
+                href={`https://erp.olist.com/vendas#edit/${order.tinyId}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[var(--accent)] hover:underline"

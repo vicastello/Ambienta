@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Upload, LayoutGrid, Table2 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { FluxoCaixaTimeline } from './components/FluxoCaixaTimeline';
 import { ReceivablesHeader } from './components/ReceivablesHeader';
 import { ReceivablesTable } from './components/ReceivablesTable';
@@ -126,7 +127,7 @@ function FluxoCaixaContent() {
                                 "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
                                 activeView === 'table'
                                     ? "bg-primary-500 text-white"
-                                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                             )}
                         >
                             <Table2 className="w-4 h-4" />
@@ -138,7 +139,7 @@ function FluxoCaixaContent() {
                                 "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
                                 activeView === 'dashboard'
                                     ? "bg-primary-500 text-white"
-                                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                             )}
                         >
                             <LayoutGrid className="w-4 h-4" />
@@ -182,9 +183,13 @@ function FluxoCaixaContent() {
 
                     {/* Evolution Chart */}
                     <CashFlowEvolutionChart
-                        orders={receivablesData.orders}
+                        orders={receivablesData.chartOrders || []}
+                        expenses={receivablesData.expenses}
                         loading={receivablesLoading}
                     />
+
+                    {/* Tabela de Lançamentos Manuais (acima dos pedidos) */}
+                    <ManualEntriesTable searchParams={searchParams} />
 
                     {/* Tabela de Recebíveis */}
                     <ReceivablesTable
@@ -192,9 +197,6 @@ function FluxoCaixaContent() {
                         meta={receivablesData.meta}
                         loading={receivablesLoading}
                     />
-
-                    {/* Tabela de Lançamentos Manuais */}
-                    <ManualEntriesTable />
                 </>
             )}
 
@@ -258,6 +260,9 @@ function FluxoCaixaLoading() {
 export default function FluxoCaixaPage() {
     return (
         <AppLayout title="Fluxo de Caixa">
+            <div className="pb-6">
+                <Breadcrumb items={[{ label: 'Financeiro', href: '/financeiro' }, { label: 'Fluxo de Caixa' }]} />
+            </div>
             <Suspense fallback={<FluxoCaixaLoading />}>
                 <FluxoCaixaContent />
             </Suspense>

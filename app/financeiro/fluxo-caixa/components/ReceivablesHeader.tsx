@@ -4,9 +4,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import {
     Filter, Calendar as CalendarIcon, CheckCircle2, Clock, AlertTriangle, List,
-    Tag, X, ChevronDown
+    Tag, X, ChevronDown, Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AppSelect } from '@/components/ui/AppSelect';
+import { PeriodPicker } from './PeriodPicker';
 
 const STATUS_OPTIONS = [
     { value: 'todos', label: 'Todos', icon: List, color: 'text-slate-500' },
@@ -34,7 +36,6 @@ export function ReceivablesHeader() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [categories, setCategories] = useState<Category[]>([]);
-    const [showAdvanced, setShowAdvanced] = useState(false);
 
     // Current filter values
     const currentStatus = searchParams.get('statusPagamento') || 'todos';
@@ -45,6 +46,8 @@ export function ReceivablesHeader() {
     const currentDateEnd = searchParams.get('dataFim') || '';
     const currentMinValue = searchParams.get('valorMin') || '';
     const currentMaxValue = searchParams.get('valorMax') || '';
+    const currentSearch = searchParams.get('busca') || '';
+    const [searchInput, setSearchInput] = useState(currentSearch);
 
     // Load categories
     const fetchCategories = useCallback(async () => {
@@ -141,7 +144,7 @@ export function ReceivablesHeader() {
                 </div>
 
                 {/* Quick Status Filters */}
-                <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800 relative z-30">
                     {STATUS_OPTIONS.map((status) => {
                         const Icon = status.icon;
                         const isActive = currentStatus === status.value;
@@ -153,7 +156,7 @@ export function ReceivablesHeader() {
                                     "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                                     isActive
                                         ? "bg-primary-500 text-white shadow-sm"
-                                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                        : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                                 )}
                             >
                                 <Icon className={cn("w-4 h-4", !isActive && status.color)} />
@@ -165,36 +168,79 @@ export function ReceivablesHeader() {
             </div>
 
             {/* Filters Bar */}
-            <div className="glass-panel glass-tint p-4 rounded-2xl border border-white/40 dark:border-white/10">
+            <div
+                className="glass-panel glass-tint p-4 rounded-2xl border border-white/40 dark:border-white/10 relative z-40"
+                style={{ overflow: 'visible', contain: 'none' }}
+            >
                 {/* Main filters row */}
                 <div className="flex flex-wrap gap-3 items-end">
                     {/* Period Presets */}
-                    <div className="space-y-1.5 min-w-[160px]">
+                    <div className="space-y-1.5 min-w-[220px]">
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">Período</label>
-                        <select
-                            value={currentPeriod || 'custom'}
-                            onChange={(e) => applyPeriodPreset(e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                        >
-                            {PERIOD_PRESETS.map(p => (
-                                <option key={p.value} value={p.value}>{p.label}</option>
-                            ))}
-                        </select>
+                        <PeriodPicker
+                            startDate={currentDateStart || undefined}
+                            endDate={currentDateEnd || undefined}
+                            currentPreset={currentPeriod || 'custom'}
+                            onPresetSelect={applyPeriodPreset}
+                            onRangeChange={(start, end) => {
+                                const params = new URLSearchParams(searchParams.toString());
+                                params.set('periodo', 'custom');
+                                if (start) params.set('dataInicio', start); else params.delete('dataInicio');
+                                if (end) params.set('dataFim', end); else params.delete('dataFim');
+                                params.set('page', '1');
+                                router.push(`?${params.toString()}`);
+                            }}
+                        />
+                    </div>
+
+                    {/* Search Input */}
+                    <div className="space-y-1.5 flex-1 min-w-[200px]">
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1 flex items-center gap-1">
+                            <Search className="w-3 h-3" />
+                            Buscar
+                        </label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Cliente, pedido, descrição..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        updateFilter('busca', searchInput);
+                                    }
+                                }}
+                                onBlur={() => updateFilter('busca', searchInput)}
+                                className="app-input w-full pl-9 pr-8"
+                            />
+                            {searchInput && (
+                                <button
+                                    onClick={() => {
+                                        setSearchInput('');
+                                        updateFilter('busca', '');
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
+                                >
+                                    <X className="w-3 h-3 text-slate-400" />
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Marketplace */}
                     <div className="space-y-1.5 min-w-[160px]">
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">Marketplace</label>
-                        <select
+                        <AppSelect
                             value={currentMarketplace}
-                            onChange={(e) => updateFilter('marketplace', e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                        >
-                            <option value="todos">Todos</option>
-                            <option value="magalu">Magalu</option>
-                            <option value="mercado_livre">Mercado Livre</option>
-                            <option value="shopee">Shopee</option>
-                        </select>
+                            onChange={(v) => updateFilter('marketplace', v)}
+                            options={[
+                                { value: 'todos', label: 'Todos' },
+                                { value: 'magalu', label: 'Magalu' },
+                                { value: 'mercado_livre', label: 'Mercado Livre' },
+                                { value: 'shopee', label: 'Shopee' },
+                            ]}
+                        />
                     </div>
 
                     {/* Category */}
@@ -203,32 +249,14 @@ export function ReceivablesHeader() {
                             <Tag className="w-3 h-3" />
                             Categoria
                         </label>
-                        <select
+                        <AppSelect
                             value={currentCategory}
-                            onChange={(e) => updateFilter('categoria', e.target.value)}
-                            className="w-full px-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                        >
-                            <option value="todos">Todas</option>
-                            {categories.map(cat => (
-                                <option key={cat.id} value={cat.name}>{cat.name}</option>
-                            ))}
-                        </select>
+                            onChange={(v) => updateFilter('categoria', v)}
+                            options={[{ value: 'todos', label: 'Todas' }, ...categories.map(cat => ({ value: cat.name, label: cat.name }))]}
+                        />
                     </div>
 
-                    {/* Toggle advanced */}
-                    <button
-                        onClick={() => setShowAdvanced(!showAdvanced)}
-                        className={cn(
-                            "px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2",
-                            showAdvanced
-                                ? "bg-primary-500/10 text-primary-600 dark:text-primary-400"
-                                : "hover:bg-white/50 text-slate-500"
-                        )}
-                    >
-                        <Filter className="w-4 h-4" />
-                        Mais
-                        <ChevronDown className={cn("w-4 h-4 transition-transform", showAdvanced && "rotate-180")} />
-                    </button>
+
 
                     {/* Active filter count + clear */}
                     {activeFilterCount > 0 && (
@@ -248,65 +276,7 @@ export function ReceivablesHeader() {
                 </div>
 
                 {/* Advanced filters row */}
-                {showAdvanced && (
-                    <div className="flex flex-wrap gap-3 items-end mt-4 pt-4 border-t border-white/20 dark:border-white/5">
-                        {/* Date Start */}
-                        <div className="space-y-1.5 min-w-[140px]">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">De</label>
-                            <div className="relative">
-                                <input
-                                    type="date"
-                                    value={currentDateStart}
-                                    onChange={(e) => updateFilter('dataInicio', e.target.value)}
-                                    className="w-full pl-9 pr-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                                />
-                                <CalendarIcon className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
-                            </div>
-                        </div>
 
-                        {/* Date End */}
-                        <div className="space-y-1.5 min-w-[140px]">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">Até</label>
-                            <div className="relative">
-                                <input
-                                    type="date"
-                                    value={currentDateEnd}
-                                    onChange={(e) => updateFilter('dataFim', e.target.value)}
-                                    className="w-full pl-9 pr-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                                />
-                                <CalendarIcon className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
-                            </div>
-                        </div>
-
-                        {/* Value Min */}
-                        <div className="space-y-1.5 min-w-[120px]">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">Valor mín</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="R$ 0,00"
-                                value={currentMinValue}
-                                onChange={(e) => updateFilter('valorMin', e.target.value)}
-                                className="w-full px-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                            />
-                        </div>
-
-                        {/* Value Max */}
-                        <div className="space-y-1.5 min-w-[120px]">
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">Valor máx</label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="R$ 999,00"
-                                value={currentMaxValue}
-                                onChange={(e) => updateFilter('valorMax', e.target.value)}
-                                className="w-full px-3 py-2.5 bg-white/50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                            />
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );
