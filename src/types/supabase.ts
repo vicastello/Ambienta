@@ -1,4 +1,3 @@
-Connecting to db 5432
 export type Json =
   | string
   | number
@@ -8,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -35,19 +39,217 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_history: {
+        Row: {
+          alert_id: string | null
+          alert_type: string
+          created_at: string | null
+          email_sent: boolean | null
+          email_sent_at: string | null
+          id: string
+          is_dismissed: boolean | null
+          is_read: boolean | null
+          message: string
+          push_sent: boolean | null
+          push_sent_at: string | null
+          read_at: string | null
+          related_entries: string[] | null
+          related_orders: number[] | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          alert_id?: string | null
+          alert_type: string
+          created_at?: string | null
+          email_sent?: boolean | null
+          email_sent_at?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          is_read?: boolean | null
+          message: string
+          push_sent?: boolean | null
+          push_sent_at?: string | null
+          read_at?: string | null
+          related_entries?: string[] | null
+          related_orders?: number[] | null
+          severity?: string
+          title: string
+        }
+        Update: {
+          alert_id?: string | null
+          alert_type?: string
+          created_at?: string | null
+          email_sent?: boolean | null
+          email_sent_at?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          is_read?: boolean | null
+          message?: string
+          push_sent?: boolean | null
+          push_sent_at?: string | null
+          read_at?: string | null
+          related_entries?: string[] | null
+          related_orders?: number[] | null
+          severity?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_history_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "financial_alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_rules: {
+        Row: {
+          actions: Json
+          apply_to_existing: boolean | null
+          conditions: Json
+          created_at: string | null
+          description: string | null
+          id: string
+          is_enabled: boolean | null
+          last_triggered_at: string | null
+          match_type: string
+          name: string
+          priority: number | null
+          times_triggered: number | null
+          trigger_event: string
+          updated_at: string | null
+        }
+        Insert: {
+          actions?: Json
+          apply_to_existing?: boolean | null
+          conditions?: Json
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_triggered_at?: string | null
+          match_type?: string
+          name: string
+          priority?: number | null
+          times_triggered?: number | null
+          trigger_event: string
+          updated_at?: string | null
+        }
+        Update: {
+          actions?: Json
+          apply_to_existing?: boolean | null
+          conditions?: Json
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_triggered_at?: string | null
+          match_type?: string
+          name?: string
+          priority?: number | null
+          times_triggered?: number | null
+          trigger_event?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      available_tags: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+          usage_count: number | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+          usage_count?: number | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+          usage_count?: number | null
+        }
+        Relationships: []
+      }
+      budget_tracking: {
+        Row: {
+          actual_amount: number | null
+          budget_id: string
+          id: string
+          period_end: string
+          period_start: string
+          planned_amount: number
+          status: string
+          updated_at: string | null
+          variance: number | null
+          variance_percent: number | null
+        }
+        Insert: {
+          actual_amount?: number | null
+          budget_id: string
+          id?: string
+          period_end: string
+          period_start: string
+          planned_amount: number
+          status?: string
+          updated_at?: string | null
+          variance?: number | null
+          variance_percent?: number | null
+        }
+        Update: {
+          actual_amount?: number | null
+          budget_id?: string
+          id?: string
+          period_end?: string
+          period_start?: string
+          planned_amount?: number
+          status?: string
+          updated_at?: string | null
+          variance?: number | null
+          variance_percent?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_tracking_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "financial_budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cash_flow_entries: {
         Row: {
           amount: number
           category: string
+          category_id: string | null
           competence_date: string | null
+          cost_center: string | null
           created_at: string | null
           description: string
           due_date: string
+          entity_name: string | null
+          entity_type: string | null
           id: string
+          installment_number: number | null
+          installment_plan_id: string | null
+          is_generated: boolean | null
           is_recurring: boolean | null
           notes: string | null
           paid_date: string | null
           parent_entry_id: string | null
+          parent_recurring_id: string | null
           recurrence_rule: Json | null
           source: string | null
           source_id: string | null
@@ -60,15 +262,23 @@ export type Database = {
         Insert: {
           amount: number
           category: string
+          category_id?: string | null
           competence_date?: string | null
+          cost_center?: string | null
           created_at?: string | null
           description: string
           due_date: string
+          entity_name?: string | null
+          entity_type?: string | null
           id?: string
+          installment_number?: number | null
+          installment_plan_id?: string | null
+          is_generated?: boolean | null
           is_recurring?: boolean | null
           notes?: string | null
           paid_date?: string | null
           parent_entry_id?: string | null
+          parent_recurring_id?: string | null
           recurrence_rule?: Json | null
           source?: string | null
           source_id?: string | null
@@ -81,15 +291,23 @@ export type Database = {
         Update: {
           amount?: number
           category?: string
+          category_id?: string | null
           competence_date?: string | null
+          cost_center?: string | null
           created_at?: string | null
           description?: string
           due_date?: string
+          entity_name?: string | null
+          entity_type?: string | null
           id?: string
+          installment_number?: number | null
+          installment_plan_id?: string | null
+          is_generated?: boolean | null
           is_recurring?: boolean | null
           notes?: string | null
           paid_date?: string | null
           parent_entry_id?: string | null
+          parent_recurring_id?: string | null
           recurrence_rule?: Json | null
           source?: string | null
           source_id?: string | null
@@ -101,10 +319,31 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "cash_flow_entries_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_flow_entries_installment_plan_id_fkey"
+            columns: ["installment_plan_id"]
+            isOneToOne: false
+            referencedRelation: "installment_plans"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "cash_flow_entries_parent_entry_id_fkey"
             columns: ["parent_entry_id"]
             isOneToOne: false
             referencedRelation: "cash_flow_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_flow_entries_parent_recurring_id_fkey"
+            columns: ["parent_recurring_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_entries"
             referencedColumns: ["id"]
           },
         ]
@@ -178,6 +417,36 @@ export type Database = {
           produtos?: Json
           target_days?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      cost_centers: {
+        Row: {
+          budget_monthly: number | null
+          color: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+        }
+        Insert: {
+          budget_monthly?: number | null
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+        }
+        Update: {
+          budget_monthly?: number | null
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
         }
         Relationships: []
       }
@@ -418,6 +687,217 @@ export type Database = {
         }
         Relationships: []
       }
+      financial_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string | null
+          days_before: number | null
+          email_address: string | null
+          id: string
+          is_enabled: boolean | null
+          last_triggered_at: string | null
+          notify_email: boolean | null
+          notify_push: boolean | null
+          schedule_day: number | null
+          schedule_time: string | null
+          threshold_value: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string | null
+          days_before?: number | null
+          email_address?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_triggered_at?: string | null
+          notify_email?: boolean | null
+          notify_push?: boolean | null
+          schedule_day?: number | null
+          schedule_time?: string | null
+          threshold_value?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string | null
+          days_before?: number | null
+          email_address?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_triggered_at?: string | null
+          notify_email?: boolean | null
+          notify_push?: boolean | null
+          schedule_day?: number | null
+          schedule_time?: string | null
+          threshold_value?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      financial_budgets: {
+        Row: {
+          alert_threshold: number | null
+          budget_type: string
+          created_at: string | null
+          description: string | null
+          end_date: string
+          id: string
+          is_active: boolean | null
+          name: string
+          period_type: string
+          planned_amount: number
+          start_date: string
+          target_value: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          alert_threshold?: number | null
+          budget_type: string
+          created_at?: string | null
+          description?: string | null
+          end_date: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          period_type: string
+          planned_amount: number
+          start_date: string
+          target_value?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          alert_threshold?: number | null
+          budget_type?: string
+          created_at?: string | null
+          description?: string | null
+          end_date?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          period_type?: string
+          planned_amount?: number
+          start_date?: string
+          target_value?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      financial_categories: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          icon: string | null
+          id: string
+          is_active: boolean | null
+          is_system: boolean | null
+          name: string
+          parent_id: string | null
+          sort_order: number | null
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_system?: boolean | null
+          name: string
+          parent_id?: string | null
+          sort_order?: number | null
+          type: string
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_system?: boolean | null
+          name?: string
+          parent_id?: string | null
+          sort_order?: number | null
+          type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_categories_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      installment_plans: {
+        Row: {
+          category: string | null
+          category_id: string | null
+          created_at: string | null
+          description: string
+          entity_name: string | null
+          entity_type: string | null
+          first_due_date: string
+          frequency: string
+          id: string
+          installment_amount: number
+          paid_installments: number | null
+          status: string
+          total_amount: number
+          total_installments: number
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          category_id?: string | null
+          created_at?: string | null
+          description: string
+          entity_name?: string | null
+          entity_type?: string | null
+          first_due_date: string
+          frequency?: string
+          id?: string
+          installment_amount: number
+          paid_installments?: number | null
+          status?: string
+          total_amount: number
+          total_installments: number
+          type: string
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          category_id?: string | null
+          created_at?: string | null
+          description?: string
+          entity_name?: string | null
+          entity_type?: string | null
+          first_due_date?: string
+          frequency?: string
+          id?: string
+          installment_amount?: number
+          paid_installments?: number | null
+          status?: string
+          total_amount?: number
+          total_installments?: number
+          type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "installment_plans_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       magalu_order_items: {
         Row: {
           created_at: string | null
@@ -616,6 +1096,33 @@ export type Database = {
         }
         Relationships: []
       }
+      marketplace_fee_config: {
+        Row: {
+          campaigns: Json | null
+          config: Json
+          created_at: string | null
+          id: number
+          marketplace: string
+          updated_at: string | null
+        }
+        Insert: {
+          campaigns?: Json | null
+          config?: Json
+          created_at?: string | null
+          id?: number
+          marketplace: string
+          updated_at?: string | null
+        }
+        Update: {
+          campaigns?: Json | null
+          config?: Json
+          created_at?: string | null
+          id?: number
+          marketplace?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       marketplace_kit_components: {
         Row: {
           component_qty: number
@@ -648,34 +1155,49 @@ export type Database = {
       }
       marketplace_order_links: {
         Row: {
+          calculated_fees: Json | null
           confidence_score: number | null
           id: number
+          is_campaign_order: boolean | null
+          is_kit: boolean | null
           linked_at: string
           linked_by: string | null
           marketplace: string
           marketplace_order_id: string
           notes: string | null
+          product_count: number | null
           tiny_order_id: number
+          uses_free_shipping: boolean | null
         }
         Insert: {
+          calculated_fees?: Json | null
           confidence_score?: number | null
           id?: number
+          is_campaign_order?: boolean | null
+          is_kit?: boolean | null
           linked_at?: string
           linked_by?: string | null
           marketplace: string
           marketplace_order_id: string
           notes?: string | null
+          product_count?: number | null
           tiny_order_id: number
+          uses_free_shipping?: boolean | null
         }
         Update: {
+          calculated_fees?: Json | null
           confidence_score?: number | null
           id?: number
+          is_campaign_order?: boolean | null
+          is_kit?: boolean | null
           linked_at?: string
           linked_by?: string | null
           marketplace?: string
           marketplace_order_id?: string
           notes?: string | null
+          product_count?: number | null
           tiny_order_id?: number
+          uses_free_shipping?: boolean | null
         }
         Relationships: [
           {
@@ -689,66 +1211,100 @@ export type Database = {
       }
       marketplace_payments: {
         Row: {
+          balance_after: number | null
           created_at: string | null
           discount: number | null
+          expense_category: string | null
           fees: number | null
           gross_amount: number | null
           id: string
+          is_adjustment: boolean | null
+          is_expense: boolean | null
+          is_refund: boolean | null
           marketplace: string
           marketplace_order_id: string
           match_confidence: string | null
           matched_at: string | null
           net_amount: number | null
+          parent_payment_id: string | null
           payment_date: string | null
           payment_method: string | null
           raw_data: Json | null
           settlement_date: string | null
           status: string | null
+          tags: string[] | null
           tiny_order_id: number | null
+          transaction_description: string | null
+          transaction_type: string | null
           updated_at: string | null
           upload_batch_id: string
         }
         Insert: {
+          balance_after?: number | null
           created_at?: string | null
           discount?: number | null
+          expense_category?: string | null
           fees?: number | null
           gross_amount?: number | null
           id?: string
+          is_adjustment?: boolean | null
+          is_expense?: boolean | null
+          is_refund?: boolean | null
           marketplace: string
           marketplace_order_id: string
           match_confidence?: string | null
           matched_at?: string | null
           net_amount?: number | null
+          parent_payment_id?: string | null
           payment_date?: string | null
           payment_method?: string | null
           raw_data?: Json | null
           settlement_date?: string | null
           status?: string | null
+          tags?: string[] | null
           tiny_order_id?: number | null
+          transaction_description?: string | null
+          transaction_type?: string | null
           updated_at?: string | null
           upload_batch_id: string
         }
         Update: {
+          balance_after?: number | null
           created_at?: string | null
           discount?: number | null
+          expense_category?: string | null
           fees?: number | null
           gross_amount?: number | null
           id?: string
+          is_adjustment?: boolean | null
+          is_expense?: boolean | null
+          is_refund?: boolean | null
           marketplace?: string
           marketplace_order_id?: string
           match_confidence?: string | null
           matched_at?: string | null
           net_amount?: number | null
+          parent_payment_id?: string | null
           payment_date?: string | null
           payment_method?: string | null
           raw_data?: Json | null
           settlement_date?: string | null
           status?: string | null
+          tags?: string[] | null
           tiny_order_id?: number | null
+          transaction_description?: string | null
+          transaction_type?: string | null
           updated_at?: string | null
           upload_batch_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "marketplace_payments_parent_payment_id_fkey"
+            columns: ["parent_payment_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_payments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "marketplace_payments_tiny_order_id_fkey"
             columns: ["tiny_order_id"]
@@ -809,6 +1365,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tiny_produtos"
             referencedColumns: ["id_produto_tiny"]
+          },
+          {
+            foreignKeyName: "marketplace_sku_mapping_tiny_product_id_fkey"
+            columns: ["tiny_product_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["id_produto_tiny"]
+          },
+          {
+            foreignKeyName: "marketplace_sku_mapping_tiny_product_id_fkey"
+            columns: ["tiny_product_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["tiny_id"]
           },
         ]
       }
@@ -961,13 +1531,161 @@ export type Database = {
         }
         Relationships: []
       }
+      order_tags: {
+        Row: {
+          created_at: string | null
+          id: string
+          order_id: number
+          tag_name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          order_id: number
+          tag_name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          order_id?: number
+          tag_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_tags_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_auto_link_rules: {
+        Row: {
+          action: string
+          created_at: string | null
+          id: string
+          marketplace: string
+          priority: number | null
+          tags: string[] | null
+          transaction_type_pattern: string
+          updated_at: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          id?: string
+          marketplace: string
+          priority?: number | null
+          tags?: string[] | null
+          transaction_type_pattern: string
+          updated_at?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          id?: string
+          marketplace?: string
+          priority?: number | null
+          tags?: string[] | null
+          transaction_type_pattern?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      payment_import_sessions: {
+        Row: {
+          batch_id: string | null
+          created_at: string | null
+          date_range_end: string | null
+          date_range_start: string | null
+          id: string
+          marketplace: string
+          parsed_data: Json | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string | null
+          date_range_end?: string | null
+          date_range_start?: string | null
+          id?: string
+          marketplace: string
+          parsed_data?: Json | null
+          status: string
+          updated_at?: string | null
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string | null
+          date_range_end?: string | null
+          date_range_start?: string | null
+          id?: string
+          marketplace?: string
+          parsed_data?: Json | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_import_sessions_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "payment_upload_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_transaction_groups: {
+        Row: {
+          created_at: string | null
+          has_adjustments: boolean | null
+          has_refunds: boolean | null
+          id: string
+          marketplace: string
+          marketplace_order_id: string
+          net_balance: number
+          tags: string[] | null
+          transaction_count: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          has_adjustments?: boolean | null
+          has_refunds?: boolean | null
+          id?: string
+          marketplace: string
+          marketplace_order_id: string
+          net_balance?: number
+          tags?: string[] | null
+          transaction_count?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          has_adjustments?: boolean | null
+          has_refunds?: boolean | null
+          id?: string
+          marketplace?: string
+          marketplace_order_id?: string
+          net_balance?: number
+          tags?: string[] | null
+          transaction_count?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       payment_upload_batches: {
         Row: {
           created_at: string | null
+          date_range_end: string | null
+          date_range_start: string | null
           error_message: string | null
           filename: string
           id: string
           marketplace: string
+          payments_count: number | null
           rows_failed: number | null
           rows_matched: number | null
           rows_processed: number | null
@@ -978,10 +1696,13 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          date_range_end?: string | null
+          date_range_start?: string | null
           error_message?: string | null
           filename: string
           id?: string
           marketplace: string
+          payments_count?: number | null
           rows_failed?: number | null
           rows_matched?: number | null
           rows_processed?: number | null
@@ -992,10 +1713,13 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          date_range_end?: string | null
+          date_range_start?: string | null
           error_message?: string | null
           filename?: string
           id?: string
           marketplace?: string
+          payments_count?: number | null
           rows_failed?: number | null
           rows_matched?: number | null
           rows_processed?: number | null
@@ -1044,6 +1768,13 @@ export type Database = {
             columns: ["produto_id"]
             isOneToOne: false
             referencedRelation: "tiny_produtos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_produto_embalagens_produto"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
             referencedColumns: ["id"]
           },
         ]
@@ -1154,6 +1885,63 @@ export type Database = {
           supplier_id?: string | null
           supplier_name?: string | null
           total_amount?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      recurring_entries: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string | null
+          day_of_month: number | null
+          day_of_week: number | null
+          description: string
+          entity_name: string | null
+          frequency: string
+          id: string
+          is_active: boolean | null
+          last_generated_at: string | null
+          next_due_date: string | null
+          notes: string | null
+          subcategory: string | null
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          amount: number
+          category?: string | null
+          created_at?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description: string
+          entity_name?: string | null
+          frequency?: string
+          id?: string
+          is_active?: boolean | null
+          last_generated_at?: string | null
+          next_due_date?: string | null
+          notes?: string | null
+          subcategory?: string | null
+          type: string
+          updated_at?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description?: string
+          entity_name?: string | null
+          frequency?: string
+          id?: string
+          is_active?: boolean | null
+          last_generated_at?: string | null
+          next_due_date?: string | null
+          notes?: string | null
+          subcategory?: string | null
+          type?: string
           updated_at?: string | null
         }
         Relationships: []
@@ -1501,6 +2289,9 @@ export type Database = {
           cliente_nome: string | null
           data_criacao: string | null
           data_hash: string | null
+          diferenca_valor: number | null
+          fee_overrides: Json | null
+          fees_breakdown: Json | null
           forma_pagamento: string | null
           id: number
           inserted_at: string | null
@@ -1523,6 +2314,7 @@ export type Database = {
           updated_at: string | null
           valor: number | null
           valor_desconto: number | null
+          valor_esperado_liquido: number | null
           valor_frete: number | null
           valor_outras_despesas: number | null
           valor_total_pedido: number | null
@@ -1536,6 +2328,9 @@ export type Database = {
           cliente_nome?: string | null
           data_criacao?: string | null
           data_hash?: string | null
+          diferenca_valor?: number | null
+          fee_overrides?: Json | null
+          fees_breakdown?: Json | null
           forma_pagamento?: string | null
           id?: number
           inserted_at?: string | null
@@ -1558,6 +2353,7 @@ export type Database = {
           updated_at?: string | null
           valor?: number | null
           valor_desconto?: number | null
+          valor_esperado_liquido?: number | null
           valor_frete?: number | null
           valor_outras_despesas?: number | null
           valor_total_pedido?: number | null
@@ -1571,6 +2367,9 @@ export type Database = {
           cliente_nome?: string | null
           data_criacao?: string | null
           data_hash?: string | null
+          diferenca_valor?: number | null
+          fee_overrides?: Json | null
+          fees_breakdown?: Json | null
           forma_pagamento?: string | null
           id?: number
           inserted_at?: string | null
@@ -1593,6 +2392,7 @@ export type Database = {
           updated_at?: string | null
           valor?: number | null
           valor_desconto?: number | null
+          valor_esperado_liquido?: number | null
           valor_frete?: number | null
           valor_outras_despesas?: number | null
           valor_total_pedido?: number | null
@@ -1652,6 +2452,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "tiny_produtos"
             referencedColumns: ["id_produto_tiny"]
+          },
+          {
+            foreignKeyName: "fk_produto"
+            columns: ["id_produto_tiny"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["id_produto_tiny"]
+          },
+          {
+            foreignKeyName: "fk_produto"
+            columns: ["id_produto_tiny"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["tiny_id"]
           },
           {
             foreignKeyName: "tiny_pedido_itens_id_pedido_fkey"
@@ -1794,8 +2608,155 @@ export type Database = {
         }
         Relationships: []
       }
+      user_fluxo_preferences: {
+        Row: {
+          created_at: string | null
+          default_filters: Json | null
+          export_format: string | null
+          id: string
+          notification_cooldown_hours: number | null
+          rows_per_page: number | null
+          show_categories: boolean | null
+          show_cost_centers: boolean | null
+          show_entities: boolean | null
+          updated_at: string | null
+          user_id: string | null
+          visible_columns: Json | null
+        }
+        Insert: {
+          created_at?: string | null
+          default_filters?: Json | null
+          export_format?: string | null
+          id?: string
+          notification_cooldown_hours?: number | null
+          rows_per_page?: number | null
+          show_categories?: boolean | null
+          show_cost_centers?: boolean | null
+          show_entities?: boolean | null
+          updated_at?: string | null
+          user_id?: string | null
+          visible_columns?: Json | null
+        }
+        Update: {
+          created_at?: string | null
+          default_filters?: Json | null
+          export_format?: string | null
+          id?: string
+          notification_cooldown_hours?: number | null
+          rows_per_page?: number | null
+          show_categories?: boolean | null
+          show_cost_centers?: boolean | null
+          show_entities?: boolean | null
+          updated_at?: string | null
+          user_id?: string | null
+          visible_columns?: Json | null
+        }
+        Relationships: []
+      }
     }
     Views: {
+      tiny_produtos_v: {
+        Row: {
+          categoria: string | null
+          codigo: string | null
+          created_at: string | null
+          data_atualizacao_tiny: string | null
+          data_criacao_tiny: string | null
+          descricao: string | null
+          disponivel: number | null
+          embalagem_qtd: number | null
+          fornecedor_codigo: string | null
+          fornecedor_nome: string | null
+          gtin: string | null
+          id: number | null
+          id_produto_tiny: number | null
+          imagem_url: string | null
+          marca: string | null
+          ncm: string | null
+          nome: string | null
+          observacao_compras: string | null
+          origem: string | null
+          peso_bruto: number | null
+          peso_liquido: number | null
+          preco: number | null
+          preco_promocional: number | null
+          raw_payload: Json | null
+          reservado: number | null
+          saldo: number | null
+          situacao: string | null
+          tiny_id: number | null
+          tipo: string | null
+          unidade: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          categoria?: string | null
+          codigo?: string | null
+          created_at?: string | null
+          data_atualizacao_tiny?: string | null
+          data_criacao_tiny?: string | null
+          descricao?: string | null
+          disponivel?: number | null
+          embalagem_qtd?: number | null
+          fornecedor_codigo?: string | null
+          fornecedor_nome?: string | null
+          gtin?: string | null
+          id?: number | null
+          id_produto_tiny?: number | null
+          imagem_url?: string | null
+          marca?: string | null
+          ncm?: string | null
+          nome?: string | null
+          observacao_compras?: string | null
+          origem?: string | null
+          peso_bruto?: number | null
+          peso_liquido?: number | null
+          preco?: number | null
+          preco_promocional?: number | null
+          raw_payload?: Json | null
+          reservado?: number | null
+          saldo?: number | null
+          situacao?: string | null
+          tiny_id?: number | null
+          tipo?: string | null
+          unidade?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          categoria?: string | null
+          codigo?: string | null
+          created_at?: string | null
+          data_atualizacao_tiny?: string | null
+          data_criacao_tiny?: string | null
+          descricao?: string | null
+          disponivel?: number | null
+          embalagem_qtd?: number | null
+          fornecedor_codigo?: string | null
+          fornecedor_nome?: string | null
+          gtin?: string | null
+          id?: number | null
+          id_produto_tiny?: number | null
+          imagem_url?: string | null
+          marca?: string | null
+          ncm?: string | null
+          nome?: string | null
+          observacao_compras?: string | null
+          origem?: string | null
+          peso_bruto?: number | null
+          peso_liquido?: number | null
+          preco?: number | null
+          preco_promocional?: number | null
+          raw_payload?: Json | null
+          reservado?: number | null
+          saldo?: number | null
+          situacao?: string | null
+          tiny_id?: number | null
+          tipo?: string | null
+          unidade?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       vw_marketplace_order_items_expanded: {
         Row: {
           marketplace: string | null
@@ -1862,6 +2823,20 @@ export type Database = {
             referencedRelation: "tiny_produtos"
             referencedColumns: ["id_produto_tiny"]
           },
+          {
+            foreignKeyName: "marketplace_sku_mapping_tiny_product_id_fkey"
+            columns: ["tiny_product_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["id_produto_tiny"]
+          },
+          {
+            foreignKeyName: "marketplace_sku_mapping_tiny_product_id_fkey"
+            columns: ["tiny_product_id"]
+            isOneToOne: false
+            referencedRelation: "tiny_produtos_v"
+            referencedColumns: ["tiny_id"]
+          },
         ]
       }
     }
@@ -1870,6 +2845,15 @@ export type Database = {
       assert_no_shopee_dup: { Args: never; Returns: undefined }
       auto_link_pending_orders_http: { Args: never; Returns: undefined }
       bytea_to_text: { Args: { data: string }; Returns: string }
+      calculate_next_due_date: {
+        Args: {
+          p_day_of_month: number
+          p_day_of_week: number
+          p_frequency: string
+          p_from_date?: string
+        }
+        Returns: string
+      }
       check_magalu_items_dup: {
         Args: never
         Returns: {
@@ -2076,6 +3060,7 @@ export type Database = {
       }
       text_to_bytea: { Args: { data: string }; Returns: string }
       tiny_estoque_round_robin_http: { Args: never; Returns: undefined }
+      tiny_token_refresh_http: { Args: never; Returns: undefined }
       touch_tiny_order_updated_at: {
         Args: { pedido_id: number }
         Returns: undefined
@@ -2246,4 +3231,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
