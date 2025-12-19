@@ -288,7 +288,7 @@ export default function TaxasMarketplacePage() {
         // Backup before saving
         saveBackup(configs, `Before updating ${pendingSave.marketplace}`);
 
-        await saveConfig(pendingSave.marketplace, pendingSave.config, true);
+        await saveConfig(pendingSave.marketplace, pendingSave.config);
         setShowConfirmModal(false);
         setPendingSave(null);
     };

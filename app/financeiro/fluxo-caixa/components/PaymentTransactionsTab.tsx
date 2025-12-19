@@ -1,5 +1,7 @@
 'use client';
 
+import React from 'react';
+
 import { Tag as TagIcon, Calendar, DollarSign, FileText } from 'lucide-react';
 
 type MarketplacePayment = {

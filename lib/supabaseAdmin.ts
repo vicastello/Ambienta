@@ -1,6 +1,6 @@
 // lib/supabaseAdmin.ts
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/src/types/db-public';
+import type { Database } from '@/src/types/supabase';
 
 // URL pública do seu projeto (a mesma que você já usa no front)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

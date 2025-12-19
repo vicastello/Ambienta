@@ -84,7 +84,15 @@ export async function POST(request: NextRequest) {
             .eq('marketplace', marketplace)
             .order('priority', { ascending: false });
 
-        const customRules = dbRules ? convertDbRulesToTagRules(dbRules) : [];
+        const customRules = dbRules
+            ? convertDbRulesToTagRules(
+                dbRules.map(r => ({
+                    transaction_type_pattern: r.transaction_type_pattern,
+                    tags: r.tags || [],
+                    priority: r.priority || 0,
+                }))
+            )
+            : [];
 
         // 3. Apply smart tagging and check for matches
         const previewPayments: PreviewPayment[] = [];

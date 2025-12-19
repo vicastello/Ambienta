@@ -1188,6 +1188,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
+                                                {/* @ts-ignore - valor_original exists but type not updated */}
                                                 {formatCurrency(order.valor_original || order.valor)}
                                             </td>
                                             <td className="py-4 px-4 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
