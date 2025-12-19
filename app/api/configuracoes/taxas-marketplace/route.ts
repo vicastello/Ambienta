@@ -11,13 +11,23 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const marketplace = searchParams.get('marketplace');
 
-        let query = supabase.from('marketplace_fee_config').select('*');
+        let data, error;
 
         if (marketplace) {
-            query = query.eq('marketplace', marketplace).single();
+            const result = await supabase
+                .from('marketplace_fee_config')
+                .select('*')
+                .eq('marketplace', marketplace)
+                .single();
+            data = result.data;
+            error = result.error;
+        } else {
+            const result = await supabase
+                .from('marketplace_fee_config')
+                .select('*');
+            data = result.data;
+            error = result.error;
         }
-
-        const { data, error } = await query;
 
         if (error) {
             console.error('[API] Error fetching fee config:', error);

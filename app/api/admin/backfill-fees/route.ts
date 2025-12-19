@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
                 const { error: updateError } = await supabaseAdmin
                     .from('tiny_orders')
                     .update({
+                        // @ts-ignore - fields exist but not in generated types yet
                         valor_esperado_liquido: feeCalc.netValue,
                         diferenca_valor: difference,
                         fees_breakdown: feeCalc

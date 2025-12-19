@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { clearFeeConfigCache } from '@/lib/marketplace-fees';
 
 /**
@@ -59,8 +59,7 @@ export async function POST(request: NextRequest) {
 
         // Preview mode: return diff without saving
         if (isPreview) {
-            const supabase = await createClient();
-            const currentConfigs = await loadCurrentConfigs(supabase);
+            const currentConfigs = await loadCurrentConfigs(supabaseAdmin);
             const preview = calculateDiff(currentConfigs, configs);
 
             return NextResponse.json({
@@ -72,8 +71,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Apply mode: save to database
-        const supabase = await createClient();
-        await saveConfigs(supabase, configs);
+        await saveConfigs(supabaseAdmin, configs);
 
         // Clear cache
         clearFeeConfigCache();

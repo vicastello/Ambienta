@@ -235,6 +235,7 @@ export async function GET(request: NextRequest) {
             let financialStatus = 'pendente';
             let vencimentoEstimado: string | null = null;
 
+            // @ts-ignore - payment_received exists but not in generated types
             if (order.payment_received) {
                 financialStatus = 'pago';
             } else {

@@ -310,8 +310,8 @@ Clique para editar embalagem/quantidade`;
     : null;
   const modalOptions = modalCurrentEmb
     ? [modalCurrentEmb, ...availableEmbalagens].filter(
-        (value, index, array) => array.findIndex((x) => x.id === value.id) === index
-      )
+      (value, index, array) => array.findIndex((x) => x.id === value.id) === index
+    )
     : availableEmbalagens;
 
   return (
@@ -401,129 +401,129 @@ Clique para editar embalagem/quantidade`;
       {modalOpen && (
         typeof document !== "undefined"
           ? ReactDOM.createPortal(
+            <div
+              className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+              onClick={() => !adding && setModalOpen(false)}
+            >
               <div
-                className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
-                onClick={() => !adding && setModalOpen(false)}
+                className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700"
+                onClick={(e) => e.stopPropagation()}
               >
-                <div
-                  className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="p-5 space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="text-base font-semibold text-gray-900 dark:text-white">Editar embalagem</h3>
-                        <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 truncate">Produto #{produtoId}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setModalOpen(false)}
-                        disabled={adding}
-                        className="p-2 rounded-lg hover:bg-gray-100/60 dark:hover:bg-gray-700/60 disabled:opacity-50"
-                        title="Fechar"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                <div className="p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-gray-900 dark:text-white">Editar embalagem</h3>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 truncate">Produto #{produtoId}</p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      disabled={adding}
+                      className="p-2 rounded-lg hover:bg-gray-100/60 dark:hover:bg-gray-700/60 disabled:opacity-50"
+                      title="Fechar"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
 
-                    {/* Se estiver editando (modalEmbalagemId), mostra pill atual com X para deletar */}
-                    {modalEmbalagemId ? (
-                      (() => {
-                        const current = embalagensCatalog.find((e) => e.id === modalEmbalagemId) ||
-                          linkedEmbalagens.find((l) => l.embalagem_id === modalEmbalagemId)?.embalagem || null;
-                        if (!current) return null;
-                        return (
-                          <div className="flex items-center gap-2">
-                            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 dark:bg-blue-500/10 px-2 py-0.5 text-sm text-blue-700 dark:text-blue-300">
-                              <Box className="h-3 w-3" />
-                              <span className="font-medium truncate">{current.nome}</span>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (!confirm('Deseja remover esta embalagem do produto?')) return;
-                                  try {
-                                    setAdding(true);
-                                    const res = await fetch(`/api/produtos/${produtoId}/embalagens?embalagem_id=${modalEmbalagemId}`, {
-                                      method: 'DELETE',
-                                    });
-                                    if (!res.ok) {
-                                      const err = await res.json().catch(() => ({}));
-                                      throw new Error(err.error || 'Erro ao remover');
-                                    }
-                                    await fetchLinks(produtoId);
-                                    await onAfterChange();
-                                    setModalOpen(false);
-                                  } catch (err) {
-                                    console.error(err);
-                                    alert(err instanceof Error ? err.message : 'Erro ao remover');
-                                  } finally {
-                                    setAdding(false);
+                  {/* Se estiver editando (modalEmbalagemId), mostra pill atual com X para deletar */}
+                  {modalEmbalagemId ? (
+                    (() => {
+                      const current = embalagensCatalog.find((e) => e.id === modalEmbalagemId) ||
+                        linkedEmbalagens.find((l) => l.embalagem_id === modalEmbalagemId)?.embalagem || null;
+                      if (!current) return null;
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 dark:bg-blue-500/10 px-2 py-0.5 text-sm text-blue-700 dark:text-blue-300">
+                            <Box className="h-3 w-3" />
+                            <span className="font-medium truncate">{current.nome}</span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!confirm('Deseja remover esta embalagem do produto?')) return;
+                                try {
+                                  setAdding(true);
+                                  const res = await fetch(`/api/produtos/${produtoId}/embalagens?embalagem_id=${modalEmbalagemId}`, {
+                                    method: 'DELETE',
+                                  });
+                                  if (!res.ok) {
+                                    const err = await res.json().catch(() => ({}));
+                                    throw new Error(err.error || 'Erro ao remover');
                                   }
-                                }}
-                                className="ml-2 inline-flex items-center justify-center rounded-full bg-red-100 text-red-700 w-5 h-5 p-0"
-                                title="Remover"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
+                                  await fetchLinks(produtoId);
+                                  await onAfterChange();
+                                  setModalOpen(false);
+                                } catch (err) {
+                                  console.error(err);
+                                  alert(err instanceof Error ? err.message : 'Erro ao remover');
+                                } finally {
+                                  setAdding(false);
+                                }
+                              }}
+                              className="ml-2 inline-flex items-center justify-center rounded-full bg-red-100 text-red-700 w-5 h-5 p-0"
+                              title="Remover"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
-                        );
-                      })()
-                    ) : null}
+                        </div>
+                      );
+                    })()
+                  ) : null}
 
-                    <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-3">
-                      <div className="min-w-0">
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Embalagem</label>
-                        <select
-                          value={modalEmbalagemId}
-                          onChange={(e) => setModalEmbalagemId(e.target.value)}
-                          className="app-input text-sm w-full"
-                          disabled={adding}
-                        >
-                          {modalOptions.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                              {opt.nome} ({opt.codigo})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Quantidade</label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={modalQuantidade}
-                          onChange={(e) => setModalQuantidade(Math.max(1, Number(e.target.value) || 1))}
-                          className="app-input text-sm w-full text-right"
-                          disabled={adding}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 justify-end pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setModalOpen(false)}
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-3">
+                    <div className="min-w-0">
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Embalagem</label>
+                      <select
+                        value={modalEmbalagemId}
+                        onChange={(e) => setModalEmbalagemId(e.target.value)}
+                        className="app-input text-sm w-full"
                         disabled={adding}
-                        className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-100/60 dark:hover:bg-gray-700/60 disabled:opacity-50"
                       >
-                        Cancelar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveEditing}
-                        disabled={adding || !modalEmbalagemId}
-                        className="px-3 py-2 rounded-lg text-sm font-semibold bg-[#009DA8] text-white disabled:opacity-50 inline-flex items-center gap-2"
-                      >
-                        {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                        Salvar
-                      </button>
+                        {modalOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.nome} ({opt.codigo})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Quantidade</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={modalQuantidade}
+                        onChange={(e) => setModalQuantidade(Math.max(1, Number(e.target.value) || 1))}
+                        className="app-input text-sm w-full text-right"
+                        disabled={adding}
+                      />
                     </div>
                   </div>
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalOpen(false)}
+                      disabled={adding}
+                      className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-100/60 dark:hover:bg-gray-700/60 disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditing}
+                      disabled={adding || !modalEmbalagemId}
+                      className="px-3 py-2 rounded-lg text-sm font-semibold bg-[#009DA8] text-white disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Salvar
+                    </button>
+                  </div>
                 </div>
-              </div>,
-              document.body
-            )
+              </div>
+            </div>,
+            document.body
+          )
           : null
       )}
     </>
@@ -817,7 +817,7 @@ export default function VendasMensaisPage() {
       const autoTable = (await import("jspdf-autotable")).default;
 
       const doc = new jsPDF();
-      
+
       // Título
       doc.setFontSize(16);
       doc.text("Relatório de Vendas", 14, 15);
@@ -1041,22 +1041,20 @@ export default function VendasMensaisPage() {
               <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
                 <button
                   onClick={() => setViewMode("unitario")}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
-                    viewMode === "unitario"
-                      ? "bg-[#009DA8] text-white"
-                      : "bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600"
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${viewMode === "unitario"
+                    ? "bg-[#009DA8] text-white"
+                    : "bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600"
+                    }`}
                 >
                   <Box className="w-4 h-4" />
                   Unitário
                 </button>
                 <button
                   onClick={() => setViewMode("kit")}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
-                    viewMode === "kit"
-                      ? "bg-[#009DA8] text-white"
-                      : "bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600"
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${viewMode === "kit"
+                    ? "bg-[#009DA8] text-white"
+                    : "bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600"
+                    }`}
                 >
                   <Layers className="w-4 h-4" />
                   Apenas Kits
@@ -1149,7 +1147,7 @@ export default function VendasMensaisPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="canal" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatCurrency(value) : ''} />
                   <Bar dataKey="faturamento" fill="#009DA8" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -1174,7 +1172,7 @@ export default function VendasMensaisPage() {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatNumber(value)} />
+                  <Tooltip formatter={(value: number | undefined) => value !== undefined ? formatNumber(value) : ''} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
