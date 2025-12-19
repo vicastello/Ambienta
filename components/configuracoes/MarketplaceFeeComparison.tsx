@@ -80,7 +80,7 @@ export function MarketplaceFeeComparison({
                                 fontSize: '12px',
                             }}
                             labelStyle={{ color: '#fff', fontWeight: 'bold' }}
-                            formatter={(value: number) => [`R$ ${value.toFixed(2)}`, '']}
+                            formatter={(value: number | undefined) => value !== undefined ? [`R$ ${value.toFixed(2)}`, ''] : ['', '']}
                         />
                         <Legend
                             wrapperStyle={{ fontSize: '12px' }}

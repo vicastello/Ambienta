@@ -182,13 +182,13 @@ export async function fetchAndSaveTinyOrder(
         const { error: insertError } = await supabaseAdmin
             .from('tiny_orders')
             .insert({
-                id: order.id,
+                tiny_id: order.id,
                 numero_pedido: order.numero_pedido,
                 cliente_nome: order.cliente_nome,
                 valor_total_pedido: order.valor_total_pedido,
-                data_pedido: order.data_pedido,
-                // Add other fields as needed
-            });
+                data_criacao: order.data_pedido,
+                canal: order.marketplace,
+            } as any);
 
         if (insertError) {
             console.error('[TinyClient] Error saving order:', insertError);

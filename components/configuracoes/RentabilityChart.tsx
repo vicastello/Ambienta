@@ -49,7 +49,7 @@ export function RentabilityChart({
             marketplaces.forEach(async ({ key, name }) => {
                 try {
                     const feeCalc = await calculateMarketplaceFees({
-                        marketplace: name,
+                        marketplace: name as 'shopee' | 'mercado_livre' | 'magalu',
                         orderValue: price,
                         usesFreeShipping: name === 'shopee' ? freeShippingShopee : undefined,
                         isCampaignOrder: name === 'shopee' ? campaignShopee : undefined,
