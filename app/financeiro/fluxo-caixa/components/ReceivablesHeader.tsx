@@ -155,7 +155,7 @@ export function ReceivablesHeader() {
                                 className={cn(
                                     "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all",
                                     isActive
-                                        ? "bg-primary-500 text-white shadow-sm"
+                                        ? "bg-[#009CA6] hover:bg-[#007982] text-white shadow-sm"
                                         : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                                 )}
                             >
