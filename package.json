@@ -8,6 +8,7 @@
     "dev:full": "concurrently \"npm run dev\" \"npm run dev:cron\"",
     "build": "next build --webpack",
     "lint": "eslint app components --ext .ts,.tsx",
+    "test": "jest",
     "start": "next start",
     "sync:month": "tsx scripts/syncMonth.ts",
     "sync:tiny-items": "tsx scripts/sync-tiny-items-since-nov.ts",
@@ -51,8 +52,10 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
     "@next/bundle-analyzer": "^16.0.5",
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
@@ -60,8 +63,10 @@
     "baseline-browser-mapping": "^2.8.32",
     "eslint": "^9",
     "eslint-config-next": "16.0.5",
+    "jest": "^30.2.0",
     "playwright": "^1.57.0",
     "tailwindcss": "^4",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.1",
     "tsx": "^4.20.6",
     "typescript": "^5"

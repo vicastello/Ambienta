@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -23,10 +24,30 @@ export function AppDatePicker({
     const date = value ? new Date(value + 'T00:00:00') : null;
     const [viewDate, setViewDate] = useState(date || new Date());
     const containerRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
+    const popupRef = useRef<HTMLDivElement>(null);
+
+    // Calculate popup position when opening
+    useEffect(() => {
+        if (isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setPopupStyle({
+                position: 'fixed',
+                top: rect.bottom + 8,
+                left: rect.left,
+                zIndex: 9999,
+            });
+        }
+    }, [isOpen]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            if (
+                containerRef.current && !containerRef.current.contains(target) &&
+                popupRef.current && !popupRef.current.contains(target)
+            ) {
                 setIsOpen(false);
             }
         }
@@ -119,23 +140,29 @@ export function AppDatePicker({
     return (
         <div className="relative" ref={containerRef}>
             <button
+                ref={buttonRef}
                 type="button"
                 onClick={() => !disabled && setIsOpen(!isOpen)}
                 disabled={disabled}
                 className={cn(
-                    "app-input w-full text-left flex items-center justify-between gap-2",
+                    "app-input text-left flex items-center justify-between gap-2",
+                    "focus:ring-2 focus:ring-emerald-500",
                     disabled && "opacity-50 cursor-not-allowed",
                     className
                 )}
             >
-                <span className={date ? "text-slate-900 dark:text-white" : "text-slate-400"}>
+                <span className={date ? "text-main" : "text-muted"}>
                     {date ? formatDisplayDate(date) : placeholder}
                 </span>
-                <CalendarIcon className="w-4 h-4 text-slate-400" />
+                <CalendarIcon className="w-4 h-4 text-muted" />
             </button>
 
-            {isOpen && (
-                <div className="absolute top-full mt-2 z-[100] rounded-[20px] shadow-xl p-4 w-[320px] animate-in fade-in-0 zoom-in-95 duration-200 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/50 dark:border-white/10">
+            {isOpen && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={popupRef}
+                    style={popupStyle}
+                    className="rounded-[20px] shadow-xl p-4 w-[280px] animate-in fade-in-0 zoom-in-95 duration-200 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/50 dark:border-white/10"
+                >
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4">
                         <button
@@ -181,7 +208,8 @@ export function AppDatePicker({
                             Limpar data
                         </button>
                     )}
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

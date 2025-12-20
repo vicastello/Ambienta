@@ -194,15 +194,16 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    gap: 0.5rem;
-    font-weight: 600;
+    font-weight: 500;
+    /* font-medium - igual ao app-input */
+    font-size: 0.875rem;
+    /* text-sm - igual ao app-input */
     font-family: var(--font-inter), sans-serif;
     line-height: 1.2;
-    padding: 0.7rem 1.4rem;
+    padding: 0.625rem 1rem;
+    /* py-2.5 px-4 - igual ao app-input */
     transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
-    box-shadow: var(--btn-shadow);
-    backdrop-filter: blur(18px) saturate(1.08);
-    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+    box-shadow: none;
   }
 
   button:hover,
@@ -856,33 +857,60 @@
     border-color: var(--border-subtle);
   }
 
-  /* Input com estilo Liquid Glass */
+  /* Input com estilo Liquid Glass - Padrão para todos os inputs do app */
   .app-input {
-    background-color: rgba(255, 255, 255, 0.28);
-    border: 1px solid rgba(15, 23, 42, 0.1);
-    border-radius: 1.5rem;
-    padding: 0.75rem 1rem;
+    width: 100%;
+    padding: 0.625rem 1rem;
+    /* py-2.5 px-4 */
+    border-radius: 9999px;
     font-size: 0.875rem;
+    /* text-sm */
+    font-weight: 500;
+    /* font-medium */
     color: var(--text-main);
+    background-color: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    outline: none;
     transition: all 150ms ease;
-    backdrop-filter: blur(24px) saturate(1.1);
-    -webkit-backdrop-filter: blur(24px) saturate(1.1);
+    box-shadow: none;
+  }
+
+  .app-input::placeholder {
+    color: var(--text-muted);
   }
 
   .app-input:focus {
     outline: none;
-    background-color: rgba(255, 255, 255, 0.8);
-    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+    border-color: transparent;
   }
 
   :root.dark .app-input {
-    background-color: rgba(7, 11, 26, 0.82);
-    border-color: rgba(226, 237, 255, 0.12);
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   :root.dark .app-input:focus {
-    background-color: rgba(10, 16, 36, 0.95);
-    border-color: var(--accent-light);
+    box-shadow: 0 0 0 2px var(--accent-light);
+    border-color: transparent;
+  }
+
+  /* Override para botões que usam app-input (ex: date picker) */
+  button.app-input,
+  [type="button"].app-input {
+    padding: 0.625rem 1rem !important;
+    border-radius: 9999px !important;
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  :root.dark button.app-input,
+  :root.dark [type="button"].app-input {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   /* Input editável destacado para tabelas */
@@ -1632,4 +1660,101 @@
   background-color: rgba(255, 255, 255, 0.1);
   color: var(--accent-light);
   box-shadow: none;
+}
+
+/* =========================
+   OVERRIDE FINAL - app-input
+   Garante consistência de altura em todo o app
+   ========================= */
+.app-input {
+  padding-top: 0.625rem !important;
+  padding-bottom: 0.625rem !important;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  border-radius: 9999px !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  box-shadow: none !important;
+}
+
+button.app-input,
+[type="button"].app-input {
+  padding-top: 0.625rem !important;
+  padding-bottom: 0.625rem !important;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  border-radius: 9999px !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Input com prefixo (ex: R$) - espaço à esquerda para o símbolo */
+.app-input-prefix {
+  padding-left: 3rem !important;
+}
+
+/* Input com sufixo (ex: %) - espaço à direita para o símbolo */
+.app-input-suffix {
+  padding-right: 2.5rem !important;
+}
+
+/* Container de prefixo/sufixo */
+.app-input-addon {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.app-input-addon-left {
+  left: 1.25rem;
+}
+
+.app-input-addon-right {
+  right: 1.25rem;
+}
+
+/* Variante compacta para inputs menores (ex: taxas-marketplace) */
+.app-input-compact {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+  font-size: 0.8125rem !important;
+  max-width: 140px;
+}
+
+/* Ajuste do addon para input compacto */
+.app-input-compact+.app-input-addon,
+.app-input-addon+.app-input-compact {
+  font-size: 0.75rem;
+}
+
+/* Prefix compacto - menos espaço à esquerda */
+.app-input-prefix-compact {
+  padding-left: 2.25rem !important;
+}
+
+/* Suffix compacto - menos espaço à direita */
+.app-input-suffix-compact {
+  padding-right: 2rem !important;
+}
+
+/* Addon compacto */
+.app-input-addon-compact {
+  font-size: 0.75rem;
+}
+
+.app-input-addon-left-compact {
+  left: 0.875rem;
+}
+
+.app-input-addon-right-compact {
+  right: 0.5rem;
 }

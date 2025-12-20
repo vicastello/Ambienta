@@ -1,12 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Calendar, AlertTriangle } from 'lucide-react';
-import { Campaign } from '@/app/configuracoes/taxas-marketplace/page';
+import { Campaign } from '@/app/configuracoes/taxas-marketplace/lib/types';
+import { findOverlappingCampaigns, detectAllCampaignOverlaps, CampaignOverlap } from '@/lib/validations/campaign-overlap';
+import { CampaignOverlapAlert } from './CampaignOverlapAlert';
 
 interface CampaignManagerProps {
     campaigns: Campaign[];
     onChange: (campaigns: Campaign[]) => void;
+    /** Called after any campaign change with the NEW campaigns array */
+    onAutoSave?: (updatedCampaigns: Campaign[]) => void;
 }
 
 interface CampaignFormData {
@@ -17,7 +21,7 @@ interface CampaignFormData {
     is_active: boolean;
 }
 
-export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
+export function CampaignManager({ campaigns, onChange, onAutoSave }: CampaignManagerProps) {
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [formData, setFormData] = useState<CampaignFormData>({
@@ -28,6 +32,13 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
         is_active: true,
     });
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [allOverlaps, setAllOverlaps] = useState<CampaignOverlap[]>([]);
+
+    // Detectar sobreposições sempre que as campanhas mudarem
+    useEffect(() => {
+        const overlaps = detectAllCampaignOverlaps(campaigns);
+        setAllOverlaps(overlaps);
+    }, [campaigns]);
 
     const resetForm = () => {
         setFormData({
@@ -71,22 +82,9 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                 newErrors.end_date = 'Data de término deve ser posterior à data de início';
             }
 
-            // Check for overlaps with other active campaigns
-            if (data.is_active) {
-                const overlapping = campaigns.find((c) => {
-                    if (c.id === excludeId || !c.is_active) return false;
-                    const cStart = new Date(c.start_date);
-                    const cEnd = new Date(c.end_date);
-                    return (
-                        (start >= cStart && start <= cEnd) ||
-                        (end >= cStart && end <= cEnd) ||
-                        (start <= cStart && end >= cEnd)
-                    );
-                });
-                if (overlapping) {
-                    newErrors.dates = `Período sobrepõe com a campanha "${overlapping.name}"`;
-                }
-            }
+            // Note: Overlap validation is now handled by CampaignOverlapAlert component
+            // We no longer add overlaps to errors to avoid redundancy and maintain
+            // proper visual hierarchy (yellow warning vs red error)
         }
 
         setErrors(newErrors);
@@ -105,8 +103,11 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
             is_active: formData.is_active,
         };
 
-        onChange([...campaigns, newCampaign]);
+        const newCampaigns = [...campaigns, newCampaign];
+        onChange(newCampaigns);
         resetForm();
+        // Auto-save with the new campaigns array
+        onAutoSave?.(newCampaigns);
     };
 
     const handleEdit = (campaign: Campaign) => {
@@ -138,11 +139,16 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
 
         onChange(updated);
         resetForm();
+        // Auto-save with the updated campaigns array
+        onAutoSave?.(updated);
     };
 
     const handleDelete = (id: string) => {
         if (confirm('Tem certeza que deseja excluir esta campanha?')) {
-            onChange(campaigns.filter((c) => c.id !== id));
+            const filtered = campaigns.filter((c) => c.id !== id);
+            onChange(filtered);
+            // Auto-save with the filtered campaigns array
+            onAutoSave?.(filtered);
         }
     };
 
@@ -151,6 +157,8 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
             c.id === id ? { ...c, is_active: !c.is_active } : c
         );
         onChange(updated);
+        // Auto-save with the toggled campaigns array
+        onAutoSave?.(updated);
     };
 
     const getDaysUntilEnd = (endDate: string): number => {
@@ -163,6 +171,21 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
     const formatDate = (dateStr: string): string => {
         const date = new Date(dateStr);
         return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    /**
+     * Retorna array de campanhas que conflitam com a campanha especificada
+     */
+    const getCampaignConflicts = (campaignId: string): Campaign[] => {
+        const conflicts: Campaign[] = [];
+        allOverlaps.forEach(overlap => {
+            if (overlap.campaign1.id === campaignId) {
+                conflicts.push(overlap.campaign2);
+            } else if (overlap.campaign2.id === campaignId) {
+                conflicts.push(overlap.campaign1);
+            }
+        });
+        return conflicts;
     };
 
     return (
@@ -188,6 +211,19 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                             className="p-4 bg-blue-500/10 border-2 border-blue-500/30 rounded-xl space-y-3"
                         >
                             <h4 className="text-sm font-bold text-main mb-3">Editando Campanha</h4>
+                            {(() => {
+                                const overlapping = findOverlappingCampaigns(
+                                    formData,
+                                    campaigns,
+                                    editingId
+                                );
+                                return overlapping.length > 0 && (
+                                    <CampaignOverlapAlert
+                                        overlappingCampaigns={overlapping}
+                                        className="mb-3"
+                                    />
+                                );
+                            })()}
                             <CampaignForm
                                 data={formData}
                                 onChange={setFormData}
@@ -215,8 +251,8 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                     <div
                         key={campaign.id}
                         className={`p-4 rounded-xl border transition-all ${campaign.is_active
-                                ? 'bg-emerald-500/5 border-emerald-500/20'
-                                : 'bg-slate-500/5 border-slate-500/20 opacity-60'
+                            ? 'bg-emerald-500/5 border-emerald-500/20'
+                            : 'bg-slate-500/5 border-slate-500/20 opacity-60'
                             }`}
                     >
                         <div className="flex items-start justify-between gap-4">
@@ -225,8 +261,8 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                                     <h3 className="text-sm font-bold text-main">{campaign.name}</h3>
                                     <span
                                         className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${campaign.is_active
-                                                ? 'bg-emerald-500 text-white'
-                                                : 'bg-slate-400 text-white'
+                                            ? 'bg-emerald-500 text-white'
+                                            : 'bg-slate-400 text-white'
                                             }`}
                                     >
                                         {campaign.is_active ? 'Ativa' : 'Inativa'}
@@ -242,6 +278,15 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                                             Expirada
                                         </span>
                                     )}
+                                    {(() => {
+                                        const conflicts = getCampaignConflicts(campaign.id);
+                                        return conflicts.length > 0 && (
+                                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-orange-500 text-white flex items-center gap-1" title={`Conflita com: ${conflicts.map(c => c.name).join(', ')}`}>
+                                                <AlertTriangle className="w-3 h-3" />
+                                                {conflicts.length} conflito{conflicts.length > 1 ? 's' : ''}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
                                 <div className="flex items-center gap-4 text-xs text-muted">
                                     <span>
@@ -254,8 +299,8 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
                                 <button
                                     onClick={() => handleToggleActive(campaign.id)}
                                     className={`px-3 py-1.5 text-xs rounded-lg transition-all ${campaign.is_active
-                                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
-                                            : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
+                                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
                                         }`}
                                     title={campaign.is_active ? 'Desativar' : 'Ativar'}
                                 >
@@ -285,6 +330,19 @@ export function CampaignManager({ campaigns, onChange }: CampaignManagerProps) {
             {isAdding && (
                 <div className="p-4 bg-emerald-500/10 border-2 border-emerald-500/30 rounded-xl space-y-3">
                     <h4 className="text-sm font-bold text-main mb-3">Nova Campanha</h4>
+                    {(() => {
+                        const overlapping = findOverlappingCampaigns(
+                            formData,
+                            campaigns,
+                            undefined
+                        );
+                        return overlapping.length > 0 && (
+                            <CampaignOverlapAlert
+                                overlappingCampaigns={overlapping}
+                                className="mb-3"
+                            />
+                        );
+                    })()}
                     <CampaignForm
                         data={formData}
                         onChange={setFormData}
