@@ -144,7 +144,7 @@ export function ReceivablesHeader() {
                 </div>
 
                 {/* Quick Status Filters */}
-                <div className="flex items-center gap-1 p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800 relative z-30">
+                <div className="flex gap-2 p-1 rounded-[20px] glass-panel glass-tint border border-white/40 dark:border-white/10 relative z-30">
                     {STATUS_OPTIONS.map((status) => {
                         const Icon = status.icon;
                         const isActive = currentStatus === status.value;
@@ -153,13 +153,13 @@ export function ReceivablesHeader() {
                                 key={status.value}
                                 onClick={() => updateFilter('statusPagamento', status.value)}
                                 className={cn(
-                                    "flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium transition-all",
+                                    "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all rounded-2xl",
                                     isActive
-                                        ? "bg-[#009CA6] hover:bg-[#007982] text-white shadow-sm"
-                                        : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                                        ? "bg-white/80 dark:bg-white/15 shadow-sm text-main"
+                                        : "text-muted hover:text-main bg-transparent border-0 shadow-none hover:bg-transparent"
                                 )}
                             >
-                                <Icon className={cn("w-4 h-4", !isActive && status.color)} />
+                                <Icon className={cn("w-4 h-4", !isActive && status.color, isActive && "text-main")} />
                                 <span className="hidden sm:inline">{status.label}</span>
                             </button>
                         );

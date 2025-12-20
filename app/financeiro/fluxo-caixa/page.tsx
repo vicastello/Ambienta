@@ -120,14 +120,14 @@ function FluxoCaixaContent() {
             <div className="flex flex-col gap-6">
                 <div className="flex items-center justify-between gap-3">
                     {/* View Toggle */}
-                    <div className="flex items-center p-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div className="flex gap-2 p-1 rounded-[20px] glass-panel glass-tint border border-white/40 dark:border-white/10">
                         <button
                             onClick={() => setActiveView('table')}
                             className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                                "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all rounded-2xl",
                                 activeView === 'table'
-                                    ? "bg-[#009CA6] hover:bg-[#007982] text-white"
-                                    : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                                    ? "bg-white/80 dark:bg-white/15 shadow-sm text-main"
+                                    : "text-muted hover:text-main bg-transparent border-0 shadow-none hover:bg-transparent"
                             )}
                         >
                             <Table2 className="w-4 h-4" />
@@ -136,10 +136,10 @@ function FluxoCaixaContent() {
                         <button
                             onClick={() => setActiveView('dashboard')}
                             className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                                "flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all rounded-2xl",
                                 activeView === 'dashboard'
-                                    ? "bg-[#009CA6] hover:bg-[#007982] text-white"
-                                    : "bg-transparent border-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                                    ? "bg-white/80 dark:bg-white/15 shadow-sm text-main"
+                                    : "text-muted hover:text-main bg-transparent border-0 shadow-none hover:bg-transparent"
                             )}
                         >
                             <LayoutGrid className="w-4 h-4" />
