@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Link2, LinkIcon, AlertTriangle, ChevronDown, ChevronUp, Tag, Calendar, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import FeeBreakdownCard from './FeeBreakdownCard';
 
 export type PreviewPayment = {
     marketplaceOrderId: string;
@@ -149,8 +150,10 @@ const PaymentRow = ({
             const commission = overrides.commissionFee !== undefined ? Number(overrides.commissionFee) : (feesBreakdown.grossValue * commissionRate / 100);
             const fixed = overrides.fixedCost !== undefined ? Number(overrides.fixedCost) : feesBreakdown.fixedCost;
             const campaign = overrides.campaignFee !== undefined ? Number(overrides.campaignFee) : (feesBreakdown.campaignFee || 0);
+            const sellerVoucher = feesBreakdown.sellerVoucher || feesBreakdown.breakdown?.sellerVoucher || 0;
+            const amsCommissionFee = feesBreakdown.amsCommissionFee || feesBreakdown.breakdown?.amsCommissionFee || 0;
 
-            const total = commission + fixed + campaign;
+            const total = commission + fixed + campaign + sellerVoucher + amsCommissionFee;
             payment.tinyOrderInfo!.valor_esperado = feesBreakdown.grossValue - total;
 
             // Update overrides with new commission if toggle changed but fee wasn't manually set
@@ -197,11 +200,20 @@ const PaymentRow = ({
                     {formatBRL(payment.netAmount)}
                 </td>
                 <td className="px-4 py-3 text-sm font-semibold text-right">
-                    {payment.tinyOrderInfo?.valor_esperado ? (
-                        <span className={payment.netAmount - payment.tinyOrderInfo.valor_esperado >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                            {formatBRL(payment.netAmount - payment.tinyOrderInfo.valor_esperado)}
-                        </span>
-                    ) : '-'}
+                    {payment.tinyOrderInfo?.valor_esperado ? (() => {
+                        const diff = payment.netAmount - payment.tinyOrderInfo.valor_esperado;
+                        const isWithinTolerance = Math.abs(diff) <= 0.02;
+                        const colorClass = isWithinTolerance
+                            ? 'text-gray-500 dark:text-gray-400'
+                            : diff >= 0
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400';
+                        return (
+                            <span className={colorClass}>
+                                {formatBRL(diff)}
+                            </span>
+                        );
+                    })() : '-'}
                 </td>
                 <td className="px-4 py-3">
                     <MatchStatusBadge status={payment.matchStatus} />
@@ -292,86 +304,16 @@ const PaymentRow = ({
                             )}
 
                             {feesBreakdown && (
-                                <div className="glass-panel p-3 rounded-lg border-l-4 border-blue-500">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex flex-col gap-1">
-                                            <h4 className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                                                Detalhamento de Taxas (Estimado)
-                                            </h4>
-
-                                        </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); setIsEditingFees(!isEditingFees); }}
-                                            className="text-xs app-btn-secondary px-2 py-1"
-                                        >
-                                            {isEditingFees ? 'Cancelar' : 'Ajustar Taxas'}
-                                        </button>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                        <div>
-                                            <span className="text-gray-500 dark:text-gray-400">Comissão ({feesBreakdown.breakdown?.commissionRate}%):</span>
-                                            {isEditingFees ? (
-                                                <input
-                                                    type="number"
-                                                    className="w-full mt-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-xs"
-                                                    value={overrides.commissionFee ?? feesBreakdown.commissionFee.toFixed(2)}
-                                                    onChange={(e) => setOverrides({ ...overrides, commissionFee: parseFloat(e.target.value) })}
-                                                />
-                                            ) : (
-                                                <p className="font-medium text-red-500">{formatBRL(overrides.commissionFee ?? feesBreakdown.commissionFee)}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500 dark:text-gray-400">Custo Fixo:</span>
-                                            {isEditingFees ? (
-                                                <input
-                                                    type="number"
-                                                    className="w-full mt-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-xs"
-                                                    value={overrides.fixedCost ?? feesBreakdown.fixedCost.toFixed(2)}
-                                                    onChange={(e) => setOverrides({ ...overrides, fixedCost: parseFloat(e.target.value) })}
-                                                />
-                                            ) : (
-                                                <p className="font-medium text-red-500">{formatBRL(overrides.fixedCost ?? feesBreakdown.fixedCost)}</p>
-                                            )}
-                                        </div>
-                                        {(feesBreakdown.campaignFee > 0 || isEditingFees) && (
-                                            <div>
-                                                <span className="text-gray-500 dark:text-gray-400">Campanha ({feesBreakdown.breakdown?.campaignRate || 0}%):</span>
-                                                {isEditingFees ? (
-                                                    <input
-                                                        type="number"
-                                                        className="w-full mt-1 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-xs"
-                                                        value={overrides.campaignFee ?? (feesBreakdown.campaignFee || 0).toFixed(2)}
-                                                        onChange={(e) => setOverrides({ ...overrides, campaignFee: parseFloat(e.target.value) })}
-                                                    />
-                                                ) : (
-                                                    <p className="font-medium text-red-500">{formatBRL(overrides.campaignFee ?? feesBreakdown.campaignFee)}</p>
-                                                )}
-                                            </div>
-                                        )}
-                                        <div>
-                                            <span className="text-gray-500 dark:text-gray-400">Expectativa Líquida:</span>
-                                            <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                                                {formatBRL(feesBreakdown.grossValue - (
-                                                    (overrides.commissionFee ?? feesBreakdown.commissionFee) +
-                                                    (overrides.fixedCost ?? feesBreakdown.fixedCost) +
-                                                    (overrides.campaignFee ?? (feesBreakdown.campaignFee || 0))
-                                                ))}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {isEditingFees && (
-                                        <div className="mt-3 flex justify-end">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleSaveFees(); }}
-                                                className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
-                                            >
-                                                Salvar Ajustes Temporários
-                                            </button>
-                                        </div>
-                                    )}
+                                <div onClick={(e) => e.stopPropagation()}>
+                                    <FeeBreakdownCard
+                                        breakdown={feesBreakdown}
+                                        marketplace={marketplace}
+                                        isEditing={isEditingFees}
+                                        overrides={overrides}
+                                        onOverrideChange={(field, value) => setOverrides({ ...overrides, [field]: value })}
+                                        onSave={handleSaveFees}
+                                        onToggleEdit={() => setIsEditingFees(!isEditingFees)}
+                                    />
                                 </div>
                             )}
                         </div>

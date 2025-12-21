@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { SHOPEE_DEFAULTS } from '@/app/configuracoes/taxas-marketplace/lib/defaults';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -13,6 +14,10 @@ export interface FeeCalculationInput {
     usesFreeShipping?: boolean;
     isCampaignOrder?: boolean;
     orderDate?: Date;
+    /** Seller voucher/coupon amount (deducted from seller, not buyer) */
+    sellerVoucher?: number;
+    /** Affiliate Marketing Solutions commission (Shopee affiliate/influencer sales) */
+    amsCommissionFee?: number;
 }
 
 export interface FeeCalculationResult {
@@ -20,6 +25,8 @@ export interface FeeCalculationResult {
     commissionFee: number;
     campaignFee?: number;
     fixedCost: number;
+    sellerVoucher?: number;
+    amsCommissionFee?: number;
     totalFees: number;
     netValue: number;
     breakdown: {
@@ -27,6 +34,9 @@ export interface FeeCalculationResult {
         campaignRate?: number;
         fixedCostPerUnit: number;
         units: number;
+        transactionFee?: number;
+        sellerVoucher?: number;
+        amsCommissionFee?: number;
     };
 }
 
@@ -86,25 +96,34 @@ function calculateShopeeFees(
 ): FeeCalculationResult {
     const grossValue = input.orderValue;
 
-    // Commission rate: prioritize manual override, otherwise use global config
+    // Ensure we use defaults if config fields are missing
+    const safeConfig = { ...SHOPEE_DEFAULTS, ...config };
+
+    // Seller voucher: deducted BEFORE calculating percentage-based fees
+    // Shopee calculates commission/campaign on the value AFTER the voucher is deducted
+    const sellerVoucher = input.sellerVoucher || 0;
+    const valueAfterVoucher = grossValue - sellerVoucher;
+
     const usesFreeShipping = input.usesFreeShipping !== undefined
         ? input.usesFreeShipping
-        : (config.participates_in_free_shipping || false);
+        : (safeConfig.participates_in_free_shipping || false);
 
     const commissionRate = usesFreeShipping
-        ? config.free_shipping_commission
-        : config.base_commission;
+        ? safeConfig.free_shipping_commission
+        : safeConfig.base_commission;
 
-    const commissionFee = (grossValue * commissionRate) / 100;
+    // Calculate commission on value AFTER voucher deduction
+    const commissionFee = (valueAfterVoucher * commissionRate) / 100;
 
-    // Campaign fee - check all active campaigns
-    let campaignFee = 0;
-    let campaignRate = 0;
-    if (input.isCampaignOrder && input.orderDate) {
-        // NEW: Check campaigns array first (if it exists)
-        if (config.campaigns && config.campaigns.length > 0) {
-            // Find matching active campaign
-            const matchingCampaign = config.campaigns.find((campaign: any) => {
+    // Campaign fee - ALWAYS applied
+    // Default rate (2.5%) applies always
+    // During Nov/Dec period, rate increases to 3.5%
+    let campaignRate = safeConfig.campaign_fee_default; // Always start with default (2.5%)
+
+    if (input.orderDate) {
+        // Check custom campaigns first (highest priority)
+        if (safeConfig.campaigns && safeConfig.campaigns.length > 0) {
+            const matchingCampaign = safeConfig.campaigns.find((campaign: any) => {
                 if (!campaign.is_active) return false;
                 const startDate = new Date(campaign.start_date);
                 const endDate = new Date(campaign.end_date);
@@ -113,53 +132,66 @@ function calculateShopeeFees(
 
             if (matchingCampaign) {
                 campaignRate = matchingCampaign.fee_rate;
-                campaignFee = (grossValue * campaignRate) / 100;
-            } else {
-                // No matching campaign, use default
-                campaignRate = config.campaign_fee_default;
-                campaignFee = (grossValue * campaignRate) / 100;
             }
-        } else {
-            // FALLBACK: Use legacy single campaign logic for backwards compatibility
-            let isNovDecPeriod = false;
+        }
 
-            // Use exact date range from config if available
-            if (config.campaign_start_date && config.campaign_end_date) {
-                const startDate = new Date(config.campaign_start_date);
-                const endDate = new Date(config.campaign_end_date);
-                isNovDecPeriod = input.orderDate >= startDate && input.orderDate <= endDate;
-            } else {
-                // Fallback to month-based logic if dates are missing
-                const orderMonth = input.orderDate.getMonth();
-                isNovDecPeriod = (orderMonth === 10 || orderMonth === 11);
+        // Check Nov/Dec period (if no custom campaign matched)
+        if (safeConfig.campaign_start_date && safeConfig.campaign_end_date) {
+            const startDate = new Date(safeConfig.campaign_start_date);
+            const endDate = new Date(safeConfig.campaign_end_date);
+            const isInNovDecPeriod = input.orderDate >= startDate && input.orderDate <= endDate;
+
+            if (isInNovDecPeriod) {
+                // Nov/Dec rate overrides default (but custom campaigns take precedence)
+                const hasCustomCampaign = safeConfig.campaigns?.some((c: any) => {
+                    if (!c.is_active) return false;
+                    const cStart = new Date(c.start_date);
+                    const cEnd = new Date(c.end_date);
+                    return input.orderDate! >= cStart && input.orderDate! <= cEnd;
+                });
+
+                if (!hasCustomCampaign) {
+                    campaignRate = safeConfig.campaign_fee_nov_dec;
+                }
             }
-
-            campaignRate = isNovDecPeriod
-                ? config.campaign_fee_nov_dec
-                : config.campaign_fee_default;
-            campaignFee = (grossValue * campaignRate) / 100;
         }
     }
 
+    // Calculate campaign fee on value AFTER voucher deduction
+    const campaignFee = (valueAfterVoucher * campaignRate) / 100;
+
     // Fixed cost: R$ 4 per product, but if it's a kit, only count once
     const units = input.isKit ? 1 : (input.productCount || 1);
-    const fixedCost = config.fixed_cost_per_product * units;
+    const fixedCost = safeConfig.fixed_cost_per_product * units;
 
-    const totalFees = commissionFee + campaignFee + fixedCost;
-    const netValue = grossValue - totalFees;
+    // Affiliate commission (AMS) - passed from Shopee escrow data, not calculated
+    const amsCommissionFee = input.amsCommissionFee || 0;
+
+    // Total percentage-based fees (on value after voucher)
+    const percentageFees = commissionFee + campaignFee;
+
+    // Net Value = valueAfterVoucher - percentageFees - fixedCost - amsCommissionFee
+    const netValue = valueAfterVoucher - percentageFees - fixedCost - amsCommissionFee;
+
+    // Total fees for display (includes everything deducted from original value)
+    const totalFees = sellerVoucher + percentageFees + fixedCost + amsCommissionFee;
 
     return {
         grossValue,
         commissionFee,
         campaignFee,
         fixedCost,
+        sellerVoucher: sellerVoucher > 0 ? sellerVoucher : undefined,
+        amsCommissionFee: amsCommissionFee > 0 ? amsCommissionFee : undefined,
         totalFees,
         netValue,
         breakdown: {
             commissionRate,
             campaignRate,
-            fixedCostPerUnit: config.fixed_cost_per_product,
+            fixedCostPerUnit: safeConfig.fixed_cost_per_product,
             units,
+            sellerVoucher: sellerVoucher > 0 ? sellerVoucher : undefined,
+            amsCommissionFee: amsCommissionFee > 0 ? amsCommissionFee : undefined,
         },
     };
 }

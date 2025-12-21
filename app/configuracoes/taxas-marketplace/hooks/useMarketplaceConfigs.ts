@@ -103,11 +103,13 @@ export function useMarketplaceConfigs(): UseMarketplaceConfigsReturn {
                     }
                 }
 
-                // Special handling for Shopee dates if needed (though now covered by defaults above, keeping for safety)
+                // Special handling for Shopee
                 if (item.marketplace === 'shopee') {
+                    const shopeeConfig = config as ShopeeConfig;
+
                     config = {
                         ...config,
-                        campaigns: (config as ShopeeConfig).campaigns || [],
+                        campaigns: shopeeConfig.campaigns || [],
                     } as ShopeeConfig;
                 }
 

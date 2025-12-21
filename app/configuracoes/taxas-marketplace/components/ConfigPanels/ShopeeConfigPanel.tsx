@@ -94,7 +94,7 @@ export function ShopeeConfigPanel({
                             </p>
                         </div>
 
-                        {/* Taxas de Comissão + Custo Fixo - todos em uma linha */}
+                        {/* Taxas de Comissão + Custo Fixo */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <FeeRateInput
                                 value={config.base_commission}
@@ -119,7 +119,7 @@ export function ShopeeConfigPanel({
                                 onChange={(value) => onUpdate({ fixed_cost_per_product: value })}
                                 label="Custo por Produto (R$)"
                                 tooltip="Taxa fixa cobrada por produto vendido."
-                                colorScheme="amber"
+                                colorScheme="yellow"
                                 helpText="Cobrado por produto ou kit"
                             />
                         </div>

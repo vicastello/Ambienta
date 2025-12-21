@@ -39,10 +39,10 @@ export function calculateShopeeImpact(
     const totalCommissionRate = baseCommissionRate + campaignFeeRate;
     const commission = (saleValue * totalCommissionRate) / 100;
 
-    // 4. Custo fixo por produto
+    // 5. Custo fixo por produto
     const fixedCost = config.fixed_cost_per_product;
 
-    // 5. Total de taxas
+    // 6. Total de taxas
     const totalFees = commission + fixedCost;
 
     return {
