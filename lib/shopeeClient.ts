@@ -411,3 +411,170 @@ export async function getAllShopeeOrdersForPeriod(params: {
 
   return allOrders;
 }
+
+// Resposta da API get_escrow_detail
+export interface ShopeeEscrowDetail {
+  order_sn: string;
+  voucher_from_seller: number;
+  voucher_from_shopee: number;
+  seller_voucher_code: string[];
+  original_shopee_discount: number;
+  total_discount_seller_provided: number;
+  escrow_amount: number;
+  buyer_total_amount: number;
+  actual_shipping_fee: number;
+  commission_fee: number;
+  service_fee: number;
+  ams_commission_fee: number; // Affiliate Marketing Solutions - commission paid to affiliates/influencers
+  order_selling_price: number; // Selling price after bulk discounts (before order-level discounts)
+  order_discounted_price: number; // Price after seller discount (base for fee calculation)
+  seller_discount: number; // Seller-provided discount (e.g., 2% for buying more items)
+}
+
+interface ShopeeEscrowDetailResponse {
+  response: {
+    order_sn: string;
+    buyer_payment_info?: {
+      buyer_total_amount?: number;
+      seller_voucher?: number;
+      shopee_voucher?: number;
+      merchant_subtotal?: number;
+      shipping_fee?: number;
+      [key: string]: unknown;
+    };
+    order_income?: {
+      voucher_from_seller?: number;
+      voucher_from_shopee?: number;
+      seller_voucher_code?: string[];
+      original_shopee_discount?: number;
+      escrow_amount?: number;
+      buyer_total_amount?: number;
+      actual_shipping_fee?: number;
+      commission_fee?: number;
+      service_fee?: number;
+      items?: Array<{
+        discount_from_voucher_seller?: number;
+        discount_from_voucher_shopee?: number;
+        [key: string]: unknown;
+      }>;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  error?: string;
+  message?: string;
+}
+
+/**
+ * Busca detalhes de escrow/pagamento de um pedido, incluindo breakdown de vouchers
+ * @param orderSn - ID do pedido
+ * @returns Detalhes financeiros incluindo voucher_from_seller e voucher_from_shopee
+ */
+export async function getShopeeEscrowDetail(orderSn: string): Promise<ShopeeEscrowDetail | null> {
+  try {
+    const path = '/payment/get_escrow_detail';
+
+    const data = await shopeeRequest<ShopeeEscrowDetailResponse>(
+      path,
+      { order_sn: orderSn }
+    );
+
+    const resp = data.response;
+
+    if (!resp || !resp.order_sn) {
+      console.warn(`[Shopee Escrow] No escrow data for order ${orderSn}`);
+      return null;
+    }
+
+    // Extract data from order_income (where the voucher breakdown actually lives)
+    const orderIncome = resp.order_income || {};
+
+    const result: ShopeeEscrowDetail = {
+      order_sn: resp.order_sn,
+      voucher_from_seller: orderIncome.voucher_from_seller ?? 0,
+      voucher_from_shopee: orderIncome.voucher_from_shopee ?? 0,
+      seller_voucher_code: orderIncome.seller_voucher_code ?? [],
+      original_shopee_discount: orderIncome.original_shopee_discount ?? 0,
+      total_discount_seller_provided: 0, // Calculate from items if needed
+      escrow_amount: orderIncome.escrow_amount ?? 0,
+      buyer_total_amount: orderIncome.buyer_total_amount ?? 0,
+      actual_shipping_fee: orderIncome.actual_shipping_fee ?? 0,
+      commission_fee: orderIncome.commission_fee ?? 0,
+      service_fee: orderIncome.service_fee ?? 0,
+      ams_commission_fee: (orderIncome as any).order_ams_commission_fee ?? 0, // Affiliate commission
+      order_selling_price: (orderIncome as any).order_selling_price ?? 0, // Selling price after bulk discounts
+      order_discounted_price: (orderIncome as any).order_discounted_price ?? 0, // Price after seller discount (base for fee calc)
+      seller_discount: (orderIncome as any).seller_discount ?? 0, // Seller-provided discount (e.g., 2%)
+    };
+
+    // Log when there's a seller voucher
+    if (result.voucher_from_seller > 0) {
+      console.log(`[Shopee Escrow] Order ${orderSn} has seller voucher: R$ ${result.voucher_from_seller} (code: ${result.seller_voucher_code.join(', ')})`);
+    }
+
+    // Log when there's an affiliate commission
+    if (result.ams_commission_fee > 0) {
+      console.log(`[Shopee Escrow] Order ${orderSn} has affiliate commission: R$ ${result.ams_commission_fee}`);
+    }
+
+    // Log when there's a seller discount
+    if (result.seller_discount > 0) {
+      console.log(`[Shopee Escrow] Order ${orderSn} has seller discount: R$ ${result.seller_discount}`);
+    }
+
+    // DEBUG: Log all fees and pricing fields
+    const pricing = {
+      order_original_price: (orderIncome as any).order_original_price,
+      order_discounted_price: (orderIncome as any).order_discounted_price,
+      order_selling_price: (orderIncome as any).order_selling_price,
+      order_seller_discount: (orderIncome as any).order_seller_discount,
+      seller_discount: (orderIncome as any).seller_discount,
+      cost_of_goods_sold: (orderIncome as any).cost_of_goods_sold,
+    };
+    console.log(`[Shopee Escrow PRICES] Order ${orderSn}:`, JSON.stringify(pricing));
+    console.log(`[Shopee Escrow FEES] Order ${orderSn}: commission=${result.commission_fee}, service=${result.service_fee}, ams=${result.ams_commission_fee}, shipping=${result.actual_shipping_fee}, escrow=${result.escrow_amount}`);
+
+    return result;
+  } catch (err) {
+    console.error(`[Shopee Escrow] Error fetching escrow for ${orderSn}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Busca detalhes de escrow para múltiplos pedidos em batch
+ * @param orderSnList - Lista de order_sn
+ * @returns Map de order_sn para escrow details
+ */
+export async function getShopeeEscrowDetailsForOrders(
+  orderSnList: string[]
+): Promise<Map<string, ShopeeEscrowDetail>> {
+  const results = new Map<string, ShopeeEscrowDetail>();
+
+  // A API get_escrow_detail aceita apenas um pedido por vez
+  // Processamos em paralelo com limite de concorrência
+  const CONCURRENCY = 5;
+  const batches: string[][] = [];
+
+  for (let i = 0; i < orderSnList.length; i += CONCURRENCY) {
+    batches.push(orderSnList.slice(i, i + CONCURRENCY));
+  }
+
+  for (const batch of batches) {
+    const promises = batch.map(async (orderSn) => {
+      const escrow = await getShopeeEscrowDetail(orderSn);
+      if (escrow) {
+        results.set(orderSn, escrow);
+      }
+    });
+
+    await Promise.all(promises);
+
+    // Rate limiting entre batches
+    if (batches.indexOf(batch) < batches.length - 1) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  return results;
+}

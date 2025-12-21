@@ -66,6 +66,10 @@ export async function POST(request: NextRequest) {
         // 1. Parse file
         const parseResult = await parsePaymentFile(file, marketplace);
 
+        // Clear cache to ensure we have the latest config
+        const { clearFeeConfigCache } = await import('@/lib/marketplace-fees');
+        clearFeeConfigCache(marketplace);
+
         if (!parseResult.success || parseResult.payments.length === 0) {
             return NextResponse.json({
                 success: false,
@@ -110,22 +114,103 @@ export async function POST(request: NextRequest) {
                 .from('marketplace_order_links')
                 .select(`
                     tiny_order_id,
-                    product_count,
-                    is_kit,
-                    uses_free_shipping,
-                    is_campaign_order,
                     tiny_orders!inner(
                         id,
                         numero_pedido,
                         cliente_nome,
                         valor_total_pedido,
                         valor,
-                        valor_frete
+                        valor_frete,
+                        data_criacao
                     )
                 `)
                 .eq('marketplace', marketplace)
                 .eq('marketplace_order_id', payment.marketplaceOrderId)
                 .maybeSingle();
+
+            // Get product count and original order value from shopee_order_items for Shopee orders
+            // We use discounted_price (seller's price after seller discount, before customer coupons)
+            // because that's what Shopee calculates fees on
+            let productCount = 1;
+            let shopeeOrderValue: number | null = null;
+            let voucherFromSeller = 0;
+            let voucherFromShopee = 0;
+            let amsCommissionFee = 0;
+            let orderSellingPrice = 0;
+            let orderDiscountedPrice = 0; // Base value for fee calculation (after seller discount)
+            let sellerDiscount = 0;
+            let escrowAmount = 0;
+
+            if (marketplace === 'shopee' && payment.marketplaceOrderId) {
+                // Get items for product count and base value
+                const { data: itemsData, error: itemsError } = await supabaseAdmin
+                    .from('shopee_order_items')
+                    .select('quantity, discounted_price, original_price')
+                    .eq('order_sn', payment.marketplaceOrderId);
+
+                console.log(`[Preview] Order ${payment.marketplaceOrderId}: shopee_order_items query result:`,
+                    itemsData ? `${itemsData.length} items found` : 'no data',
+                    itemsError ? `Error: ${itemsError.message}` : '');
+
+                if (itemsData && itemsData.length > 0) {
+                    productCount = itemsData.reduce((sum, item) => sum + (item.quantity || 1), 0);
+                    // Sum up discounted_price × quantity for each item
+                    shopeeOrderValue = itemsData.reduce((sum, item) => {
+                        const price = item.discounted_price || item.original_price || 0;
+                        const qty = item.quantity || 1;
+                        return sum + (price * qty);
+                    }, 0);
+                }
+
+                // Get voucher and affiliate data from shopee_orders (if available)
+                const { data: shopeeOrderData } = await supabaseAdmin
+                    .from('shopee_orders')
+                    .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount')
+                    .eq('order_sn', payment.marketplaceOrderId)
+                    .maybeSingle();
+
+                // Access fields directly (they may not exist in types until regenerated)
+                const escrowData = shopeeOrderData as any;
+                if (escrowData?.voucher_from_seller) {
+                    voucherFromSeller = Number(escrowData.voucher_from_seller) || 0;
+                }
+
+                // Get affiliate commission (AMS = Affiliate Marketing Solutions)
+                if (escrowData?.ams_commission_fee) {
+                    amsCommissionFee = Number(escrowData.ams_commission_fee) || 0;
+                }
+
+                // Get order prices and discounts
+                if (escrowData?.order_selling_price) {
+                    orderSellingPrice = Number(escrowData.order_selling_price) || 0;
+                }
+                if (escrowData?.order_discounted_price) {
+                    orderDiscountedPrice = Number(escrowData.order_discounted_price) || 0;
+                }
+                if (escrowData?.seller_discount) {
+                    sellerDiscount = Number(escrowData.seller_discount) || 0;
+                }
+                if (escrowData?.escrow_amount) {
+                    escrowAmount = Number(escrowData.escrow_amount) || 0;
+                }
+                if (escrowData?.voucher_from_shopee) {
+                    voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
+                }
+
+                // Add automatic tags based on escrow data
+                if (voucherFromSeller > 0) {
+                    tagResult.tags.push('cupom loja');
+                }
+                if (amsCommissionFee > 0) {
+                    tagResult.tags.push('comissão afiliado');
+                }
+                if (sellerDiscount > 0) {
+                    tagResult.tags.push('leve mais pague menos');
+                }
+
+                // Note: voucher and ams_commission are passed separately to the fee calculation
+                console.log(`[Preview] Order ${payment.marketplaceOrderId}: productCount=${productCount}, orderSellingPrice=${orderSellingPrice}, orderDiscountedPrice=${orderDiscountedPrice}, sellerDiscount=${sellerDiscount}, escrowAmount=${escrowAmount}`);
+            }
 
             // Calculate expected fees if order is linked
             let valorEsperado: number | undefined;
@@ -133,18 +218,78 @@ export async function POST(request: NextRequest) {
 
             if (linkData && linkData.tiny_orders) {
                 try {
+                    // Use order date from Tiny (data_criacao) to determine campaign period
+                    const orderDateStr = (linkData as any).tiny_orders.data_criacao || payment.paymentDate;
+                    const orderDate = orderDateStr ? new Date(orderDateStr) : new Date();
+
+                    // For Shopee, use order_discounted_price as the base for fee calculation
+                    // order_discounted_price = order_selling_price - seller_discount
+                    // This is what Shopee actually uses to calculate commission and service fees
+                    // For other marketplaces, use Tiny value
+                    let orderValue: number;
+                    if (marketplace === 'shopee') {
+                        if (orderDiscountedPrice > 0) {
+                            // Primary: use order_discounted_price (exactly what Shopee charges fees on)
+                            orderValue = orderDiscountedPrice;
+                        } else if (orderSellingPrice > 0) {
+                            // Fallback: use order_selling_price minus seller_discount
+                            orderValue = orderSellingPrice - sellerDiscount;
+                        } else if (shopeeOrderValue !== null && shopeeOrderValue > 0) {
+                            // Fallback: use calculated value from items
+                            orderValue = shopeeOrderValue;
+                        } else {
+                            // Last resort: use Tiny value minus freight
+                            orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
+                        }
+                    } else {
+                        orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
+                    }
+
                     const feeCalc = await calculateMarketplaceFees({
                         marketplace: marketplace as 'shopee' | 'mercado_livre' | 'magalu',
-                        orderDate: payment.paymentDate ? new Date(payment.paymentDate) : new Date(),
-                        orderValue: Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0)),
-                        productCount: (linkData as any).product_count || 1,
-                        isKit: (linkData as any).is_kit || false,
-                        usesFreeShipping: (linkData as any).uses_free_shipping || false,
-                        isCampaignOrder: (linkData as any).is_campaign_order || false,
+                        orderDate: orderDate,
+                        orderValue: orderValue,
+                        productCount: productCount,
+                        isKit: false, // Would need marketplace_kit_components check
+                        usesFreeShipping: undefined, // Use global config
+                        isCampaignOrder: false,
+                        sellerVoucher: marketplace === 'shopee' ? voucherFromSeller : undefined,
+                        amsCommissionFee: marketplace === 'shopee' ? amsCommissionFee : undefined,
+                        // Note: seller_discount is NOT passed here because it's already reflected in order_selling_price
+                    });
+
+                    console.log(`[Preview] Order ${payment.marketplaceOrderId} fee calculation result:`, {
+                        grossValue: feeCalc.grossValue,
+                        commissionFee: feeCalc.commissionFee,
+                        campaignFee: feeCalc.campaignFee,
+                        fixedCost: feeCalc.fixedCost,
+                        sellerVoucher: feeCalc.sellerVoucher,
+                        amsCommissionFee: feeCalc.amsCommissionFee,
+                        totalFees: feeCalc.totalFees,
+                        netValue: feeCalc.netValue,
+                        inputOrderValue: orderValue,
                     });
 
                     valorEsperado = feeCalc.netValue;
-                    feesBreakdown = feeCalc;
+
+                    // Build extended fees breakdown with all data for transparency
+                    feesBreakdown = {
+                        ...feeCalc,
+                        // Additional context for UI
+                        productCount,
+                        // Shopee escrow data from API
+                        shopeeData: marketplace === 'shopee' ? {
+                            orderSellingPrice,
+                            orderDiscountedPrice, // Base value for fee calculation
+                            sellerDiscount,
+                            escrowAmount,
+                            voucherFromSeller,
+                            voucherFromShopee,
+                            amsCommissionFee,
+                            // Calculate the difference between our calculation and Shopee's escrow
+                            escrowDifference: escrowAmount > 0 ? feeCalc.netValue - escrowAmount : 0,
+                        } : undefined,
+                    };
                 } catch (error) {
                     console.error('[Preview API] Fee calculation error:', error);
                 }
