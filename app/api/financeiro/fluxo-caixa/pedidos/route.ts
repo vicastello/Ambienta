@@ -298,7 +298,7 @@ export async function GET(request: NextRequest) {
             // Fetch Orders Data (financials)
             const { data: sOrders } = await supabaseAdmin
                 .from('shopee_orders')
-                .select('order_sn, order_selling_price, seller_discount, voucher_from_seller, ams_commission_fee, escrow_amount, order_discounted_price, voucher_from_shopee')
+                .select('order_sn, order_selling_price, seller_discount, voucher_from_seller, ams_commission_fee, escrow_amount, order_discounted_price, voucher_from_shopee, total_amount')
                 .in('order_sn', shopeeOrderIds) as any;
 
             if (sOrders) {
