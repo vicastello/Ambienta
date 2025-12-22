@@ -340,8 +340,10 @@ export async function GET(request: NextRequest) {
 
             const vTotal = Number(order.valor || order.valor_total_pedido || 0);
             const vFrete = Number(order.valor_frete || 0);
-            const valorOriginal = vTotal; // The original total is still the same for display
             const baseTaxas = Math.max(0, vTotal - vFrete); // Base for fees is total minus freight
+            // valorOriginal now represents PRODUCTS ONLY (not including shipping)
+            // For Shopee, we'll override with order_selling_price if available
+            let valorOriginal = baseTaxas;
 
             // If we have matched payments (array), calculate the Effective Net Amount
             // Sum of all payments linked to this order (handling adjustments)
@@ -411,6 +413,9 @@ export async function GET(request: NextRequest) {
                         if (sOrder && sItems && sItems.length > 0) {
                             const orderSellingPrice = Number(sOrder.order_selling_price) || baseTaxas;
                             const totalSellerDiscount = Number(sOrder.seller_discount) || 0;
+
+                            // Override valorOriginal with Shopee's order_selling_price (products only)
+                            valorOriginal = orderSellingPrice;
 
                             // CALCULATE FEE BASE (Validation Mode)
                             // We calculate the component of the discount that applies to the Fee Base.
@@ -609,8 +614,9 @@ export async function GET(request: NextRequest) {
         const processSummaryItem = async (o: any) => {
             const vTotal = Number(o.valor || o.valor_total_pedido || 0);
             const vFrete = Number(o.valor_frete || 0);
-            const valorOriginal = vTotal;
             const baseTaxas = Math.max(0, vTotal - vFrete);
+            // valorOriginal = products value only (without shipping)
+            let valorOriginal = baseTaxas;
 
             // Re-calculate fee if there's an override for summary accuracy
             let vEsperado: number | undefined;
@@ -677,6 +683,11 @@ export async function GET(request: NextRequest) {
                                 const orderSellingPrice = Number(sOrder?.order_selling_price) || (Number(o.valor) || baseTaxas);
                                 const totalSellerDiscount = Number(sOrder?.seller_discount) || 0;
                                 feeBase = orderSellingPrice;
+
+                                // Override valorOriginal with Shopee's order_selling_price (products only)
+                                if (sOrder?.order_selling_price) {
+                                    valorOriginal = orderSellingPrice;
+                                }
 
                                 // Helper logic to isolate Bundle Deal discount
                                 if (sOrder && sItems && sItems.length > 0) {
