@@ -234,7 +234,7 @@ export default function FeeBreakdownCard({
                                     />
                                     <FeeRow
                                         label="Base para Cálculo"
-                                        value={breakdown.grossValue}
+                                        value={shopeeData.orderSellingPrice - shopeeData.sellerDiscount}
                                         isNegative={false}
                                         isSubtotal
                                         color="green"
