@@ -409,25 +409,43 @@ export async function GET(request: NextRequest) {
                         }
 
                         if (sOrder && sItems && sItems.length > 0) {
-                            // CRITICAL FIX: Use Shopee's order_selling_price as the fee base
-                            if (sOrder.order_selling_price) {
-                                feeBase = Number(sOrder.order_selling_price) || baseTaxas;
-                            }
+                            const orderSellingPrice = Number(sOrder.order_selling_price) || baseTaxas;
+                            const totalSellerDiscount = Number(sOrder.seller_discount) || 0;
 
-                            // BUNDLE DEAL DETECTION (Leve Mais Pague Menos)
-                            // When promotion_type is "bundle_deal", Shopee calculates commission
-                            // on the discounted value (after seller_discount)
-                            // For other promotions (flash_sale, etc.), commission is on full price
-                            const hasBundleDeal = sItems.some((item: any) =>
-                                item.raw_payload?.promotion_type === 'bundle_deal' ||
-                                item.is_wholesale === true
-                            );
+                            // CALCULATE FEE BASE (Validation Mode)
+                            // We calculate the component of the discount that applies to the Fee Base.
+                            // Shopee Logic:
+                            // - Flash Sale discounts are NOT subtracted from the base (Base = Discounted Price)
+                            // - Bundle Deal discounts ARE subtracted from the base
+                            // - Total Seller Discount = Flash Sale Disc + Bundle Disc
 
-                            if (hasBundleDeal && sOrder.seller_discount) {
-                                const sellerDiscount = Number(sOrder.seller_discount) || 0;
-                                if (sellerDiscount > 0 && sellerDiscount < feeBase) {
-                                    feeBase = feeBase - sellerDiscount;
+                            const nonBundleDiscounts = sItems.reduce((acc: number, item: any) => {
+                                // If item is NOT in a bundle deal, its discount ("Flash Sale" etc) is likely part of the Non-Base-Reducing discounts
+                                if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
+                                    const orig = Number(item.original_price) || 0;
+                                    const disc = Number(item.discounted_price) || 0;
+                                    if (orig > 0 && disc > 0 && orig > disc) {
+                                        return acc + (orig - disc);
+                                    }
                                 }
+                                return acc;
+                            }, 0);
+
+                            // The discount that SHOULD reduce the base is the Total Discount minus Non-Bundle (Flash) discounts
+                            // Clamp to 0 just in case
+                            const effectiveBundleDiscount = Math.max(0, totalSellerDiscount - nonBundleDiscounts);
+
+                            // Calculated Base
+                            const calculatedFeeBase = orderSellingPrice - effectiveBundleDiscount;
+
+                            // Use the calculated base (User Request: "We calculate to ensure correct logic")
+                            feeBase = calculatedFeeBase;
+
+                            // Fallback/Safety: If calculation is wildly off from order_discounted_price (if available), 
+                            // we might want to warn, but for now we trust our logic which fixes the Flash Sale vs Bundle Deal conflict.
+                            if (sOrder.order_discounted_price && Number(sOrder.order_discounted_price) > 0) {
+                                // Optional: Log discrepancy if needed
+                                // console.log(`[FeeCalc] Calc: ${calculatedFeeBase}, Shopee: ${sOrder.order_discounted_price}`);
                             }
 
                             // 1. Calculate calculated order value (sum of items)
@@ -649,23 +667,26 @@ export async function GET(request: NextRequest) {
                                     }
                                 }
 
-                                // CRITICAL FIX: Use order_selling_price as the fee base for Shopee
-                                if (sOrder?.order_selling_price) {
-                                    feeBase = Number(sOrder.order_selling_price) || baseTaxas;
-                                }
+                                // CRITICAL FIX: Use calculated fee base to ensure correctness across Flash Sale / Bundle Deals
+                                const orderSellingPrice = Number(sOrder?.order_selling_price) || (Number(o.valor) || baseTaxas);
+                                const totalSellerDiscount = Number(sOrder?.seller_discount) || 0;
+                                feeBase = orderSellingPrice;
 
-                                // BUNDLE DEAL DETECTION (Leve Mais Pague Menos)
-                                // Only subtract seller_discount for bundle_deal promotions
-                                const hasBundleDeal = sItems?.some((item: any) =>
-                                    item.raw_payload?.promotion_type === 'bundle_deal' ||
-                                    item.is_wholesale === true
-                                );
+                                // Helper logic to isolate Bundle Deal discount
+                                if (sOrder && sItems && sItems.length > 0) {
+                                    const nonBundleDiscounts = sItems.reduce((acc: number, item: any) => {
+                                        if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
+                                            const orig = Number(item.original_price) || 0;
+                                            const disc = Number(item.discounted_price) || 0;
+                                            if (orig > 0 && disc > 0 && orig > disc) {
+                                                return acc + (orig - disc);
+                                            }
+                                        }
+                                        return acc;
+                                    }, 0);
 
-                                if (hasBundleDeal && sOrder?.seller_discount) {
-                                    const sellerDiscount = Number(sOrder.seller_discount) || 0;
-                                    if (sellerDiscount > 0 && sellerDiscount < feeBase) {
-                                        feeBase = feeBase - sellerDiscount;
-                                    }
+                                    const effectiveBundleDiscount = Math.max(0, totalSellerDiscount - nonBundleDiscounts);
+                                    feeBase = orderSellingPrice - effectiveBundleDiscount;
                                 }
 
                                 // Extract AMS Commission for more accurate pending value estimation

@@ -1,10 +1,21 @@
 #!/usr/bin/env npx tsx
-import { config } from 'dotenv';
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Carregar .env.local
-config({ path: '.env.local' });
+// Load .env.vercel for Supabase, then .env.local for Shopee (overrides)
+const envVercelPath = path.resolve(process.cwd(), '.env.vercel');
+if (fs.existsSync(envVercelPath)) {
+  const envConfig = dotenv.parse(fs.readFileSync(envVercelPath));
+  for (const k in envConfig) process.env[k] = envConfig[k];
+}
+const envLocalPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(envLocalPath)) {
+  const envConfig = dotenv.parse(fs.readFileSync(envLocalPath));
+  for (const k in envConfig) process.env[k] = envConfig[k];
+}
 
 const SHOPEE_BASE_URL = 'https://partner.shopeemobile.com';
 
@@ -101,7 +112,7 @@ async function getOrderList(timeFrom: number, timeTo: number, cursor?: string): 
 
 async function getOrderDetails(orderSns: string[]): Promise<any[]> {
   if (orderSns.length === 0) return [];
-  
+
   const response = await shopeeRequest<OrderDetailResponse>('/order/get_order_detail', {
     order_sn_list: orderSns.join(','),
     response_optional_fields: 'buyer_user_id,buyer_username,recipient_address,total_amount,item_list',
@@ -126,12 +137,12 @@ function sleep(ms: number) {
 
 function extractCityState(fullAddress: string | undefined): { city: string | null; state: string | null } {
   if (!fullAddress) return { city: null, state: null };
-  
+
   const patterns = [
     /[-,]\s*([^-,]+)\s*[-/]\s*([A-Z]{2})\s*$/i,
     /\b([A-Za-zÀ-ÿ\s]+)\s*[-/]\s*([A-Z]{2})\s*$/i,
   ];
-  
+
   for (const pattern of patterns) {
     const match = fullAddress.match(pattern);
     if (match) {
@@ -141,7 +152,7 @@ function extractCityState(fullAddress: string | undefined): { city: string | nul
       };
     }
   }
-  
+
   return { city: null, state: null };
 }
 
@@ -150,7 +161,7 @@ function mapOrderToDb(order: any) {
   const orderIncome = order.order_income || {};
   const orderDiscounted = Number(orderIncome.order_discounted_price || order.total_amount || 0) || 0;
   const buyerTotal = Number(orderIncome.buyer_total_amount || orderDiscounted || 0) || 0;
-  
+
   return {
     order_sn: order.order_sn,
     shop_id: parseInt(shopId, 10),
@@ -169,6 +180,18 @@ function mapOrderToDb(order: any) {
     recipient_city: city,
     recipient_state: state,
     raw_payload: order,
+
+    // Store detailed financial info for accurate fee calculation
+    order_selling_price: orderIncome.order_selling_price || 0,
+    seller_discount: orderIncome.seller_discount || 0,
+    order_discounted_price: orderIncome.order_discounted_price || 0,
+    escrow_amount: orderIncome.escrow_amount || 0,
+    voucher_from_seller: orderIncome.voucher_from_seller || 0,
+    voucher_from_shopee: orderIncome.voucher_from_shopee || 0,
+    commission_fee: orderIncome.commission_fee || 0,
+    service_fee: orderIncome.service_fee || 0,
+    ams_commission_fee: orderIncome.ams_commission_fee || 0,
+    seller_voucher_code: orderIncome.seller_voucher_code || [],
   };
 }
 
@@ -223,7 +246,7 @@ function mapItemsToDb(order: any): any[] {
 
 async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, totalChunks: number): Promise<number> {
   console.log(`\n[Chunk ${chunkNum}/${totalChunks}] ${new Date(timeFrom * 1000).toISOString().split('T')[0]} → ${new Date(timeTo * 1000).toISOString().split('T')[0]}`);
-  
+
   const allOrderSns: string[] = [];
   let cursor: string | undefined;
   let page = 0;
@@ -233,14 +256,14 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
     page++;
     const response = await getOrderList(timeFrom, timeTo, cursor);
     const orders = response.response?.order_list || [];
-    
+
     if (orders.length > 0) {
       allOrderSns.push(...orders.map(o => o.order_sn));
       console.log(`  Página ${page}: +${orders.length} pedidos (total: ${allOrderSns.length})`);
     }
 
     cursor = response.response?.more ? response.response?.next_cursor : undefined;
-    
+
     if (cursor) await sleep(300);
   } while (cursor);
 
@@ -253,8 +276,8 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
   const allOrders: any[] = [];
   for (let i = 0; i < allOrderSns.length; i += 50) {
     const batch = allOrderSns.slice(i, i + 50);
-    console.log(`  Detalhes batch ${Math.floor(i/50)+1}/${Math.ceil(allOrderSns.length/50)} (${batch.length} pedidos)`);
-    
+    console.log(`  Detalhes batch ${Math.floor(i / 50) + 1}/${Math.ceil(allOrderSns.length / 50)} (${batch.length} pedidos)`);
+
     try {
       const details = await getOrderDetails(batch);
       for (const order of details) {
@@ -271,7 +294,7 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
     } catch (err: any) {
       console.error(`  Erro ao buscar detalhes: ${err.message}`);
     }
-    
+
     await sleep(300);
   }
 
@@ -285,7 +308,7 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
     const { error } = await supabase
       .from('shopee_orders')
       .upsert(batch as any, { onConflict: 'order_sn' });
-    
+
     if (error) {
       console.error(`  Erro ao salvar pedidos: ${error.message}`);
     }
@@ -298,7 +321,7 @@ async function syncPeriod(timeFrom: number, timeTo: number, chunkNum: number, to
       const { error } = await supabase
         .from('shopee_order_items')
         .upsert(batch as any, { onConflict: 'order_sn,item_id,model_id' });
-      
+
       if (error) {
         console.error(`  Erro ao salvar itens: ${error.message}`);
       }
@@ -339,7 +362,7 @@ async function main() {
     const chunk = chunks[i];
     const count = await syncPeriod(chunk.from, chunk.to, i + 1, chunks.length);
     totalOrders += count;
-    
+
     // Delay entre chunks
     if (i < chunks.length - 1) {
       await sleep(500);
