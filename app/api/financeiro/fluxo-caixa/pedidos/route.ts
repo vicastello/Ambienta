@@ -401,7 +401,7 @@ export async function GET(request: NextRequest) {
                         // ALWAYS prefer real item count from Shopee over link data
                         // This fixes cases where link has product_count: 1 but order has 2+ items
                         if (sItems && sItems.length > 0) {
-                            const realItemCount = sItems.reduce((acc: number, i: any) => acc + (i.quantity || 1), 0);
+                            const realItemCount = sItems.reduce((acc: number, i: any) => acc + (Number(i.quantity) || 1), 0);
                             // Override if link is missing/wrong (link says 1 but items say more)
                             if (!linkData?.product_count || realItemCount > (linkData?.product_count || 1)) {
                                 productCount = realItemCount;
@@ -451,7 +451,7 @@ export async function GET(request: NextRequest) {
                             // 1. Calculate calculated order value (sum of items)
                             const shopeeOrderValue = sItems.reduce((sum: number, item: any) => {
                                 const price = item.discounted_price || item.original_price || 0;
-                                const qty = item.quantity || 1;
+                                const qty = Number(item.quantity) || 1;
                                 return sum + (price * qty);
                             }, 0);
 
@@ -462,7 +462,7 @@ export async function GET(request: NextRequest) {
                                 if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
                                     // Refund detected! Calculate ratio and adjust count
                                     const refundRatio = actualOrderValue / shopeeOrderValue;
-                                    const originalCount = sItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+                                    const originalCount = sItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 1), 0);
                                     const adjustedCount = Math.round(originalCount * refundRatio);
                                     productCount = Math.max(1, adjustedCount);
                                 }
@@ -660,7 +660,7 @@ export async function GET(request: NextRequest) {
                                 const sOrder = shopeeOrdersMap.get(o.numero_pedido_ecommerce);
 
                                 if (sItems && sItems.length > 0) {
-                                    const realItemCount = sItems.reduce((acc: number, i: any) => acc + (i.quantity || 1), 0);
+                                    const realItemCount = sItems.reduce((acc: number, i: any) => acc + (Number(i.quantity) || 1), 0);
                                     // Override if link is missing/wrong (link says 1 but items say more)
                                     if (!linkData?.product_count || realItemCount > (linkData?.product_count || 1)) {
                                         productCount = realItemCount;
