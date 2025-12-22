@@ -202,23 +202,28 @@ export default function FeeBreakdownCard({
                         <SectionHeader title="Valor Base" icon="💰" />
                         <div className="bg-white/5 rounded-2xl p-2 border border-white/5">
                             {/* Show refund information if there was a return */}
-                            {isShopee && shopeeData.refundAmount > 0 && (
+                            {isShopee && shopeeData.refundAmount > 0 ? (
                                 <>
                                     <FeeRow
-                                        label={`Valor Original (${shopeeData.originalProductCount} itens)`}
+                                        label="Valor Total Produtos"
                                         value={shopeeData.originalOrderValue || 0}
                                         isNegative={false}
                                         color="default"
                                     />
                                     <FeeRow
-                                        label="Devolução"
+                                        label="Reembolso"
                                         value={shopeeData.refundAmount}
                                         color="orange"
-                                        subLabel={`${shopeeData.originalProductCount - (breakdown.productCount || 1)} item(ns) devolvido(s)`}
+                                    />
+                                    <FeeRow
+                                        label="Preço de Venda"
+                                        value={shopeeData.orderSellingPrice}
+                                        isNegative={false}
+                                        isSubtotal
+                                        color="green"
                                     />
                                 </>
-                            )}
-                            {isShopee && shopeeData.sellerDiscount > 0 && shopeeData.isLeveMaisPagueMenos ? (
+                            ) : isShopee && shopeeData.sellerDiscount > 0 && shopeeData.isLeveMaisPagueMenos ? (
                                 <>
                                     <FeeRow
                                         label="Preço de Venda"
