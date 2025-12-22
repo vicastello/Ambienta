@@ -5,6 +5,7 @@ import { ReadonlyURLSearchParams } from 'next/navigation';
 import { listManualEntries, markEntryAsPaid, deleteManualEntry, updateManualEntry } from '../../actions';
 import { Loader2, Trash2, CheckCircle2, Clock, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, Edit2, Circle, Minus, CreditCard, Download, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getTagColor, formatTagName } from '@/lib/tagColors';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -27,6 +28,7 @@ interface ManualEntry {
     entity_type?: string;
     tags?: string[];
     paid_date?: string;
+    source?: 'manual' | 'import';
 }
 
 interface ManualEntriesTableProps {
@@ -442,7 +444,7 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
         <>
             <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
-                    Lançamentos Manuais
+                    Lançamentos
                     <span className="ml-2 text-sm font-normal text-slate-400">({entries.length})</span>
                 </h3>
 
@@ -585,43 +587,59 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
                                                         </button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="center" className="min-w-[160px]">
-                                                        {entry.status !== 'confirmed' && (
-                                                            <DropdownMenuItem
-                                                                onClick={() => handleMarkAsPaid(entry.id)}
-                                                                className="flex items-center gap-2 text-emerald-600"
-                                                            >
-                                                                <CheckCircle2 className="w-4 h-4" />
-                                                                Marcar como Pago
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                        {entry.status === 'confirmed' && (
-                                                            <DropdownMenuItem
-                                                                onClick={() => handleMarkAsPending(entry.id)}
-                                                                className="flex items-center gap-2 text-amber-600"
-                                                            >
-                                                                <Clock className="w-4 h-4" />
-                                                                Marcar como Pendente
-                                                            </DropdownMenuItem>
+                                                        {entry.source === 'import' ? (
+                                                            <div className="px-2 py-1.5 text-xs text-center text-muted">
+                                                                Importado automaticamente
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                {entry.status !== 'confirmed' && (
+                                                                    <DropdownMenuItem
+                                                                        onClick={() => handleMarkAsPaid(entry.id)}
+                                                                        className="flex items-center gap-2 text-emerald-600"
+                                                                    >
+                                                                        <CheckCircle2 className="w-4 h-4" />
+                                                                        Marcar como Pago
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                                {entry.status === 'confirmed' && (
+                                                                    <DropdownMenuItem
+                                                                        onClick={() => handleMarkAsPending(entry.id)}
+                                                                        className="flex items-center gap-2 text-amber-600"
+                                                                    >
+                                                                        <Clock className="w-4 h-4" />
+                                                                        Marcar como Pendente
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                            </>
                                                         )}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             </td>
                                             <td className="py-4 px-6">
                                                 <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
-                                                    {(entry.tags || []).map((tag, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                                                        >
-                                                            {tag}
-                                                            <button
-                                                                onClick={() => removeTag(entry.id, tag)}
-                                                                className="hover:bg-primary-200 dark:hover:bg-primary-800 rounded-full p-0.5"
+                                                    {(entry.tags || []).map((tag, idx) => {
+                                                        const colors = getTagColor(tag);
+                                                        return (
+                                                            <span
+                                                                key={idx}
+                                                                className={cn(
+                                                                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
+                                                                    colors.bg,
+                                                                    colors.text,
+                                                                    colors.border
+                                                                )}
                                                             >
-                                                                <X className="w-3 h-3" />
-                                                            </button>
-                                                        </span>
-                                                    ))}
+                                                                {formatTagName(tag)}
+                                                                <button
+                                                                    onClick={() => removeTag(entry.id, tag)}
+                                                                    className={cn("rounded-full p-0.5 transition-colors opacity-60 hover:opacity-100", colors.text)}
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </span>
+                                                        );
+                                                    })}
                                                     {tagInputId === entry.id ? (
                                                         <input
                                                             autoFocus
@@ -660,16 +678,17 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
                                                 <div className="flex items-center justify-end gap-1">
                                                     <button
                                                         onClick={() => setEditingEntry(entry)}
-                                                        className="p-1.5 rounded-full hover:bg-primary-100 dark:hover:bg-primary-900/30 text-primary-600 transition-colors"
-                                                        title="Editar"
+                                                        disabled={entry.source === 'import'}
+                                                        className="p-1.5 rounded-full hover:bg-primary-100 dark:hover:bg-primary-900/30 text-primary-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                        title={entry.source === 'import' ? "Importado (somente leitura)" : "Editar"}
                                                     >
                                                         <Edit2 className="w-4 h-4" />
                                                     </button>
                                                     <button
                                                         onClick={() => handleDelete(entry.id, entry.description)}
-                                                        disabled={processing === entry.id}
-                                                        className="p-1.5 rounded-full hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600 transition-colors disabled:opacity-50"
-                                                        title="Excluir"
+                                                        disabled={processing === entry.id || entry.source === 'import'}
+                                                        className="p-1.5 rounded-full hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                                        title={entry.source === 'import' ? "Importado (somente leitura)" : "Excluir"}
                                                     >
                                                         {processing === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                                     </button>

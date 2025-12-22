@@ -134,35 +134,96 @@ export async function listManualEntries(filters?: {
     statusPagamento?: 'todos' | 'pagos' | 'pendentes';
     search?: string;
 }) {
+    // 1. Fetch Manual Entries
     let query = supabaseAdmin
         .from('cash_flow_entries')
         .select('*')
         .eq('source', 'manual');
 
-    // Apply date filters
-    if (filters?.dataInicio) {
-        query = query.gte('due_date', filters.dataInicio);
-    }
-    if (filters?.dataFim) {
-        query = query.lte('due_date', filters.dataFim);
-    }
+    // Apply date filters to manual entries
+    if (filters?.dataInicio) query = query.gte('due_date', filters.dataInicio);
+    if (filters?.dataFim) query = query.lte('due_date', filters.dataFim);
 
     // Apply status filter
-    if (filters?.statusPagamento === 'pagos') {
-        query = query.eq('status', 'confirmed');
-    } else if (filters?.statusPagamento === 'pendentes') {
-        query = query.in('status', ['pending', 'overdue']);
-    }
+    if (filters?.statusPagamento === 'pagos') query = query.eq('status', 'confirmed');
+    else if (filters?.statusPagamento === 'pendentes') query = query.in('status', ['pending', 'overdue']);
 
-    // Apply search filter (description or entity_name)
+    // Apply search
     if (filters?.search) {
         query = query.or(`description.ilike.%${filters.search}%,entity_name.ilike.%${filters.search}%`);
     }
 
-    query = query.order('due_date', { ascending: true }).limit(100);
+    const { data: manualEntries } = await query.order('due_date', { ascending: true }).limit(100);
 
-    const { data } = await query;
-    return data || [];
+    // 2. Fetch Orphan Import Entries (Marketplace Payments without tiny_order_id)
+    let importQuery = supabaseAdmin
+        .from('marketplace_payments')
+        .select('*')
+        .is('tiny_order_id', null);
+
+    // Apply date filters to import entries
+    if (filters?.dataInicio) importQuery = importQuery.gte('payment_date', filters.dataInicio);
+    if (filters?.dataFim) importQuery = importQuery.lte('payment_date', filters.dataFim);
+
+    // Apply status filter (all imports are confirmed/paid)
+    if (filters?.statusPagamento === 'pendentes') {
+        // If filtering for pending, imports (which are paid) should not be returned
+        // So we return only manual entries
+        return manualEntries || [];
+    }
+
+    if (filters?.search) {
+        importQuery = importQuery.or(`transaction_description.ilike.%${filters.search}%,description.ilike.%${filters.search}%`);
+    }
+
+    const { data: orphanPayments } = await importQuery.order('payment_date', { ascending: true }).limit(100);
+
+    // 3. Map orphans to ManualEntry shape
+    const mappedOrphans = (orphanPayments || []).map((p: any) => {
+        let description = p.transaction_description || p.description;
+
+        // Fallback to raw_data analysis if description is missing
+        if (!description && Array.isArray(p.raw_data) && p.raw_data.length > 2) {
+            // For Shopee, index 2 usually contains "Renda do pedido #ID" or "Adjustment..."
+            description = p.raw_data[2];
+        } else if (!description && Array.isArray(p.raw_data) && p.raw_data.length > 1) {
+            description = p.raw_data[1];
+        }
+
+        // Final fallback
+        if (!description) {
+            description = p.description || p.transaction_type || 'Lançamento Importado';
+            if (p.marketplace_order_id) {
+                description += ` (${p.marketplace_order_id})`;
+            }
+        }
+
+        return {
+            id: p.id,
+            description: description,
+            amount: Math.abs(p.net_amount || 0),
+            type: (p.net_amount || 0) >= 0 ? 'income' : 'expense',
+            status: 'confirmed', // Imports are always settled
+            due_date: p.payment_date,
+            competence_date: p.payment_date,
+            entity_name: p.marketplace ? p.marketplace.charAt(0).toUpperCase() + p.marketplace.slice(1) : 'Marketplace',
+            category: 'Marketplace',
+            subcategory: p.transaction_type || 'Importado',
+            tags: ['import', p.marketplace],
+            source: 'import'
+        };
+    });
+
+    // 4. Combine and Sort
+    const allEntries = [...(manualEntries || []), ...mappedOrphans];
+
+    // Sort by due_date desc (newest first usually better for mix) or asc as requested
+    // The previous implementation was 'asc'. Let's keep 'asc' but ensure stable sort.
+    return allEntries.sort((a, b) => {
+        const dateA = new Date(a.due_date).getTime();
+        const dateB = new Date(b.due_date).getTime();
+        return dateA - dateB;
+    });
 }
 
 /**

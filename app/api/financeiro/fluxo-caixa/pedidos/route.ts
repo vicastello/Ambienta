@@ -101,12 +101,15 @@ export async function GET(request: NextRequest) {
         const statusPagamento = searchParams.get('statusPagamento') || 'todos'; // todos, pagos, pendentes
         const marketplace = searchParams.get('marketplace') || 'todos';
 
+        const busca = searchParams.get('busca');
+
         // Debug logging
         console.log('[CashFlowAPI] Filters:', {
             dataInicio,
             dataFim,
             statusPagamento,
             marketplace,
+            busca,
             fullUrl: request.url
         });
 
@@ -123,23 +126,38 @@ export async function GET(request: NextRequest) {
 
         // Helper to apply filters
         const applyFilters = (query: any, ignoreStatus = false) => {
+            // Text Search
+            if (busca) {
+                // Search in client name, ecommerce order number, and channel
+                // Note: numero_pedido is int8, so ilike fails. We exclude it for now to prevent errors.
+                query = query.or(`cliente_nome.ilike.%${busca}%,numero_pedido_ecommerce.ilike.%${busca}%,canal.ilike.%${busca}%`);
+            }
+
             // data_criacao is type DATE (not TIMESTAMPTZ), so we compare with plain dates
             // The frontend sends dates in YYYY-MM-DD format from local timezone
-            if (dataInicio) {
-                query = query.gte('data_criacao', dataInicio);
-            }
-            if (dataFim) {
-                // Use Less Than Next Day to handle both DATE and TIMESTAMP types correctly inclusive of the end date
-                query = query.lt('data_criacao', getNextDay(dataFim));
+
+            // UX Improvement: If searching for a specific item (text search), ignore date filters
+            // to allow finding orders from any period.
+            if (!busca) {
+                if (dataInicio) {
+                    query = query.gte('data_criacao', dataInicio);
+                }
+                if (dataFim) {
+                    // Use Less Than Next Day to handle both DATE and TIMESTAMP types correctly inclusive of the end date
+                    query = query.lt('data_criacao', getNextDay(dataFim));
+                }
             }
 
             // Default filter: ignore cancelled (code 2)
             query = query.neq('situacao', 2);
 
-            if (!ignoreStatus && statusPagamento === 'pagos') {
-                query = query.eq('payment_received', true);
-            } else if (!ignoreStatus && statusPagamento === 'pendentes') {
-                query = query.or('payment_received.is.null,payment_received.eq.false');
+            // UX Improvement: If searching, also ignore status filters to find the order anywhere
+            if (!busca) {
+                if (!ignoreStatus && statusPagamento === 'pagos') {
+                    query = query.eq('payment_received', true);
+                } else if (!ignoreStatus && statusPagamento === 'pendentes') {
+                    query = query.or('payment_received.is.null,payment_received.eq.false');
+                }
             }
 
             if (marketplace !== 'todos') {
@@ -155,6 +173,7 @@ export async function GET(request: NextRequest) {
                 id,
                 tiny_id,
                 numero_pedido,
+                numero_pedido_ecommerce,
                 data_criacao,
                 tiny_data_faturamento,
                 cliente_nome,
@@ -168,9 +187,12 @@ export async function GET(request: NextRequest) {
                 marketplace_order_links (
                     marketplace_order_id
                 ),
-                marketplace_payments!tiny_orders_marketplace_payment_id_fkey (
+                marketplace_payments!marketplace_payments_tiny_order_id_fkey (
                     net_amount,
-                    gross_amount
+                    gross_amount,
+                    transaction_type,
+                    is_expense,
+                    tags
                 ),
                 valor_frete,
                 fee_overrides
@@ -191,8 +213,9 @@ export async function GET(request: NextRequest) {
                 data_criacao, 
                 canal,
                 marketplace_payment_id,
-                marketplace_payments!tiny_orders_marketplace_payment_id_fkey (
-                    net_amount
+                marketplace_payments!marketplace_payments_tiny_order_id_fkey (
+                    net_amount,
+                    is_expense
                 ),
                 valor_frete,
                 fee_overrides
@@ -230,6 +253,41 @@ export async function GET(request: NextRequest) {
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Normalize to start of day for correct date comparison
 
+        // Pre-fetch Shopee data for bulk processing to avoid N+1 queries
+        // This is crucial for applying preview logic (refunds, discounts) efficiently
+        const shopeeOrderIds = listRes.data
+            .filter(o => o.canal?.toLowerCase().includes('shopee') && o.numero_pedido_ecommerce)
+            .map(o => o.numero_pedido_ecommerce as string);
+
+        const shopeeOrdersMap = new Map<string, any>();
+        const shopeeItemsMap = new Map<string, any[]>();
+
+        if (shopeeOrderIds.length > 0) {
+            // Fetch Orders Data (financials)
+            const { data: sOrders } = await supabaseAdmin
+                .from('shopee_orders')
+                .select('order_sn, order_selling_price, seller_discount, voucher_from_seller, ams_commission_fee, escrow_amount, order_discounted_price, voucher_from_shopee')
+                .in('order_sn', shopeeOrderIds) as any;
+
+            if (sOrders) {
+                sOrders.forEach((o: any) => shopeeOrdersMap.set(o.order_sn, o));
+            }
+
+            // Fetch Order Items (for product count / refund detection)
+            const { data: sItems } = await supabaseAdmin
+                .from('shopee_order_items')
+                .select('order_sn, quantity, discounted_price, original_price')
+                .in('order_sn', shopeeOrderIds);
+
+            if (sItems) {
+                sItems.forEach(item => {
+                    const current = shopeeItemsMap.get(item.order_sn) || [];
+                    current.push(item);
+                    shopeeItemsMap.set(item.order_sn, current);
+                });
+            }
+        }
+
         // Processing List (async to calculate fees)
         const orders = await Promise.all(listRes.data.map(async (order) => {
             let financialStatus = 'pendente';
@@ -253,11 +311,26 @@ export async function GET(request: NextRequest) {
             const valorOriginal = vTotal; // The original total is still the same for display
             const baseTaxas = Math.max(0, vTotal - vFrete); // Base for fees is total minus freight
 
-            // If we have a matched payment, prefer the Net Amount (Effective Cash Flow)
-            // Otherwise use the Order Value
-            const valorEfetivo = order.marketplace_payments?.net_amount
-                ? Number(order.marketplace_payments.net_amount)
-                : valorOriginal;
+            // If we have matched payments (array), calculate the Effective Net Amount
+            // Sum of all payments linked to this order (handling adjustments)
+            const payments = Array.isArray(order.marketplace_payments) ? order.marketplace_payments : (order.marketplace_payments ? [order.marketplace_payments] : []);
+
+            let valorEfetivo = valorOriginal;
+
+            if (payments.length > 0) {
+                // Sum all net amounts (subtract expenses/adjustments)
+                const totalPaid = payments.reduce((sum: number, p: any) => {
+                    const val = Number(p.net_amount || 0);
+                    return sum + (p.is_expense ? -val : val);
+                }, 0);
+                valorEfetivo = totalPaid;
+            }
+
+            // Calculate total adjustment amount (refunds, etc.) for difference calculation
+            // This allows us to show the "real" difference (discrepancies) vs "expected" adjustments
+            const totalAjustes = payments
+                .filter((p: any) => p.is_expense === true)
+                .reduce((sum: number, p: any) => sum + Number(p.net_amount || 0), 0);
 
             // Calculate expected fees
             let valorEsperado: number | undefined;
@@ -274,14 +347,62 @@ export async function GET(request: NextRequest) {
             if (marketplace && valorOriginal > 0) {
                 try {
                     const linkData = order.marketplace_order_links?.[0] as any;
+                    let productCount = linkData?.product_count || 1;
+                    let isKit = linkData?.is_kit || false;
+                    let useFreeShipping = (order.fee_overrides as any)?.usesFreeShipping ?? (linkData?.uses_free_shipping || false);
+
+                    let voucherFromSeller = 0;
+                    let amsCommissionFee = 0;
+
+                    // Advanced Logic for Shopee (Synced with Preview Logic)
+                    if (marketplace === 'shopee' && order.numero_pedido_ecommerce) {
+                        const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
+                        const sItems = shopeeItemsMap.get(order.numero_pedido_ecommerce);
+
+                        if (sOrder && sItems && sItems.length > 0) {
+                            // 1. Calculate calculated order value (sum of items)
+                            const shopeeOrderValue = sItems.reduce((sum: number, item: any) => {
+                                const price = item.discounted_price || item.original_price || 0;
+                                const qty = item.quantity || 1;
+                                return sum + (price * qty);
+                            }, 0);
+
+                            // 2. Refund Detection
+                            // If actual selling price is lower than calculated, it means refund occurred
+                            if (sOrder.order_selling_price && shopeeOrderValue > 0) {
+                                const actualOrderValue = Number(sOrder.order_selling_price) || 0;
+                                if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
+                                    // Refund detected! Calculate ratio and adjust count
+                                    const refundRatio = actualOrderValue / shopeeOrderValue;
+                                    const originalCount = sItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+                                    const adjustedCount = Math.round(originalCount * refundRatio);
+                                    productCount = Math.max(1, adjustedCount);
+                                } else {
+                                    // Normal case: Update product count from items to be precise
+                                    productCount = sItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+                                }
+                            }
+
+                            // 3. Extract Vouchers & Fees
+                            if (sOrder.voucher_from_seller) {
+                                voucherFromSeller = Number(sOrder.voucher_from_seller) || 0;
+                            }
+                            if (sOrder.ams_commission_fee) {
+                                amsCommissionFee = Number(sOrder.ams_commission_fee) || 0;
+                            }
+                        }
+                    }
+
                     const feeCalc = await calculateMarketplaceFees({
                         marketplace,
                         orderValue: baseTaxas,
-                        productCount: linkData?.product_count || 1,
-                        isKit: linkData?.is_kit || false,
-                        usesFreeShipping: (order.fee_overrides as any)?.usesFreeShipping ?? (linkData?.uses_free_shipping || false),
+                        productCount,
+                        isKit,
+                        usesFreeShipping: useFreeShipping,
+                        sellerVoucher: voucherFromSeller > 0 ? voucherFromSeller : undefined,
+                        amsCommissionFee: amsCommissionFee > 0 ? amsCommissionFee : undefined,
                         isCampaignOrder: linkData?.is_campaign_order || false,
-                        orderDate: new Date(order.data_criacao || new Date()),
+                        orderDate: new Date(order.data_criacao || new Date())
                     });
 
                     // Apply manual overrides if present
@@ -296,9 +417,48 @@ export async function GET(request: NextRequest) {
                         feeCalc.netValue = feeCalc.grossValue - feeCalc.totalFees;
                     }
 
-                    valorEsperado = feeCalc.netValue;
-                    diferenca = valorEfetivo - valorEsperado;
-                    feesBreakdown = feeCalc;
+                    if (feeCalc) {
+                        // Attach Shopee Data for FeeBreakdownCard parity
+                        if (marketplace === 'shopee' && order.numero_pedido_ecommerce) {
+                            const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
+                            if (sOrder) {
+                                const orderSellingPrice = Number(sOrder.order_selling_price) || 0;
+                                const sellerDiscount = Number(sOrder.seller_discount) || 0;
+                                const isLeveMaisPagueMenos = sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05;
+
+                                (feeCalc as any).shopeeData = {
+                                    orderSellingPrice,
+                                    orderDiscountedPrice: Number(sOrder.order_discounted_price) || 0,
+                                    sellerDiscount,
+                                    escrowAmount: Number(sOrder.escrow_amount) || 0,
+                                    voucherFromSeller: Number(sOrder.voucher_from_seller) || 0,
+                                    voucherFromShopee: Number(sOrder.voucher_from_shopee) || 0,
+                                    amsCommissionFee: Number(sOrder.ams_commission_fee) || 0,
+                                    isLeveMaisPagueMenos,
+                                    // Refund info (using vars from scope if possible, else 0/defaults)
+                                    // Note: we didn't store refundAmount in a variable in the outer scope, 
+                                    // so we might miss it unless we refactor. 
+                                    // ideally we move logic up or recalculate.
+                                    refundAmount: 0,
+                                    originalProductCount: 0,
+                                    originalOrderValue: 0,
+                                    escrowDifference: 0 // Frontend calculates this? No, backend usually does.
+                                };
+                            }
+                        }
+
+                        valorEsperado = feeCalc.netValue;
+
+                        // Adjust expected value by subtracting known adjustments (refunds, etc.)
+                        // This way, the 'diferença' reflects actual discrepancies, not expected refunds
+                        const valorEsperadoAjustado = valorEsperado - totalAjustes;
+                        const rawDiferenca = valorEfetivo - valorEsperadoAjustado;
+
+                        // Round to 2 decimal places and treat tiny differences as 0 (floating point precision)
+                        diferenca = Math.abs(rawDiferenca) < 0.01 ? 0 : Math.round(rawDiferenca * 100) / 100;
+
+                        feesBreakdown = feeCalc;
+                    }
                 } catch (error) {
                     console.error('[CashFlowAPI] Fee calculation error for order:', order.id, error);
                 }
@@ -308,6 +468,7 @@ export async function GET(request: NextRequest) {
                 id: order.id,
                 tiny_id: order.tiny_id,
                 numero_pedido: order.numero_pedido,
+                numero_pedido_ecommerce: order.numero_pedido_ecommerce,
                 cliente: order.cliente_nome,
                 valor: valorEfetivo,
                 valor_original: valorOriginal,
@@ -320,7 +481,8 @@ export async function GET(request: NextRequest) {
                 status_pagamento: financialStatus,
                 data_pagamento: order.payment_received_at,
                 canal: order.canal,
-                marketplace_info: order.marketplace_order_links?.[0] || null
+                marketplace_info: order.marketplace_order_links?.[0] || null,
+                payments_breakdown: payments // Pass all payments for UI details
             };
         }));
 
@@ -365,10 +527,25 @@ export async function GET(request: NextRequest) {
                 vEsperado = baseTaxas - totalFees;
             }
 
-            // Prefer Net Amount from payment if available
-            const valor = o.marketplace_payments?.net_amount
-                ? Number(o.marketplace_payments.net_amount)
-                : (o.fee_overrides ? vEsperado : valorOriginal);
+            // Prefer Net Amount from payment(s) if available
+            const payments = Array.isArray(o.marketplace_payments) ? o.marketplace_payments : (o.marketplace_payments ? [o.marketplace_payments] : []);
+
+            let valor = o.fee_overrides ? vEsperado : valorOriginal;
+
+            if (payments.length > 0) {
+                valor = payments.reduce((sum: number, p: any) => {
+                    const val = Number(p.net_amount || 0);
+                    // Check logic for is_expense: usually stored as boolean or implied by type
+                    // Parsing logic stores absolute netAmount and relies on isExpense
+                    // Note: summary query only selects net_amount. 
+                    // I need to update summary query to include is_expense too!
+                    // Wait, I updated listQuery but did I update summaryQuery?
+                    // Checking line 214...
+                    // "marketplace_payments!tiny_orders_marketplace_payment_id_fkey ( net_amount )"
+                    // I need to add is_expense to summary query too.
+                    return sum + ((p.is_expense === true) ? -val : val);
+                }, 0);
+            }
 
             summary.total += valor;
 

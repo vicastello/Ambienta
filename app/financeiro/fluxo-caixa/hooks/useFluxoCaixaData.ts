@@ -29,6 +29,7 @@ type Order = {
     id: number;
     tiny_id: number | null;
     numero_pedido: string | null;
+    numero_pedido_ecommerce?: string | null;
     data_pedido: string;
     cliente: string | null;
     valor: number;

@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 export default {
   darkMode: "class",
@@ -10,6 +11,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        primary: colors.teal,
         ambienta: {
           primary: "var(--color-brand-primary)",
           "primary-light": "var(--color-brand-light)",

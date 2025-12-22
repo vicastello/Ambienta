@@ -125,14 +125,18 @@ export async function POST(request: NextRequest) {
                     )
                 `)
                 .eq('marketplace', marketplace)
-                .eq('marketplace_order_id', payment.marketplaceOrderId)
+                .in('marketplace_order_id', [payment.marketplaceOrderId, payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '')])
+                .limit(1)
                 .maybeSingle();
 
             // Get product count and original order value from shopee_order_items for Shopee orders
             // We use discounted_price (seller's price after seller discount, before customer coupons)
             // because that's what Shopee calculates fees on
             let productCount = 1;
+            let originalProductCount = 1; // Before refunds
             let shopeeOrderValue: number | null = null;
+            let originalOrderValue: number | null = null; // Before refunds
+            let refundAmount = 0; // Amount refunded
             let voucherFromSeller = 0;
             let voucherFromShopee = 0;
             let amsCommissionFee = 0;
@@ -141,12 +145,16 @@ export async function POST(request: NextRequest) {
             let sellerDiscount = 0;
             let escrowAmount = 0;
 
+            // Strip suffixes from marketplaceOrderId (e.g., "123_AJUSTE_2" -> "123", "123_REEMBOLSO" -> "123")
+            // This ensures adjustment entries can still fetch related order/item data
+            const baseMarketplaceOrderId = payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+
             if (marketplace === 'shopee' && payment.marketplaceOrderId) {
                 // Get items for product count and base value
                 const { data: itemsData, error: itemsError } = await supabaseAdmin
                     .from('shopee_order_items')
                     .select('quantity, discounted_price, original_price')
-                    .eq('order_sn', payment.marketplaceOrderId);
+                    .eq('order_sn', baseMarketplaceOrderId);
 
                 console.log(`[Preview] Order ${payment.marketplaceOrderId}: shopee_order_items query result:`,
                     itemsData ? `${itemsData.length} items found` : 'no data',
@@ -160,17 +168,37 @@ export async function POST(request: NextRequest) {
                         const qty = item.quantity || 1;
                         return sum + (price * qty);
                     }, 0);
+
+                    // Calculate average price per unit for later refund adjustment
+                    // This will be used to detect if items were refunded
                 }
 
                 // Get voucher and affiliate data from shopee_orders (if available)
                 const { data: shopeeOrderData } = await supabaseAdmin
                     .from('shopee_orders')
                     .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount')
-                    .eq('order_sn', payment.marketplaceOrderId)
+                    .eq('order_sn', baseMarketplaceOrderId)
                     .maybeSingle();
 
-                // Access fields directly (they may not exist in types until regenerated)
+                // Adjust productCount if order_selling_price differs from calculated value
+                // This handles refunds where items were returned but shopee_order_items isn't updated
                 const escrowData = shopeeOrderData as any;
+                if (escrowData?.order_selling_price && shopeeOrderValue && shopeeOrderValue > 0) {
+                    const actualOrderValue = Number(escrowData.order_selling_price) || 0;
+                    if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
+                        // Refund detected! Calculate the ratio and adjust product count
+                        originalProductCount = productCount;
+                        originalOrderValue = shopeeOrderValue;
+                        refundAmount = shopeeOrderValue - actualOrderValue;
+
+                        const refundRatio = actualOrderValue / shopeeOrderValue;
+                        const adjustedCount = Math.round(productCount * refundRatio);
+                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Refund detected! Original count: ${productCount}, Adjusted count: ${adjustedCount}, Refund: R$ ${refundAmount.toFixed(2)}`);
+                        productCount = Math.max(1, adjustedCount);
+                        // Update shopeeOrderValue to match actual
+                        shopeeOrderValue = actualOrderValue;
+                    }
+                }
                 if (escrowData?.voucher_from_seller) {
                     voucherFromSeller = Number(escrowData.voucher_from_seller) || 0;
                 }
@@ -197,6 +225,12 @@ export async function POST(request: NextRequest) {
                     voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
                 }
 
+                // Determine if this is "leve mais pague menos" (small ~2% discount) or a promotional discount
+                // Leve mais pague menos is typically 2% of the selling price
+                const isLeveMaisPagueMenos = sellerDiscount > 0 &&
+                    orderSellingPrice > 0 &&
+                    (sellerDiscount / orderSellingPrice) <= 0.05; // Up to 5% is considered leve mais pague menos
+
                 // Add automatic tags based on escrow data
                 if (voucherFromSeller > 0) {
                     tagResult.tags.push('cupom loja');
@@ -204,7 +238,9 @@ export async function POST(request: NextRequest) {
                 if (amsCommissionFee > 0) {
                     tagResult.tags.push('comissão afiliado');
                 }
-                if (sellerDiscount > 0) {
+                // Only add tag for real "leve mais pague menos" discounts (~2%)
+                // High seller_discount values are just inflated original prices, not real costs
+                if (isLeveMaisPagueMenos) {
                     tagResult.tags.push('leve mais pague menos');
                 }
 
@@ -227,13 +263,21 @@ export async function POST(request: NextRequest) {
                     // This is what Shopee actually uses to calculate commission and service fees
                     // For other marketplaces, use Tiny value
                     let orderValue: number;
+                    // Determine if seller_discount is "leve mais pague menos" (small ~2% discount)
+                    const isLeveMaisPagueMenos = sellerDiscount > 0 &&
+                        orderSellingPrice > 0 &&
+                        (sellerDiscount / orderSellingPrice) <= 0.05;
+
                     if (marketplace === 'shopee') {
-                        if (orderDiscountedPrice > 0) {
-                            // Primary: use order_discounted_price (exactly what Shopee charges fees on)
+                        // For Shopee, the base value depends on the type of discount:
+                        // - "Leve mais pague menos" (2%): use order_discounted_price (seller pays the discount)
+                        // - Promotional discounts (larger): use order_selling_price (Shopee pays the discount)
+                        if (isLeveMaisPagueMenos && orderDiscountedPrice > 0) {
+                            // Small discount like "leve mais pague menos" - use discounted price
                             orderValue = orderDiscountedPrice;
                         } else if (orderSellingPrice > 0) {
-                            // Fallback: use order_selling_price minus seller_discount
-                            orderValue = orderSellingPrice - sellerDiscount;
+                            // Large promotional discount or no discount - use selling price
+                            orderValue = orderSellingPrice;
                         } else if (shopeeOrderValue !== null && shopeeOrderValue > 0) {
                             // Fallback: use calculated value from items
                             orderValue = shopeeOrderValue;
@@ -286,6 +330,12 @@ export async function POST(request: NextRequest) {
                             voucherFromSeller,
                             voucherFromShopee,
                             amsCommissionFee,
+                            // Refund information
+                            refundAmount,
+                            originalProductCount,
+                            originalOrderValue,
+                            // Flag to indicate if this is "leve mais pague menos" vs promotional discount
+                            isLeveMaisPagueMenos: sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05,
                             // Calculate the difference between our calculation and Shopee's escrow
                             escrowDifference: escrowAmount > 0 ? feeCalc.netValue - escrowAmount : 0,
                         } : undefined,

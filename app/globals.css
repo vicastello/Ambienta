@@ -181,10 +181,10 @@
     color: var(--text-main);
   }
 
-  button,
-  [type="button"],
-  [type="submit"],
-  [type="reset"] {
+  :where(button,
+    [type="button"],
+    [type="submit"],
+    [type="reset"]) {
     appearance: none;
     background-color: var(--btn-bg);
     border: 1px solid var(--btn-border);
@@ -530,7 +530,22 @@
     contain: paint;
   }
 
-  .dark .glass-panel {
+  .glass-card {
+    background: var(--surface-panel-bg);
+    border: 1px solid var(--surface-panel-border);
+    border-radius: 2rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+    -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
+    will-change: transform;
+    contain: paint;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    /* Stronger shadow for single card focus */
+  }
+
+  .dark .glass-panel,
+  .dark .glass-card {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
       var(--surface-panel-bg);

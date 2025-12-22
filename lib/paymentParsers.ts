@@ -299,11 +299,13 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
             return null;
         };
 
+        const seenIds = new Map<string, number>();
+
         rows.forEach((row, index) => {
             if (!row || row.length === 0) return;
 
             try {
-                const orderId = String(row[idxOrder] || '').trim();
+                let orderId = String(row[idxOrder] || '').trim();
                 const transactionDesc = idxDescription !== -1 ? String(row[idxDescription] || '') : '';
 
                 // Skip only completely empty rows
@@ -311,9 +313,36 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     return;
                 }
 
+                if (!orderId) orderId = 'NO_ORDER_ID';
+
+                // Get transaction type early to use in ID suffix
                 const idxTransactionType = getColumnIndex('Tipo de transação');
+                const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
+
+                // Create a unique suffix based on transaction type to prevent overwriting
+                // This ensures "Renda do pedido" and "Ajuste" for the same order get different IDs
+                const typeIndicator = transactionType.toLowerCase().includes('ajuste') ? '_AJUSTE' :
+                    transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
+                        transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
+
+                // Handle duplicates within the file (e.g. multiple adjustments of same type)
+                const baseId = orderId + typeIndicator;
+                if (seenIds.has(baseId)) {
+                    const count = seenIds.get(baseId)! + 1;
+                    seenIds.set(baseId, count);
+                    orderId = `${baseId}_${count}`;
+                } else {
+                    seenIds.set(baseId, 1);
+                    orderId = baseId; // Use baseId with type indicator
+                }
+
+
                 const idxBalanceAfter = getColumnIndex('Balança após as transações');
-                const idxMovementType = getColumnIndex('Tipo de movimentação'); // "Entrada" or "Saída"
+                // Check multiple possible column names for money direction
+                let idxMovementType = getColumnIndex('Tipo de movimentação');
+                if (idxMovementType === -1) {
+                    idxMovementType = getColumnIndex('Direção do dinheiro'); // Alternative column name
+                }
 
                 const amount = parseAmount(row[idxAmount]);
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';

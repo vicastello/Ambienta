@@ -12,8 +12,8 @@ import {
     ExternalLink, Calendar, User, Hash, MapPin, FileText, Edit2, Tag, Plus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getTagColor, formatTagName } from '@/lib/tagColors';
 import { markOrdersAsPaid, markOrdersAsUnpaid } from '@/app/financeiro/actions';
-import { useDebounce } from '@/hooks/useDebounce';
 import { EntryEditModal } from './EntryEditModal';
 import {
     DropdownMenu,
@@ -21,11 +21,20 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/Dialog';
+import FeeBreakdownCard from './FeeBreakdownCard';
+import TagModal from './TagModal';
 
 interface Order {
     id: number;
     tiny_id: number;
     numero_pedido: number;
+    numero_pedido_ecommerce?: string;
     cliente: string;
     valor: number;
     valor_total_pedido: number;
@@ -38,6 +47,7 @@ interface Order {
     valor_esperado?: number;
     diferenca?: number;
     fees_breakdown?: any;
+    payments_breakdown?: any[];
     fee_overrides?: {
         commissionFee?: number;
         fixedCost?: number;
@@ -459,227 +469,206 @@ function OrderDetailDrawer({
     const nfLink = order.marketplace_info?.nfe_link || order.marketplace_info?.link_nfe;
 
     return (
-        <>
-            {/* Backdrop */}
-            <div
-                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
-                onClick={onClose}
-            />
+        <Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="max-w-7xl w-full p-0 gap-0 rounded-[32px] glass-panel glass-tint border border-white/10 shadow-2xl overflow-hidden !bg-white/90 dark:!bg-slate-900/90">
+                <div className="h-full flex flex-col max-h-[90vh]">
+                    <DialogHeader className="p-6 border-b border-white/10 flex-shrink-0">
+                        <DialogTitle className="text-xl font-bold text-main flex items-center gap-3">
+                            <span className="opacity-50 font-normal">Pedido</span> #{order.numero_pedido}
+                            <span className="text-xs font-medium text-muted bg-white/10 px-2 py-0.5 rounded-full border border-white/5">
+                                {formatDate(order.data_pedido)}
+                            </span>
+                        </DialogTitle>
+                    </DialogHeader>
 
-            {/* Drawer */}
-            <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl animate-in slide-in-from-right duration-300">
-                <div className="h-full flex flex-col">
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                            Pedido #{order.numero_pedido}
-                        </h2>
-                        <button
-                            onClick={onClose}
-                            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        >
-                            <X className="w-5 h-5 text-slate-500" />
-                        </button>
-                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                    {/* Content */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                        {/* Status Card */}
-                        <div className={cn(
-                            "p-4 rounded-2xl",
-                            status.bg
-                        )}>
-                            <div className="flex items-center gap-3">
-                                <StatusIcon className={cn("w-8 h-8", status.iconColor)} />
-                                <div>
-                                    <p className={cn("text-lg font-semibold", status.text)}>
-                                        {status.label}
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                                        {formatCurrency(order.valor)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Details Grid */}
-                        <div className="space-y-4">
-                            <DetailRow
-                                icon={User}
-                                label="Cliente"
-                                value={order.cliente || 'Consumidor Final'}
-                            />
-                            <DetailRow
-                                icon={Hash}
-                                label="ID Tiny"
-                                value={String(order.tiny_id)}
-                            />
-                            <DetailRow
-                                icon={Calendar}
-                                label="Data do Pedido"
-                                value={formatDate(order.data_pedido)}
-                            />
-                            <DetailRow
-                                icon={Calendar}
-                                label="Vencimento Estimado"
-                                value={formatDate(order.vencimento_estimado)}
-                            />
-                            {order.data_pagamento && (
-                                <DetailRow
-                                    icon={CheckCircle2}
-                                    label="Data de Pagamento"
-                                    value={formatDate(order.data_pagamento)}
-                                />
-                            )}
-                            <DetailRow
-                                icon={BadgeIcon}
-                                label="Canal"
-                                value={order.canal}
-                                badge={marketplaceBadge}
-                            />
-                        </div>
-
-                        {/* Marketplace Fees Section */}
-                        {(feesBreakdown || isEditingFees) && (
-                            <div className="pt-6 border-t border-slate-200 dark:border-slate-700 space-y-4">
-                                <div className="flex flex-col gap-1">
-                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                                        <CreditCard className="w-4 h-4 text-primary-500" />
-                                        Detalhamento de Taxas
-                                    </h3>
-
-                                </div>
-                                <button
-                                    onClick={() => setIsEditingFees(!isEditingFees)}
-                                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-                                >
-                                    {isEditingFees ? 'Cancelar' : 'Ajustar'}
-                                </button>
-
-                                <div className="glass-panel p-4 rounded-xl space-y-3">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Comissão</p>
-                                            {isEditingFees ? (
-                                                <input
-                                                    type="number"
-                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
-                                                    value={overrides.commissionFee ?? (feesBreakdown?.commissionFee || 0).toFixed(2)}
-                                                    onChange={(e) => setOverrides({ ...overrides, commissionFee: parseFloat(e.target.value) })}
-                                                />
-                                            ) : (
-                                                <p className="font-medium text-slate-900 dark:text-white">
-                                                    {formatCurrency(overrides.commissionFee ?? feesBreakdown?.commissionFee ?? 0)}
-                                                </p>
-                                            )}
+                            {/* Left Column: Details (5 cols) */}
+                            <div className="xl:col-span-5 space-y-6">
+                                {/* Status Card */}
+                                <div className={cn(
+                                    "p-5 rounded-2xl border border-white/5 relative overflow-hidden",
+                                    status.bg.replace('bg-', 'bg-opacity-10 bg-')
+                                )}>
+                                    <div className="relative z-10 flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <StatusIcon className={cn("w-6 h-6", status.iconColor)} />
+                                            <span className={cn("text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/20", status.text)}>
+                                                {status.label}
+                                            </span>
                                         </div>
                                         <div>
-                                            <p className="text-xs text-slate-500 mb-1">Custo Fixo</p>
-                                            {isEditingFees ? (
-                                                <input
-                                                    type="number"
-                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
-                                                    value={overrides.fixedCost ?? (feesBreakdown?.fixedCost || 0).toFixed(2)}
-                                                    onChange={(e) => setOverrides({ ...overrides, fixedCost: parseFloat(e.target.value) })}
-                                                />
-                                            ) : (
-                                                <p className="font-medium text-slate-900 dark:text-white">
-                                                    {formatCurrency(overrides.fixedCost ?? feesBreakdown?.fixedCost ?? 0)}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Campanhas</p>
-                                            {isEditingFees ? (
-                                                <input
-                                                    type="number"
-                                                    className="w-full px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
-                                                    value={overrides.campaignFee ?? (feesBreakdown?.campaignFee || 0).toFixed(2)}
-                                                    onChange={(e) => setOverrides({ ...overrides, campaignFee: parseFloat(e.target.value) })}
-                                                />
-                                            ) : (
-                                                <p className="font-medium text-slate-900 dark:text-white">
-                                                    {formatCurrency(overrides.campaignFee ?? feesBreakdown?.campaignFee ?? 0)}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Expectativa Líquida</p>
-                                            <p className="font-bold text-emerald-600 dark:text-emerald-400">
-                                                {formatCurrency((feesBreakdown?.grossValue || order.valor) - (
-                                                    (overrides.commissionFee ?? feesBreakdown?.commissionFee ?? 0) +
-                                                    (overrides.fixedCost ?? feesBreakdown?.fixedCost ?? 0) +
-                                                    (overrides.campaignFee ?? feesBreakdown?.campaignFee ?? 0)
-                                                ))}
+                                            <p className="text-xs text-muted font-medium uppercase tracking-wider">Valor Total</p>
+                                            <p className="text-2xl font-bold text-main tracking-tight">
+                                                {formatCurrency(order.valor)}
                                             </p>
                                         </div>
                                     </div>
+                                </div>
 
-                                    {isEditingFees && (
-                                        <button
-                                            onClick={handleSaveManualFees}
-                                            disabled={isSavingFees}
-                                            className="w-full mt-2 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                                        >
-                                            {isSavingFees ? 'Salvando...' : 'Salvar Alterações'}
-                                        </button>
+
+                                {/* Details Grid - Now wrapped in the requested inner card style */}
+                                <div className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5 p-5 shadow-sm space-y-2">
+
+                                    <DetailRow
+                                        icon={User}
+                                        label="Cliente"
+                                        value={order.cliente || 'Consumidor Final'}
+                                    />
+                                    <DetailRow
+                                        icon={Hash}
+                                        label="ID Tiny"
+                                        value={String(order.tiny_id)}
+                                    />
+                                    {order.numero_pedido_ecommerce && (
+                                        <DetailRow
+                                            icon={Tag}
+                                            label="ID Marketplace"
+                                            value={order.numero_pedido_ecommerce}
+                                        />
                                     )}
+                                    <DetailRow
+                                        icon={Calendar}
+                                        label="Vencimento"
+                                        value={formatDate(order.vencimento_estimado)}
+                                    />
+                                    {order.data_pagamento && (
+                                        <DetailRow
+                                            icon={CheckCircle2}
+                                            label="Pago em"
+                                            value={formatDate(order.data_pagamento)}
+                                        />
+                                    )}
+                                    <DetailRow
+                                        icon={BadgeIcon}
+                                        label="Canal"
+                                        value={order.canal}
+                                        badge={marketplaceBadge}
+                                    />
+                                </div>
+
+                                {/* Quick Actions */}
+                                <div className="rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5 p-5 shadow-sm">
+                                    <h3 className="text-sm font-semibold text-soft uppercase tracking-wider mb-4 px-2">
+                                        Ações
+                                    </h3>
+                                    <div className="grid gap-3">
+                                        <button
+                                            onClick={() => onMarkAsPaid(order)}
+                                            disabled={order.status_pagamento === 'pago'}
+                                            className={cn(
+                                                "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-all shadow-lg",
+                                                order.status_pagamento === 'pago'
+                                                    ? "bg-emerald-500/10 text-emerald-500 cursor-default"
+                                                    : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-500/20"
+                                            )}
+                                        >
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            {order.status_pagamento === 'pago' ? 'Pedido Pago' : 'Marcar como Pago'}
+                                        </button>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <a
+                                                href={tinyUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 transition-colors font-medium border border-indigo-500/20"
+                                            >
+                                                <ExternalLink className="w-4 h-4" />
+                                                Tiny
+                                            </a>
+
+                                            {(() => {
+                                                const getMarketplaceUrl = () => {
+                                                    const canal = order.canal?.toLowerCase() || '';
+                                                    const ecommerceId = order.numero_pedido_ecommerce;
+
+                                                    if (!ecommerceId) return null;
+
+                                                    if (canal.includes('shopee')) {
+                                                        // Tenta usar parâmetros de busca conhecidos
+                                                        // O portal novo da Shopee costuma usar 'search' ou 'keyword' na URL da listagem
+                                                        // Ex: https://seller.shopee.com.br/portal/sale/order?type=all&search=TYPE_ORDER_SN%2CID_DO_PEDIDO
+
+                                                        // Format found by reverse engineering standard behaviors:
+                                                        // type=all -> search all tabs
+                                                        // search=TYPE_ORDER_SN,ORDER_ID -> specific syntax for searching by SN
+                                                        return `https://seller.shopee.com.br/portal/sale/order?type=all&search=TYPE_ORDER_SN%2C${ecommerceId}`;
+                                                    } else if (canal.includes('mercado') || canal.includes('meli')) {
+                                                        // Mercado Livre uses the numeric ID directly in the URL
+                                                        return `https://www.mercadolivre.com.br/vendas/${ecommerceId}/detalhe`;
+                                                    }
+
+                                                    return null;
+                                                };
+
+                                                const marketplaceUrl = getMarketplaceUrl();
+
+                                                if (marketplaceUrl) {
+                                                    return (
+                                                        <a
+                                                            href={marketplaceUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 transition-colors font-medium border border-indigo-500/20"
+                                                        >
+                                                            <ShoppingBag className="w-4 h-4" />
+                                                            Ver no Canal
+                                                        </a>
+                                                    );
+                                                }
+
+                                                return (
+                                                    <button disabled className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm bg-white/5 text-muted cursor-not-allowed border border-white/5 opacity-50">
+                                                        <ShoppingBag className="w-4 h-4" />
+                                                        Sem Link
+                                                    </button>
+                                                );
+                                            })()}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Quick Actions */}
-                        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                            <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">
-                                Ações Rápidas
-                            </h3>
-                            <div className="flex flex-wrap gap-2">
-                                <button
-                                    onClick={() => onMarkAsPaid(order)}
-                                    disabled={order.status_pagamento === 'pago'}
-                                    className={cn(
-                                        "inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                                        order.status_pagamento === 'pago'
-                                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 cursor-default"
-                                            : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-800/30"
-                                    )}
-                                >
-                                    <CheckCircle2 className="w-4 h-4" />
-                                    {order.status_pagamento === 'pago' ? 'Pago' : 'Marcar como Pago'}
-                                </button>
-
-                                <a
-                                    href={tinyUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-700 dark:text-slate-300"
-                                >
-                                    <ExternalLink className="w-4 h-4" />
-                                    Ver no Tiny
-                                </a>
-
-                                {nfLink ? (
-                                    <a
-                                        href={nfLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-slate-700 dark:text-slate-300"
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                        Ver NF-e
-                                    </a>
+                            {/* Right Column: Fees (7 cols) */}
+                            <div className="xl:col-span-7">
+                                {(feesBreakdown || isEditingFees) ? (
+                                    // FeeBreakdownCard with wrapper
+                                    <div className="h-full rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5 p-5 shadow-sm">
+                                        <FeeBreakdownCard
+                                            breakdown={feesBreakdown}
+                                            marketplace={order.canal?.toLowerCase() || 'other'}
+                                            isEditing={isEditingFees}
+                                            overrides={overrides}
+                                            onOverrideChange={(field, value) => setOverrides(prev => ({ ...prev, [field]: value }))}
+                                            onSave={handleSaveManualFees}
+                                            onToggleEdit={() => setIsEditingFees(!isEditingFees)}
+                                            paymentsBreakdown={order.payments_breakdown}
+                                            valorFinal={order.valor}
+                                        />
+                                    </div>
                                 ) : (
-                                    <button disabled className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-slate-50 dark:bg-slate-800/50 text-slate-400 cursor-not-allowed">
-                                        <FileText className="w-4 h-4" />
-                                        Sem NF-e
-                                    </button>
+                                    <div className="h-full flex flex-col items-center justify-center p-12 text-center rounded-3xl border border-white/40 dark:border-white/10 bg-white/40 dark:bg-white/5">
+                                        <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                                            <CreditCard className="w-8 h-8 text-muted" />
+                                        </div>
+                                        <h3 className="text-lg font-semibold text-main mb-2">Sem dados financeiros</h3>
+                                        <p className="text-muted max-w-xs mx-auto mb-6">Não encontramos o detalhamento de taxas para este pedido.</p>
+                                        <button
+                                            onClick={() => setIsEditingFees(true)}
+                                            className="px-6 py-2.5 rounded-full bg-accent text-white font-medium hover:brightness-110 transition-all shadow-lg shadow-accent/20"
+                                        >
+                                            Adicionar manualmente
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </>
+            </DialogContent >
+        </Dialog >
     );
 }
 
@@ -692,24 +681,27 @@ function DetailRow({
     icon: any;
     label: string;
     value: string;
-    badge?: { bg: string; text: string };
+    badge?: { bg: string; text: string; icon?: any; label?: string }
 }) {
     return (
-        <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">
-                <Icon className="w-4 h-4 text-slate-500" />
+        <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 group">
+            <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors text-muted">
+                    <Icon className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-medium text-muted">{label}</span>
             </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-500 dark:text-slate-400">{label}</p>
+
+            <div className="text-right">
                 {badge ? (
                     <span className={cn(
-                        "inline-flex items-center px-2 py-0.5 rounded text-sm font-medium mt-0.5",
+                        "inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold",
                         badge.bg, badge.text
                     )}>
                         {value}
                     </span>
                 ) : (
-                    <p className="text-slate-900 dark:text-white font-medium truncate">{value}</p>
+                    <p className="text-sm font-semibold text-main">{value}</p>
                 )}
             </div>
         </div>
@@ -719,19 +711,17 @@ function DetailRow({
 export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTableProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
     const [sortField, setSortField] = useState<SortField | null>(null);
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [isProcessing, setIsProcessing] = useState(false);
     const [detailOrder, setDetailOrder] = useState<Order | null>(null);
     const [editOrderId, setEditOrderId] = useState<string | null>(null);
-    const searchInputRef = useRef<HTMLInputElement>(null);
 
     // Tags state - persisted to database
     const [orderTags, setOrderTags] = useState<Map<number, string[]>>(new Map());
     const [availableTags, setAvailableTags] = useState<{ name: string; color: string }[]>([]);
-    const [tagInputId, setTagInputId] = useState<number | null>(null);
+    const [tagModalOrderId, setTagModalOrderId] = useState<number | null>(null);
     const [newTagValue, setNewTagValue] = useState('');
     const [loadingTags, setLoadingTags] = useState(false);
 
@@ -788,7 +778,6 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
             return newMap;
         });
         setNewTagValue('');
-        setTagInputId(null);
 
         // Persist to API
         try {
@@ -828,11 +817,6 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // ⌘K or Ctrl+K: Focus search
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                searchInputRef.current?.focus();
-            }
             // ⌘E or Ctrl+E: Export CSV (if items selected)
             if ((e.metaKey || e.ctrlKey) && e.key === 'e' && selectedIds.size > 0) {
                 e.preventDefault();
@@ -932,23 +916,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         link.click();
     };
 
-    // Debounce search term for performance
-    const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
     // Client-side filtering and sorting
     const processedOrders = useMemo(() => {
         let result = [...orders];
-
-        // Filter by debounced search term
-        if (debouncedSearchTerm.trim()) {
-            const term = debouncedSearchTerm.toLowerCase();
-            result = result.filter(order =>
-                order.cliente?.toLowerCase().includes(term) ||
-                order.numero_pedido?.toString().includes(term) ||
-                order.tiny_id?.toString().includes(term) ||
-                order.canal?.toLowerCase().includes(term)
-            );
-        }
 
         // Sort
         if (sortField) {
@@ -974,7 +944,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
         }
 
         return result;
-    }, [orders, debouncedSearchTerm, sortField, sortDirection]);
+    }, [orders, sortField, sortDirection]);
 
     const pendingOrders = useMemo(() =>
         processedOrders.filter(o => o.status_pagamento !== 'pago'),
@@ -1006,32 +976,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                 isProcessing={isProcessing}
             />
 
-            {/* Search Input */}
-            <div className="relative max-w-md">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Buscar por cliente, pedido ou canal... (⌘K)"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className={cn(
-                        "w-full pl-10 pr-10 py-3 rounded-2xl",
-                        "bg-white/60 dark:bg-black/20 border border-white/40 dark:border-white/10",
-                        "placeholder:text-slate-400 text-slate-700 dark:text-slate-200",
-                        "focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-transparent",
-                        "transition-all duration-200"
-                    )}
-                />
-                {searchTerm && (
-                    <button
-                        onClick={() => setSearchTerm('')}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
-                    >
-                        <X className="w-4 h-4 text-slate-400" />
-                    </button>
-                )}
-            </div>
+
 
             {/* Table */}
             <div className="glass-panel glass-tint rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden">
@@ -1117,14 +1062,10 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                             {processedOrders.length === 0 ? (
                                 <tr>
                                     <td colSpan={12} className="py-12 text-center text-slate-500">
-                                        {searchTerm ? (
-                                            <div className="flex flex-col items-center gap-2">
-                                                <Search className="w-8 h-8 text-slate-300" />
-                                                <p>Nenhum resultado para "{searchTerm}"</p>
-                                            </div>
-                                        ) : (
-                                            'Nenhum pedido encontrado com os filtros atuais.'
-                                        )}
+                                        <div className="flex flex-col items-center gap-2">
+                                            <Search className="w-8 h-8 text-slate-300" />
+                                            <p>Nenhum pedido encontrado com os filtros atuais.</p>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
@@ -1261,58 +1202,65 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                             {/* Tags Cell */}
                                             <td className="py-4 px-6">
                                                 <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
-                                                    {(orderTags.get(order.id) || []).map((tag, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                                                        >
-                                                            {tag}
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    removeTagFromOrder(order.id, tag);
-                                                                }}
-                                                                className="hover:bg-primary-200 dark:hover:bg-primary-800 rounded-full p-0.5"
+                                                    {/* Import tags from payments_breakdown */}
+                                                    {(() => {
+                                                        const importTags = new Set<string>();
+                                                        order.payments_breakdown?.forEach((p: any) => {
+                                                            if (p.tags && Array.isArray(p.tags)) {
+                                                                p.tags.forEach((t: string) => importTags.add(t));
+                                                            }
+                                                        });
+                                                        return Array.from(importTags).map((tag, idx) => {
+                                                            const colors = getTagColor(tag);
+                                                            return (
+                                                                <span
+                                                                    key={`import-${idx}`}
+                                                                    className={cn(
+                                                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                                                                        colors.bg, colors.text
+                                                                    )}
+                                                                    title="Tag do extrato"
+                                                                >
+                                                                    {formatTagName(tag)}
+                                                                </span>
+                                                            );
+                                                        });
+                                                    })()}
+                                                    {/* Manual tags */}
+                                                    {(orderTags.get(order.id) || []).map((tag, idx) => {
+                                                        const colors = getTagColor(tag);
+                                                        return (
+                                                            <span
+                                                                key={idx}
+                                                                className={cn(
+                                                                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                                                                    colors.bg, colors.text
+                                                                )}
                                                             >
-                                                                <X className="w-3 h-3" />
-                                                            </button>
-                                                        </span>
-                                                    ))}
-                                                    {tagInputId === order.id ? (
-                                                        <input
-                                                            autoFocus
-                                                            className="w-16 px-1 py-0.5 text-xs rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-slate-800"
-                                                            value={newTagValue}
-                                                            onChange={(e) => setNewTagValue(e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    addTagToOrder(order.id, newTagValue);
-                                                                } else if (e.key === 'Escape') {
-                                                                    setTagInputId(null);
-                                                                    setNewTagValue('');
-                                                                }
-                                                            }}
-                                                            onBlur={() => {
-                                                                if (newTagValue.trim()) {
-                                                                    addTagToOrder(order.id, newTagValue);
-                                                                } else {
-                                                                    setTagInputId(null);
-                                                                }
-                                                            }}
-                                                            placeholder="tag..."
-                                                        />
-                                                    ) : (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setTagInputId(order.id);
-                                                            }}
-                                                            className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
-                                                            title="Adicionar tag"
-                                                        >
-                                                            <Plus className="w-4 h-4" />
-                                                        </button>
-                                                    )}
+                                                                {formatTagName(tag)}
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        removeTagFromOrder(order.id, tag);
+                                                                    }}
+                                                                    className="hover:opacity-70 rounded-full p-0.5"
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                    {/* Button to open tag modal */}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setTagModalOrderId(order.id);
+                                                        }}
+                                                        className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
+                                                        title="Gerenciar tags"
+                                                    >
+                                                        <Plus className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -1364,6 +1312,29 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                         setIsProcessing(false);
                     }
                 }}
+            />
+
+            {/* Tag Modal */}
+            <TagModal
+                isOpen={tagModalOrderId !== null}
+                onClose={() => setTagModalOrderId(null)}
+                orderId={tagModalOrderId ?? 0}
+                currentTags={(() => {
+                    if (!tagModalOrderId) return [];
+                    // Combine manual tags with import tags
+                    const manualTags = orderTags.get(tagModalOrderId) || [];
+                    const order = orders.find(o => o.id === tagModalOrderId);
+                    const importTags = new Set<string>();
+                    order?.payments_breakdown?.forEach((p: any) => {
+                        if (p.tags && Array.isArray(p.tags)) {
+                            p.tags.forEach((t: string) => importTags.add(t));
+                        }
+                    });
+                    return [...new Set([...manualTags, ...importTags])];
+                })()}
+                availableTags={availableTags}
+                onAddTag={addTagToOrder}
+                onRemoveTag={removeTagFromOrder}
             />
         </div>
     );

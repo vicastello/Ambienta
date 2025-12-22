@@ -223,32 +223,40 @@ async function matchPaymentWithTinyOrder(
 
     let tinyOrderId: number | null = null;
 
+    // Strip suffix if present (e.g., "ID_AJUSTE", "ID_AJUSTE_2", "ID_REEMBOLSO")
+    // Formats appended by parser: _AJUSTE, _REEMBOLSO, _RETIRADA, _N
+    const cleanId = marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+
     // Match based on marketplace using marketplace_order_links table
     if (marketplace === 'magalu') {
         const { data, error } = await supabaseAdmin
             .from('marketplace_order_links')
             .select('tiny_order_id')
             .eq('marketplace', 'magalu')
-            .eq('marketplace_order_id', marketplaceOrderId)
-            .single();
+            .in('marketplace_order_id', [marketplaceOrderId, cleanId]) // Try both
+            .limit(1)
+            .maybeSingle(); // Use maybeSingle to avoid error on multiple matches (though limit 1 helps) 
+        // Note: multiple matches shouldn't happen for same ID in links table
 
-        console.log('[MatchPayment] Magalu query result:', { data, error, marketplaceOrderId });
+        console.log('[MatchPayment] Magalu query result:', { data, error, marketplaceOrderId: cleanId });
         tinyOrderId = data?.tiny_order_id ?? null;
     } else if (marketplace === 'mercado_livre') {
         const { data } = await supabaseAdmin
             .from('marketplace_order_links')
             .select('tiny_order_id')
             .eq('marketplace', 'mercado_livre')
-            .eq('marketplace_order_id', marketplaceOrderId)
-            .single();
+            .in('marketplace_order_id', [marketplaceOrderId, cleanId])
+            .limit(1)
+            .maybeSingle();
         tinyOrderId = data?.tiny_order_id ?? null;
     } else if (marketplace === 'shopee') {
         const { data } = await supabaseAdmin
             .from('marketplace_order_links')
             .select('tiny_order_id')
             .eq('marketplace', 'shopee')
-            .eq('marketplace_order_id', marketplaceOrderId)
-            .single();
+            .in('marketplace_order_id', [marketplaceOrderId, cleanId])
+            .limit(1)
+            .maybeSingle();
         tinyOrderId = data?.tiny_order_id ?? null;
     }
 
