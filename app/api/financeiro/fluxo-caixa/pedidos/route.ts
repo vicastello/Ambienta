@@ -424,8 +424,9 @@ export async function GET(request: NextRequest) {
                                 if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
                                     const orig = Number(item.original_price) || 0;
                                     const disc = Number(item.discounted_price) || 0;
+                                    const qty = Number(item.quantity) || 1;
                                     if (orig > 0 && disc > 0 && orig > disc) {
-                                        return acc + (orig - disc);
+                                        return acc + ((orig - disc) * qty);
                                     }
                                 }
                                 return acc;
@@ -683,8 +684,9 @@ export async function GET(request: NextRequest) {
                                         if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
                                             const orig = Number(item.original_price) || 0;
                                             const disc = Number(item.discounted_price) || 0;
+                                            const qty = Number(item.quantity) || 1;
                                             if (orig > 0 && disc > 0 && orig > disc) {
-                                                return acc + (orig - disc);
+                                                return acc + ((orig - disc) * qty);
                                             }
                                         }
                                         return acc;
