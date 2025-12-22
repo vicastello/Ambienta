@@ -340,7 +340,7 @@ export async function GET(request: NextRequest) {
 
             const vTotal = Number(order.valor || order.valor_total_pedido || 0);
             const vFrete = Number(order.valor_frete || 0);
-            const valorOriginal = vTotal; // The original total is still the same for display
+            let valorOriginal = vTotal; // The original total - will be updated for Shopee refunds
             const baseTaxas = Math.max(0, vTotal - vFrete); // Base for fees is total minus freight
 
             // If we have matched payments (array), calculate the Effective Net Amount
@@ -411,6 +411,13 @@ export async function GET(request: NextRequest) {
                         if (sOrder && sItems && sItems.length > 0) {
                             const orderSellingPrice = Number(sOrder.order_selling_price) || baseTaxas;
                             const totalSellerDiscount = Number(sOrder.seller_discount) || 0;
+
+                            // Use Shopee's total_amount as the original order value for display
+                            // This shows the full product value before any refunds
+                            const shopeeTotalAmount = Number(sOrder.total_amount) || 0;
+                            if (shopeeTotalAmount > 0) {
+                                valorOriginal = shopeeTotalAmount;
+                            }
 
                             // CALCULATE FEE BASE (Validation Mode)
                             // We calculate the component of the discount that applies to the Fee Base.
