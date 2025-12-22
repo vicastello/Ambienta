@@ -223,8 +223,8 @@ export async function GET(request: NextRequest) {
 
         summaryQuery = applyFilters(summaryQuery, true);
 
-        // Execute queries in parallel (added manual entries query)
-        const [listRes, summaryRes, manualEntriesRes] = await Promise.all([
+        // Execute queries in parallel (added manual entries query AND orphan payments query)
+        const [listRes, summaryRes, manualEntriesRes, sectionOrphansRes] = await Promise.all([
             listQuery,
             summaryQuery,
             (async () => {
@@ -236,6 +236,24 @@ export async function GET(request: NextRequest) {
                 // Apply similar filters to manual entries
                 if (dataInicio) q = q.gte('due_date', dataInicio);
                 if (dataFim) q = q.lte('due_date', dataFim); // due_date is explicitly DATE type, lte works fine
+
+                return q;
+            })(),
+            (async () => {
+                // Query for Orphan Payments (imported but not linked)
+                let q = supabaseAdmin
+                    .from('marketplace_payments')
+                    .select('net_amount, payment_date, transaction_description, transaction_type, marketplace')
+                    .is('tiny_order_id', null);
+
+                // Apply filters
+                if (dataInicio) q = q.gte('payment_date', dataInicio);
+                if (dataFim) q = q.lte('payment_date', dataFim);
+
+                // Marketplace filter
+                if (marketplace !== 'todos') {
+                    q = q.eq('marketplace', marketplace);
+                }
 
                 return q;
             })()
@@ -252,6 +270,23 @@ export async function GET(request: NextRequest) {
 
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Normalize to start of day for correct date comparison
+
+        // ... existing shopee pre-fetch logic ... Same as before ...
+
+        // I need to skip the long block I'm not changing to keep this concise, 
+        // but replace_file_content requires contiguous block.
+        // Wait, I can't skip within replacement content. 
+        // So I will just rewrite the surrounding parts and keep the middle intact?
+        // Actually, the Summary calculation happens AFTER the list processing.
+        // So I will split this into two edits if needed, or include the list calculation code.
+        // The list calculation code is huge (lines 256-487). 
+        // I'd rather modify the `Promise.all` part first, then modify the Summary processing part separately.
+
+        // Let's abort this single large replacement and use smaller focused ones.
+        // This tool call is for the Promise.all modification.
+
+        // ... (See next tool call for continuation)
+
 
         // Pre-fetch Shopee data for bulk processing to avoid N+1 queries
         // This is crucial for applying preview logic (refunds, discounts) efficiently
@@ -618,6 +653,39 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        // 3. Process Orphan Payments (Ads, Adjustments, etc.)
+        if (sectionOrphansRes && sectionOrphansRes.data) {
+            sectionOrphansRes.data.forEach((p: any) => {
+                let description = p.transaction_description || p.description || p.transaction_type || 'Importado';
+
+                // Check for Ads/Recarga keywords but exclude refunds
+                const descLower = description.toLowerCase();
+                const isAdsOrRecharge = descLower.match(/recarga|ads|publicidade/) &&
+                    !descLower.match(/reembolso|estorno|cancelamento/);
+
+                const isExpense = (p.net_amount || 0) < 0 || !!isAdsOrRecharge;
+                const valor = Math.abs(Number(p.net_amount || 0));
+
+                if (isExpense) {
+                    summary.expenses.total += valor;
+                    summary.expenses.paid += valor; // Imports are always paid
+                    summary.total -= valor; // Deduct from net balance
+                } else {
+                    // Income orphan (e.g. bonus, adjustment credit)
+                    summary.total += valor;
+                    summary.recebido += valor;
+                }
+
+                // Add to sparkline items
+                sparklineItems.push({
+                    date: new Date(p.payment_date),
+                    valor,
+                    type: isExpense ? 'expense' : 'income',
+                    status: 'pago' // Always paid
+                });
+            });
+        }
+
         // Calculate Sparklines
         const rangeStart = dataInicio ? new Date(dataInicio) : undefined;
         const rangeEnd = dataFim ? new Date(dataFim) : undefined;
@@ -667,6 +735,36 @@ export async function GET(request: NextRequest) {
             rangeEnd
         );
 
+        // Construct final expenses array for the Chart
+        const finalExpenses: any[] = [];
+
+        // 1. Add Manual Expenses
+        if (manualEntriesRes.data) {
+            finalExpenses.push(...manualEntriesRes.data.filter((e: any) => e.type === 'expense'));
+        }
+
+        // 2. Add Orphan Expenses (Ads/Recarga)
+        if (sectionOrphansRes && sectionOrphansRes.data) {
+            sectionOrphansRes.data.forEach((p: any) => {
+                let description = p.transaction_description || p.description || p.transaction_type || 'Importado';
+                const descLower = description.toLowerCase();
+                const isAdsOrRecharge = descLower.match(/recarga|ads|publicidade/) &&
+                    !descLower.match(/reembolso|estorno|cancelamento/);
+
+                const isExpense = (p.net_amount || 0) < 0 || !!isAdsOrRecharge;
+
+                if (isExpense) {
+                    finalExpenses.push({
+                        amount: Math.abs(Number(p.net_amount || 0)),
+                        due_date: p.payment_date,
+                        status: 'confirmed', // Imports are always paid
+                        type: 'expense',
+                        description: description
+                    });
+                }
+            });
+        }
+
         return NextResponse.json({
             orders,
             chartOrders: sparklineItems
@@ -677,7 +775,7 @@ export async function GET(request: NextRequest) {
                     data_pedido: i.date,
                     status_pagamento: i.status
                 })),
-            expenses: manualEntriesRes.data || [], // Return raw expenses for chart
+            expenses: finalExpenses, // Return correctly filtered and merged expenses
             meta: {
                 total: listRes.count,
                 page,

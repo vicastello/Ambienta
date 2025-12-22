@@ -198,11 +198,18 @@ export async function listManualEntries(filters?: {
             }
         }
 
+        // Check for Ads/Recarga keywords but exclude refunds
+        const descLower = description.toLowerCase();
+        const isAdsOrRecharge = descLower.match(/recarga|ads|publicidade/) &&
+            !descLower.match(/reembolso|estorno|cancelamento/);
+
+        const isExpense = (p.net_amount || 0) < 0 || !!isAdsOrRecharge;
+
         return {
             id: p.id,
             description: description,
             amount: Math.abs(p.net_amount || 0),
-            type: (p.net_amount || 0) >= 0 ? 'income' : 'expense',
+            type: isExpense ? 'expense' : 'income',
             status: 'confirmed', // Imports are always settled
             due_date: p.payment_date,
             competence_date: p.payment_date,

@@ -698,6 +698,25 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
                                     );
                                 })}
                             </tbody>
+                            <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
+                                <tr>
+                                    <td colSpan={4} className="py-4 px-6 text-right">Total</td>
+                                    <td className="py-4 px-6 text-right">
+                                        {(() => {
+                                            const total = sortedEntries.reduce((acc, e) => {
+                                                const val = e.amount || 0;
+                                                return acc + (e.type === 'income' ? val : -val);
+                                            }, 0);
+                                            return (
+                                                <span className={total >= 0 ? "text-emerald-600" : "text-rose-600"}>
+                                                    {formatCurrency(total)}
+                                                </span>
+                                            );
+                                        })()}
+                                    </td>
+                                    <td colSpan={3}></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 </div>

@@ -1,8 +1,15 @@
-#!/usr/bin/env tsx
 import fs from 'fs';
 import path from 'path';
+import * as dotenv from 'dotenv';
 import { Client } from 'pg';
-import { supabaseAdmin } from '../lib/supabaseAdmin';
+
+// Load envs BEFORE importing lib
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
+dotenv.config({ path: '.env.vercel', override: true });
+
+// Dynamic import to ensure envs are loaded first
+const { supabaseAdmin } = require('../lib/supabaseAdmin');
 
 async function main() {
   const fileArg = process.argv[2];

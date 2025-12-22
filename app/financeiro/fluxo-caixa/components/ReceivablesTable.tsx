@@ -37,6 +37,7 @@ interface Order {
     numero_pedido_ecommerce?: string;
     cliente: string;
     valor: number;
+    valor_original?: number;
     valor_total_pedido: number;
     data_pedido: string;
     vencimento_estimado: string | null;
@@ -1268,6 +1269,33 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                 })
                             )}
                         </tbody>
+                        <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
+                            <tr>
+                                <td colSpan={5} className="py-4 px-6 text-right">Total</td>
+                                <td className="py-4 px-6 text-right text-xs">
+                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_original || o.valor || 0), 0))}
+                                </td>
+                                <td className="py-4 px-4 text-right text-xs">
+                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_esperado || 0), 0))}
+                                </td>
+                                <td className="py-4 px-4 text-right">
+                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor || 0), 0))}
+                                </td>
+                                <td className="py-4 px-4 text-right text-xs">
+                                    {(() => {
+                                        const totalDiff = processedOrders.reduce((acc, o) => acc + (o.diferenca || 0), 0);
+                                        return (
+                                            <span className={cn(
+                                                totalDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                            )}>
+                                                {formatCurrency(totalDiff)}
+                                            </span>
+                                        );
+                                    })()}
+                                </td>
+                                <td colSpan={3}></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
 

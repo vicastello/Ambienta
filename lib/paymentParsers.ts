@@ -348,9 +348,15 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';
 
                 // Determine if it's an expense (saída) or income (entrada)
+                // Check for "Recarga" or "ADS" - but EXCLUDE refunds/reversals
+                const cleanDesc = (transactionType + transactionDesc).toLowerCase();
+                const isAdsOrRecharge = cleanDesc.match(/recarga|ads|publicidade/) &&
+                    !cleanDesc.match(/reembolso|estorno|cancelamento/);
+
                 const isExpense = movementType.toLowerCase().includes('saída') ||
                     movementType.toLowerCase().includes('saida') ||
-                    amount < 0;
+                    amount < 0 ||
+                    !!isAdsOrRecharge;
 
                 payments.push({
                     marketplaceOrderId: orderId || 'NO_ORDER_ID', // For expenses without order
