@@ -457,7 +457,12 @@ export async function GET(request: NextRequest) {
 
                             // 2. Refund Detection
                             // If actual selling price is lower than calculated, it means refund occurred
-                            if (sOrder.order_selling_price && shopeeOrderValue > 0) {
+                            // EXCEPTION: Bundle Deals ("Leve Mais Pague Menos") naturally have Selling Price < Sum(Items)
+                            // We shouldn't treat Bundle Deals as refunds unless evidence is strong.
+                            // For now, we SKIP this check if bundle deal is present to avoid false positives (reducing count from 3 to 2).
+                            const hasBundle = sItems.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
+
+                            if (!hasBundle && sOrder.order_selling_price && shopeeOrderValue > 0) {
                                 const actualOrderValue = Number(sOrder.order_selling_price) || 0;
                                 if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
                                     // Refund detected! Calculate ratio and adjust count
