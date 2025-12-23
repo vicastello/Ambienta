@@ -1,7 +1,8 @@
 // Consistent tag colors and styles for the entire app
 
 // Normalize tag name: lowercase, remove accents for matching
-function normalizeTagName(tag: string): string {
+function normalizeTagName(tag: string | null | undefined): string {
+    if (!tag) return '';
     return tag
         .toLowerCase()
         .normalize('NFD')
@@ -9,12 +10,21 @@ function normalizeTagName(tag: string): string {
 }
 
 // Display name: ensure lowercase
-export function formatTagName(tag: string): string {
+export function formatTagName(tag: string | null | undefined): string {
+    if (!tag) return '';
     return tag.toLowerCase();
 }
 
 // Generate a consistent color based on tag name (hash-based)
-export function getTagColor(tagName: string): { bg: string; text: string; border: string } {
+export function getTagColor(tagName: string | null | undefined): { bg: string; text: string; border: string } {
+    // Default color for null/undefined
+    if (!tagName) {
+        return {
+            bg: 'bg-slate-100 dark:bg-slate-900/30',
+            text: 'text-slate-700 dark:text-slate-300',
+            border: 'border-slate-200 dark:border-slate-800'
+        };
+    }
     // Predefined colors for common tags (keys without accents for matching)
     const predefinedColors: Record<string, { bg: string; text: string; border: string }> = {
         'reembolso': {
