@@ -29,8 +29,8 @@ interface ReceivablesSummaryProps {
     loading?: boolean;
 }
 
-const formatBRL = (value: number) => {
-    return value.toLocaleString('pt-BR', {
+const formatBRL = (value: number | null | undefined) => {
+    return (value ?? 0).toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
     });
