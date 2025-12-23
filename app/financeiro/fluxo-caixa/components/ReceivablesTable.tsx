@@ -76,8 +76,8 @@ interface Meta {
 type SortField = 'numero_pedido' | 'data_pedido' | 'cliente' | 'valor' | 'status_pagamento' | 'vencimento_estimado';
 type SortDirection = 'asc' | 'desc';
 
-const formatCurrency = (value: number) => {
-    return value.toLocaleString('pt-BR', {
+const formatCurrency = (value: number | null | undefined) => {
+    return (value ?? 0).toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
     });
