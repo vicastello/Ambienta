@@ -89,7 +89,7 @@ export function AppMultiSelect({
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                     {icon && <span className="text-slate-400 flex-shrink-0">{icon}</span>}
                     {values.length === 0 ? (
-                        <span className="text-slate-400 truncate">{placeholder}</span>
+                        <span className="text-slate-900 dark:text-white truncate">{placeholder}</span>
                     ) : values.length === 1 ? (
                         <span className="text-slate-900 dark:text-white truncate">
                             {selectedLabels[0]}
