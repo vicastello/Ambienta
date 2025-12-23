@@ -119,7 +119,7 @@ export function AppMultiSelect({
                                     type="button"
                                     onClick={() => toggleValue(option.value)}
                                     className={cn(
-                                        "w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors border-0 bg-transparent",
+                                        "w-full px-3 py-2 text-left text-sm flex items-center justify-start gap-2 transition-colors border-0 bg-transparent",
                                         isSelected
                                             ? "bg-primary-50 dark:bg-primary-900/20"
                                             : "hover:bg-slate-50 dark:hover:bg-white/5"
