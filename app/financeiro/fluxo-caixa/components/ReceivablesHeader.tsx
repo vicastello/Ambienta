@@ -300,7 +300,6 @@ export function ReceivablesHeader() {
                             }}
                             options={availableTags.map(tag => ({ value: tag, label: tag }))}
                             placeholder="Todas"
-                            icon={<Tag className="w-4 h-4" />}
                         />
                     </div>
 

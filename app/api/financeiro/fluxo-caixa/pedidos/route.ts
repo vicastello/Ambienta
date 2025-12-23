@@ -171,13 +171,37 @@ export async function GET(request: NextRequest) {
         // Pre-filter by tags if any are selected
         let orderIdsWithTags: number[] | null = null;
         if (filterTags.length > 0) {
+            const matchingOrderIds = new Set<number>();
+
+            // 1. Check order_tags table
             const { data: taggedOrders } = await supabaseAdmin
                 .from('order_tags')
                 .select('order_id')
                 .in('tag_name', filterTags);
 
-            if (taggedOrders && taggedOrders.length > 0) {
-                orderIdsWithTags = [...new Set(taggedOrders.map((t: { order_id: number }) => t.order_id))];
+            if (taggedOrders) {
+                taggedOrders.forEach((t: { order_id: number }) => matchingOrderIds.add(t.order_id));
+            }
+
+            // 2. Check marketplace_payments.tags array - need to find orders linked to these payments
+            const { data: taggedPayments } = await supabaseAdmin
+                .from('marketplace_payments')
+                .select('tiny_order_id, tags')
+                .not('tiny_order_id', 'is', null);
+
+            if (taggedPayments) {
+                taggedPayments.forEach((p: { tiny_order_id: number | null, tags: string[] | null }) => {
+                    if (p.tiny_order_id && p.tags && Array.isArray(p.tags)) {
+                        // Check if any of the payment tags match the filter
+                        if (filterTags.some(ft => p.tags!.includes(ft))) {
+                            matchingOrderIds.add(p.tiny_order_id);
+                        }
+                    }
+                });
+            }
+
+            if (matchingOrderIds.size > 0) {
+                orderIdsWithTags = [...matchingOrderIds];
             } else {
                 // No orders match the tag filter, return empty results
                 return NextResponse.json({
