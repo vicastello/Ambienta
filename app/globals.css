@@ -901,8 +901,8 @@
   }
 
   :root.dark .app-input {
-    background-color: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
   :root.dark .app-input:focus {
@@ -924,8 +924,8 @@
 
   :root.dark button.app-input,
   :root.dark [type="button"].app-input {
-    background-color: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
   }
 
   /* Input editável destacado para tabelas */
