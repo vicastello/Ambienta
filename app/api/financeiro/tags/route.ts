@@ -1,8 +1,49 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
+        const { searchParams } = new URL(request.url);
+        const orderId = searchParams.get('orderId');
+
+        // If orderId is provided, return only tags for that specific order
+        if (orderId) {
+            const orderIdNum = parseInt(orderId);
+            const orderTags: string[] = [];
+
+            // 1. Get tags from order_tags table for this order
+            const { data: orderTagsData } = await supabaseAdmin
+                .from('order_tags')
+                .select('tag_name')
+                .eq('order_id', orderIdNum);
+
+            if (orderTagsData) {
+                orderTagsData.forEach((t: { tag_name: string }) => orderTags.push(t.tag_name));
+            }
+
+            // 2. Get tags from marketplace_payments linked to this order
+            const { data: paymentData } = await supabaseAdmin
+                .from('marketplace_payments')
+                .select('tags')
+                .eq('tiny_order_id', orderIdNum)
+                .not('tags', 'is', null);
+
+            if (paymentData) {
+                paymentData.forEach((p: { tags: string[] | null }) => {
+                    if (p.tags && Array.isArray(p.tags)) {
+                        p.tags.forEach(tag => {
+                            if (!orderTags.includes(tag)) {
+                                orderTags.push(tag);
+                            }
+                        });
+                    }
+                });
+            }
+
+            return NextResponse.json({ tags: orderTags });
+        }
+
+        // No orderId - return all available tags (for filter dropdown)
         const allTags = new Set<string>();
 
         // 1. Get tags from order_tags table
@@ -60,3 +101,4 @@ export async function GET() {
         return NextResponse.json({ tags: [] });
     }
 }
+
