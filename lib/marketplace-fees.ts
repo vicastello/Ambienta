@@ -244,10 +244,20 @@ function calculateMagaluFees(
     config: any
 ): FeeCalculationResult {
     const grossValue = input.orderValue;
+    const productCount = input.productCount || 1;
 
-    const commissionRate = config.commission;
+    // Config field names: commission_rate (decimal, e.g. 0.148) and fixed_cost_per_product
+    let commissionRate = config.commission_rate ?? config.commission ?? 0.148;
+
+    // If rate is in decimal form (e.g., 0.148), convert to percentage for calculation
+    // Commission is expected as percentage (e.g., 14.8), so divide by 100 if < 1
+    if (commissionRate < 1) {
+        commissionRate = commissionRate * 100; // Convert 0.148 -> 14.8
+    }
+
     const commissionFee = (grossValue * commissionRate) / 100;
-    const fixedCost = config.fixed_cost;
+    const fixedCostPerUnit = config.fixed_cost_per_product ?? config.fixed_cost ?? 5;
+    const fixedCost = fixedCostPerUnit * productCount;
 
     const totalFees = commissionFee + fixedCost;
     const netValue = grossValue - totalFees;
@@ -260,8 +270,8 @@ function calculateMagaluFees(
         netValue,
         breakdown: {
             commissionRate,
-            fixedCostPerUnit: fixedCost,
-            units: 1,
+            fixedCostPerUnit,
+            units: productCount,
         },
     };
 }
