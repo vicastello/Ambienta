@@ -200,7 +200,6 @@ export function ReceivablesHeader() {
                             Buscar
                         </label>
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                             <input
                                 type="text"
                                 placeholder="Cliente, pedido, descrição..."
@@ -212,17 +211,26 @@ export function ReceivablesHeader() {
                                     }
                                 }}
                                 onBlur={() => updateFilter('busca', searchInput)}
-                                className="app-input w-full pl-9 pr-8"
+                                className="app-input w-full pr-10"
                             />
-                            {searchInput && (
+                            {searchInput ? (
                                 <button
                                     onClick={() => {
                                         setSearchInput('');
                                         updateFilter('busca', '');
                                     }}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                    title="Limpar busca"
                                 >
-                                    <X className="w-3 h-3 text-slate-400" />
+                                    <X className="w-4 h-4 text-slate-400" />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => updateFilter('busca', searchInput)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+                                    title="Pesquisar"
+                                >
+                                    <Search className="w-4 h-4 text-slate-400 hover:text-primary-500" />
                                 </button>
                             )}
                         </div>
