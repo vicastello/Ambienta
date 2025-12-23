@@ -100,6 +100,8 @@ export async function GET(request: NextRequest) {
         const dataFim = searchParams.get('dataFim');
         const statusPagamento = searchParams.get('statusPagamento') || 'todos'; // todos, pagos, pendentes
         const marketplace = searchParams.get('marketplace') || 'todos';
+        const tagsParam = searchParams.get('tags');
+        const filterTags = tagsParam ? tagsParam.split(',').filter(Boolean) : [];
 
         const busca = searchParams.get('busca');
 
@@ -166,6 +168,45 @@ export async function GET(request: NextRequest) {
             return query;
         };
 
+        // Pre-filter by tags if any are selected
+        let orderIdsWithTags: number[] | null = null;
+        if (filterTags.length > 0) {
+            const { data: taggedOrders } = await supabaseAdmin
+                .from('order_tags')
+                .select('order_id')
+                .in('tag_name', filterTags);
+
+            if (taggedOrders && taggedOrders.length > 0) {
+                orderIdsWithTags = [...new Set(taggedOrders.map((t: { order_id: number }) => t.order_id))];
+            } else {
+                // No orders match the tag filter, return empty results
+                return NextResponse.json({
+                    pedidos: [],
+                    summary: {
+                        valorReceberTotal: 0,
+                        valorRecebido: 0,
+                        valorPendente: 0,
+                        percentualRecebido: 0,
+                        contasPagas: 0,
+                        contasPendentes: 0,
+                        valorPorMarketplace: {},
+                    },
+                    page,
+                    limit,
+                    total: 0,
+                    totalPages: 0
+                });
+            }
+        }
+
+        // Helper to apply tag filter
+        const applyTagFilter = (query: any) => {
+            if (orderIdsWithTags !== null) {
+                query = query.in('id', orderIdsWithTags);
+            }
+            return query;
+        };
+
         // 1. List Query (Paginated)
         let listQuery = supabaseAdmin
             .from('tiny_orders')
@@ -199,6 +240,7 @@ export async function GET(request: NextRequest) {
             `, { count: 'exact' });
 
         listQuery = applyFilters(listQuery);
+        listQuery = applyTagFilter(listQuery);
         listQuery = listQuery.order('data_criacao', { ascending: false });
         listQuery = listQuery.range(offset, offset + limit - 1);
 
@@ -229,6 +271,7 @@ export async function GET(request: NextRequest) {
             `);
 
         summaryQuery = applyFilters(summaryQuery, true);
+        summaryQuery = applyTagFilter(summaryQuery);
 
         // Execute queries in parallel (added manual entries query AND orphan payments query)
         const [listRes, summaryRes, manualEntriesRes, sectionOrphansRes] = await Promise.all([

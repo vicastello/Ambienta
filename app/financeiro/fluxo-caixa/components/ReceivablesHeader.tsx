@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppSelect } from '@/components/ui/AppSelect';
+import { AppMultiSelect } from '@/components/ui/AppMultiSelect';
 import { PeriodPicker } from './PeriodPicker';
 
 const STATUS_OPTIONS = [
@@ -36,6 +37,7 @@ export function ReceivablesHeader() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [categories, setCategories] = useState<Category[]>([]);
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
 
     // Current filter values
     const currentStatus = searchParams.get('statusPagamento') || 'todos';
@@ -47,6 +49,7 @@ export function ReceivablesHeader() {
     const currentMinValue = searchParams.get('valorMin') || '';
     const currentMaxValue = searchParams.get('valorMax') || '';
     const currentSearch = searchParams.get('busca') || '';
+    const currentTags = searchParams.get('tags')?.split(',').filter(Boolean) || [];
     const [searchInput, setSearchInput] = useState(currentSearch);
 
     // Load categories
@@ -60,9 +63,21 @@ export function ReceivablesHeader() {
         }
     }, []);
 
+    // Load available tags
+    const fetchTags = useCallback(async () => {
+        try {
+            const res = await fetch('/api/financeiro/tags');
+            const data = await res.json();
+            setAvailableTags(data.tags || []);
+        } catch {
+            console.error('Error loading tags');
+        }
+    }, []);
+
     useEffect(() => {
         fetchCategories();
-    }, [fetchCategories]);
+        fetchTags();
+    }, [fetchCategories, fetchTags]);
 
     // Count active filters
     const activeFilterCount = [
@@ -73,6 +88,7 @@ export function ReceivablesHeader() {
         currentDateEnd,
         currentMinValue,
         currentMaxValue,
+        currentTags.length > 0,
     ].filter(Boolean).length;
 
     const updateFilter = (key: string, value: string) => {
@@ -261,6 +277,30 @@ export function ReceivablesHeader() {
                             value={currentCategory}
                             onChange={(v) => updateFilter('categoria', v)}
                             options={[{ value: 'todos', label: 'Todas' }, ...categories.map(cat => ({ value: cat.name, label: cat.name }))]}
+                        />
+                    </div>
+
+                    {/* Tags Filter */}
+                    <div className="space-y-1.5 min-w-[180px]">
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1 flex items-center gap-1">
+                            <Tag className="w-3 h-3" />
+                            Tags
+                        </label>
+                        <AppMultiSelect
+                            values={currentTags}
+                            onChange={(tags) => {
+                                const params = new URLSearchParams(searchParams.toString());
+                                if (tags.length > 0) {
+                                    params.set('tags', tags.join(','));
+                                } else {
+                                    params.delete('tags');
+                                }
+                                params.set('page', '1');
+                                router.push(`?${params.toString()}`);
+                            }}
+                            options={availableTags.map(tag => ({ value: tag, label: tag }))}
+                            placeholder="Todas"
+                            icon={<Tag className="w-4 h-4" />}
                         />
                     </div>
 
