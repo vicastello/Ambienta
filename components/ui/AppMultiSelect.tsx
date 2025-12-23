@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check, X, Tag } from 'lucide-react';
+import { ChevronDown, Check, X, Tag, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getTagColor } from '@/lib/tagColors';
 
@@ -30,17 +30,27 @@ export function AppMultiSelect({
     icon,
 }: AppMultiSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
     const containerRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
+                setSearchTerm('');
             }
         }
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Focus input when dropdown opens
+    useEffect(() => {
+        if (isOpen && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isOpen]);
 
     const toggleValue = (value: string) => {
         if (values.includes(value)) {
@@ -58,6 +68,11 @@ export function AppMultiSelect({
     const selectedLabels = values
         .map(v => options.find(opt => opt.value === v)?.label)
         .filter(Boolean);
+
+    // Filter options based on search term
+    const filteredOptions = options.filter(option =>
+        option.label.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div className="relative" ref={containerRef}>
@@ -103,50 +118,77 @@ export function AppMultiSelect({
             </button>
 
             {isOpen && (
-                <div className="absolute top-full mt-2 z-50 w-full min-w-[200px] rounded-2xl shadow-xl py-2 max-h-[280px] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/50 dark:border-white/10">
-                    {options.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-slate-400 text-center">
-                            Nenhuma tag disponível
-                        </div>
-                    ) : (
-                        options.map((option) => {
-                            const isSelected = values.includes(option.value);
-                            const tagColor = getTagColor(option.value);
-
-                            return (
+                <div className="absolute top-full mt-2 z-50 w-full min-w-[220px] rounded-2xl shadow-xl max-h-[320px] overflow-hidden animate-in fade-in-0 zoom-in-95 duration-200 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/50 dark:border-white/10">
+                    {/* Search Input */}
+                    <div className="p-2 border-b border-slate-200/50 dark:border-white/10">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                placeholder="Buscar tag..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 text-sm bg-slate-100 dark:bg-white/5 rounded-xl border-0 outline-none focus:ring-2 focus:ring-primary-500 placeholder:text-slate-400"
+                            />
+                            {searchTerm && (
                                 <button
-                                    key={option.value}
                                     type="button"
-                                    onClick={() => toggleValue(option.value)}
-                                    className={cn(
-                                        "w-full px-3 py-2 text-left text-sm flex items-center justify-start gap-2 transition-colors border-0 bg-transparent",
-                                        isSelected
-                                            ? "bg-primary-50 dark:bg-primary-900/20"
-                                            : "hover:bg-slate-50 dark:hover:bg-white/5"
-                                    )}
+                                    onClick={() => setSearchTerm('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
                                 >
-                                    <div className={cn(
-                                        "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors",
-                                        isSelected
-                                            ? "bg-primary-500 border-primary-500"
-                                            : "border-slate-300 dark:border-slate-600"
-                                    )}>
-                                        {isSelected && <Check className="w-3 h-3 text-white" />}
-                                    </div>
-                                    <span className={cn(
-                                        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
-                                        tagColor.bg,
-                                        tagColor.text,
-                                        tagColor.border,
-                                        "border"
-                                    )}>
-                                        <Tag className="w-3 h-3" />
-                                        {option.label}
-                                    </span>
+                                    <X className="w-3 h-3 text-slate-400" />
                                 </button>
-                            );
-                        })
-                    )}
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Options List */}
+                    <div className="py-2 max-h-[240px] overflow-y-auto">
+                        {filteredOptions.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-slate-400 text-center">
+                                {options.length === 0 ? 'Nenhuma tag disponível' : 'Nenhuma tag encontrada'}
+                            </div>
+                        ) : (
+                            filteredOptions.map((option) => {
+                                const isSelected = values.includes(option.value);
+                                const tagColor = getTagColor(option.value);
+
+                                return (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => toggleValue(option.value)}
+                                        className={cn(
+                                            "w-full px-3 py-2 text-left text-sm flex items-center justify-start gap-2 transition-colors border-0 bg-transparent",
+                                            isSelected
+                                                ? "bg-primary-50 dark:bg-primary-900/20"
+                                                : "hover:bg-slate-50 dark:hover:bg-white/5"
+                                        )}
+                                    >
+                                        <div className={cn(
+                                            "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors",
+                                            isSelected
+                                                ? "bg-primary-500 border-primary-500"
+                                                : "border-slate-300 dark:border-slate-600"
+                                        )}>
+                                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                                        </div>
+                                        <span className={cn(
+                                            "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
+                                            tagColor.bg,
+                                            tagColor.text,
+                                            tagColor.border,
+                                            "border"
+                                        )}>
+                                            <Tag className="w-3 h-3" />
+                                            {option.label}
+                                        </span>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
             )}
         </div>
