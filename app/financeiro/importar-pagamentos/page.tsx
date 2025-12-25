@@ -1,18 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Upload, CheckCircle, AlertCircle, Loader2, History, ArrowLeft, ArrowRight, FileUp, Settings } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { CheckCircle, AlertCircle, Loader2, ArrowLeft, ArrowRight, Settings, Link as LinkIcon } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import PaymentPreviewTable, { type PreviewPayment } from '../fluxo-caixa/components/PaymentPreviewTable';
 import ManualLinkModal from '../fluxo-caixa/components/ManualLinkModal';
 import EditTagsModal from '../fluxo-caixa/components/EditTagsModal';
-import AutoLinkRulesManager from '../fluxo-caixa/components/AutoLinkRulesManager';
+import RulesManager from '../fluxo-caixa/components/RulesManager';
 import { cn } from '@/lib/utils';
 
-type Marketplace = 'magalu' | 'mercado_livre' | 'shopee';
+// New components
+import { FileUploadZone } from './components/FileUploadZone';
+import { ImportStepper, type StepperStep } from './components/ImportStepper';
+import { MarketplaceSelector, getMarketplaceConfig, type Marketplace } from './components/MarketplaceSelector';
+import { ImportHistory, type ImportHistoryItem } from './components/ImportHistory';
+import { ImportCalendar, type ImportedDate } from './components/ImportCalendar';
 
-type ImportStep = 'upload' | 'preview' | 'confirm' | 'complete';
+type ImportStep = 'upload' | 'preview' | 'complete';
 
 type PreviewResponse = {
     success: boolean;
@@ -33,15 +38,11 @@ type PreviewResponse = {
     errors?: string[];
 };
 
-type ImportHistory = {
-    marketplace: string;
-    dateRange: {
-        start: string | null;
-        end: string | null;
-    };
-    uploadedAt: string;
-    paymentsCount: number;
-};
+const STEPPER_STEPS: StepperStep[] = [
+    { id: 'upload', label: 'Upload' },
+    { id: 'preview', label: 'Preview & Review' },
+    { id: 'complete', label: 'Concluído' },
+];
 
 export default function ImportarPagamentosPage() {
     const [activeTab, setActiveTab] = useState<'import' | 'rules'>('import');
@@ -52,10 +53,11 @@ export default function ImportarPagamentosPage() {
     const [confirming, setConfirming] = useState(false);
     const [previewData, setPreviewData] = useState<PreviewResponse | null>(null);
     const [confirmResult, setConfirmResult] = useState<any>(null);
-    const [history, setHistory] = useState<ImportHistory[]>([]);
+    const [history, setHistory] = useState<ImportHistoryItem[]>([]);
     const [showManualLinkModal, setShowManualLinkModal] = useState(false);
     const [showEditTagsModal, setShowEditTagsModal] = useState(false);
     const [selectedPayment, setSelectedPayment] = useState<PreviewPayment | null>(null);
+    const [ruleFeedback, setRuleFeedback] = useState<{ message: string; count: number } | null>(null);
 
     // Fetch import history on mount
     useEffect(() => {
@@ -74,17 +76,35 @@ export default function ImportarPagamentosPage() {
         }
     };
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
-        }
+    // Transform history to calendar format
+    const calendarDates = useMemo((): ImportedDate[] => {
+        const dates: ImportedDate[] = [];
+        history.forEach(item => {
+            if (item.dateRange.start && item.dateRange.end) {
+                // Add entries for each day in the range
+                const start = new Date(item.dateRange.start);
+                const end = new Date(item.dateRange.end);
+                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    dates.push({
+                        date: d.toISOString().split('T')[0],
+                        marketplace: item.marketplace as Marketplace,
+                        paymentsCount: Math.ceil(item.paymentsCount / ((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1)),
+                    });
+                }
+            }
+        });
+        return dates;
+    }, [history]);
+
+    const handleFileSelect = (selectedFile: File | null) => {
+        setFile(selectedFile);
+        setPreviewData(null); // Clear any previous errors
     };
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            setFile(e.dataTransfer.files[0]);
-        }
+    const handleMarketplaceChange = (newMarketplace: Marketplace) => {
+        setMarketplace(newMarketplace);
+        setFile(null); // Clear file when marketplace changes (different format)
+        setPreviewData(null);
     };
 
     const handlePreview = async () => {
@@ -152,9 +172,7 @@ export default function ImportarPagamentosPage() {
     };
 
     const handleLinkSuccess = () => {
-        // Refresh preview data
         setShowManualLinkModal(false);
-        // Optionally refetch preview
     };
 
     const handleEditTags = (payment: PreviewPayment) => {
@@ -165,40 +183,85 @@ export default function ImportarPagamentosPage() {
     const handleSaveTags = async (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string) => {
         if (!selectedPayment || !previewData) return;
 
-        // Update tags, type, and description in preview data
-        const updatedPayments = previewData.payments.map(p =>
-            p.marketplaceOrderId === selectedPayment.marketplaceOrderId
-                ? {
+        // Build pattern for matching similar entries
+        const patternStr = updatedDescription && updatedDescription.length > 10
+            ? `.*${updatedDescription.substring(0, 30)}.*`
+            : updatedDescription ? `.*${updatedDescription}.*` : null;
+
+        let patternRegex: RegExp | null = null;
+        if (patternStr && createRule) {
+            try {
+                patternRegex = new RegExp(patternStr, 'i');
+            } catch {
+                patternRegex = null;
+            }
+        }
+
+        // Update payments - if creating rule, apply to ALL matching entries
+        const updatedPayments = previewData.payments.map(p => {
+            // Always update the selected payment
+            if (p.marketplaceOrderId === selectedPayment.marketplaceOrderId) {
+                return {
                     ...p,
                     tags: updatedTags,
                     transactionType: updatedType || p.transactionType,
                     transactionDescription: updatedDescription || p.transactionDescription,
+                };
+            }
+
+            // If creating rule, also update other matching entries
+            if (createRule && patternRegex) {
+                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`;
+                if (patternRegex.test(textToMatch)) {
+                    // Merge new tags with existing ones (avoid duplicates)
+                    const mergedTags = [...new Set([...p.tags, ...updatedTags])];
+                    return { ...p, tags: mergedTags };
                 }
-                : p
-        );
+            }
+
+            return p;
+        });
+
+        // Count how many entries were affected (excluding the selected one)
+        const otherMatchCount = createRule && patternRegex
+            ? previewData.payments.filter(p => {
+                if (p.marketplaceOrderId === selectedPayment.marketplaceOrderId) return false;
+                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`;
+                return patternRegex!.test(textToMatch);
+            }).length
+            : 0;
+
         setPreviewData({ ...previewData, payments: updatedPayments });
 
-        // Create auto-link rule if requested
         if (createRule && updatedDescription) {
             try {
-                // Use a more specific pattern from the edited description
-                const pattern = updatedDescription.length > 10
-                    ? `.*${updatedDescription.substring(0, 30)}.*`
-                    : `.*${updatedDescription}.*`;
-
                 await fetch('/api/financeiro/pagamentos/auto-link-rules', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         marketplace: previewData.marketplace,
-                        transaction_type_pattern: pattern,
+                        transaction_type_pattern: patternStr,
                         action: 'auto_tag',
                         tags: updatedTags,
                         priority: 50,
                     }),
                 });
+
+                // Show visual feedback with count
+                const totalApplied = otherMatchCount + 1;
+                setRuleFeedback({
+                    message: otherMatchCount > 0
+                        ? `✅ Regra criada e aplicada a ${totalApplied} entrada(s)`
+                        : '✅ Regra criada com sucesso',
+                    count: totalApplied,
+                });
+
+                // Auto-hide feedback after 5 seconds
+                setTimeout(() => setRuleFeedback(null), 5000);
             } catch (error) {
                 console.error('Error creating auto-rule:', error);
+                setRuleFeedback({ message: '❌ Erro ao criar regra', count: 0 });
+                setTimeout(() => setRuleFeedback(null), 3000);
             }
         }
 
@@ -212,6 +275,8 @@ export default function ImportarPagamentosPage() {
         setConfirmResult(null);
     };
 
+    const marketplaceConfig = getMarketplaceConfig(marketplace);
+
     return (
         <AppLayout title="Importar Pagamentos">
             <div className="space-y-6 pb-6">
@@ -221,195 +286,123 @@ export default function ImportarPagamentosPage() {
                     { label: 'Importar Pagamentos' }
                 ]} />
 
-                {/* Header */}
+                {/* Header Section */}
                 <section className="glass-panel glass-tint rounded-[32px] border border-white/60 dark:border-white/10 p-6 md:p-8">
-                    <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Financeiro</p>
-                        <h1 className="text-3xl font-semibold text-slate-900 dark:text-white">
-                            Importar Pagamentos
-                        </h1>
-                        <p className="text-sm text-slate-600 dark:text-slate-300 max-w-2xl">
-                            Sistema de importação inteligente com preview, detecção automática de tags e vinculação manual
-                        </p>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div className="space-y-1">
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Financeiro</p>
+                            <h1 className="text-2xl md:text-3xl font-semibold text-slate-900 dark:text-white">
+                                Importar Pagamentos
+                            </h1>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                                Importe extratos de marketplaces para reconciliação automática
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setActiveTab(activeTab === 'import' ? 'rules' : 'import')}
+                            className="app-btn-secondary inline-flex items-center gap-2 self-start"
+                        >
+                            {activeTab === 'import' ? (
+                                <>
+                                    <Settings className="w-4 h-4" />
+                                    Gerenciar Regras
+                                </>
+                            ) : (
+                                <>
+                                    <ArrowLeft className="w-4 h-4" />
+                                    Voltar para Importação
+                                </>
+                            )}
+                        </button>
                     </div>
                 </section>
-
-                {/* Tabs Navigation */}
-                <div className="flex gap-3 mb-6">
-                    <button
-                        onClick={() => setActiveTab('import')}
-                        className={activeTab === 'import' ? 'app-btn-primary' : 'app-btn-secondary'}
-                    >
-                        <FileUp className="w-4 h-4" />
-                        Importar Pagamentos
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('rules')}
-                        className={activeTab === 'rules' ? 'app-btn-primary' : 'app-btn-secondary'}
-                    >
-                        <Settings className="w-4 h-4" />
-                        Gerenciar Regras Automáticas
-                    </button>
-                </div>
 
                 {/* Tab Content */}
                 {activeTab === 'rules' ? (
                     <div className="glass-panel glass-tint rounded-[32px] border border-white/40 dark:border-white/10 p-6 md:p-8">
-                        <AutoLinkRulesManager />
+                        <RulesManager />
                     </div>
                 ) : (
                     <>
-                        {/* Import History (only show on upload step) */}
-                        <div className="flex items-center justify-center gap-2">
-                            {['upload', 'preview', 'complete'].map((s, i) => (
-                                <div key={s} className="flex items-center">
-                                    <div className={cn(
-                                        'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all',
-                                        step === s
-                                            ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-md'
-                                            : (step === 'preview' && s === 'upload') || (step === 'complete' && ['upload', 'preview'].includes(s))
-                                                ? 'bg-blue-600/70 dark:bg-blue-500/70 text-white'
-                                                : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                                    )}>
-                                        <span>{i + 1}</span>
-                                        <span className="hidden sm:inline">
-                                            {s === 'upload' && 'Upload'}
-                                            {s === 'preview' && 'Preview & Review'}
-                                            {s === 'complete' && 'Concluído'}
-                                        </span>
-                                    </div>
-                                    {i < 2 && (
-                                        <ArrowRight className="w-4 h-4 mx-2 text-gray-400" />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Import History */}
-                        {step === 'upload' && history.length > 0 && (
-                            <div className="glass-panel glass-tint rounded-[32px] border border-white/40 dark:border-white/10 p-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <History className="w-5 h-5 text-blue-500" />
-                                    <h2 className="text-lg font-semibold text-main">Histórico de Importações</h2>
-                                </div>
-                                <div className="space-y-2 max-h-48 overflow-y-auto">
-                                    {history.slice(0, 10).map((item, i) => (
-                                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/30 dark:bg-white/5">
-                                            <div className="flex-1">
-                                                <p className="text-sm font-medium capitalize">{item.marketplace.replace('_', ' ')}</p>
-                                                <p className="text-xs text-muted">
-                                                    {item.dateRange.start && item.dateRange.end
-                                                        ? `${new Date(item.dateRange.start).toLocaleDateString('pt-BR')} - ${new Date(item.dateRange.end).toLocaleDateString('pt-BR')}`
-                                                        : 'Sem período definido'
-                                                    }
-                                                </p>
-                                            </div>
-                                            <div className="text-right text-sm">
-                                                <p className="font-semibold text-main">{item.paymentsCount} pagamentos</p>
-                                                <p className="text-xs text-muted">
-                                                    {new Date(item.uploadedAt).toLocaleDateString('pt-BR')}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* Stepper */}
+                        <ImportStepper steps={STEPPER_STEPS} currentStep={step} />
 
                         {/* Step 1: Upload */}
                         {step === 'upload' && (
-                            <div className="glass-panel glass-tint rounded-[32px] border border-white/40 dark:border-white/10 p-6 md:p-8">
-                                <div className="mb-6">
-                                    <h2 className="text-xl font-semibold text-main mb-1">Upload de Extrato</h2>
-                                    <p className="text-sm text-muted">Selecione o marketplace e o arquivo de extrato</p>
-                                </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                {/* Main Upload Area (2 columns) */}
+                                <div className="lg:col-span-2 space-y-6">
+                                    <div className="glass-panel glass-tint rounded-[32px] border border-white/40 dark:border-white/10 p-6 md:p-8">
+                                        <div className="mb-6">
+                                            <h2 className="text-xl font-semibold text-main mb-1">Upload de Extrato</h2>
+                                            <p className="text-sm text-muted">Selecione o marketplace e o arquivo de extrato</p>
+                                        </div>
 
-                                <div className="mb-6">
-                                    <label className="block text-sm font-medium text-main mb-3">Marketplace</label>
-                                    <div className="flex gap-3">
-                                        {(['magalu', 'mercado_livre', 'shopee'] as const).map((mp) => (
-                                            <button
-                                                key={mp}
-                                                onClick={() => setMarketplace(mp)}
-                                                className={marketplace === mp ? 'app-btn-primary' : 'app-btn-secondary'}
-                                            >
-                                                {mp === 'magalu' && 'Magalu'}
-                                                {mp === 'mercado_livre' && 'Mercado Livre'}
-                                                {mp === 'shopee' && 'Shopee'}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                        {/* Marketplace Selector */}
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-main mb-3">Marketplace</label>
+                                            <MarketplaceSelector
+                                                selected={marketplace}
+                                                onSelect={handleMarketplaceChange}
+                                                disabled={uploading}
+                                            />
+                                        </div>
 
-                                {/* File upload */}
-                                <div className="mb-6">
-                                    <label className="block text-sm font-medium text-main mb-3">Arquivo</label>
-                                    <div
-                                        onDrop={handleDrop}
-                                        onDragOver={(e) => e.preventDefault()}
-                                        className="border-2 border-dashed border-white/30 dark:border-white/10 rounded-2xl p-8 text-center hover:border-accent/50 transition-colors cursor-pointer"
-                                        onClick={() => document.getElementById('file-input')?.click()}
-                                    >
-                                        <Upload className="w-12 h-12 mx-auto mb-4 text-muted" />
-                                        {file ? (
-                                            <div>
-                                                <p className="text-main font-medium mb-1">{file.name}</p>
-                                                <p className="text-sm text-muted">{(file.size / 1024).toFixed(1)} KB</p>
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <p className="text-main font-medium mb-1">Arraste o arquivo aqui ou clique para selecionar</p>
-                                                <p className="text-sm text-muted">
-                                                    {marketplace === 'magalu' && 'Formato aceito: CSV'}
-                                                    {marketplace !== 'magalu' && 'Formato aceito: XLSX'}
-                                                </p>
-                                                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
-                                                    ⚠️ Máximo 500 registros por arquivo
-                                                </p>
+                                        {/* File Upload */}
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-main mb-3">Arquivo</label>
+                                            <FileUploadZone
+                                                file={file}
+                                                onFileSelect={handleFileSelect}
+                                                acceptedTypes={marketplaceConfig?.acceptedTypes || '.xlsx'}
+                                                formatHint={`Formato aceito: ${marketplaceConfig?.format || 'XLSX'}`}
+                                                disabled={uploading}
+                                            />
+                                        </div>
+
+                                        {/* Submit Button */}
+                                        <button
+                                            onClick={handlePreview}
+                                            disabled={!file || uploading}
+                                            className="app-btn-primary inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {uploading ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Analisando arquivo...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ArrowRight className="w-4 h-4" />
+                                                    Continuar para Preview
+                                                </>
+                                            )}
+                                        </button>
+
+                                        {/* Error display */}
+                                        {previewData && !previewData.success && (
+                                            <div className="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                                <div className="flex items-start gap-2">
+                                                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                                                    <div>
+                                                        <p className="font-medium text-red-900 dark:text-red-300 mb-1">Erro ao processar arquivo</p>
+                                                        {previewData.errors?.map((err, i) => (
+                                                            <p key={i} className="text-sm text-red-700 dark:text-red-400">{err}</p>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
-                                        <input
-                                            id="file-input"
-                                            type="file"
-                                            accept={marketplace === 'magalu' ? '.csv' : '.xlsx'}
-                                            onChange={handleFileSelect}
-                                            className="hidden"
-                                        />
                                     </div>
+
+                                    {/* Import History (Collapsible) */}
+                                    <ImportHistory history={history} maxItems={5} />
                                 </div>
 
-                                <button
-                                    onClick={handlePreview}
-                                    disabled={!file || uploading}
-                                    className="app-btn-primary inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {uploading ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            Analisando arquivo...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ArrowRight className="w-4 h-4" />
-                                            Continuar para Preview
-                                        </>
-                                    )}
-                                </button>
-
-                                {/* Error display */}
-                                {previewData && !previewData.success && (
-                                    <div className="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                                        <div className="flex items-start gap-2">
-                                            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                                            <div>
-                                                <p className="font-medium text-red-900 dark:text-red-300 mb-1">Erro ao processar arquivo</p>
-                                                {previewData.errors?.map((err, i) => (
-                                                    <p key={i} className="text-sm text-red-700 dark:text-red-400">{err}</p>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                {/* Sidebar: Calendar (1 column) */}
+                                <div className="lg:col-span-1">
+                                    <ImportCalendar importedDates={calendarDates} />
+                                </div>
                             </div>
                         )}
 
@@ -417,27 +410,45 @@ export default function ImportarPagamentosPage() {
                         {step === 'preview' && previewData && (
                             <div className="space-y-6">
                                 {/* Summary Cards */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                                     <div className="glass-panel p-4 rounded-xl">
                                         <p className="text-sm text-muted mb-1">Total</p>
                                         <p className="text-2xl font-bold text-main">{previewData.summary.total}</p>
                                     </div>
                                     <div className="glass-panel p-4 rounded-xl relative overflow-hidden">
-                                        <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/6 via-emerald-500/2 to-transparent pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/6 via-emerald-500/2 to-transparent pointer-events-none" />
                                         <div className="relative z-10">
-                                            <p className="text-sm text-muted mb-1">Vinculados</p>
-                                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{previewData.summary.linked}</p>
+                                            <p className="text-sm text-muted mb-1">Entradas</p>
+                                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                                                {previewData.payments.filter(p => !p.isExpense).length}
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="glass-panel p-4 rounded-xl relative overflow-hidden">
-                                        <div className="absolute inset-0 bg-gradient-to-t from-red-500/6 via-red-500/2 to-transparent pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-rose-500/6 via-rose-500/2 to-transparent pointer-events-none" />
+                                        <div className="relative z-10">
+                                            <p className="text-sm text-muted mb-1">Saídas</p>
+                                            <p className="text-2xl font-bold text-rose-600 dark:text-rose-400">
+                                                {previewData.payments.filter(p => p.isExpense).length}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="glass-panel p-4 rounded-xl relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-blue-500/6 via-blue-500/2 to-transparent pointer-events-none" />
+                                        <div className="relative z-10">
+                                            <p className="text-sm text-muted mb-1">Vinculados</p>
+                                            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{previewData.summary.linked}</p>
+                                        </div>
+                                    </div>
+                                    <div className="glass-panel p-4 rounded-xl relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-red-500/6 via-red-500/2 to-transparent pointer-events-none" />
                                         <div className="relative z-10">
                                             <p className="text-sm text-muted mb-1">Não Vinculados</p>
                                             <p className="text-2xl font-bold text-red-600 dark:text-red-400">{previewData.summary.unmatched}</p>
                                         </div>
                                     </div>
                                     <div className="glass-panel p-4 rounded-xl relative overflow-hidden">
-                                        <div className="absolute inset-0 bg-gradient-to-t from-amber-500/6 via-amber-500/2 to-transparent pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-amber-500/6 via-amber-500/2 to-transparent pointer-events-none" />
                                         <div className="relative z-10">
                                             <p className="text-sm text-muted mb-1">Múltiplas Entradas</p>
                                             <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{previewData.summary.multiEntry}</p>
@@ -453,6 +464,25 @@ export default function ImportarPagamentosPage() {
                                             Revise os pagamentos detectados, vincule manualmente os que precisam e confirme a importação
                                         </p>
                                     </div>
+
+                                    {/* Rule application feedback */}
+                                    {ruleFeedback && (
+                                        <div className={cn(
+                                            "mb-4 p-3 rounded-xl flex items-center gap-2 transition-all animate-in fade-in slide-in-from-top-2",
+                                            ruleFeedback.count > 0
+                                                ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800"
+                                                : "bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800"
+                                        )}>
+                                            <span className="text-sm font-medium">{ruleFeedback.message}</span>
+                                            <button
+                                                onClick={() => setRuleFeedback(null)}
+                                                className="ml-auto text-muted hover:text-main"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <PaymentPreviewTable
                                         payments={previewData.payments}
                                         marketplace={previewData.marketplace}
@@ -495,7 +525,9 @@ export default function ImportarPagamentosPage() {
                         {step === 'complete' && confirmResult && (
                             <div className="glass-panel glass-tint rounded-[32px] border border-emerald-500/30 bg-emerald-50/5 p-6 md:p-8">
                                 <div className="text-center max-w-2xl mx-auto">
-                                    <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
+                                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                        <CheckCircle className="w-10 h-10 text-emerald-500" />
+                                    </div>
                                     <h2 className="text-2xl font-semibold text-main mb-2">Importação Concluída!</h2>
                                     <p className="text-muted mb-6">Todos os pagamentos foram processados e salvos com sucesso</p>
 

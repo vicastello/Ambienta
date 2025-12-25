@@ -9,6 +9,7 @@ import { MarketplaceTabs } from './components/Navigation';
 import { SimulatorPanel } from './components/Sidebar';
 import { ShopeeConfigPanel, MercadoLivreConfigPanel, MagaluConfigPanel } from './components/ConfigPanels';
 import { ImpactPreviewCard } from './components/Shared';
+import { FeePeriodsPanel } from './components/FeePeriodsPanel';
 import type { ShopeeConfig, MercadoLivreConfig, MagaluConfig, Marketplace, Campaign } from './lib/types';
 import { MARKETPLACE_DEFAULTS } from './lib/defaults';
 
@@ -177,7 +178,6 @@ export default function TaxasMarketplacePage() {
                             <ShopeeConfigPanel
                                 config={shopeeConfig}
                                 onUpdate={handleShopeeUpdate}
-                                onAutoSave={handleShopeeAutoSave}
                             />
                         )}
                         {activeTab === 'mercadoLivre' && (
@@ -192,6 +192,9 @@ export default function TaxasMarketplacePage() {
                                 onUpdate={handleMagaluUpdate}
                             />
                         )}
+
+                        {/* Histórico de Taxas por Período */}
+                        <FeePeriodsPanel marketplace={currentMarketplace} />
                     </div>
 
                     {/* Sidebar - Impact Preview + Save Actions + Simulator */}

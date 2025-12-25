@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { parsePaymentFile, type ParsedPayment } from '@/lib/paymentParsers';
 import { applySmartTags, detectMultiEntry, convertDbRulesToTagRules } from '@/lib/smartTagger';
 import { calculateMarketplaceFees } from '@/lib/marketplace-fees';
+import { RulesEngine, getSystemRules, type AutoRule, type PaymentInput } from '@/lib/rules';
 
 export const config = {
     api: {
@@ -14,6 +15,7 @@ export type PreviewPayment = ParsedPayment & {
     tags: string[];
     isAdjustment: boolean;
     isRefund: boolean;
+    isFreightAdjustment: boolean; // Freight/weight adjustments - don't show expected/difference
     matchStatus: 'linked' | 'unmatched' | 'multiple_entries';
     tinyOrderId?: number;
     tinyOrderInfo?: {
@@ -23,6 +25,7 @@ export type PreviewPayment = ParsedPayment & {
         valor_total_pedido: number;
         valor_esperado?: number;
         fees_breakdown?: any;
+        data_criacao?: string | null;
     };
     relatedPayments?: string[]; // Other marketplace order IDs in same group
     netBalance?: number;
@@ -81,33 +84,81 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // 2. Fetch auto-link rules from DB
-        const { data: dbRules } = await supabaseAdmin
-            .from('payment_auto_link_rules')
-            .select('transaction_type_pattern, tags, priority')
-            .eq('marketplace', marketplace)
-            .order('priority', { ascending: false });
+        // 2. Fetch rules from new auto_rules table + system rules
+        let rulesEngine: RulesEngine;
+        try {
+            // Note: Using 'as any' until auto_rules table is added to Supabase types
+            const { data: dbRules } = await (supabaseAdmin as any)
+                .from('auto_rules')
+                .select('*')
+                .eq('enabled', true)
+                .order('priority', { ascending: false });
 
-        const customRules = dbRules
-            ? convertDbRulesToTagRules(
-                dbRules.map(r => ({
-                    transaction_type_pattern: r.transaction_type_pattern,
-                    tags: r.tags || [],
-                    priority: r.priority || 0,
-                }))
-            )
-            : [];
+            // Convert DB rows to AutoRule format
+            const userRules: AutoRule[] = (dbRules || []).map((row: any) => ({
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                marketplace: row.marketplace,
+                conditions: row.conditions || [],
+                conditionLogic: row.condition_logic || 'AND',
+                actions: row.actions || [],
+                priority: row.priority,
+                enabled: row.enabled,
+                stopOnMatch: row.stop_on_match,
+                isSystemRule: row.is_system_rule,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+            }));
 
-        // 3. Apply smart tagging and check for matches
+            // Combine user rules with system rules
+            const allRules = [...userRules, ...getSystemRules()];
+            rulesEngine = new RulesEngine(allRules);
+
+            console.log(`[Preview] Loaded ${userRules.length} user rules + ${getSystemRules().length} system rules for ${marketplace}`);
+        } catch (error) {
+            console.warn('[Preview] Error loading new rules, falling back to empty:', error);
+            rulesEngine = new RulesEngine(getSystemRules());
+        }
+
+        // 3. Apply rules and check for matches
         const previewPayments: PreviewPayment[] = [];
 
         for (const payment of parseResult.payments) {
-            // Apply smart tags
-            const tagResult = applySmartTags(
-                payment.rawData?.toString() || '',
-                undefined,
-                customRules
-            );
+            // Create PaymentInput for the engine
+            const paymentInput: PaymentInput = {
+                marketplaceOrderId: payment.marketplaceOrderId,
+                transactionDescription: payment.transactionDescription || '',
+                transactionType: payment.transactionType || '',
+                amount: payment.netAmount,
+                paymentDate: payment.paymentDate || new Date().toISOString(),
+            };
+
+            // Process through the new rules engine
+            const engineResult = rulesEngine.process(paymentInput, marketplace);
+
+            // Check for freight-related adjustments (specific patterns)
+            const freightFeePatterns = [
+                /frete\s+de\s+devolu/i,
+                /devolucao.*frete/i,
+                /cobran[çc]a.*frete/i,
+                /peso\s+diferente/i,
+                /ajuste.*peso/i,
+            ];
+            const fullText = `${payment.transactionDescription || ''} ${payment.transactionType || ''}`;
+            const isFreightAdjustment = engineResult.tags.includes('ajuste') &&
+                freightFeePatterns.some(p => p.test(fullText));
+
+            // Debug logging for rule matching
+            if (engineResult.tags.length > 0) {
+                console.log(`[Preview] Tags applied to ${payment.marketplaceOrderId}:`, {
+                    desc: payment.transactionDescription?.substring(0, 50),
+                    type: payment.transactionType,
+                    tags: engineResult.tags,
+                    matchedRules: engineResult.matchedRules.filter(r => r.matched).map(r => r.ruleName),
+                });
+            }
+
 
             // Check if order exists in marketplace_order_links
             const { data: linkData } = await supabaseAdmin
@@ -180,12 +231,22 @@ export async function POST(request: NextRequest) {
                     .eq('order_sn', baseMarketplaceOrderId)
                     .maybeSingle();
 
-                // Adjust productCount if order_selling_price differs from calculated value
-                // This handles refunds where items were returned but shopee_order_items isn't updated
+                // Adjust productCount if total_amount differs from calculated value
+                // IMPORTANT: total_amount reflects the actual order value AFTER refunds
+                // order_selling_price is the ORIGINAL value before any refunds
+                // So we use total_amount to detect refunds
                 const escrowData = shopeeOrderData as any;
-                if (escrowData?.order_selling_price && shopeeOrderValue && shopeeOrderValue > 0) {
-                    const actualOrderValue = Number(escrowData.order_selling_price) || 0;
-                    if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
+                if (escrowData && shopeeOrderValue && shopeeOrderValue > 0) {
+                    // Use total_amount as the definitive post-refund value
+                    // If total_amount is not available or 0, fall back to order_selling_price
+                    const totalAmount = Number(escrowData.total_amount) || 0;
+                    const sellingPrice = Number(escrowData.order_selling_price) || 0;
+
+                    // total_amount is the final value after refunds
+                    // If total_amount < order_selling_price, there was a refund
+                    const actualOrderValue = totalAmount > 0 ? totalAmount : sellingPrice;
+
+                    if (actualOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
                         // Refund detected! Calculate the ratio and adjust product count
                         originalProductCount = productCount;
                         originalOrderValue = shopeeOrderValue;
@@ -193,9 +254,9 @@ export async function POST(request: NextRequest) {
 
                         const refundRatio = actualOrderValue / shopeeOrderValue;
                         const adjustedCount = Math.round(productCount * refundRatio);
-                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Refund detected! Original count: ${productCount}, Adjusted count: ${adjustedCount}, Refund: R$ ${refundAmount.toFixed(2)}`);
+                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Refund detected! Original: R$${shopeeOrderValue.toFixed(2)}, Actual: R$${actualOrderValue.toFixed(2)}, Refund: R$${refundAmount.toFixed(2)}, Original count: ${productCount}, Adjusted count: ${adjustedCount}`);
                         productCount = Math.max(1, adjustedCount);
-                        // Update shopeeOrderValue to match actual
+                        // Update shopeeOrderValue to match actual post-refund value
                         shopeeOrderValue = actualOrderValue;
                     }
                 }
@@ -233,15 +294,15 @@ export async function POST(request: NextRequest) {
 
                 // Add automatic tags based on escrow data
                 if (voucherFromSeller > 0) {
-                    tagResult.tags.push('cupom loja');
+                    engineResult.tags.push('cupom loja');
                 }
                 if (amsCommissionFee > 0) {
-                    tagResult.tags.push('comissão afiliado');
+                    engineResult.tags.push('comissão afiliado');
                 }
                 // Only add tag for real "leve mais pague menos" discounts (~2%)
                 // High seller_discount values are just inflated original prices, not real costs
                 if (isLeveMaisPagueMenos) {
-                    tagResult.tags.push('leve mais pague menos');
+                    engineResult.tags.push('leve mais pague menos');
                 }
 
                 // Note: voucher and ams_commission are passed separately to the fee calculation
@@ -254,9 +315,13 @@ export async function POST(request: NextRequest) {
 
             if (linkData && linkData.tiny_orders) {
                 try {
-                    // Use order date from Tiny (data_criacao) to determine campaign period
+                    // Use order date from Tiny (data_criacao) to determine fee period
                     const orderDateStr = (linkData as any).tiny_orders.data_criacao || payment.paymentDate;
-                    const orderDate = orderDateStr ? new Date(orderDateStr) : new Date();
+                    // Add T12:00:00 to avoid timezone issues (midnight UTC becomes previous day in BRT)
+                    const normalizedDateStr = orderDateStr && !orderDateStr.includes('T')
+                        ? `${orderDateStr.split(' ')[0]}T12:00:00`
+                        : orderDateStr;
+                    const orderDate = normalizedDateStr ? new Date(normalizedDateStr) : new Date();
 
                     // For Shopee, use order_discounted_price as the base for fee calculation
                     // order_discounted_price = order_selling_price - seller_discount
@@ -269,10 +334,13 @@ export async function POST(request: NextRequest) {
                         (sellerDiscount / orderSellingPrice) <= 0.05;
 
                     if (marketplace === 'shopee') {
-                        // For Shopee, the base value depends on the type of discount:
-                        // - "Leve mais pague menos" (2%): use order_discounted_price (seller pays the discount)
-                        // - Promotional discounts (larger): use order_selling_price (Shopee pays the discount)
-                        if (isLeveMaisPagueMenos && orderDiscountedPrice > 0) {
+                        // For Shopee, use the post-refund value if a refund occurred
+                        // shopeeOrderValue is already adjusted after refund detection above
+                        // Only fall back to orderSellingPrice/orderDiscountedPrice if no refund
+                        if (refundAmount > 0 && shopeeOrderValue !== null && shopeeOrderValue > 0) {
+                            // Refund occurred - use the post-refund value
+                            orderValue = shopeeOrderValue;
+                        } else if (isLeveMaisPagueMenos && orderDiscountedPrice > 0) {
                             // Small discount like "leve mais pague menos" - use discounted price
                             orderValue = orderDiscountedPrice;
                         } else if (orderSellingPrice > 0) {
@@ -285,6 +353,7 @@ export async function POST(request: NextRequest) {
                             // Last resort: use Tiny value minus freight
                             orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
                         }
+                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Fee calculation base value = R$${orderValue.toFixed(2)} (refund: ${refundAmount > 0 ? 'yes' : 'no'})`);
                     } else {
                         orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
                     }
@@ -347,9 +416,10 @@ export async function POST(request: NextRequest) {
 
             previewPayments.push({
                 ...payment,
-                tags: tagResult.tags,
-                isAdjustment: tagResult.isAdjustment,
-                isRefund: tagResult.isRefund,
+                tags: engineResult.tags,
+                isAdjustment: engineResult.tags.some(t => ['ajuste', 'compensacao', 'correcao'].includes(t)),
+                isRefund: engineResult.tags.some(t => ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(t)),
+                isFreightAdjustment: isFreightAdjustment,
                 matchStatus: linkData ? 'linked' : 'unmatched',
                 tinyOrderId: linkData?.tiny_order_id,
                 tinyOrderInfo: linkData && linkData.tiny_orders ? {
@@ -359,6 +429,7 @@ export async function POST(request: NextRequest) {
                     valor_total_pedido: Number((linkData as any).tiny_orders.valor_total_pedido || (linkData as any).tiny_orders.valor || 0),
                     valor_esperado: valorEsperado,
                     fees_breakdown: feesBreakdown,
+                    data_criacao: (linkData as any).tiny_orders.data_criacao || null,
                 } : undefined,
             });
         }
