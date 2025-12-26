@@ -269,7 +269,11 @@ const PaymentRow = ({
         payment.transactionType?.toLowerCase().includes('reembolso') ||
         payment.transactionType?.toLowerCase().includes('adjustment') ||
         payment.transactionType?.toLowerCase().includes('withdraw') ||
-        payment.transactionType?.toLowerCase().includes('retirada');
+        payment.transactionType?.toLowerCase().includes('retirada') ||
+        payment.transactionType?.toLowerCase().includes('diferença') ||
+        payment.transactionType?.toLowerCase().includes('diferenca') ||
+        payment.marketplaceOrderId.endsWith('_AJUSTE') ||
+        payment.marketplaceOrderId.endsWith('_REEMBOLSO');
 
     const shouldShowExpected = !isAdjustmentOrOther && payment.tinyOrderInfo?.valor_esperado;
 
