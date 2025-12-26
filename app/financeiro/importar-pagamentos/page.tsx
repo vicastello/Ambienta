@@ -172,6 +172,17 @@ export default function ImportarPagamentosPage() {
     };
 
     const handleLinkSuccess = () => {
+        // Update the preview data to show the payment as linked
+        if (previewData && selectedPayment) {
+            setPreviewData({
+                ...previewData,
+                payments: previewData.payments.map(p =>
+                    p.marketplaceOrderId === selectedPayment.marketplaceOrderId
+                        ? { ...p, matchStatus: 'linked' as const }
+                        : p
+                ),
+            });
+        }
         setShowManualLinkModal(false);
     };
 
