@@ -314,9 +314,11 @@ const PaymentRow = ({
                     ) : payment.tinyOrderInfo?.valor_esperado ? (
                         <span className={cn(
                             'font-medium',
-                            Math.abs(payment.netAmount - payment.tinyOrderInfo.valor_esperado) < 0.01
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-amber-600 dark:text-amber-400'
+                            Math.abs(payment.netAmount - payment.tinyOrderInfo.valor_esperado) <= 0.02
+                                ? 'text-gray-400 dark:text-gray-500'
+                                : (payment.netAmount - payment.tinyOrderInfo.valor_esperado) > 0
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-red-600 dark:text-red-400'
                         )}>
                             {formatBRL(payment.netAmount - payment.tinyOrderInfo.valor_esperado)}
                         </span>
