@@ -84,8 +84,11 @@ const formatDateFull = (dateStr: string | null) => {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-const MatchStatusBadge = ({ status, hasMultiple }: { status: PreviewPayment['matchStatus']; hasMultiple?: boolean }) => {
-    if (status === 'linked') {
+const MatchStatusBadge = ({ payment }: { payment: PreviewPayment }) => {
+    const { matchStatus, isExpense, isAdjustment, isFreightAdjustment } = payment;
+    const isOrder = !isExpense && !isAdjustment && !isFreightAdjustment;
+
+    if (matchStatus === 'linked') {
         return (
             <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <Link2 className="w-4 h-4" />
@@ -94,12 +97,19 @@ const MatchStatusBadge = ({ status, hasMultiple }: { status: PreviewPayment['mat
         );
     }
 
-    if (status === 'multiple_entries') {
+    if (matchStatus === 'multiple_entries') {
         return (
             <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-xs font-medium">Múltiplas Entradas</span>
             </div>
+        );
+    }
+
+    // Hide "Não Vinculado" for non-orders (expenses, adjustments, etc)
+    if (!isOrder) {
+        return (
+            <span className="text-xs text-muted italic">-</span>
         );
     }
 
@@ -325,7 +335,7 @@ const PaymentRow = ({
                     ) : '-'}
                 </td>
                 <td className="px-2 py-2">
-                    <MatchStatusBadge status={payment.matchStatus} />
+                    <MatchStatusBadge payment={payment} />
                 </td>
                 <td className="px-2 py-2 max-w-[100px]">
                     <div className="flex items-center gap-1">
