@@ -183,19 +183,16 @@ export default function ImportarPagamentosPage() {
     const handleSaveTags = async (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string) => {
         if (!selectedPayment || !previewData) return;
 
-        // Build pattern for matching similar entries
-        const patternStr = updatedDescription && updatedDescription.length > 10
-            ? `.*${updatedDescription.substring(0, 30)}.*`
-            : updatedDescription ? `.*${updatedDescription}.*` : null;
+        // Use the ORIGINAL description from the selected payment for pattern matching
+        // This ensures we match similar entries even if user edited the description
+        const originalDescription = selectedPayment.transactionDescription || '';
 
-        let patternRegex: RegExp | null = null;
-        if (patternStr && createRule) {
-            try {
-                patternRegex = new RegExp(patternStr, 'i');
-            } catch {
-                patternRegex = null;
-            }
-        }
+        // Build pattern for matching similar entries using original description
+        const patternKeyword = originalDescription.length > 10
+            ? originalDescription.substring(0, 30).toLowerCase()
+            : originalDescription.toLowerCase();
+
+        console.log('[ImportPage] Matching pattern:', patternKeyword);
 
         // Update payments - if creating rule, apply to ALL matching entries
         const updatedPayments = previewData.payments.map(p => {
@@ -209,10 +206,11 @@ export default function ImportarPagamentosPage() {
                 };
             }
 
-            // If creating rule, also update other matching entries
-            if (createRule && patternRegex) {
-                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`;
-                if (patternRegex.test(textToMatch)) {
+            // If creating rule, also update other matching entries using contains (not regex)
+            if (createRule && patternKeyword) {
+                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`.toLowerCase();
+                if (textToMatch.includes(patternKeyword)) {
+                    console.log('[ImportPage] ✓ Matched entry:', p.marketplaceOrderId, p.transactionDescription?.substring(0, 40));
                     // Merge new tags with existing ones (avoid duplicates)
                     const mergedTags = [...new Set([...p.tags, ...updatedTags])];
                     return { ...p, tags: mergedTags };
@@ -223,29 +221,47 @@ export default function ImportarPagamentosPage() {
         });
 
         // Count how many entries were affected (excluding the selected one)
-        const otherMatchCount = createRule && patternRegex
+        const otherMatchCount = createRule && patternKeyword
             ? previewData.payments.filter(p => {
                 if (p.marketplaceOrderId === selectedPayment.marketplaceOrderId) return false;
-                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`;
-                return patternRegex!.test(textToMatch);
+                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`.toLowerCase();
+                return textToMatch.includes(patternKeyword);
             }).length
             : 0;
 
+        console.log('[ImportPage] Applied to:', otherMatchCount + 1, 'entries');
+
         setPreviewData({ ...previewData, payments: updatedPayments });
 
-        if (createRule && updatedDescription) {
+        if (createRule && patternKeyword) {
             try {
-                await fetch('/api/financeiro/pagamentos/auto-link-rules', {
+                // Create rule in new auto_rules table via new API
+                const response = await fetch('/api/financeiro/rules', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        name: `Regra: ${originalDescription.substring(0, 30)}`,
+                        description: `Criada automaticamente para: ${originalDescription}`,
                         marketplace: previewData.marketplace,
-                        transaction_type_pattern: patternStr,
-                        action: 'auto_tag',
-                        tags: updatedTags,
+                        conditions: [{
+                            id: `cond_${Date.now()}`,
+                            field: 'full_text',
+                            operator: 'contains',
+                            value: patternKeyword, // Use the same pattern used for matching
+                        }],
+                        conditionLogic: 'AND',
+                        actions: [{
+                            type: 'add_tags',
+                            tags: updatedTags,
+                        }],
                         priority: 50,
+                        enabled: true,
+                        stopOnMatch: false,
                     }),
                 });
+
+                const result = await response.json();
+                console.log('[ImportPage] Rule creation result:', result);
 
                 // Show visual feedback with count
                 const totalApplied = otherMatchCount + 1;
