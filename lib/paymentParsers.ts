@@ -242,7 +242,11 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
             const row = data[i];
             if (Array.isArray(row) && row.some(cell => {
                 const normalized = normalizeKey(String(cell));
-                return normalized === 'id do pedido' || normalized === 'numero do pedido';
+                return normalized === 'id do pedido' ||
+                    normalized === 'numero do pedido' ||
+                    normalized === 'order id' ||
+                    normalized === 'order sn' ||
+                    normalized === 'no. pedido';
             })) {
                 headerRowIndex = i;
                 break;
