@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { sessionId, marketplaceOrderId, marketplace, tinyOrderId } = body;
+        const { sessionId, marketplaceOrderId, marketplace, tinyOrderId, orderDetails } = body;
 
         if (!marketplaceOrderId || !marketplace || !tinyOrderId) {
             return NextResponse.json(
@@ -19,13 +19,84 @@ export async function POST(request: NextRequest) {
 
         console.log('[ManualLink] Linking:', { marketplaceOrderId, marketplace, tinyOrderId });
 
+        // 0. Check if order exists in tiny_orders, if not fetch and save it
+        const { data: existingOrder } = await supabaseAdmin
+            .from('tiny_orders')
+            .select('id')
+            .eq('id', tinyOrderId)
+            .maybeSingle();
+
+        if (!existingOrder) {
+            console.log('[ManualLink] Order not in DB, fetching from Tiny API...');
+
+            try {
+                // Fetch order details from Tiny API v3
+                const { getAccessTokenFromDbOrRefresh } = await import('@/lib/tinyAuth');
+                const { obterPedidoDetalhado } = await import('@/lib/tinyApi');
+
+                const accessToken = await getAccessTokenFromDbOrRefresh();
+                const pedido = await obterPedidoDetalhado(accessToken, tinyOrderId, 'manual-link');
+
+                console.log('[ManualLink] Fetched order from Tiny:', { id: pedido.id, numeroPedido: pedido.numeroPedido });
+
+                // Insert minimal order record (tiny_id is the Tiny order ID, id is auto-generated)
+                const { data: insertedOrder, error: insertError } = await supabaseAdmin
+                    .from('tiny_orders')
+                    .insert({
+                        tiny_id: pedido.id,
+                        numero_pedido: pedido.numeroPedido || 0,
+                        situacao: pedido.situacao || 0,
+                        data_criacao: pedido.dataCriacao ? pedido.dataCriacao.split('T')[0] : new Date().toISOString().split('T')[0],
+                        valor_frete: typeof pedido.valorFrete === 'string' ? parseFloat(pedido.valorFrete) : (pedido.valorFrete || null),
+                        valor: typeof pedido.valorTotalPedido === 'string' ? parseFloat(pedido.valorTotalPedido) : (pedido.valorTotalPedido || null),
+                        canal: marketplace,
+                    })
+                    .select('id')
+                    .single();
+
+                if (insertError) {
+                    console.error('[ManualLink] Error saving order:', insertError);
+                    return NextResponse.json(
+                        { error: 'Erro ao salvar pedido do Tiny no banco: ' + insertError.message },
+                        { status: 500 }
+                    );
+                }
+
+                console.log('[ManualLink] Order saved to DB with internal ID:', insertedOrder?.id);
+            } catch (fetchError: any) {
+                console.error('[ManualLink] Error fetching order from Tiny:', fetchError);
+                return NextResponse.json(
+                    { error: 'Erro ao buscar detalhes do pedido no Tiny: ' + (fetchError?.message || 'Unknown error') },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // Get the internal DB ID from tiny_id (the order may have existed before or was just inserted)
+        const { data: orderRow, error: lookupError } = await supabaseAdmin
+            .from('tiny_orders')
+            .select('id')
+            .eq('tiny_id', tinyOrderId)
+            .single();
+
+        if (lookupError || !orderRow) {
+            console.error('[ManualLink] Could not find order in DB after insert:', lookupError);
+            return NextResponse.json(
+                { error: 'Pedido não encontrado no banco de dados após inserção' },
+                { status: 500 }
+            );
+        }
+
+        const internalOrderId = orderRow.id;
+        console.log('[ManualLink] Using internal order ID for link:', internalOrderId);
+
         // 1. Create or update marketplace_order_links
         const { error: linkError } = await supabaseAdmin
             .from('marketplace_order_links')
             .upsert({
                 marketplace,
                 marketplace_order_id: marketplaceOrderId,
-                tiny_order_id: tinyOrderId,
+                tiny_order_id: internalOrderId,
             }, {
                 onConflict: 'marketplace,marketplace_order_id',
             });
