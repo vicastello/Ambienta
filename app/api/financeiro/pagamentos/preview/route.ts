@@ -52,6 +52,7 @@ export type PreviewResponse = {
 
 export async function POST(request: NextRequest) {
     try {
+        const startTime = Date.now();
         const formData = await request.formData();
         const file = formData.get('file') as File;
         const marketplace = formData.get('marketplace') as 'magalu' | 'mercado_livre' | 'shopee';
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
 
         // 1. Parse file
         const parseResult = await parsePaymentFile(file, marketplace);
+        console.log(`[PaymentPreview] Parsed ${parseResult.payments.length} payments in ${Date.now() - startTime}ms`);
 
         // Clear cache to ensure we have the latest config
         const { clearFeeConfigCache } = await import('@/lib/marketplace-fees');
@@ -116,13 +118,131 @@ export async function POST(request: NextRequest) {
             rulesEngine = new RulesEngine(allRules);
 
             console.log(`[Preview] Loaded ${userRules.length} user rules + ${getSystemRules().length} system rules for ${marketplace}`);
+
+            // Detailed logging of user rules for debugging
+            if (userRules.length > 0) {
+                console.log('[Preview] User rules details:', userRules.map(r => ({
+                    id: r.id,
+                    name: r.name,
+                    marketplace: r.marketplace,
+                    enabled: r.enabled,
+                    conditions: r.conditions,
+                    actions: r.actions,
+                })));
+            }
         } catch (error) {
             console.warn('[Preview] Error loading new rules, falling back to empty:', error);
             rulesEngine = new RulesEngine(getSystemRules());
         }
 
-        // 3. Apply rules and check for matches
+        // ============================================================
+        // PERFORMANCE OPTIMIZATION: Batch queries instead of N+1
+        // ============================================================
+
+        // 3a. Collect all unique order IDs (both original and base versions)
+        const allOrderIds = new Set<string>();
+        const baseOrderIdMap = new Map<string, string>(); // marketplaceOrderId -> baseId
+
+        for (const payment of parseResult.payments) {
+            const baseId = payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+            allOrderIds.add(payment.marketplaceOrderId);
+            allOrderIds.add(baseId);
+            baseOrderIdMap.set(payment.marketplaceOrderId, baseId);
+        }
+
+        const orderIdsArray = Array.from(allOrderIds);
+        const baseOrderIds = [...new Set(Array.from(baseOrderIdMap.values()))];
+
+        console.log(`[PaymentPreview] Fetching data for ${orderIdsArray.length} order IDs (${baseOrderIds.length} unique base IDs)`);
+
+        // 3b. BATCH QUERY: Fetch all marketplace_order_links at once
+        const batchQueryStart = Date.now();
+        const { data: allLinks } = await supabaseAdmin
+            .from('marketplace_order_links')
+            .select(`
+                marketplace_order_id,
+                tiny_order_id,
+                tiny_orders!inner(
+                    id,
+                    numero_pedido,
+                    cliente_nome,
+                    valor_total_pedido,
+                    valor,
+                    valor_frete,
+                    data_criacao
+                )
+            `)
+            .eq('marketplace', marketplace)
+            .in('marketplace_order_id', orderIdsArray);
+
+        // Create lookup map for O(1) access
+        // Using 'any' to work around Supabase TypeScript inference issues
+        const linksMap = new Map<string, any>();
+        if (allLinks) {
+            for (const link of allLinks as any[]) {
+                linksMap.set(link.marketplace_order_id, link);
+            }
+        }
+        console.log(`[PaymentPreview] Fetched ${allLinks?.length || 0} order links in ${Date.now() - batchQueryStart}ms`);
+
+        // 3c. BATCH QUERY: Fetch all shopee_order_items at once (for Shopee only)
+        type ShopeeOrderItem = { order_sn: string; quantity: number | null; discounted_price: number | null; original_price: number | null };
+        const itemsByOrderSn = new Map<string, ShopeeOrderItem[]>();
+
+        if (marketplace === 'shopee' && baseOrderIds.length > 0) {
+            const itemsQueryStart = Date.now();
+            const { data: allItems } = await supabaseAdmin
+                .from('shopee_order_items')
+                .select('order_sn, quantity, discounted_price, original_price')
+                .in('order_sn', baseOrderIds);
+
+            // Group items by order_sn
+            if (allItems) {
+                for (const item of allItems) {
+                    const existing = itemsByOrderSn.get(item.order_sn) || [];
+                    existing.push(item);
+                    itemsByOrderSn.set(item.order_sn, existing);
+                }
+            }
+            console.log(`[PaymentPreview] Fetched ${allItems?.length || 0} shopee items for ${itemsByOrderSn.size} orders in ${Date.now() - itemsQueryStart}ms`);
+        }
+
+        // 3d. BATCH QUERY: Fetch all shopee_orders at once (for Shopee only)
+        type ShopeeOrderData = {
+            order_sn: string;
+            total_amount: number | null;
+            voucher_from_seller: number | null;
+            voucher_from_shopee: number | null;
+            seller_voucher_code: string | null;
+            ams_commission_fee: number | null;
+            order_selling_price: number | null;
+            order_discounted_price: number | null;
+            seller_discount: number | null;
+            escrow_amount: number | null;
+        };
+        const shopeeOrdersMap = new Map<string, ShopeeOrderData>();
+
+        if (marketplace === 'shopee' && baseOrderIds.length > 0) {
+            const ordersQueryStart = Date.now();
+            // Using 'as any' to work around Supabase TypeScript column validation issues
+            const { data: allShopeeOrders } = await (supabaseAdmin as any)
+                .from('shopee_orders')
+                .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount')
+                .in('order_sn', baseOrderIds);
+
+            if (allShopeeOrders) {
+                for (const order of allShopeeOrders as any[]) {
+                    shopeeOrdersMap.set(order.order_sn, order as ShopeeOrderData);
+                }
+            }
+            console.log(`[PaymentPreview] Fetched ${allShopeeOrders?.length || 0} shopee orders in ${Date.now() - ordersQueryStart}ms`);
+        }
+
+        console.log(`[PaymentPreview] All batch queries completed in ${Date.now() - batchQueryStart}ms`);
+
+        // 4. Process payments using cached data (no more individual queries!)
         const previewPayments: PreviewPayment[] = [];
+        const processStart = Date.now();
 
         for (const payment of parseResult.payments) {
             // Create PaymentInput for the engine
@@ -149,127 +269,81 @@ export async function POST(request: NextRequest) {
             const isFreightAdjustment = engineResult.tags.includes('ajuste') &&
                 freightFeePatterns.some(p => p.test(fullText));
 
-            // Debug logging for rule matching
-            if (engineResult.tags.length > 0) {
-                console.log(`[Preview] Tags applied to ${payment.marketplaceOrderId}:`, {
-                    desc: payment.transactionDescription?.substring(0, 50),
-                    type: payment.transactionType,
+            // Debug logging for rule matching (only log first 5 to avoid spam)
+            if (previewPayments.length < 5) {
+                console.log(`[Preview] Payment ${previewPayments.length + 1}:`, {
+                    orderId: payment.marketplaceOrderId,
+                    desc: payment.transactionDescription?.substring(0, 60),
+                    inputToEngine: {
+                        description: paymentInput.transactionDescription?.substring(0, 60),
+                        type: paymentInput.transactionType,
+                    },
                     tags: engineResult.tags,
-                    matchedRules: engineResult.matchedRules.filter(r => r.matched).map(r => r.ruleName),
+                    totalRulesEvaluated: engineResult.totalRulesEvaluated,
+                    matchedRules: engineResult.matchedRules.filter(r => r.matched).map(r => ({
+                        name: r.ruleName,
+                        conditions: r.conditionResults,
+                    })),
                 });
             }
 
+            // Look up order link from pre-fetched map (O(1) instead of DB query)
+            const baseMarketplaceOrderId = baseOrderIdMap.get(payment.marketplaceOrderId) || payment.marketplaceOrderId;
+            const linkData = linksMap.get(payment.marketplaceOrderId) || linksMap.get(baseMarketplaceOrderId);
 
-            // Check if order exists in marketplace_order_links
-            const { data: linkData } = await supabaseAdmin
-                .from('marketplace_order_links')
-                .select(`
-                    tiny_order_id,
-                    tiny_orders!inner(
-                        id,
-                        numero_pedido,
-                        cliente_nome,
-                        valor_total_pedido,
-                        valor,
-                        valor_frete,
-                        data_criacao
-                    )
-                `)
-                .eq('marketplace', marketplace)
-                .in('marketplace_order_id', [payment.marketplaceOrderId, payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '')])
-                .limit(1)
-                .maybeSingle();
-
-            // Get product count and original order value from shopee_order_items for Shopee orders
-            // We use discounted_price (seller's price after seller discount, before customer coupons)
-            // because that's what Shopee calculates fees on
+            // Get Shopee-specific data from pre-fetched maps
             let productCount = 1;
-            let originalProductCount = 1; // Before refunds
+            let originalProductCount = 1;
             let shopeeOrderValue: number | null = null;
-            let originalOrderValue: number | null = null; // Before refunds
-            let refundAmount = 0; // Amount refunded
+            let originalOrderValue: number | null = null;
+            let refundAmount = 0;
             let voucherFromSeller = 0;
             let voucherFromShopee = 0;
             let amsCommissionFee = 0;
             let orderSellingPrice = 0;
-            let orderDiscountedPrice = 0; // Base value for fee calculation (after seller discount)
+            let orderDiscountedPrice = 0;
             let sellerDiscount = 0;
             let escrowAmount = 0;
 
-            // Strip suffixes from marketplaceOrderId (e.g., "123_AJUSTE_2" -> "123", "123_REEMBOLSO" -> "123")
-            // This ensures adjustment entries can still fetch related order/item data
-            const baseMarketplaceOrderId = payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
-
             if (marketplace === 'shopee' && payment.marketplaceOrderId) {
-                // Get items for product count and base value
-                const { data: itemsData, error: itemsError } = await supabaseAdmin
-                    .from('shopee_order_items')
-                    .select('quantity, discounted_price, original_price')
-                    .eq('order_sn', baseMarketplaceOrderId);
-
-                console.log(`[Preview] Order ${payment.marketplaceOrderId}: shopee_order_items query result:`,
-                    itemsData ? `${itemsData.length} items found` : 'no data',
-                    itemsError ? `Error: ${itemsError.message}` : '');
+                // Get items from pre-fetched map (O(1) instead of DB query)
+                const itemsData = itemsByOrderSn.get(baseMarketplaceOrderId);
 
                 if (itemsData && itemsData.length > 0) {
                     productCount = itemsData.reduce((sum, item) => sum + (item.quantity || 1), 0);
-                    // Sum up discounted_price × quantity for each item
                     shopeeOrderValue = itemsData.reduce((sum, item) => {
                         const price = item.discounted_price || item.original_price || 0;
                         const qty = item.quantity || 1;
                         return sum + (price * qty);
                     }, 0);
-
-                    // Calculate average price per unit for later refund adjustment
-                    // This will be used to detect if items were refunded
                 }
 
-                // Get voucher and affiliate data from shopee_orders (if available)
-                const { data: shopeeOrderData } = await supabaseAdmin
-                    .from('shopee_orders')
-                    .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount')
-                    .eq('order_sn', baseMarketplaceOrderId)
-                    .maybeSingle();
+                // Get shopee order data from pre-fetched map (O(1) instead of DB query)
+                const escrowData = shopeeOrdersMap.get(baseMarketplaceOrderId);
 
-                // Adjust productCount if total_amount differs from calculated value
-                // IMPORTANT: total_amount reflects the actual order value AFTER refunds
-                // order_selling_price is the ORIGINAL value before any refunds
-                // So we use total_amount to detect refunds
-                const escrowData = shopeeOrderData as any;
                 if (escrowData && shopeeOrderValue && shopeeOrderValue > 0) {
-                    // Use total_amount as the definitive post-refund value
-                    // If total_amount is not available or 0, fall back to order_selling_price
                     const totalAmount = Number(escrowData.total_amount) || 0;
                     const sellingPrice = Number(escrowData.order_selling_price) || 0;
-
-                    // total_amount is the final value after refunds
-                    // If total_amount < order_selling_price, there was a refund
                     const actualOrderValue = totalAmount > 0 ? totalAmount : sellingPrice;
 
                     if (actualOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
-                        // Refund detected! Calculate the ratio and adjust product count
                         originalProductCount = productCount;
                         originalOrderValue = shopeeOrderValue;
                         refundAmount = shopeeOrderValue - actualOrderValue;
 
                         const refundRatio = actualOrderValue / shopeeOrderValue;
                         const adjustedCount = Math.round(productCount * refundRatio);
-                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Refund detected! Original: R$${shopeeOrderValue.toFixed(2)}, Actual: R$${actualOrderValue.toFixed(2)}, Refund: R$${refundAmount.toFixed(2)}, Original count: ${productCount}, Adjusted count: ${adjustedCount}`);
                         productCount = Math.max(1, adjustedCount);
-                        // Update shopeeOrderValue to match actual post-refund value
                         shopeeOrderValue = actualOrderValue;
                     }
                 }
+
                 if (escrowData?.voucher_from_seller) {
                     voucherFromSeller = Number(escrowData.voucher_from_seller) || 0;
                 }
-
-                // Get affiliate commission (AMS = Affiliate Marketing Solutions)
                 if (escrowData?.ams_commission_fee) {
                     amsCommissionFee = Number(escrowData.ams_commission_fee) || 0;
                 }
-
-                // Get order prices and discounts
                 if (escrowData?.order_selling_price) {
                     orderSellingPrice = Number(escrowData.order_selling_price) || 0;
                 }
@@ -286,11 +360,10 @@ export async function POST(request: NextRequest) {
                     voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
                 }
 
-                // Determine if this is "leve mais pague menos" (small ~2% discount) or a promotional discount
-                // Leve mais pague menos is typically 2% of the selling price
+                // Determine if this is "leve mais pague menos"
                 const isLeveMaisPagueMenos = sellerDiscount > 0 &&
                     orderSellingPrice > 0 &&
-                    (sellerDiscount / orderSellingPrice) <= 0.05; // Up to 5% is considered leve mais pague menos
+                    (sellerDiscount / orderSellingPrice) <= 0.05;
 
                 // Add automatic tags based on escrow data
                 if (voucherFromSeller > 0) {
@@ -299,14 +372,9 @@ export async function POST(request: NextRequest) {
                 if (amsCommissionFee > 0) {
                     engineResult.tags.push('comissão afiliado');
                 }
-                // Only add tag for real "leve mais pague menos" discounts (~2%)
-                // High seller_discount values are just inflated original prices, not real costs
                 if (isLeveMaisPagueMenos) {
                     engineResult.tags.push('leve mais pague menos');
                 }
-
-                // Note: voucher and ams_commission are passed separately to the fee calculation
-                console.log(`[Preview] Order ${payment.marketplaceOrderId}: productCount=${productCount}, orderSellingPrice=${orderSellingPrice}, orderDiscountedPrice=${orderDiscountedPrice}, sellerDiscount=${sellerDiscount}, escrowAmount=${escrowAmount}`);
             }
 
             // Calculate expected fees if order is linked
@@ -315,45 +383,29 @@ export async function POST(request: NextRequest) {
 
             if (linkData && linkData.tiny_orders) {
                 try {
-                    // Use order date from Tiny (data_criacao) to determine fee period
                     const orderDateStr = (linkData as any).tiny_orders.data_criacao || payment.paymentDate;
-                    // Add T12:00:00 to avoid timezone issues (midnight UTC becomes previous day in BRT)
                     const normalizedDateStr = orderDateStr && !orderDateStr.includes('T')
                         ? `${orderDateStr.split(' ')[0]}T12:00:00`
                         : orderDateStr;
                     const orderDate = normalizedDateStr ? new Date(normalizedDateStr) : new Date();
 
-                    // For Shopee, use order_discounted_price as the base for fee calculation
-                    // order_discounted_price = order_selling_price - seller_discount
-                    // This is what Shopee actually uses to calculate commission and service fees
-                    // For other marketplaces, use Tiny value
                     let orderValue: number;
-                    // Determine if seller_discount is "leve mais pague menos" (small ~2% discount)
                     const isLeveMaisPagueMenos = sellerDiscount > 0 &&
                         orderSellingPrice > 0 &&
                         (sellerDiscount / orderSellingPrice) <= 0.05;
 
                     if (marketplace === 'shopee') {
-                        // For Shopee, use the post-refund value if a refund occurred
-                        // shopeeOrderValue is already adjusted after refund detection above
-                        // Only fall back to orderSellingPrice/orderDiscountedPrice if no refund
                         if (refundAmount > 0 && shopeeOrderValue !== null && shopeeOrderValue > 0) {
-                            // Refund occurred - use the post-refund value
                             orderValue = shopeeOrderValue;
                         } else if (isLeveMaisPagueMenos && orderDiscountedPrice > 0) {
-                            // Small discount like "leve mais pague menos" - use discounted price
                             orderValue = orderDiscountedPrice;
                         } else if (orderSellingPrice > 0) {
-                            // Large promotional discount or no discount - use selling price
                             orderValue = orderSellingPrice;
                         } else if (shopeeOrderValue !== null && shopeeOrderValue > 0) {
-                            // Fallback: use calculated value from items
                             orderValue = shopeeOrderValue;
                         } else {
-                            // Last resort: use Tiny value minus freight
                             orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
                         }
-                        console.log(`[Preview] Order ${payment.marketplaceOrderId}: Fee calculation base value = R$${orderValue.toFixed(2)} (refund: ${refundAmount > 0 ? 'yes' : 'no'})`);
                     } else {
                         orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
                     }
@@ -363,49 +415,30 @@ export async function POST(request: NextRequest) {
                         orderDate: orderDate,
                         orderValue: orderValue,
                         productCount: productCount,
-                        isKit: false, // Would need marketplace_kit_components check
-                        usesFreeShipping: undefined, // Use global config
+                        isKit: false,
+                        usesFreeShipping: undefined,
                         isCampaignOrder: false,
                         sellerVoucher: marketplace === 'shopee' ? voucherFromSeller : undefined,
                         amsCommissionFee: marketplace === 'shopee' ? amsCommissionFee : undefined,
-                        // Note: seller_discount is NOT passed here because it's already reflected in order_selling_price
-                    });
-
-                    console.log(`[Preview] Order ${payment.marketplaceOrderId} fee calculation result:`, {
-                        grossValue: feeCalc.grossValue,
-                        commissionFee: feeCalc.commissionFee,
-                        campaignFee: feeCalc.campaignFee,
-                        fixedCost: feeCalc.fixedCost,
-                        sellerVoucher: feeCalc.sellerVoucher,
-                        amsCommissionFee: feeCalc.amsCommissionFee,
-                        totalFees: feeCalc.totalFees,
-                        netValue: feeCalc.netValue,
-                        inputOrderValue: orderValue,
                     });
 
                     valorEsperado = feeCalc.netValue;
 
-                    // Build extended fees breakdown with all data for transparency
                     feesBreakdown = {
                         ...feeCalc,
-                        // Additional context for UI
                         productCount,
-                        // Shopee escrow data from API
                         shopeeData: marketplace === 'shopee' ? {
                             orderSellingPrice,
-                            orderDiscountedPrice, // Base value for fee calculation
+                            orderDiscountedPrice,
                             sellerDiscount,
                             escrowAmount,
                             voucherFromSeller,
                             voucherFromShopee,
                             amsCommissionFee,
-                            // Refund information
                             refundAmount,
                             originalProductCount,
                             originalOrderValue,
-                            // Flag to indicate if this is "leve mais pague menos" vs promotional discount
                             isLeveMaisPagueMenos: sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05,
-                            // Calculate the difference between our calculation and Shopee's escrow
                             escrowDifference: escrowAmount > 0 ? feeCalc.netValue - escrowAmount : 0,
                         } : undefined,
                     };
@@ -433,6 +466,8 @@ export async function POST(request: NextRequest) {
                 } : undefined,
             });
         }
+
+        console.log(`[PaymentPreview] Processed ${previewPayments.length} payments in ${Date.now() - processStart}ms`);
 
         // 4. Detect multi-entry scenarios
         const multiEntryGroups = detectMultiEntry(
@@ -504,6 +539,7 @@ export async function POST(request: NextRequest) {
             },
         };
 
+        console.log(`[PaymentPreview] Total request time: ${Date.now() - startTime}ms for ${previewPayments.length} payments`);
         return NextResponse.json(response);
 
     } catch (error) {
