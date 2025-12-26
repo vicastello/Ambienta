@@ -261,16 +261,28 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
         const headers = rawHeaders.map(normalizeKey);
         const rows = data.slice(headerRowIndex + 1);
 
-        const getColumnIndex = (target: string): number => {
-            const normalizedTarget = normalizeKey(target);
-            return headers.findIndex(h => h === normalizedTarget);
+        const getColumnIndex = (targets: string[]): number => {
+            return headers.findIndex(h => {
+                // Check if header matches any of the target aliases (normalized)
+                return targets.some(t => h === normalizeKey(t) || h.includes(normalizeKey(t)));
+            });
         };
 
-        const idxOrder = getColumnIndex('ID do pedido');
-        const idxAmount = getColumnIndex('Valor');
-        const idxDate = getColumnIndex('Data');
-        const idxStatus = getColumnIndex('Status');
-        const idxDescription = getColumnIndex('Descrição');
+        const idxOrder = getColumnIndex(['ID do pedido', 'Order ID', 'No. do pedido']);
+        const idxAmount = getColumnIndex(['Valor', 'Amount', 'Total amount']);
+        const idxDate = getColumnIndex(['Data', 'Date', 'Time', 'Data e Hora']);
+        const idxStatus = getColumnIndex(['Status', 'Estado']);
+        const idxDescription = getColumnIndex(['Descrição', 'Description', 'Detalhes']);
+        const idxTransactionType = getColumnIndex(['Tipo de transação', 'Transaction Type', 'Tipo']);
+
+        if (idxOrder === -1) {
+            // If we can't even find the order ID column, we can't parse correctly
+            return {
+                success: false,
+                payments: [],
+                errors: ['Coluna "ID do pedido" não encontrada no arquivo Shopee.'],
+            };
+        }
 
         const parseAmount = (value: any): number => {
             if (typeof value === 'number') return value;
@@ -279,36 +291,7 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
             return parseFloat(v) || 0;
         };
 
-        const parseDate = (value: any): string | null => {
-            if (!value) return null;
-            // Handle XLSX date numbers or strings
-            if (typeof value === 'number') {
-                // XLSX dates are serial numbers. 25569 is the offset for Unix epoch.
-                // Use UTC to avoid timezone issues
-                const date = new Date((value - 25569) * 86400 * 1000);
-                // Format using UTC methods to avoid timezone shift
-                const year = date.getUTCFullYear();
-                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(date.getUTCDate()).padStart(2, '0');
-                // Removed split to keep time if needed, but for paymentDate we usually want YYYY-MM-DD
-                return `${year}-${month}-${day}`;
-            }
-            const dateStr = String(value).trim();
-            // Expected: YYYY-MM-DD HH:MM:SS or DD/MM/YYYY
-            if (dateStr.includes('-')) {
-                // Extract just the date part (YYYY-MM-DD)
-                return dateStr.split(' ')[0];
-            }
-            if (dateStr.includes('/')) {
-                const parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                }
-            }
-            return null;
-        };
-
-        // Helper to generate ID from datetime: DDMMYYYYHHMM
+        // Helper to generate ID from datetime: DDMMYYYYHHMMSS + Index
         const generateIdFromDate = (prefix: string, dateValue: any, rowIndex: number): string => {
             let date: Date;
             if (typeof dateValue === 'number') {
@@ -339,16 +322,45 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
             // Verify if date is valid
             if (isNaN(date.getTime())) date = new Date();
 
-            const dd = String(date.getDate()).padStart(2, '0'); // Local time to match worksheet visualization
+            const dd = String(date.getDate()).padStart(2, '0');
             const MM = String(date.getMonth() + 1).padStart(2, '0');
             const yyyy = date.getFullYear();
             const hh = String(date.getHours()).padStart(2, '0');
             const mm = String(date.getMinutes()).padStart(2, '0');
-            const ss = String(date.getSeconds()).padStart(2, '0'); // Add seconds for more uniqueness
+            const ss = String(date.getSeconds()).padStart(2, '0');
 
-            // Use full time if available (HHMMSS), otherwise just date
-            // Assuming most exports have time, we try to use it.
-            return `${prefix}${dd}${MM}${yyyy}${hh}${mm}${ss}`;
+            // Add row index to guarantee uniqueness even within same second
+            const idx = String(rowIndex).padStart(3, '0');
+
+            return `${prefix}${dd}${MM}${yyyy}${hh}${mm}${ss}${idx}`;
+        };
+
+        const parseDate = (value: any): string | null => {
+            if (!value) return null;
+            // Handle XLSX date numbers or strings
+            if (typeof value === 'number') {
+                // XLSX dates are serial numbers. 25569 is the offset for Unix epoch.
+                // Use UTC to avoid timezone issues
+                const date = new Date((value - 25569) * 86400 * 1000);
+                // Format using UTC methods to avoid timezone shift
+                const year = date.getUTCFullYear();
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(date.getUTCDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            const dateStr = String(value).trim();
+            // Expected: YYYY-MM-DD HH:MM:SS or DD/MM/YYYY
+            if (dateStr.includes('-')) {
+                // Extract just the date part (YYYY-MM-DD)
+                return dateStr.split(' ')[0];
+            }
+            if (dateStr.includes('/')) {
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+            }
+            return null;
         };
 
         const seenIds = new Map<string, number>();
@@ -365,17 +377,17 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     return;
                 }
 
-                // Get transaction type early to use in ID suffix checks
-                const idxTransactionType = getColumnIndex('Tipo de transação');
+                // Get transaction type
+                // Use index found outside loop
                 const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
 
                 // If no Order ID, generate one based on transaction type + date
-                if (!orderId) {
+                if (!orderId || orderId.toLowerCase() === 'null' || orderId.toLowerCase() === 'undefined') {
                     // Rule: Use first 3 letters of transaction type
                     let prefix = 'TRX'; // Default fallback
 
                     // Try to get prefix from transactionType first, then description
-                    const sourceText = transactionType || transactionDesc || 'GEN';
+                    const sourceText = transactionType || transactionDesc || 'GENERICO';
 
                     // Clean text: remove accents, special chars, uppercase
                     const cleanText = sourceText
@@ -388,6 +400,7 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     }
 
                     orderId = generateIdFromDate(prefix, row[idxDate], index);
+                    // console.log(`[Shopee] Generated ID for missing order: ${orderId} (Type: ${transactionType})`);
                 } else {
                     // Regular logic for existing Order IDs
                     // Create a unique suffix based on transaction type to prevent overwriting
@@ -411,12 +424,9 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 }
 
 
-                const idxBalanceAfter = getColumnIndex('Balança após as transações');
+                const idxBalanceAfter = getColumnIndex(['Balança após as transações', 'Balance after']);
                 // Check multiple possible column names for money direction
-                let idxMovementType = getColumnIndex('Tipo de movimentação');
-                if (idxMovementType === -1) {
-                    idxMovementType = getColumnIndex('Direção do dinheiro'); // Alternative column name
-                }
+                let idxMovementType = getColumnIndex(['Tipo de movimentação', 'Movement Type', 'Direção do dinheiro']);
 
                 const amount = parseAmount(row[idxAmount]);
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';
