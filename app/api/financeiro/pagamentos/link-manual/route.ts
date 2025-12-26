@@ -90,6 +90,24 @@ export async function POST(request: NextRequest) {
         const internalOrderId = orderRow.id;
         console.log('[ManualLink] Using internal order ID for link:', internalOrderId);
 
+        // 1.5. Sync order items (products) from Tiny API
+        try {
+            const { getAccessTokenFromDbOrRefresh } = await import('@/lib/tinyAuth');
+            const { salvarItensPedido } = await import('@/lib/pedidoItensHelper');
+
+            const accessToken = await getAccessTokenFromDbOrRefresh();
+            console.log('[ManualLink] Syncing order items from Tiny...');
+
+            const itemsSaved = await salvarItensPedido(accessToken, tinyOrderId, internalOrderId, {
+                context: 'manual-link',
+            });
+
+            console.log('[ManualLink] Order items synced:', itemsSaved, 'items saved');
+        } catch (itemsError: any) {
+            // Log but don't fail the whole operation if items fail to sync
+            console.warn('[ManualLink] Warning: Could not sync order items:', itemsError?.message || itemsError);
+        }
+
         // 1. Create or update marketplace_order_links
         const { error: linkError } = await supabaseAdmin
             .from('marketplace_order_links')
