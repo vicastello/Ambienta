@@ -187,7 +187,8 @@ export default function ImportarPagamentosPage() {
         updatedDescription?: string,
         expenseCategory?: string,
         _ruleId?: string | null,
-        ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean }
+        ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean },
+        ruleCondition?: { field: string; operator: string; value: string }
     ) => {
         if (!selectedPayment || !previewData) return;
 
@@ -299,6 +300,11 @@ export default function ImportarPagamentosPage() {
                 }
 
                 // Create rule in new auto_rules table via new API
+                // Use custom condition from UI if provided, otherwise fallback to auto-generated
+                const conditionToUse = ruleCondition && ruleCondition.value
+                    ? ruleCondition
+                    : { field: 'full_text', operator: 'contains', value: patternKeyword };
+
                 const response = await fetch('/api/financeiro/rules', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -308,9 +314,9 @@ export default function ImportarPagamentosPage() {
                         marketplace: previewData.marketplace,
                         conditions: [{
                             id: `cond_${Date.now()}`,
-                            field: 'full_text',
-                            operator: 'contains',
-                            value: patternKeyword,
+                            field: conditionToUse.field,
+                            operator: conditionToUse.operator,
+                            value: conditionToUse.value,
                         }],
                         conditionLogic: 'AND',
                         actions: actions,

@@ -18,7 +18,16 @@ interface EditTagsModalProps {
         appliedRuleId?: string;
     };
     marketplace: string;
-    onSave: (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string, ruleId?: string | null, ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean }) => void;
+    onSave: (
+        updatedTags: string[],
+        createRule: boolean,
+        updatedType?: string,
+        updatedDescription?: string,
+        expenseCategory?: string,
+        ruleId?: string | null,
+        ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean },
+        ruleCondition?: { field: string; operator: string; value: string }
+    ) => void;
 }
 
 export default function EditTagsModal({
@@ -39,6 +48,13 @@ export default function EditTagsModal({
     const [includeTagsInRule, setIncludeTagsInRule] = useState(true);
     const [includeTypeInRule, setIncludeTypeInRule] = useState(true);
     const [includeCategoryInRule, setIncludeCategoryInRule] = useState(true);
+
+    // Condition editing for auto-rule
+    const [conditionField, setConditionField] = useState<'full_text' | 'description' | 'transaction_type'>('full_text');
+    const [conditionOperator, setConditionOperator] = useState<'contains' | 'equals' | 'regex'>('contains');
+    const [conditionValue, setConditionValue] = useState(
+        (payment.transactionDescription || '').substring(0, 30).toLowerCase()
+    );
 
     // NEW: Rules state using AutoRule type
     const [allRules, setAllRules] = useState<AutoRule[]>([]);
@@ -161,6 +177,13 @@ export default function EditTagsModal({
             includeCategory: includeCategoryInRule && !!expenseCategory,
         } : undefined;
 
+        // Custom condition for rule
+        const ruleCondition = createAutoRule ? {
+            field: conditionField,
+            operator: conditionOperator,
+            value: conditionValue,
+        } : undefined;
+
         onSave(
             tags, // Always update tags on the current entry
             createAutoRule,
@@ -168,7 +191,8 @@ export default function EditTagsModal({
             transactionDescription,
             expenseCategory, // Always update category on current entry
             appliedRuleId,
-            ruleActionFlags
+            ruleActionFlags,
+            ruleCondition
         );
         onClose();
     };
@@ -514,16 +538,46 @@ export default function EditTagsModal({
                                         📋 Preview da Regra
                                     </h4>
 
-                                    {/* Conditions */}
-                                    <div className="mb-3">
+                                    {/* Conditions - Editable */}
+                                    <div className="mb-4">
                                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
                                             Condição
                                         </span>
-                                        <div className="mt-1 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
-                                            <code className="text-sm text-purple-600 dark:text-purple-400">
-                                                Texto completo <span className="text-gray-500">contém</span> &quot;{(payment.transactionDescription || '').substring(0, 30).toLowerCase()}&quot;
-                                            </code>
+                                        <div className="mt-2 flex flex-wrap gap-2 items-center">
+                                            {/* Field selector */}
+                                            <select
+                                                value={conditionField}
+                                                onChange={(e) => setConditionField(e.target.value as 'full_text' | 'description' | 'transaction_type')}
+                                                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
+                                            >
+                                                <option value="full_text">Texto completo</option>
+                                                <option value="description">Descrição</option>
+                                                <option value="transaction_type">Tipo de transação</option>
+                                            </select>
+
+                                            {/* Operator selector */}
+                                            <select
+                                                value={conditionOperator}
+                                                onChange={(e) => setConditionOperator(e.target.value as 'contains' | 'equals' | 'regex')}
+                                                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
+                                            >
+                                                <option value="contains">contém</option>
+                                                <option value="equals">é igual a</option>
+                                                <option value="regex">regex</option>
+                                            </select>
+
+                                            {/* Value input */}
+                                            <input
+                                                type="text"
+                                                value={conditionValue}
+                                                onChange={(e) => setConditionValue(e.target.value)}
+                                                placeholder="Valor a buscar..."
+                                                className="flex-1 min-w-[200px] px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-gray-900 dark:text-white placeholder-gray-400"
+                                            />
                                         </div>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            💡 A regra será aplicada quando o texto corresponder a esta condição
+                                        </p>
                                     </div>
 
                                     {/* Actions */}
