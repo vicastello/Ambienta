@@ -64,132 +64,81 @@ export async function fetchTinyOrderByMarketplaceId(
         return { error: 'Token da Tiny não encontrado' };
     }
 
-    let lastError: any = null;
-    let retryDelay = INITIAL_BACKOFF_MS;
+    console.log('[TinyClient] Searching for order using API v3:', {
+        marketplaceOrderId,
+        marketplace,
+        tokenPrefix: token.substring(0, 20) + '...',
+    });
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
-            // Search by marketplace order ID in Tiny
-            // Tiny API expects form-urlencoded data, not JSON
-            const formData = new URLSearchParams();
-            formData.set('token', token);
-            formData.set('formato', 'json');
-            formData.set('numero_ecommerce', marketplaceOrderId);
+    try {
+        // Use the v3 API with Bearer token authentication
+        const { tinyGet, TinyApiError } = await import('./tinyApi');
 
-            console.log('[TinyClient] Searching for order:', {
-                marketplaceOrderId,
-                marketplace,
-                tokenPrefix: token.substring(0, 20) + '...',
-                attempt: attempt + 1,
-            });
+        // Search by marketplace order ID (numeroPedidoEcommerce in v3 API)
+        const response = await tinyGet<{
+            itens?: Array<{
+                id: number;
+                numeroPedido: number;
+                cliente?: { nome?: string };
+                ecommerce?: { numeroPedidoEcommerce?: string; canal?: string };
+                dataCriacao: string;
+                valorTotalPedido?: number | string;
+            }>;
+            paginacao?: { total: number };
+        }>('/pedidos', token, {
+            numeroPedidoEcommerce: marketplaceOrderId,
+            limit: 10,
+        }, {
+            context: 'manual-link-search',
+            endpointLabel: '/pedidos (search by ecommerce)',
+        });
 
-            const response = await fetch(`${TINY_API_BASE}/pedidos.pesquisa.php`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: formData.toString(),
-            });
+        console.log('[TinyClient] API v3 response:', {
+            hasItems: !!response.itens,
+            itemsCount: response.itens?.length || 0,
+            total: response.paginacao?.total || 0,
+        });
 
-            // Try to parse as JSON first, regardless of content-type
-            // Tiny sometimes returns JSON with text/html or other content types
-            const text = await response.text();
-            let data: any;
-
-            try {
-                data = JSON.parse(text);
-                console.log('[TinyClient] Parsed JSON response:', {
-                    status: data.retorno?.status,
-                    statusProcessamento: data.retorno?.status_processamento,
-                    hasOrderes: !!data.retorno?.pedidos,
-                    ordersCount: data.retorno?.pedidos?.length || 0,
-                    errors: data.retorno?.erros,
+        // Parse orders from v3 response format
+        const orders: TinyOrder[] = [];
+        if (response.itens && response.itens.length > 0) {
+            for (const pedido of response.itens) {
+                orders.push({
+                    id: pedido.id,
+                    numero_pedido: String(pedido.numeroPedido),
+                    cliente_nome: pedido.cliente?.nome || 'N/A',
+                    valor_total_pedido: typeof pedido.valorTotalPedido === 'string'
+                        ? parseFloat(pedido.valorTotalPedido)
+                        : (pedido.valorTotalPedido || 0),
+                    data_pedido: pedido.dataCriacao || new Date().toISOString(),
+                    marketplace: pedido.ecommerce?.canal || marketplace,
                 });
-            } catch {
-                // Response is not valid JSON (likely XML or HTML error page)
-                console.error('[TinyClient] Received non-JSON response:', text.substring(0, 300));
-
-                // Check if it's an authentication error in XML/HTML
-                if (text.includes('Token inválido') || text.includes('Token invalido')) {
-                    return { error: 'Token da Tiny inválido ou expirado' };
-                }
-                if (text.includes('Acesso negado')) {
-                    return { error: 'Acesso negado pela API Tiny. Verifique as permissões do token.' };
-                }
-                // Check for XML success status (Tiny sometimes returns XML even with formato=json)
-                if (text.includes('<status>OK</status>') || text.includes('<status_processamento>2</status_processamento>')) {
-                    // Try to extract data from XML - for now return empty orders
-                    console.warn('[TinyClient] Received XML instead of JSON, but status is OK');
-                    return { orders: [], error: 'API retornou XML - pedido pode não existir' };
-                }
-                if (text.includes('Nenhum registro encontrado')) {
-                    return { orders: [] };
-                }
-
-                return { error: `Erro ao comunicar com a API Tiny. Resposta: ${text.substring(0, 100)}` };
-            }
-
-            // Check for rate limit (429 or specific Tiny error)
-            if (response.status === 429 || data.retorno?.codigo_erro === '429') {
-                console.warn(`[TinyClient] Rate limited on attempt ${attempt + 1}`);
-
-                if (attempt < MAX_RETRIES - 1) {
-                    await new Promise(resolve => setTimeout(resolve, retryDelay));
-                    retryDelay *= 2; // Exponential backoff
-                    continue;
-                } else {
-                    return {
-                        rateLimited: true,
-                        retryAfter: Math.ceil(retryDelay / 1000),
-                    };
-                }
-            }
-
-            // Check for API errors
-            if (data.retorno?.status === 'Erro') {
-                return {
-                    error: data.retorno.erros?.[0]?.erro || 'Erro desconhecido da API Tiny',
-                };
-            }
-
-            // Parse orders
-            const orders: TinyOrder[] = [];
-            if (data.retorno?.pedidos) {
-                for (const pedidoWrapper of data.retorno.pedidos) {
-                    const pedido = pedidoWrapper.pedido;
-                    orders.push({
-                        id: parseInt(pedido.id),
-                        numero_pedido: pedido.numero || pedido.numero_pedido,
-                        cliente_nome: pedido.cliente?.nome || pedido.nome_cliente || 'N/A',
-                        valor_total_pedido: parseFloat(pedido.valor_total || pedido.total || 0),
-                        data_pedido: pedido.data_pedido || new Date().toISOString(),
-                        marketplace: pedido.ecommerce?.nome || marketplace,
-                    });
-                }
-            }
-
-            // Cache the result
-            orderCache.set(cacheKey, {
-                data: orders,
-                expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-            });
-
-            return { orders };
-
-        } catch (error) {
-            lastError = error;
-            console.error(`[TinyClient] Attempt ${attempt + 1} failed:`, error);
-
-            if (attempt < MAX_RETRIES - 1) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                retryDelay *= 2;
             }
         }
-    }
 
-    return {
-        error: lastError instanceof Error ? lastError.message : 'Erro ao conectar com a API Tiny',
-    };
+        // Cache the result
+        orderCache.set(cacheKey, {
+            data: orders,
+            expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+        });
+
+        return { orders };
+
+    } catch (error: any) {
+        console.error('[TinyClient] Error searching order:', error);
+
+        // Check for rate limit
+        if (error?.status === 429) {
+            return {
+                rateLimited: true,
+                retryAfter: 5,
+            };
+        }
+
+        // Return error message
+        const errorMessage = error?.message || error?.body || 'Erro desconhecido';
+        return { error: `Erro ao buscar pedido: ${errorMessage}` };
+    }
 }
 
 /**
