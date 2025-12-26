@@ -39,6 +39,7 @@ export type PreviewPayment = {
     matchedRuleNames?: string[];  // Rules that were automatically applied
     netBalance?: number;
     fee_overrides?: {
+        source?: 'parsed' | 'manual';
         commissionFee?: number;
         fixedCost?: number;
         campaignFee?: number;
@@ -252,11 +253,14 @@ const PaymentRow = ({
     };
 
     // Check if this payment has override applied
-    const hasOverride = payment.fee_overrides && (
-        payment.fee_overrides.commissionFee !== undefined ||
-        payment.fee_overrides.fixedCost !== undefined ||
-        payment.fee_overrides.campaignFee !== undefined
-    );
+    // Check if this payment has override applied
+    // Ignore overrides that come from the parser (source: 'parsed') - these are "reconciled", not "manually overridden"
+    const hasOverride = payment.fee_overrides &&
+        payment.fee_overrides.source !== 'parsed' && (
+            payment.fee_overrides.commissionFee !== undefined ||
+            payment.fee_overrides.fixedCost !== undefined ||
+            payment.fee_overrides.campaignFee !== undefined
+        );
 
     // Helper to determine if we should show expected value/difference
     const isOrderIncome = payment.transactionType?.toLowerCase().includes('renda') ||

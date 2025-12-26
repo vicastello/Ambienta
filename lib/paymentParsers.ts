@@ -17,6 +17,7 @@ export type ParsedPayment = {
     transactionDescription?: string; // Full description from extract
     balanceAfter?: number; // Balance after transaction
     isExpense?: boolean; // True for outgoing transactions (fees, ads, etc)
+    fee_overrides?: any; // Parsed fee components (commission, affiliate, etc)
     rawData: any;
 };
 
@@ -497,9 +498,11 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     isExpense, // New field to mark expenses
                     rawData: row,
                     fee_overrides: { // Store breakdown for debugging/viewing
+                        source: 'parsed', // Flag to indicate this comes from file, not user manual override
                         commissionFee: commission,
                         fixedCost: service, // Mapping Service -> Fixed roughly? Or just store as is
-                        // actually store in raw structure or specific fields if we had them
+                        amsCommissionFee: affiliate,
+                        campaignFee: transaction, // Transaction fee -> Campaign? Or just leave separate? Shopee Transaction fee is usually ~2%
                     }
                 });
             } catch (error) {
