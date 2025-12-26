@@ -448,6 +448,18 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 // Check multiple possible column names for money direction
                 let idxMovementType = getColumnIndex(['Tipo de movimentação', 'Movement Type', 'Direção do dinheiro']);
 
+                const idxCommission = getColumnIndex(['Taxa de comissão', 'Commission Fee']);
+                const idxService = getColumnIndex(['Taxa de serviço', 'Service Fee']);
+                const idxTransaction = getColumnIndex(['Taxa de transação', 'Transaction Fee']);
+                const idxAffiliate = getColumnIndex(['Comissão de afiliado', 'Affiliate Commission', 'Custo de campanha']); // Affiliate/Campaign
+
+                const commission = idxCommission !== -1 ? Math.abs(parseAmount(row[idxCommission])) : 0;
+                const service = idxService !== -1 ? Math.abs(parseAmount(row[idxService])) : 0;
+                const transaction = idxTransaction !== -1 ? Math.abs(parseAmount(row[idxTransaction])) : 0;
+                const affiliate = idxAffiliate !== -1 ? Math.abs(parseAmount(row[idxAffiliate])) : 0;
+
+                const totalFees = commission + service + transaction + affiliate;
+
                 const amount = parseAmount(row[idxAmount]);
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';
 
@@ -462,13 +474,20 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     amount < 0 ||
                     !!isAdsOrRecharge;
 
+                // Shopee "Amount" is usually the Net Amount (already deducted fees)
+                // So Gross = Net + Fees
+                const netVal = Math.abs(amount);
+
+                // If it's an order income, Gross is typically higher.
+                // If it's an expense, fees might not apply in the same way, but usually they are deducted.
+
                 payments.push({
                     marketplaceOrderId: orderId || 'NO_ORDER_ID', // For expenses without order
                     paymentDate: parseDate(row[idxDate]),
                     settlementDate: parseDate(row[idxDate]),
-                    grossAmount: Math.abs(amount),
-                    netAmount: Math.abs(amount), // Use absolute value, direction is in metadata
-                    fees: 0,
+                    grossAmount: isExpense ? netVal : (netVal + totalFees), // Reconstruct Gross for income
+                    netAmount: netVal, // Use absolute value, direction is in metadata
+                    fees: totalFees,
                     discount: 0,
                     status: String(row[idxStatus] || 'completed'),
                     paymentMethod: 'shopee_pay',
@@ -477,6 +496,11 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     balanceAfter: idxBalanceAfter !== -1 ? parseAmount(row[idxBalanceAfter]) : undefined,
                     isExpense, // New field to mark expenses
                     rawData: row,
+                    fee_overrides: { // Store breakdown for debugging/viewing
+                        commissionFee: commission,
+                        fixedCost: service, // Mapping Service -> Fixed roughly? Or just store as is
+                        // actually store in raw structure or specific fields if we had them
+                    }
                 });
             } catch (error) {
                 errors.push(`Linha ${headerRowIndex + index + 2}: ${error instanceof Error ? error.message : 'Erro'}`);
