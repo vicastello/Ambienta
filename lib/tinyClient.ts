@@ -68,16 +68,18 @@ export async function fetchTinyOrderByMarketplaceId(
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
             // Search by marketplace order ID in Tiny
+            // Tiny API expects form-urlencoded data, not JSON
+            const formData = new URLSearchParams();
+            formData.set('token', token);
+            formData.set('formato', 'json');
+            formData.set('numero_ecommerce', marketplaceOrderId);
+
             const response = await fetch(`${TINY_API_BASE}/pedidos.pesquisa.php`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: JSON.stringify({
-                    token,
-                    formato: 'json',
-                    numero_ecommerce: marketplaceOrderId,
-                }),
+                body: formData.toString(),
             });
 
             // Check if response is JSON before parsing
