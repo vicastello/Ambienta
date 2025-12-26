@@ -180,7 +180,15 @@ export default function ImportarPagamentosPage() {
         setShowEditTagsModal(true);
     };
 
-    const handleSaveTags = async (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string) => {
+    const handleSaveTags = async (
+        updatedTags: string[],
+        createRule: boolean,
+        updatedType?: string,
+        updatedDescription?: string,
+        expenseCategory?: string,
+        _ruleId?: string | null,
+        ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean }
+    ) => {
         if (!selectedPayment || !previewData) return;
 
         // Use the ORIGINAL description from the selected payment for pattern matching
@@ -257,27 +265,27 @@ export default function ImportarPagamentosPage() {
 
         if (createRule && patternKeyword) {
             try {
-                // Build actions array based on what was edited
+                // Build actions array based on what was selected by user
                 const actions: Array<{ type: string; tags?: string[]; transactionType?: string; category?: string }> = [];
 
-                // Add tags action if tags were provided
-                if (updatedTags.length > 0) {
+                // Add tags action if selected
+                if (ruleActionFlags?.includeTags && updatedTags.length > 0) {
                     actions.push({
                         type: 'add_tags',
                         tags: updatedTags,
                     });
                 }
 
-                // Add set_type action if type was changed
-                if (updatedType) {
+                // Add set_type action if selected
+                if (ruleActionFlags?.includeType && updatedType) {
                     actions.push({
                         type: 'set_type',
                         transactionType: updatedType,
                     });
                 }
 
-                // Add set_category action if category was set
-                if (expenseCategory) {
+                // Add set_category action if selected
+                if (ruleActionFlags?.includeCategory && expenseCategory) {
                     actions.push({
                         type: 'set_category',
                         category: expenseCategory,

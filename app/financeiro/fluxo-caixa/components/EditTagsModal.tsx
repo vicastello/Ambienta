@@ -18,7 +18,7 @@ interface EditTagsModalProps {
         appliedRuleId?: string;
     };
     marketplace: string;
-    onSave: (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string, ruleId?: string | null) => void;
+    onSave: (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string, ruleId?: string | null, ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean }) => void;
 }
 
 export default function EditTagsModal({
@@ -34,6 +34,11 @@ export default function EditTagsModal({
     const [transactionDescription, setTransactionDescription] = useState(payment.transactionDescription || '');
     const [expenseCategory, setExpenseCategory] = useState(payment.expenseCategory || '');
     const [createAutoRule, setCreateAutoRule] = useState(false);
+
+    // Action selection for auto-rule
+    const [includeTagsInRule, setIncludeTagsInRule] = useState(true);
+    const [includeTypeInRule, setIncludeTypeInRule] = useState(true);
+    const [includeCategoryInRule, setIncludeCategoryInRule] = useState(true);
 
     // NEW: Rules state using AutoRule type
     const [allRules, setAllRules] = useState<AutoRule[]>([]);
@@ -144,7 +149,27 @@ export default function EditTagsModal({
     };
 
     const handleSave = () => {
-        onSave(tags, createAutoRule, transactionType, transactionDescription, expenseCategory, appliedRuleId);
+        // When creating a rule, only pass the values for selected actions
+        const tagsForRule = createAutoRule && includeTagsInRule ? tags : tags;
+        const typeForRule = createAutoRule && !includeTypeInRule ? undefined : transactionType;
+        const categoryForRule = createAutoRule && !includeCategoryInRule ? undefined : expenseCategory;
+
+        // For the rule creation, pass what should be included
+        const ruleActionFlags = createAutoRule ? {
+            includeTags: includeTagsInRule && tags.length > 0,
+            includeType: includeTypeInRule && !!transactionType,
+            includeCategory: includeCategoryInRule && !!expenseCategory,
+        } : undefined;
+
+        onSave(
+            tags, // Always update tags on the current entry
+            createAutoRule,
+            transactionType, // Always update type on current entry
+            transactionDescription,
+            expenseCategory, // Always update category on current entry
+            appliedRuleId,
+            ruleActionFlags
+        );
         onClose();
     };
 
@@ -504,12 +529,23 @@ export default function EditTagsModal({
                                     {/* Actions */}
                                     <div>
                                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                                            Ações a aplicar
+                                            Selecione as ações a incluir na regra
                                         </span>
-                                        <div className="mt-1 space-y-1.5">
-                                            {/* Tags action */}
+                                        <div className="mt-2 space-y-2">
+                                            {/* Tags action checkbox */}
                                             {tags.length > 0 && (
-                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                                <label className={cn(
+                                                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                                                    includeTagsInRule
+                                                        ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700"
+                                                        : "bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 opacity-60"
+                                                )}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={includeTagsInRule}
+                                                        onChange={(e) => setIncludeTagsInRule(e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                                    />
                                                     <span className="text-blue-500">🏷️</span>
                                                     <span className="text-sm text-gray-700 dark:text-gray-300">
                                                         Adicionar tags:
@@ -521,27 +557,49 @@ export default function EditTagsModal({
                                                             </span>
                                                         ))}
                                                     </div>
-                                                </div>
+                                                </label>
                                             )}
 
-                                            {/* Type action */}
-                                            {transactionType && transactionType !== payment.transactionType && (
-                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                            {/* Type action checkbox */}
+                                            {transactionType && (
+                                                <label className={cn(
+                                                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                                                    includeTypeInRule
+                                                        ? "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700"
+                                                        : "bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 opacity-60"
+                                                )}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={includeTypeInRule}
+                                                        onChange={(e) => setIncludeTypeInRule(e.target.checked)}
+                                                        className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
+                                                    />
                                                     <span className="text-green-500">📝</span>
                                                     <span className="text-sm text-gray-700 dark:text-gray-300">
                                                         Definir tipo: <strong>{transactionType}</strong>
                                                     </span>
-                                                </div>
+                                                </label>
                                             )}
 
-                                            {/* Category action */}
+                                            {/* Category action checkbox */}
                                             {expenseCategory && (
-                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                                <label className={cn(
+                                                    "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                                                    includeCategoryInRule
+                                                        ? "bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700"
+                                                        : "bg-gray-50 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 opacity-60"
+                                                )}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={includeCategoryInRule}
+                                                        onChange={(e) => setIncludeCategoryInRule(e.target.checked)}
+                                                        className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
+                                                    />
                                                     <span className="text-amber-500">📁</span>
                                                     <span className="text-sm text-gray-700 dark:text-gray-300">
                                                         Definir categoria: <strong>{expenseCategory}</strong>
                                                     </span>
-                                                </div>
+                                                </label>
                                             )}
 
                                             {/* Warning if no actions */}
@@ -553,6 +611,17 @@ export default function EditTagsModal({
                                                     </span>
                                                 </div>
                                             )}
+
+                                            {/* Warning if no actions selected */}
+                                            {(tags.length > 0 || transactionType || expenseCategory) &&
+                                                !includeTagsInRule && !includeTypeInRule && !includeCategoryInRule && (
+                                                    <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+                                                        <AlertCircle className="w-4 h-4" />
+                                                        <span className="text-sm">
+                                                            Selecione pelo menos uma ação para incluir na regra
+                                                        </span>
+                                                    </div>
+                                                )}
                                         </div>
                                     </div>
                                 </div>
