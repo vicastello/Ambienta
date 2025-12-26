@@ -29,16 +29,18 @@ type FetchResult = {
 };
 
 /**
- * Get Tiny API token from database
+ * Get Tiny API token from database (with auto-refresh)
  */
 async function getTinyToken(): Promise<string | null> {
-    const { data } = await supabaseAdmin
-        .from('tiny_tokens')
-        .select('access_token')
-        .limit(1)
-        .single();
-
-    return data?.access_token || null;
+    try {
+        // Use the auth module that handles token refresh automatically
+        const { getAccessTokenFromDbOrRefresh } = await import('./tinyAuth');
+        const token = await getAccessTokenFromDbOrRefresh();
+        return token;
+    } catch (error) {
+        console.error('[TinyClient] Error getting token:', error);
+        return null;
+    }
 }
 
 /**
