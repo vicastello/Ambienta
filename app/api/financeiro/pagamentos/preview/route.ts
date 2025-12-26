@@ -244,6 +244,8 @@ export async function POST(request: NextRequest) {
         const previewPayments: PreviewPayment[] = [];
         const processStart = Date.now();
 
+        console.log(`[Preview] Starting to process ${parseResult.payments.length} payments with ${rulesEngine.getRules().length} active rules`);
+
         for (const payment of parseResult.payments) {
             // Create PaymentInput for the engine
             const paymentInput: PaymentInput = {
@@ -284,6 +286,19 @@ export async function POST(request: NextRequest) {
                         name: r.ruleName,
                         conditions: r.conditionResults,
                     })),
+                });
+            }
+
+            // ALWAYS log when user-defined rules match (to verify they're working)
+            const userRuleMatches = engineResult.matchedRules.filter(r =>
+                r.matched && !r.ruleName.startsWith('Sistema:')
+            );
+            if (userRuleMatches.length > 0) {
+                console.log(`[Preview] ✓ USER RULE MATCHED:`, {
+                    orderId: payment.marketplaceOrderId,
+                    desc: payment.transactionDescription?.substring(0, 60),
+                    tags: engineResult.tags,
+                    matchedUserRules: userRuleMatches.map(r => r.ruleName),
                 });
             }
 
