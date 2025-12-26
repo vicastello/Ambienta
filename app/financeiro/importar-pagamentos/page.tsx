@@ -257,6 +257,39 @@ export default function ImportarPagamentosPage() {
 
         if (createRule && patternKeyword) {
             try {
+                // Build actions array based on what was edited
+                const actions: Array<{ type: string; tags?: string[]; transactionType?: string; category?: string }> = [];
+
+                // Add tags action if tags were provided
+                if (updatedTags.length > 0) {
+                    actions.push({
+                        type: 'add_tags',
+                        tags: updatedTags,
+                    });
+                }
+
+                // Add set_type action if type was changed
+                if (updatedType) {
+                    actions.push({
+                        type: 'set_type',
+                        transactionType: updatedType,
+                    });
+                }
+
+                // Add set_category action if category was set
+                if (expenseCategory) {
+                    actions.push({
+                        type: 'set_category',
+                        category: expenseCategory,
+                    });
+                }
+
+                // Only create rule if there are actions
+                if (actions.length === 0) {
+                    console.log('[ImportPage] No actions to create rule for');
+                    return;
+                }
+
                 // Create rule in new auto_rules table via new API
                 const response = await fetch('/api/financeiro/rules', {
                     method: 'POST',
@@ -269,13 +302,10 @@ export default function ImportarPagamentosPage() {
                             id: `cond_${Date.now()}`,
                             field: 'full_text',
                             operator: 'contains',
-                            value: patternKeyword, // Use the same pattern used for matching
+                            value: patternKeyword,
                         }],
                         conditionLogic: 'AND',
-                        actions: [{
-                            type: 'add_tags',
-                            tags: updatedTags,
-                        }],
+                        actions: actions,
                         priority: 50,
                         enabled: true,
                         stopOnMatch: false,

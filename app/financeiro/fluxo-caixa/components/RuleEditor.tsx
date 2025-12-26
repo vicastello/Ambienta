@@ -533,12 +533,14 @@ function ActionRow({
                         className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
                     >
                         <option value="">Selecione...</option>
-                        <option value="marketing">Marketing / ADS</option>
-                        <option value="taxas">Taxas e Comissões</option>
-                        <option value="frete">Frete</option>
-                        <option value="devolucoes">Devoluções</option>
-                        <option value="ajustes">Ajustes</option>
-                        <option value="outros">Outros</option>
+                        <option value="anuncios">📢 Anúncios / Publicidade</option>
+                        <option value="taxas">💳 Taxas / Tarifas</option>
+                        <option value="comissao">💰 Comissão</option>
+                        <option value="frete">📦 Frete</option>
+                        <option value="reembolso">↩️ Reembolso</option>
+                        <option value="ajuste">⚖️ Ajuste</option>
+                        <option value="saque">🏦 Saque / Retirada</option>
+                        <option value="outros">📋 Outros</option>
                     </select>
                 </div>
             )}
