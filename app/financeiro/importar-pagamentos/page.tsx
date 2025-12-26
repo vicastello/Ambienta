@@ -180,7 +180,7 @@ export default function ImportarPagamentosPage() {
         setShowEditTagsModal(true);
     };
 
-    const handleSaveTags = async (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string) => {
+    const handleSaveTags = async (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string) => {
         if (!selectedPayment || !previewData) return;
 
         // Use the ORIGINAL description from the selected payment for pattern matching
@@ -203,6 +203,8 @@ export default function ImportarPagamentosPage() {
                     tags: updatedTags,
                     transactionType: updatedType || p.transactionType,
                     transactionDescription: updatedDescription || p.transactionDescription,
+                    expenseCategory: expenseCategory || p.expenseCategory,
+                    isExpense: expenseCategory ? true : p.isExpense,
                 };
             }
 
@@ -213,7 +215,16 @@ export default function ImportarPagamentosPage() {
                     console.log('[ImportPage] ✓ Matched entry:', p.marketplaceOrderId, p.transactionDescription?.substring(0, 40));
                     // Merge new tags with existing ones (avoid duplicates)
                     const mergedTags = [...new Set([...p.tags, ...updatedTags])];
-                    return { ...p, tags: mergedTags };
+                    return {
+                        ...p,
+                        tags: mergedTags,
+                        // Also apply transactionType if provided
+                        transactionType: updatedType || p.transactionType,
+                        // Also apply expenseCategory if provided
+                        expenseCategory: expenseCategory || p.expenseCategory,
+                        // Mark as expense if category is set
+                        isExpense: expenseCategory ? true : p.isExpense,
+                    };
                 }
             }
 
