@@ -258,6 +258,21 @@ const PaymentRow = ({
         payment.fee_overrides.campaignFee !== undefined
     );
 
+    // Helper to determine if we should show expected value/difference
+    const isOrderIncome = payment.transactionType?.toLowerCase().includes('renda') ||
+        payment.transactionType?.toLowerCase().includes('sale') ||
+        payment.transactionType?.toLowerCase().includes('receita');
+
+    const isAdjustmentOrOther = payment.isFreightAdjustment ||
+        payment.transactionType?.toLowerCase().includes('ajuste') ||
+        payment.transactionType?.toLowerCase().includes('recarga') ||
+        payment.transactionType?.toLowerCase().includes('reembolso') ||
+        payment.transactionType?.toLowerCase().includes('adjustment') ||
+        payment.transactionType?.toLowerCase().includes('withdraw') ||
+        payment.transactionType?.toLowerCase().includes('retirada');
+
+    const shouldShowExpected = !isAdjustmentOrOther && payment.tinyOrderInfo?.valor_esperado;
+
     return (
         <>
             <tr className={cn(
@@ -299,9 +314,9 @@ const PaymentRow = ({
                     {payment.tinyOrderInfo?.valor_total_pedido ? formatBRL(payment.tinyOrderInfo.valor_total_pedido) : '-'}
                 </td>
                 <td className="px-2 py-2 text-xs text-right tabular-nums">
-                    {/* Hide expected value for freight adjustments - they don't have product-based expectations */}
-                    {payment.isFreightAdjustment ? (
-                        <span className="text-muted" title="Ajuste de frete não tem valor esperado">-</span>
+                    {/* Hide expected value for adjustments/recharges - they don't have product-based expectations */}
+                    {!shouldShowExpected ? (
+                        <span className="text-muted" title="Sem valor esperado para este tipo">-</span>
                     ) : (
                         <div className="flex items-center justify-end gap-0.5">
                             {hasOverride && <span title="Taxa modificada"><Settings2 className="w-3 h-3 text-purple-500" /></span>}
@@ -318,9 +333,9 @@ const PaymentRow = ({
                     {payment.isExpense ? '-' : '+'}{formatBRL(Math.abs(payment.netAmount))}
                 </td>
                 <td className="px-2 py-2 text-xs text-right tabular-nums">
-                    {/* Hide difference for freight adjustments - they don't have product-based expectations */}
-                    {payment.isFreightAdjustment ? (
-                        <span className="text-muted" title="Ajuste de frete não tem diferença calculável">-</span>
+                    {/* Hide difference for adjustments/recharges */}
+                    {!shouldShowExpected ? (
+                        <span className="text-muted" title="Sem diferença calculável">-</span>
                     ) : payment.tinyOrderInfo?.valor_esperado ? (
                         <span className={cn(
                             'font-medium',
