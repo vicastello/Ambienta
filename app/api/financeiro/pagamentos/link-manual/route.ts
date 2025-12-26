@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
                 marketplace,
                 marketplace_order_id: marketplaceOrderId,
                 tiny_order_id: tinyOrderId,
-                created_at: new Date().toISOString(),
             }, {
                 onConflict: 'marketplace,marketplace_order_id',
             });
