@@ -19,78 +19,70 @@ export async function POST(request: NextRequest) {
 
         console.log('[ManualLink] Linking:', { marketplaceOrderId, marketplace, tinyOrderId });
 
-        // 0. Check if order exists in tiny_orders, if not fetch and save it
-        const { data: existingOrder } = await supabaseAdmin
-            .from('tiny_orders')
-            .select('id')
-            .eq('tiny_id', tinyOrderId)
-            .maybeSingle();
+        // 0. Always fetch and upsert order to ensure full data (fixes "incomplete data" issues)
+        console.log('[ManualLink] Fetching full order details from Tiny API...');
 
-        if (!existingOrder) {
-            console.log('[ManualLink] Order not in DB, fetching from Tiny API...');
+        let internalOrderId: number;
 
-            try {
-                // Fetch order details from Tiny API v3
-                const { getAccessTokenFromDbOrRefresh } = await import('@/lib/tinyAuth');
-                const { obterPedidoDetalhado } = await import('@/lib/tinyApi');
+        try {
+            // Fetch order details from Tiny API v3
+            const { getAccessTokenFromDbOrRefresh } = await import('@/lib/tinyAuth');
+            const { obterPedidoDetalhado } = await import('@/lib/tinyApi');
 
-                const accessToken = await getAccessTokenFromDbOrRefresh();
-                const pedido = await obterPedidoDetalhado(accessToken, tinyOrderId, 'manual-link');
+            const accessToken = await getAccessTokenFromDbOrRefresh();
+            const pedido = await obterPedidoDetalhado(accessToken, tinyOrderId, 'manual-link');
 
-                console.log('[ManualLink] Fetched order from Tiny:', { id: pedido.id, numeroPedido: pedido.numeroPedido });
+            console.log('[ManualLink] Fetched order from Tiny:', { id: pedido.id, numeroPedido: pedido.numeroPedido });
 
-                // Insert minimal order record (tiny_id is the Tiny order ID, id is auto-generated)
-                const { data: insertedOrder, error: insertError } = await supabaseAdmin
-                    .from('tiny_orders')
-                    .insert({
-                        tiny_id: pedido.id,
-                        numero_pedido: pedido.numeroPedido || 0,
-                        situacao: pedido.situacao || 0,
-                        data_criacao: pedido.dataCriacao ? pedido.dataCriacao.split('T')[0] : new Date().toISOString().split('T')[0],
-                        valor_frete: typeof pedido.valorFrete === 'string' ? parseFloat(pedido.valorFrete) : (pedido.valorFrete || null),
-                        valor: typeof pedido.valorTotalPedido === 'string' ? parseFloat(pedido.valorTotalPedido) : (pedido.valorTotalPedido || null),
-                        canal: marketplace,
-                    })
-                    .select('id')
-                    .single();
+            // Upsert order record with all available details
+            const { data: upsertedOrder, error: upsertError } = await supabaseAdmin
+                .from('tiny_orders')
+                .upsert({
+                    tiny_id: pedido.id,
+                    numero_pedido: pedido.numeroPedido || 0,
+                    situacao: pedido.situacao || 0,
+                    data_criacao: pedido.dataCriacao ? pedido.dataCriacao.split('T')[0] : new Date().toISOString().split('T')[0],
+                    valor_frete: typeof pedido.valorFrete === 'string' ? parseFloat(pedido.valorFrete) : (pedido.valorFrete || null),
+                    valor: typeof pedido.valorTotalPedido === 'string' ? parseFloat(pedido.valorTotalPedido) : (pedido.valorTotalPedido || null),
+                    canal: marketplace,
+                    // Full data fields
+                    cliente_nome: pedido.cliente?.nome || null,
+                    cidade: pedido.enderecoEntrega?.cidade || null,
+                    uf: pedido.enderecoEntrega?.uf || null,
+                    raw: pedido as any, // Save full payload
+                    is_enriched: true, // Mark as enriched since we fetched full details
+                    updated_at: new Date().toISOString(),
+                }, {
+                    onConflict: 'tiny_id'
+                })
+                .select('id')
+                .single();
 
-                if (insertError) {
-                    console.error('[ManualLink] Error saving order:', insertError);
-                    return NextResponse.json(
-                        { error: 'Erro ao salvar pedido do Tiny no banco: ' + insertError.message },
-                        { status: 500 }
-                    );
-                }
-
-                console.log('[ManualLink] Order saved to DB with internal ID:', insertedOrder?.id);
-            } catch (fetchError: any) {
-                console.error('[ManualLink] Error fetching order from Tiny:', fetchError);
+            if (upsertError) {
+                console.error('[ManualLink] Error saving order:', upsertError);
                 return NextResponse.json(
-                    { error: 'Erro ao buscar detalhes do pedido no Tiny: ' + (fetchError?.message || 'Unknown error') },
+                    { error: 'Erro ao salvar pedido do Tiny no banco: ' + upsertError.message },
                     { status: 500 }
                 );
             }
-        }
 
-        // Get the internal DB ID from tiny_id (the order may have existed before or was just inserted)
-        const { data: orderRow, error: lookupError } = await supabaseAdmin
-            .from('tiny_orders')
-            .select('id')
-            .eq('tiny_id', tinyOrderId)
-            .single();
+            if (!upsertedOrder) {
+                throw new Error('Falha ao recuperar ID do pedido após salvar');
+            }
 
-        if (lookupError || !orderRow) {
-            console.error('[ManualLink] Could not find order in DB after insert:', lookupError);
+            internalOrderId = upsertedOrder.id;
+            console.log('[ManualLink] Order saved/updated in DB with internal ID:', internalOrderId);
+
+        } catch (fetchError: any) {
+            console.error('[ManualLink] Error fetching/saving order from Tiny:', fetchError);
             return NextResponse.json(
-                { error: 'Pedido não encontrado no banco de dados após inserção' },
+                { error: 'Erro ao processar pedido do Tiny: ' + (fetchError?.message || 'Unknown error') },
                 { status: 500 }
             );
         }
 
-        const internalOrderId = orderRow.id;
-        console.log('[ManualLink] Using internal order ID for link:', internalOrderId);
-
-        // 1.5. Sync order items (products) from Tiny API
+        // 1.5. Sync order items (products) from Tiny API - REQUIRED before linking
+        let itemsSaved: number | null = null;
         try {
             const { getAccessTokenFromDbOrRefresh } = await import('@/lib/tinyAuth');
             const { salvarItensPedido } = await import('@/lib/pedidoItensHelper');
@@ -98,15 +90,27 @@ export async function POST(request: NextRequest) {
             const accessToken = await getAccessTokenFromDbOrRefresh();
             console.log('[ManualLink] Syncing order items from Tiny...');
 
-            const itemsSaved = await salvarItensPedido(accessToken, tinyOrderId, internalOrderId, {
+            itemsSaved = await salvarItensPedido(accessToken, tinyOrderId, internalOrderId, {
                 context: 'manual-link',
             });
 
             console.log('[ManualLink] Order items synced:', itemsSaved, 'items saved');
+
+            if (itemsSaved === null) {
+                return NextResponse.json(
+                    { error: 'Erro ao sincronizar itens do pedido. O vínculo não foi criado.' },
+                    { status: 500 }
+                );
+            }
         } catch (itemsError: any) {
-            // Log but don't fail the whole operation if items fail to sync
-            console.warn('[ManualLink] Warning: Could not sync order items:', itemsError?.message || itemsError);
+            console.error('[ManualLink] Error syncing order items:', itemsError?.message || itemsError);
+            return NextResponse.json(
+                { error: 'Erro ao sincronizar dados do pedido: ' + (itemsError?.message || 'Erro desconhecido') },
+                { status: 500 }
+            );
         }
+
+        console.log('[ManualLink] All order data synced successfully. Creating link...');
 
         // 1. Create or update marketplace_order_links
         const { error: linkError } = await supabaseAdmin
