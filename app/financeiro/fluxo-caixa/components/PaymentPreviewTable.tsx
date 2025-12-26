@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Link2, LinkIcon, AlertTriangle, ChevronDown, ChevronUp, Tag, Calendar, Pencil, TrendingUp, TrendingDown, Settings2, Check, X } from 'lucide-react';
+import { Link2, LinkIcon, AlertTriangle, ChevronDown, ChevronUp, Tag, Calendar, Pencil, TrendingUp, TrendingDown, Settings2, Check, X, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import FeeBreakdownCard from './FeeBreakdownCard';
 
@@ -36,6 +36,7 @@ export type PreviewPayment = {
         data_criacao?: string;
     };
     relatedPayments?: string[];
+    matchedRuleNames?: string[];  // Rules that were automatically applied
     netBalance?: number;
     fee_overrides?: {
         commissionFee?: number;
@@ -324,14 +325,25 @@ const PaymentRow = ({
                 <td className="px-2 py-2">
                     <MatchStatusBadge status={payment.matchStatus} />
                 </td>
-                <td className="px-2 py-2 max-w-[80px]">
-                    <div className="flex flex-wrap gap-0.5">
-                        {payment.tags.slice(0, 1).map(tag => (
-                            <TagBadge key={tag} tag={tag} />
-                        ))}
-                        {payment.tags.length > 1 && (
-                            <span className="text-[10px] text-gray-500">+{payment.tags.length - 1}</span>
+                <td className="px-2 py-2 max-w-[100px]">
+                    <div className="flex items-center gap-1">
+                        {/* Rule applied indicator */}
+                        {payment.matchedRuleNames && payment.matchedRuleNames.length > 0 && (
+                            <span
+                                title={`Regras aplicadas: ${payment.matchedRuleNames.join(', ')}`}
+                                className="flex-shrink-0 text-purple-500"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                            </span>
                         )}
+                        <div className="flex flex-wrap gap-0.5">
+                            {payment.tags.slice(0, 1).map(tag => (
+                                <TagBadge key={tag} tag={tag} />
+                            ))}
+                            {payment.tags.length > 1 && (
+                                <span className="text-[10px] text-gray-500">+{payment.tags.length - 1}</span>
+                            )}
+                        </div>
                     </div>
                 </td>
                 <td className="px-2 py-2">

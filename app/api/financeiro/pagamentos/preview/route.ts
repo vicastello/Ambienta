@@ -16,6 +16,7 @@ export type PreviewPayment = ParsedPayment & {
     isAdjustment: boolean;
     isRefund: boolean;
     isFreightAdjustment: boolean; // Freight/weight adjustments - don't show expected/difference
+    matchedRuleNames?: string[];   // Rules that were automatically applied
     matchStatus: 'linked' | 'unmatched' | 'multiple_entries';
     tinyOrderId?: number;
     tinyOrderInfo?: {
@@ -471,6 +472,10 @@ export async function POST(request: NextRequest) {
                 isAdjustment: engineResult.tags.some(t => ['ajuste', 'compensacao', 'correcao'].includes(t)),
                 isRefund: engineResult.tags.some(t => ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(t)),
                 isFreightAdjustment: isFreightAdjustment,
+                // Include matched rule names for visual indicator
+                matchedRuleNames: engineResult.matchedRules
+                    .filter(r => r.matched)
+                    .map(r => r.ruleName),
                 matchStatus: linkData ? 'linked' : 'unmatched',
                 tinyOrderId: linkData?.tiny_order_id,
                 tinyOrderInfo: linkData && linkData.tiny_orders ? {
