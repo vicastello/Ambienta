@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Plus, Save, Tag as TagIcon, Sparkles } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Plus, Save, Tag as TagIcon, Sparkles, LinkIcon, Unlink, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { AutoRule } from '@/lib/rules';
 
 interface EditTagsModalProps {
     isOpen: boolean;
@@ -13,9 +15,10 @@ interface EditTagsModalProps {
         tags: string[];
         isExpense?: boolean;
         expenseCategory?: string;
+        appliedRuleId?: string;
     };
     marketplace: string;
-    onSave: (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string) => void;
+    onSave: (updatedTags: string[], createRule: boolean, updatedType?: string, updatedDescription?: string, expenseCategory?: string, ruleId?: string | null) => void;
 }
 
 export default function EditTagsModal({
@@ -31,6 +34,72 @@ export default function EditTagsModal({
     const [transactionDescription, setTransactionDescription] = useState(payment.transactionDescription || '');
     const [expenseCategory, setExpenseCategory] = useState(payment.expenseCategory || '');
     const [createAutoRule, setCreateAutoRule] = useState(false);
+
+    // NEW: Rules state using AutoRule type
+    const [allRules, setAllRules] = useState<AutoRule[]>([]);
+    const [loadingRules, setLoadingRules] = useState(false);
+    const [appliedRuleId, setAppliedRuleId] = useState<string | null>(payment.appliedRuleId || null);
+    const [showRulesSection, setShowRulesSection] = useState(false);
+
+    // Fetch rules on mount from NEW API
+    useEffect(() => {
+        if (isOpen) {
+            fetchRules();
+        }
+    }, [isOpen, marketplace]);
+
+    const fetchRules = async () => {
+        setLoadingRules(true);
+        try {
+            // Use new rules API
+            const response = await fetch(`/api/financeiro/rules?marketplace=${marketplace}&enabled=true`);
+            const data = await response.json();
+            if (data.success) {
+                // Filter only user-defined rules (not system rules)
+                setAllRules((data.rules || []).filter((r: AutoRule) => !r.isSystemRule));
+            }
+        } catch (error) {
+            console.error('Error fetching rules:', error);
+        } finally {
+            setLoadingRules(false);
+        }
+    };
+
+    // Find matching rules based on description using new condition system
+    const matchingRules = useMemo(() => {
+        if (!transactionDescription && !transactionType) return [];
+
+        const textToMatch = `${transactionDescription} ${transactionType}`.toLowerCase();
+
+        return allRules.filter(rule => {
+            if (!rule.enabled) return false;
+
+            // Check if any condition matches
+            return rule.conditions.some(condition => {
+                const valueToCheck = condition.value?.toString().toLowerCase() || '';
+
+                if (condition.field === 'full_text' || condition.field === 'description') {
+                    if (condition.operator === 'contains') {
+                        return textToMatch.includes(valueToCheck);
+                    } else if (condition.operator === 'equals') {
+                        return textToMatch === valueToCheck;
+                    } else if (condition.operator === 'regex') {
+                        try {
+                            return new RegExp(condition.value?.toString() || '', 'i').test(textToMatch);
+                        } catch {
+                            return false;
+                        }
+                    }
+                }
+                return false;
+            });
+        }).sort((a, b) => b.priority - a.priority);
+    }, [allRules, transactionDescription, transactionType]);
+
+    // Get currently applied rule details
+    const appliedRule = useMemo(() => {
+        return allRules.find(r => r.id === appliedRuleId);
+    }, [allRules, appliedRuleId]);
 
     // Handle ESC key to close modal
     useEffect(() => {
@@ -59,8 +128,23 @@ export default function EditTagsModal({
         setTags(tags.filter(t => t !== tagToRemove));
     };
 
+    const handleApplyRule = (rule: AutoRule) => {
+        setAppliedRuleId(rule.id);
+        // Extract tags from rule actions
+        const ruleTags = rule.actions
+            .filter(a => a.type === 'add_tags')
+            .flatMap(a => a.tags || []);
+        // Merge rule tags with current tags (avoiding duplicates)
+        const newTags = [...new Set([...tags, ...ruleTags])];
+        setTags(newTags);
+    };
+
+    const handleUnlinkRule = () => {
+        setAppliedRuleId(null);
+    };
+
     const handleSave = () => {
-        onSave(tags, createAutoRule, transactionType, transactionDescription, expenseCategory);
+        onSave(tags, createAutoRule, transactionType, transactionDescription, expenseCategory, appliedRuleId);
         onClose();
     };
 
@@ -107,6 +191,72 @@ export default function EditTagsModal({
 
                 {/* Content */}
                 <div className="px-8 py-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                    {/* Applied Rule Banner */}
+                    {appliedRule && (
+                        <div className="flex items-center justify-between p-4 rounded-2xl bg-purple-500/10 border border-purple-500/20">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-full bg-purple-500/20">
+                                    <LinkIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">
+                                        Regra Aplicada: {appliedRule.name}
+                                    </p>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">
+                                        Prioridade: {appliedRule.priority}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleUnlinkRule}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition-colors"
+                            >
+                                <Unlink className="w-4 h-4" />
+                                Desvincular
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Matching Rules Section */}
+                    {matchingRules.length > 0 && !appliedRule && (
+                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                                    {matchingRules.length} regra(s) compatível(is) encontrada(s)
+                                </span>
+                            </div>
+                            <div className="space-y-2">
+                                {matchingRules.slice(0, 3).map(rule => (
+                                    <div
+                                        key={rule.id}
+                                        className="flex items-center justify-between p-3 rounded-xl bg-white/50 dark:bg-white/5"
+                                    >
+                                        <div>
+                                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                {rule.name}
+                                            </p>
+                                            <div className="flex gap-1 mt-1">
+                                                {rule.actions.filter(a => a.type === 'add_tags').flatMap(a => a.tags || []).slice(0, 3).map(tag => (
+                                                    <span key={tag} className="px-2 py-0.5 rounded-full text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleApplyRule(rule)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                                        >
+                                            <Check className="w-3.5 h-3.5" />
+                                            Aplicar
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Transaction Info - Editable */}
                     <div className="space-y-4">
                         <div>
@@ -237,28 +387,102 @@ export default function EditTagsModal({
 
                     <div className="h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-700 to-transparent"></div>
 
-                    {/* Create Auto-Rule */}
-                    <div className="glass-card p-5 rounded-2xl border border-purple-500/20 dark:border-purple-400/20">
-                        <label className="flex items-start gap-4 cursor-pointer group">
-                            <input
-                                type="checkbox"
-                                checked={createAutoRule}
-                                onChange={(e) => setCreateAutoRule(e.target.checked)}
-                                className="mt-1 w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 border-gray-300 dark:border-gray-600 cursor-pointer"
-                            />
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Sparkles className="w-5 h-5 text-purple-500 dark:text-purple-400" />
-                                    <span className="font-semibold text-gray-900 dark:text-white">
-                                        Criar regra automática
-                                    </span>
-                                </div>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                                    Aplicar estas tags automaticamente em futuras importações com descrição semelhante
-                                </p>
+                    {/* All Active Rules Section (Collapsible) */}
+                    <div className="glass-card p-4 rounded-2xl border border-gray-200 dark:border-gray-700">
+                        <button
+                            type="button"
+                            onClick={() => setShowRulesSection(!showRulesSection)}
+                            className="w-full flex items-center justify-between"
+                        >
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                    Regras Ativas ({allRules.filter(r => r.enabled).length})
+                                </span>
                             </div>
-                        </label>
+                            {showRulesSection ? (
+                                <ChevronUp className="w-4 h-4 text-gray-400" />
+                            ) : (
+                                <ChevronDown className="w-4 h-4 text-gray-400" />
+                            )}
+                        </button>
+
+                        {showRulesSection && (
+                            <div className="mt-3 space-y-2 max-h-40 overflow-y-auto">
+                                {loadingRules ? (
+                                    <p className="text-sm text-gray-500">Carregando regras...</p>
+                                ) : allRules.filter(r => r.enabled).length === 0 ? (
+                                    <p className="text-sm text-gray-500">Nenhuma regra ativa para {marketplace}</p>
+                                ) : (
+                                    allRules.filter(r => r.enabled).map(rule => (
+                                        <div
+                                            key={rule.id}
+                                            className={cn(
+                                                "flex items-center justify-between p-2 rounded-lg",
+                                                rule.id === appliedRuleId
+                                                    ? "bg-purple-100 dark:bg-purple-900/30 border border-purple-300 dark:border-purple-700"
+                                                    : "bg-gray-50 dark:bg-gray-800/50"
+                                            )}
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                                                    {rule.name}
+                                                </p>
+                                                <div className="flex gap-1 mt-0.5">
+                                                    {rule.actions.filter(a => a.type === 'add_tags').flatMap(a => a.tags || []).slice(0, 2).map(tag => (
+                                                        <span key={tag} className="px-1.5 py-0.5 rounded text-[10px] bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                    {rule.actions.filter(a => a.type === 'add_tags').flatMap(a => a.tags || []).length > 2 && (
+                                                        <span className="text-[10px] text-gray-500">+{rule.actions.filter(a => a.type === 'add_tags').flatMap(a => a.tags || []).length - 2}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {rule.id === appliedRuleId ? (
+                                                <span className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
+                                                    <Check className="w-3 h-3" />
+                                                    Aplicada
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleApplyRule(rule)}
+                                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                                >
+                                                    Aplicar
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
                     </div>
+
+                    {/* Create Auto-Rule */}
+                    {!appliedRule && (
+                        <div className="glass-card p-5 rounded-2xl border border-purple-500/20 dark:border-purple-400/20">
+                            <label className="flex items-start gap-4 cursor-pointer group">
+                                <input
+                                    type="checkbox"
+                                    checked={createAutoRule}
+                                    onChange={(e) => setCreateAutoRule(e.target.checked)}
+                                    className="mt-1 w-5 h-5 text-purple-600 rounded focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 border-gray-300 dark:border-gray-600 cursor-pointer"
+                                />
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Sparkles className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+                                        <span className="font-semibold text-gray-900 dark:text-white">
+                                            Criar regra automática
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                                        Aplicar estas tags automaticamente em futuras importações com descrição semelhante
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer */}
