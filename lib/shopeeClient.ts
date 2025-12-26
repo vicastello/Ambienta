@@ -578,3 +578,80 @@ export async function getShopeeEscrowDetailsForOrders(
 
   return results;
 }
+/**
+ * Fetch and save Shopee order (and its escrow details) to database
+ */
+export async function fetchAndSaveShopeeOrder(orderSn: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // 1. Fetch Order Details (Items, Address, etc)
+    const orders = await getShopeeOrderDetails([orderSn]);
+    if (orders.length === 0) {
+      return { success: false, error: 'Pedido não encontrado na Shopee' };
+    }
+    const order = orders[0];
+
+    // 2. Fetch Escrow Details (Financials, Affiliate Fees)
+    const escrow = await getShopeeEscrowDetail(orderSn);
+
+    // 3. Save Order to Database
+    const { error: orderError } = await (supabaseAdmin as any)
+      .from('shopee_orders')
+      .upsert({
+        order_sn: order.order_sn,
+        order_status: order.order_status,
+        total_amount: order.total_amount,
+        shipping_carrier: order.shipping_carrier,
+        create_time: new Date(order.create_time * 1000).toISOString(),
+        buyer_user_id: (order as any).buyer_user_id,
+        // Escrow fields
+        voucher_from_seller: escrow?.voucher_from_seller,
+        voucher_from_shopee: escrow?.voucher_from_shopee,
+        seller_voucher_code: escrow?.seller_voucher_code?.[0], // Store first code?
+        ams_commission_fee: escrow?.ams_commission_fee,
+        order_selling_price: escrow?.order_selling_price,
+        order_discounted_price: escrow?.order_discounted_price,
+        seller_discount: escrow?.seller_discount,
+        escrow_amount: escrow?.escrow_amount,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (orderError) {
+      console.error('[Shopee Sync] Error saving order:', orderError);
+      return { success: false, error: 'Erro ao salvar pedido no banco' };
+    }
+
+    // 4. Save Items
+    if (order.order_items && order.order_items.length > 0) {
+      const itemsToSave = order.order_items.map((item: any) => ({
+        order_sn: order.order_sn,
+        item_id: item.item_id,
+        item_name: item.item_name,
+        item_sku: item.item_sku,
+        model_id: item.model_id,
+        model_name: item.model_name,
+        model_sku: item.model_sku,
+        image_url: item.image_info?.image_url,
+        quantity: item.model_quantity_purchased,
+        original_price: item.model_original_price,
+        discounted_price: item.model_discounted_price,
+      }));
+
+      // Delete existing items first to avoid duplicates/stale data
+      await (supabaseAdmin as any).from('shopee_order_items').delete().eq('order_sn', order.order_sn);
+
+      const { error: itemsError } = await (supabaseAdmin as any)
+        .from('shopee_order_items')
+        .insert(itemsToSave);
+
+      if (itemsError) {
+        console.error('[Shopee Sync] Error saving items:', itemsError);
+        // Don't fail the whole sync for items, but log it
+      }
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('[Shopee Sync] Critical error:', error);
+    return { success: false, error: error.message };
+  }
+}

@@ -587,12 +587,44 @@ export default function PaymentPreviewTable({
     const [sortField, setSortField] = useState<SortField | null>('paymentDate');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
+    const [isSyncing, setIsSyncing] = useState(false);
+
     const handleSort = (field: SortField) => {
         if (sortField === field) {
             setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
         } else {
             setSortField(field);
             setSortDirection('asc');
+        }
+    };
+
+    const handleForceSync = async () => {
+        if (selectedIds.size === 0) return;
+        setIsSyncing(true);
+        try {
+            const response = await fetch('/api/financeiro/pagamentos/force-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderIds: Array.from(selectedIds),
+                    marketplace
+                })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                // Ideally refresh the page or trigger a re-fetch of the preview
+                // For now, simple alert or callback if provided
+                // A full page refresh is the safest way to ensure Preview fetches fresh data from DB
+                window.location.reload();
+            } else {
+                alert(`Erro ao sincronizar: ${data.error}`);
+            }
+        } catch (error) {
+            console.error('Sync error:', error);
+            alert('Erro ao tentar sincronizar');
+        } finally {
+            setIsSyncing(false);
         }
     };
 
