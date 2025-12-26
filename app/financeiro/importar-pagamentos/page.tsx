@@ -231,7 +231,18 @@ export default function ImportarPagamentosPage() {
 
         console.log('[ImportPage] Applied to:', otherMatchCount + 1, 'entries');
 
+        // Log what we're about to update
+        const updatedEntriesWithTags = updatedPayments.filter(p =>
+            p.tags && p.tags.length > 0 && p.tags !== previewData.payments.find(op => op.marketplaceOrderId === p.marketplaceOrderId)?.tags
+        );
+        console.log('[ImportPage] Entries with new tags:', updatedEntriesWithTags.map(p => ({
+            id: p.marketplaceOrderId,
+            tags: p.tags,
+        })));
+
         setPreviewData({ ...previewData, payments: updatedPayments });
+
+        console.log('[ImportPage] State updated!');
 
         if (createRule && patternKeyword) {
             try {

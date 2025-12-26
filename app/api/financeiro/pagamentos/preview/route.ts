@@ -464,6 +464,9 @@ export async function POST(request: NextRequest) {
 
             previewPayments.push({
                 ...payment,
+                // Apply engine result modifications
+                transactionType: engineResult.transactionType || payment.transactionType,
+                transactionDescription: engineResult.transactionDescription || payment.transactionDescription,
                 tags: engineResult.tags,
                 isAdjustment: engineResult.tags.some(t => ['ajuste', 'compensacao', 'correcao'].includes(t)),
                 isRefund: engineResult.tags.some(t => ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(t)),

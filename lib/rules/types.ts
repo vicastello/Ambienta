@@ -53,6 +53,8 @@ export interface RuleCondition {
  */
 export type RuleActionType =
     | 'add_tags'        // Add tags to the payment
+    | 'set_type'        // Set/override transaction type
+    | 'set_description' // Set/override transaction description
     | 'set_category'    // Set expense category
     | 'mark_expense'    // Mark as expense (outgoing)
     | 'mark_income'     // Mark as income (incoming)
@@ -65,6 +67,8 @@ export type RuleActionType =
 export interface RuleAction {
     type: RuleActionType;
     tags?: string[];            // For add_tags
+    transactionType?: string;   // For set_type
+    description?: string;       // For set_description  
     category?: string;          // For set_category
     reviewNote?: string;        // For flag_review
 }
@@ -143,6 +147,8 @@ export interface RuleMatchResult {
 export interface RuleEngineResult {
     // Applied results
     tags: string[];
+    transactionType?: string;           // Modified transaction type
+    transactionDescription?: string;    // Modified description
     category?: string;
     isExpense: boolean;
     isIncome: boolean;

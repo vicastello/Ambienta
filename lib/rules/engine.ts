@@ -183,6 +183,18 @@ export class RulesEngine {
                     }
                     break;
 
+                case 'set_type':
+                    if (action.transactionType) {
+                        result.transactionType = action.transactionType;
+                    }
+                    break;
+
+                case 'set_description':
+                    if (action.description) {
+                        result.transactionDescription = action.description;
+                    }
+                    break;
+
                 case 'set_category':
                     if (action.category) {
                         result.category = action.category;

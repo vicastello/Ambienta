@@ -387,7 +387,7 @@ function ConditionRow({
     );
 }
 
-// Action Row Component
+// Action Row Component - supports multiple action types
 function ActionRow({
     action,
     onChange,
@@ -408,32 +408,52 @@ function ActionRow({
         }
     };
 
+    // Helper to toggle between action types
+    const setActionType = (type: RuleAction['type']) => {
+        onChange({
+            type,
+            tags: type === 'add_tags' ? (action.tags || []) : undefined,
+            transactionType: type === 'set_type' ? (action.transactionType || '') : undefined,
+            description: type === 'set_description' ? (action.description || '') : undefined,
+            category: type === 'set_category' ? (action.category || '') : undefined,
+        });
+    };
+
+    const actionTypes = [
+        { type: 'add_tags' as const, label: 'Adicionar Tags', icon: '🏷️' },
+        { type: 'set_type' as const, label: 'Definir Tipo', icon: '📝' },
+        { type: 'set_description' as const, label: 'Definir Descrição', icon: '📄' },
+        { type: 'set_category' as const, label: 'Definir Categoria', icon: '📁' },
+        { type: 'mark_expense' as const, label: 'Marcar Despesa', icon: '💸' },
+        { type: 'mark_income' as const, label: 'Marcar Receita', icon: '💰' },
+    ];
+
     return (
         <div className="space-y-3 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        checked={action.type === 'add_tags'}
-                        onChange={e => onChange({ type: e.target.checked ? 'add_tags' : 'skip', tags: [] })}
-                        className="rounded"
-                    />
-                    <span className="text-sm">Adicionar tags</span>
+            {/* Action Type Selector */}
+            <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                    Tipo de Ação
                 </label>
-
-                <label className="flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        checked={action.type === 'mark_expense'}
-                        onChange={e => onChange({ type: e.target.checked ? 'mark_expense' : 'add_tags' })}
-                        className="rounded"
-                    />
-                    <span className="text-sm">Marcar como despesa</span>
-                </label>
+                <select
+                    value={action.type}
+                    onChange={e => setActionType(e.target.value as RuleAction['type'])}
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
+                >
+                    {actionTypes.map(at => (
+                        <option key={at.type} value={at.type}>
+                            {at.icon} {at.label}
+                        </option>
+                    ))}
+                </select>
             </div>
 
+            {/* Tags Input */}
             {action.type === 'add_tags' && (
                 <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                        Tags a adicionar
+                    </label>
                     <div className="flex flex-wrap gap-2 mb-2">
                         {action.tags?.map(tag => (
                             <span
@@ -450,7 +470,6 @@ function ActionRow({
                             </span>
                         ))}
                     </div>
-
                     <div className="flex gap-2">
                         <input
                             type="text"
@@ -467,6 +486,70 @@ function ActionRow({
                             Adicionar
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Transaction Type Input */}
+            {action.type === 'set_type' && (
+                <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                        Novo Tipo de Transação
+                    </label>
+                    <input
+                        type="text"
+                        value={action.transactionType || ''}
+                        onChange={e => onChange({ transactionType: e.target.value })}
+                        placeholder="Ex: ADS/Marketing, Taxa de Serviço..."
+                        className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
+                    />
+                </div>
+            )}
+
+            {/* Description Input */}
+            {action.type === 'set_description' && (
+                <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                        Nova Descrição
+                    </label>
+                    <input
+                        type="text"
+                        value={action.description || ''}
+                        onChange={e => onChange({ description: e.target.value })}
+                        placeholder="Ex: Investimento em Marketing..."
+                        className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
+                    />
+                </div>
+            )}
+
+            {/* Category Input */}
+            {action.type === 'set_category' && (
+                <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+                        Categoria
+                    </label>
+                    <select
+                        value={action.category || ''}
+                        onChange={e => onChange({ category: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
+                    >
+                        <option value="">Selecione...</option>
+                        <option value="marketing">Marketing / ADS</option>
+                        <option value="taxas">Taxas e Comissões</option>
+                        <option value="frete">Frete</option>
+                        <option value="devolucoes">Devoluções</option>
+                        <option value="ajustes">Ajustes</option>
+                        <option value="outros">Outros</option>
+                    </select>
+                </div>
+            )}
+
+            {/* Expense/Income info */}
+            {(action.type === 'mark_expense' || action.type === 'mark_income') && (
+                <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                    <Info className="w-4 h-4" />
+                    {action.type === 'mark_expense'
+                        ? 'Entradas correspondentes serão marcadas como DESPESA'
+                        : 'Entradas correspondentes serão marcadas como RECEITA'}
                 </div>
             )}
         </div>
