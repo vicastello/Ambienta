@@ -385,8 +385,17 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 // Use index found outside loop
                 const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
 
-                // If no Order ID, generate one based on transaction type + date
-                if (!orderId || orderId.toLowerCase() === 'null' || orderId.toLowerCase() === 'undefined') {
+                // If no Order ID, or if it's a placeholder, generate one based on transaction type + date
+                const normalizedId = orderId ? orderId.toLowerCase() : '';
+                const isInvalidId = !orderId ||
+                    normalizedId === 'null' ||
+                    normalizedId === 'undefined' ||
+                    normalizedId === '0' ||
+                    normalizedId === '-' ||
+                    normalizedId === 'nan' ||
+                    normalizedId === 'n/a';
+
+                if (isInvalidId) {
                     // Rule: Use first 3 letters of transaction type
                     let prefix = 'TRX'; // Default fallback
 
