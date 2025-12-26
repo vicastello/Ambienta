@@ -82,26 +82,36 @@ export async function fetchTinyOrderByMarketplaceId(
                 body: formData.toString(),
             });
 
-            // Check if response is JSON before parsing
-            const contentType = response.headers.get('content-type') || '';
+            // Try to parse as JSON first, regardless of content-type
+            // Tiny sometimes returns JSON with text/html or other content types
+            const text = await response.text();
             let data: any;
 
-            if (contentType.includes('application/json')) {
-                data = await response.json();
-            } else {
-                // Response is likely XML or HTML error page
-                const text = await response.text();
-                console.error('[TinyClient] Received non-JSON response:', text.substring(0, 200));
+            try {
+                data = JSON.parse(text);
+                console.log('[TinyClient] Parsed JSON response successfully');
+            } catch {
+                // Response is not valid JSON (likely XML or HTML error page)
+                console.error('[TinyClient] Received non-JSON response:', text.substring(0, 300));
 
-                // Check if it's an authentication error
+                // Check if it's an authentication error in XML/HTML
                 if (text.includes('Token inválido') || text.includes('Token invalido')) {
                     return { error: 'Token da Tiny inválido ou expirado' };
                 }
                 if (text.includes('Acesso negado')) {
                     return { error: 'Acesso negado pela API Tiny. Verifique as permissões do token.' };
                 }
+                // Check for XML success status (Tiny sometimes returns XML even with formato=json)
+                if (text.includes('<status>OK</status>') || text.includes('<status_processamento>2</status_processamento>')) {
+                    // Try to extract data from XML - for now return empty orders
+                    console.warn('[TinyClient] Received XML instead of JSON, but status is OK');
+                    return { orders: [], error: 'API retornou XML - pedido pode não existir' };
+                }
+                if (text.includes('Nenhum registro encontrado')) {
+                    return { orders: [] };
+                }
 
-                return { error: 'Erro ao comunicar com a API Tiny. Resposta inesperada.' };
+                return { error: `Erro ao comunicar com a API Tiny. Resposta: ${text.substring(0, 100)}` };
             }
 
             // Check for rate limit (429 or specific Tiny error)
