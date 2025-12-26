@@ -98,7 +98,13 @@ export async function fetchTinyOrderByMarketplaceId(
 
             try {
                 data = JSON.parse(text);
-                console.log('[TinyClient] Parsed JSON response successfully');
+                console.log('[TinyClient] Parsed JSON response:', {
+                    status: data.retorno?.status,
+                    statusProcessamento: data.retorno?.status_processamento,
+                    hasOrderes: !!data.retorno?.pedidos,
+                    ordersCount: data.retorno?.pedidos?.length || 0,
+                    errors: data.retorno?.erros,
+                });
             } catch {
                 // Response is not valid JSON (likely XML or HTML error page)
                 console.error('[TinyClient] Received non-JSON response:', text.substring(0, 300));
