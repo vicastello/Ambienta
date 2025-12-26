@@ -80,7 +80,27 @@ export async function fetchTinyOrderByMarketplaceId(
                 }),
             });
 
-            const data = await response.json();
+            // Check if response is JSON before parsing
+            const contentType = response.headers.get('content-type') || '';
+            let data: any;
+
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // Response is likely XML or HTML error page
+                const text = await response.text();
+                console.error('[TinyClient] Received non-JSON response:', text.substring(0, 200));
+
+                // Check if it's an authentication error
+                if (text.includes('Token inválido') || text.includes('Token invalido')) {
+                    return { error: 'Token da Tiny inválido ou expirado' };
+                }
+                if (text.includes('Acesso negado')) {
+                    return { error: 'Acesso negado pela API Tiny. Verifique as permissões do token.' };
+                }
+
+                return { error: 'Erro ao comunicar com a API Tiny. Resposta inesperada.' };
+            }
 
             // Check for rate limit (429 or specific Tiny error)
             if (response.status === 429 || data.retorno?.codigo_erro === '429') {

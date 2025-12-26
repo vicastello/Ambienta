@@ -41,6 +41,13 @@ export async function POST(request: NextRequest) {
         }
 
         const payments = bodyPayments || (session.parsed_data as any[]);
+        console.log('[ConfirmImport] Payments source:', {
+            fromBody: !!bodyPayments,
+            bodyLength: bodyPayments?.length || 0,
+            parsedDataLength: (session.parsed_data as any[])?.length || 0,
+            paymentsLength: payments?.length || 0,
+        });
+
         if (!payments || payments.length === 0) {
             return NextResponse.json(
                 { error: 'Nenhum pagamento para importar' },
