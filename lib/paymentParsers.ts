@@ -309,7 +309,7 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
         };
 
         // Helper to generate ID from datetime: DDMMYYYYHHMM
-        const generateIdFromDate = (prefix: 'AJ' | 'REC', dateValue: any, rowIndex: number): string => {
+        const generateIdFromDate = (prefix: string, dateValue: any, rowIndex: number): string => {
             let date: Date;
             if (typeof dateValue === 'number') {
                 date = new Date((dateValue - 25569) * 86400 * 1000);
@@ -365,32 +365,36 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     return;
                 }
 
-                // Get transaction type early to use in ID suffix
+                // Get transaction type early to use in ID suffix checks
                 const idxTransactionType = getColumnIndex('Tipo de transação');
                 const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
 
-                // Check for custom ID generation requirements (Recarga / Ajuste)
-                const isRecharge = transactionType.toLowerCase().includes('recarga') ||
-                    transactionDesc.toLowerCase().includes('recarga') ||
-                    transactionDesc.toLowerCase().includes('topup');
+                // If no Order ID, generate one based on transaction type + date
+                if (!orderId) {
+                    // Rule: Use first 3 letters of transaction type
+                    let prefix = 'TRX'; // Default fallback
 
-                const isAdjustment = transactionType.toLowerCase().includes('ajuste') ||
-                    transactionType.toLowerCase().includes('adjustment');
+                    // Try to get prefix from transactionType first, then description
+                    const sourceText = transactionType || transactionDesc || 'GEN';
 
-                if (isRecharge) {
-                    orderId = generateIdFromDate('REC', row[idxDate], index);
-                    // Add index suffix if not unique logic below handles it, but adding a small random/index part helps
-                    // Actually the seenIds logic below handles duplicates, so we just generate the base here.
-                } else if (isAdjustment) {
-                    orderId = generateIdFromDate('AJ', row[idxDate], index);
+                    // Clean text: remove accents, special chars, uppercase
+                    const cleanText = sourceText
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+                        .replace(/[^a-zA-Z0-9]/g, "") // Remove non-alphanumeric
+                        .toUpperCase();
+
+                    if (cleanText.length >= 2) {
+                        prefix = cleanText.substring(0, 3);
+                    }
+
+                    orderId = generateIdFromDate(prefix, row[idxDate], index);
                 } else {
-                    // Regular logic for other types
-                    if (!orderId) orderId = 'NO_ORDER_ID';
-
+                    // Regular logic for existing Order IDs
                     // Create a unique suffix based on transaction type to prevent overwriting
                     // This ensures "Renda do pedido" and "Ajuste" for the same order get different IDs
-                    const typeIndicator = transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
-                        transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
+                    const typeIndicator = transactionType.toLowerCase().includes('ajuste') ? '_AJUSTE' :
+                        transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
+                            transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
 
                     orderId = orderId + typeIndicator;
                 }
