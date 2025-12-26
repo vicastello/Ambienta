@@ -76,6 +76,13 @@ export async function fetchTinyOrderByMarketplaceId(
             formData.set('formato', 'json');
             formData.set('numero_ecommerce', marketplaceOrderId);
 
+            console.log('[TinyClient] Searching for order:', {
+                marketplaceOrderId,
+                marketplace,
+                tokenPrefix: token.substring(0, 20) + '...',
+                attempt: attempt + 1,
+            });
+
             const response = await fetch(`${TINY_API_BASE}/pedidos.pesquisa.php`, {
                 method: 'POST',
                 headers: {
