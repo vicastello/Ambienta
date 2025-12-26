@@ -385,7 +385,7 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 // Use index found outside loop
                 const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
 
-                // If no Order ID, or if it's a placeholder, generate one based on transaction type + date
+                // If no Order ID, or if it's a placeholder...
                 const normalizedId = orderId ? orderId.toLowerCase() : '';
                 const isInvalidId = !orderId ||
                     normalizedId === 'null' ||
@@ -396,32 +396,39 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     normalizedId === 'n/a';
 
                 if (isInvalidId) {
-                    // Rule: Use first 3 letters of transaction type
-                    let prefix = 'TRX'; // Default fallback
+                    // 1. Try to extract Order ID from description first!
+                    // Shopee IDs are usually alphanumeric, uppercase, length ~15, e.g. 240101789ABC
+                    // Regex: \b[2][0-9][0-9A-Z]{10,}\b works for 20xx...
+                    const idMatch = transactionDesc ? transactionDesc.match(/\b2[0-9][0-9A-Z]{10,}\b/) : null;
 
-                    // Try to get prefix from transactionType first, then description
-                    const sourceText = transactionType || transactionDesc || 'GENERICO';
+                    if (idMatch) {
+                        orderId = idMatch[0];
+                        // console.log(`[Shopee] Recovered Order ID from description: ${orderId}`);
+                    } else {
+                        // 2. Fallback: Generate custom ID based on transaction type + date
+                        let prefix = 'TRX';
 
-                    // Clean text: remove accents, special chars, uppercase
-                    const cleanText = sourceText
-                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
-                        .replace(/[^a-zA-Z0-9]/g, "") // Remove non-alphanumeric
-                        .toUpperCase();
+                        const sourceText = transactionType || transactionDesc || 'GENERICO';
+                        const cleanText = sourceText
+                            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                            .replace(/[^a-zA-Z0-9]/g, "")
+                            .toUpperCase();
 
-                    if (cleanText.length >= 2) {
-                        prefix = cleanText.substring(0, 3);
+                        if (cleanText.length >= 2) {
+                            prefix = cleanText.substring(0, 3);
+                        }
+
+                        orderId = generateIdFromDate(prefix, row[idxDate], index);
                     }
+                }
 
-                    orderId = generateIdFromDate(prefix, row[idxDate], index);
-                    // console.log(`[Shopee] Generated ID for missing order: ${orderId} (Type: ${transactionType})`);
-                } else {
-                    // Regular logic for existing Order IDs
-                    // Create a unique suffix based on transaction type to prevent overwriting
-                    // This ensures "Renda do pedido" and "Ajuste" for the same order get different IDs
-                    const typeIndicator = transactionType.toLowerCase().includes('ajuste') ? '_AJUSTE' :
-                        transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
-                            transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
+                // Only apply suffixes if it's a 'real' order ID (recovered or original)
+                // Regular logic for existing Order IDs
+                const typeIndicator = transactionType.toLowerCase().includes('ajuste') ? '_AJUSTE' :
+                    transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
+                        transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
 
+                if (!orderId.includes(typeIndicator)) {
                     orderId = orderId + typeIndicator;
                 }
 
