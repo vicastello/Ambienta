@@ -13,6 +13,7 @@ import {
     validateRule,
     sanitizeRule,
     isSystemRule,
+    getSystemRules,
     type AutoRule,
     type CreateRulePayload,
 } from '@/lib/rules';
@@ -88,12 +89,18 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const rules = (data || []).map(dbRowToRule);
+        const dbRules = (data || []).map(dbRowToRule);
+
+        // Merge database rules with system rules
+        const systemRules = getSystemRules();
+        const allRules = [...dbRules, ...systemRules].sort((a, b) => b.priority - a.priority);
 
         return NextResponse.json({
             success: true,
-            rules,
-            count: rules.length,
+            rules: allRules,
+            count: allRules.length,
+            dbCount: dbRules.length,
+            systemCount: systemRules.length,
         });
     } catch (error) {
         console.error('[AutoRules] Unexpected error:', error);
