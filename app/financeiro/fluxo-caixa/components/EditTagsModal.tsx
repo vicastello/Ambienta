@@ -477,10 +477,86 @@ export default function EditTagsModal({
                                         </span>
                                     </div>
                                     <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                                        Aplicar estas tags automaticamente em futuras importações com descrição semelhante
+                                        Aplicar automaticamente em futuras importações com descrição semelhante
                                     </p>
                                 </div>
                             </label>
+
+                            {/* Rule Preview - shown when checkbox is checked */}
+                            {createAutoRule && (
+                                <div className="mt-4 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/50">
+                                    <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-300 mb-3">
+                                        📋 Preview da Regra
+                                    </h4>
+
+                                    {/* Conditions */}
+                                    <div className="mb-3">
+                                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                            Condição
+                                        </span>
+                                        <div className="mt-1 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                            <code className="text-sm text-purple-600 dark:text-purple-400">
+                                                Texto completo <span className="text-gray-500">contém</span> &quot;{(payment.transactionDescription || '').substring(0, 30).toLowerCase()}&quot;
+                                            </code>
+                                        </div>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div>
+                                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                            Ações a aplicar
+                                        </span>
+                                        <div className="mt-1 space-y-1.5">
+                                            {/* Tags action */}
+                                            {tags.length > 0 && (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                                    <span className="text-blue-500">🏷️</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                                                        Adicionar tags:
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {tags.map(t => (
+                                                            <span key={t} className="px-1.5 py-0.5 rounded text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                                                {t}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Type action */}
+                                            {transactionType && transactionType !== payment.transactionType && (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                                    <span className="text-green-500">📝</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                                                        Definir tipo: <strong>{transactionType}</strong>
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Category action */}
+                                            {expenseCategory && (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/50 dark:bg-gray-800/50">
+                                                    <span className="text-amber-500">📁</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                                                        Definir categoria: <strong>{expenseCategory}</strong>
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {/* Warning if no actions */}
+                                            {tags.length === 0 && !transactionType && !expenseCategory && (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+                                                    <AlertCircle className="w-4 h-4" />
+                                                    <span className="text-sm">
+                                                        Adicione tags, tipo ou categoria para criar a regra
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
