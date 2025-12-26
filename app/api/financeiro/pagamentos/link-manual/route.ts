@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         const { data: existingOrder } = await supabaseAdmin
             .from('tiny_orders')
             .select('id')
-            .eq('id', tinyOrderId)
+            .eq('tiny_id', tinyOrderId)
             .maybeSingle();
 
         if (!existingOrder) {
