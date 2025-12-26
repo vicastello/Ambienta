@@ -283,13 +283,22 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
             if (!value) return null;
             // Handle XLSX date numbers or strings
             if (typeof value === 'number') {
-                // XLSX dates are numbers. 25569 is the offset for Unix epoch.
+                // XLSX dates are serial numbers. 25569 is the offset for Unix epoch.
+                // Use UTC to avoid timezone issues
                 const date = new Date((value - 25569) * 86400 * 1000);
-                return date.toISOString().split('T')[0];
+                // Format using UTC methods to avoid timezone shift
+                const year = date.getUTCFullYear();
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(date.getUTCDate()).padStart(2, '0');
+                // Removed split to keep time if needed, but for paymentDate we usually want YYYY-MM-DD
+                return `${year}-${month}-${day}`;
             }
             const dateStr = String(value).trim();
-            // Expected: YYYY-MM-DD or DD/MM/YYYY
-            if (dateStr.includes('-')) return dateStr.split(' ')[0];
+            // Expected: YYYY-MM-DD HH:MM:SS or DD/MM/YYYY
+            if (dateStr.includes('-')) {
+                // Extract just the date part (YYYY-MM-DD)
+                return dateStr.split(' ')[0];
+            }
             if (dateStr.includes('/')) {
                 const parts = dateStr.split('/');
                 if (parts.length === 3) {
@@ -297,6 +306,49 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 }
             }
             return null;
+        };
+
+        // Helper to generate ID from datetime: DDMMYYYYHHMM
+        const generateIdFromDate = (prefix: 'AJ' | 'REC', dateValue: any, rowIndex: number): string => {
+            let date: Date;
+            if (typeof dateValue === 'number') {
+                date = new Date((dateValue - 25569) * 86400 * 1000);
+            } else if (typeof dateValue === 'string') {
+                // Try parsing string formats
+                const parts = dateValue.split(/[-/ :]/);
+                if (dateValue.includes('-')) {
+                    // YYYY-MM-DD HH:MM:SS
+                    date = new Date(dateValue);
+                } else if (dateValue.includes('/')) {
+                    // DD/MM/YYYY HH:MM
+                    // parts: 0=DD, 1=MM, 2=YYYY, 3=HH, 4=MM
+                    const day = parseInt(parts[0]);
+                    const month = parseInt(parts[1]) - 1;
+                    const year = parseInt(parts[2]);
+                    const hour = parts.length > 3 ? parseInt(parts[3]) : 0;
+                    const min = parts.length > 4 ? parseInt(parts[4]) : 0;
+                    const sec = parts.length > 5 ? parseInt(parts[5]) : 0;
+                    date = new Date(year, month, day, hour, min, sec);
+                } else {
+                    date = new Date(); // Fallback
+                }
+            } else {
+                date = new Date();
+            }
+
+            // Verify if date is valid
+            if (isNaN(date.getTime())) date = new Date();
+
+            const dd = String(date.getDate()).padStart(2, '0'); // Local time to match worksheet visualization
+            const MM = String(date.getMonth() + 1).padStart(2, '0');
+            const yyyy = date.getFullYear();
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0'); // Add seconds for more uniqueness
+
+            // Use full time if available (HHMMSS), otherwise just date
+            // Assuming most exports have time, we try to use it.
+            return `${prefix}${dd}${MM}${yyyy}${hh}${mm}${ss}`;
         };
 
         const seenIds = new Map<string, number>();
@@ -313,27 +365,45 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     return;
                 }
 
-                if (!orderId) orderId = 'NO_ORDER_ID';
-
                 // Get transaction type early to use in ID suffix
                 const idxTransactionType = getColumnIndex('Tipo de transação');
                 const transactionType = idxTransactionType !== -1 ? String(row[idxTransactionType] || '') : '';
 
-                // Create a unique suffix based on transaction type to prevent overwriting
-                // This ensures "Renda do pedido" and "Ajuste" for the same order get different IDs
-                const typeIndicator = transactionType.toLowerCase().includes('ajuste') ? '_AJUSTE' :
-                    transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
+                // Check for custom ID generation requirements (Recarga / Ajuste)
+                const isRecharge = transactionType.toLowerCase().includes('recarga') ||
+                    transactionDesc.toLowerCase().includes('recarga') ||
+                    transactionDesc.toLowerCase().includes('topup');
+
+                const isAdjustment = transactionType.toLowerCase().includes('ajuste') ||
+                    transactionType.toLowerCase().includes('adjustment');
+
+                if (isRecharge) {
+                    orderId = generateIdFromDate('REC', row[idxDate], index);
+                    // Add index suffix if not unique logic below handles it, but adding a small random/index part helps
+                    // Actually the seenIds logic below handles duplicates, so we just generate the base here.
+                } else if (isAdjustment) {
+                    orderId = generateIdFromDate('AJ', row[idxDate], index);
+                } else {
+                    // Regular logic for other types
+                    if (!orderId) orderId = 'NO_ORDER_ID';
+
+                    // Create a unique suffix based on transaction type to prevent overwriting
+                    // This ensures "Renda do pedido" and "Ajuste" for the same order get different IDs
+                    const typeIndicator = transactionType.toLowerCase().includes('reembolso') ? '_REEMBOLSO' :
                         transactionType.toLowerCase().includes('retirada') ? '_RETIRADA' : '';
 
-                // Handle duplicates within the file (e.g. multiple adjustments of same type)
-                const baseId = orderId + typeIndicator;
+                    orderId = orderId + typeIndicator;
+                }
+
+                // Handle duplicates within the file (append _1, _2 if same ID generated)
+                const baseId = orderId;
                 if (seenIds.has(baseId)) {
                     const count = seenIds.get(baseId)! + 1;
                     seenIds.set(baseId, count);
                     orderId = `${baseId}_${count}`;
                 } else {
                     seenIds.set(baseId, 1);
-                    orderId = baseId; // Use baseId with type indicator
+                    orderId = baseId;
                 }
 
 
