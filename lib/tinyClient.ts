@@ -83,11 +83,15 @@ export async function fetchTinyOrderByMarketplaceId(
                 ecommerce?: { numeroPedidoEcommerce?: string; canal?: string };
                 dataCriacao: string;
                 valorTotalPedido?: number | string;
+                valorFrete?: number | string;
+                valorTotalProdutos?: number | string;
             }>;
             paginacao?: { total: number };
         }>('/pedidos', token, {
             numeroPedidoEcommerce: marketplaceOrderId,
             limit: 10,
+            // Request value fields explicitly
+            fields: 'valorTotalPedido,valorFrete,valorTotalProdutos,cliente',
         }, {
             context: 'manual-link-search',
             endpointLabel: '/pedidos (search by ecommerce)',
