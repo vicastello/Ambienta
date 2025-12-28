@@ -37,6 +37,7 @@ import type { CustomTooltipFormatter } from './components/charts/ChartTooltips';
 import { MicroTrendChart } from './components/charts/MicroTrendChart';
 import { CopilotChat } from './components/copilot/CopilotChat';
 import { ProactiveInsightsBanner } from './components/ProactiveInsightsBanner';
+import { ExecutiveSummaryWidget } from './components/ExecutiveSummaryWidget';
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = 'var(--accent)';
@@ -2193,6 +2194,12 @@ export default function DashboardClient() {
               <ProactiveInsightsBanner
                 dashboardData={insightsBaseline}
                 className="mb-2"
+              />
+
+              {/* Executive Summary Widget */}
+              <ExecutiveSummaryWidget
+                dashboardData={insightsBaseline}
+                className="mb-4"
               />
 
               <div className="grid gap-5 md:grid-cols-2">
