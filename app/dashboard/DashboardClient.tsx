@@ -288,13 +288,15 @@ const MARKETPLACE_COLORS: Record<string, string> = {
 };
 
 const buildProdutoKey = (produto: ProdutoResumo): string => {
-  if (typeof produto.produtoId === 'number' && Number.isFinite(produto.produtoId)) {
+  // Only use produtoId if it's a positive number (0 is not a valid ID)
+  if (typeof produto.produtoId === 'number' && produto.produtoId > 0) {
     return `id:${produto.produtoId}`;
   }
   if (produto.sku) {
     return `sku:${produto.sku}`;
   }
-  return `desc:${produto.descricao.toLowerCase()}`;
+  // Fallback to description with quantity for uniqueness
+  return `desc:${produto.descricao.toLowerCase()}:${produto.quantidade}`;
 };
 
 const formatSerieLabel = (isoDate: string): string => {
@@ -1557,7 +1559,7 @@ export default function DashboardClient() {
           {
             id: `${timestamp}-fallback`,
             title: 'Sem insights no momento',
-            body: 'Assim que o Gemini gerar novas recomendações elas aparecerão aqui.',
+            body: 'Assim que a IA gerar novas recomendações elas aparecerão aqui.',
             dismissible: false,
             tone: 'info',
           },
@@ -2374,14 +2376,14 @@ export default function DashboardClient() {
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-soft">Insights de IA</p>
               <h3 className="text-2xl font-semibold text-main mt-2">Ambienta Copilot</h3>
-              <p className="text-sm text-muted">Análises automáticas geradas com Gemini.</p>
+              <p className="text-sm text-muted">Análises automáticas geradas com IA.</p>
             </div>
             <button
               onClick={() => gerarInsights(false)}
               className="w-full rounded-2xl bg-[image:var(--cta-primary)] hover:bg-[image:var(--cta-primary-hover)] text-white text-sm font-semibold py-2.5 disabled:opacity-60"
               disabled={loadingInsights || !insightsBaseline}
             >
-              {loadingInsights ? 'Gerando insights…' : 'Atualizar com Gemini'}
+              {loadingInsights ? 'Gerando insights…' : 'Atualizar com IA'}
             </button>
             <div className="relative flex-1 min-h-0 overflow-hidden">
               <div
@@ -3100,14 +3102,14 @@ export default function DashboardClient() {
           <div className="space-y-1">
             <p className="text-[10px] uppercase tracking-[0.3em] text-soft">Insights de IA</p>
             <h3 className="text-xl font-semibold text-main">Ambienta Copilot</h3>
-            <p className="text-sm text-muted leading-relaxed">Análises automáticas geradas com Gemini.</p>
+            <p className="text-sm text-muted leading-relaxed">Análises automáticas geradas com IA.</p>
           </div>
           <button
             onClick={() => gerarInsights(false)}
             className="w-full rounded-2xl bg-[image:var(--cta-primary)] hover:bg-[image:var(--cta-primary-hover)] text-white text-sm font-semibold py-2.5 disabled:opacity-60"
             disabled={loadingInsights || !insightsBaseline}
           >
-            {loadingInsights ? 'Gerando insights…' : 'Atualizar com Gemini'}
+            {loadingInsights ? 'Gerando insights…' : 'Atualizar com IA'}
           </button>
           <div className="relative flex-1 min-h-0 overflow-hidden">
             <div
