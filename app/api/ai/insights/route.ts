@@ -20,6 +20,65 @@ type GroqChatResponse = {
   }>;
 };
 
+// Summarize data to fit Groq's token limits (~4k tokens max)
+function summarizeForAI(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return {};
+
+  const d = data as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+
+  // Core metrics
+  if (typeof d.totalValor === 'number') summary.faturamentoTotal = d.totalValor;
+  if (typeof d.totalPedidos === 'number') summary.totalPedidos = d.totalPedidos;
+  if (typeof d.totalFreteTotal === 'number') summary.frete = d.totalFreteTotal;
+  if (typeof d.ticketMedio === 'number') summary.ticketMedio = d.ticketMedio;
+  if (typeof d.percentualCancelados === 'number') summary.cancelamentos = `${d.percentualCancelados}%`;
+
+  // Top 5 channels only
+  if (Array.isArray(d.canais)) {
+    summary.canais = (d.canais as Array<Record<string, unknown>>)
+      .slice(0, 5)
+      .map(c => ({
+        nome: c.canal,
+        valor: c.totalValor,
+        pedidos: c.totalPedidos,
+      }));
+  }
+
+  // Top 5 products only
+  if (Array.isArray(d.topProdutos)) {
+    summary.topProdutos = (d.topProdutos as Array<Record<string, unknown>>)
+      .slice(0, 5)
+      .map(p => ({
+        nome: (p.descricao as string)?.substring(0, 50),
+        qtd: p.quantidade,
+        valor: p.totalValor,
+      }));
+  }
+
+  // Last 7 days trend only (not all days)
+  if (Array.isArray(d.vendasPorDia)) {
+    const vendas = d.vendasPorDia as Array<Record<string, unknown>>;
+    summary.ultimos7Dias = vendas.slice(-7).map(v => ({
+      data: v.data,
+      valor: v.totalDia,
+      qtd: v.quantidade,
+    }));
+  }
+
+  // Diffs if available
+  if (d.diffs && typeof d.diffs === 'object') {
+    const diffs = d.diffs as Record<string, unknown>;
+    summary.comparativo = {
+      faturamento: (diffs.faturamento as Record<string, unknown>)?.deltaPercent,
+      pedidos: (diffs.pedidos as Record<string, unknown>)?.deltaPercent,
+      ticket: (diffs.ticketMedio as Record<string, unknown>)?.deltaPercent,
+    };
+  }
+
+  return summary;
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!apiKey) {
@@ -39,19 +98,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { resumoAtual, resumoGlobal, filtrosVisuais, contexto, visaoFiltrada } = body;
+    const { resumoAtual, filtrosVisuais, contexto } = body;
+
+    // Summarize data to fit token limits
+    const resumoReduzido = summarizeForAI(resumoAtual);
 
     console.debug('[AI] Modelo Groq ativo:', modelName);
+    console.debug('[AI] Resumo reduzido tamanho:', JSON.stringify(resumoReduzido).length, 'chars');
 
-    const systemPrompt = `Você é um consultor de operações de e-commerce da Ambienta (cor institucional #009DA8).
-Analise a base consolidada SEM filtros abaixo e entregue no máximo 4 bullet points curtos (<200 caracteres) destacando oportunidades, riscos e ações claras.
-Mantenha tom profissional em português do Brasil, sempre citando números relevantes. Ignore filtros visuais eventualmente aplicados pelo usuário.`;
+    const systemPrompt = `Você é um consultor de operações de e-commerce da Ambienta.
+Analise os dados abaixo e entregue exatamente 4 bullet points curtos (<200 caracteres cada) destacando oportunidades, riscos e ações claras.
+Tom profissional em português do Brasil. Cite números específicos.`;
 
-    const userPrompt = `Filtros visuais ignorados (apenas referência): ${JSON.stringify(filtrosVisuais ?? {})}
-Visão filtrada (não utilizar para cálculos, apenas contexto): ${JSON.stringify(visaoFiltrada ?? null)}
-Contexto adicional: ${contexto ?? 'N/A'}
-Resumo consolidado (30 dias, sem filtros): ${JSON.stringify(resumoAtual)}
-Resumo adicional: ${JSON.stringify(resumoGlobal ?? null)}`;
+    const userPrompt = `Contexto: ${contexto ?? 'Dashboard Ambienta'}
+Filtros: ${JSON.stringify(filtrosVisuais ?? {})}
+Dados: ${JSON.stringify(resumoReduzido)}`;
 
     const response = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: 'POST',
@@ -66,7 +127,7 @@ Resumo adicional: ${JSON.stringify(resumoGlobal ?? null)}`;
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.7,
-        max_tokens: 1024,
+        max_tokens: 512,
       }),
     });
 
