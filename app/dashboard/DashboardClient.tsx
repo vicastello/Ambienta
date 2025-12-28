@@ -36,6 +36,7 @@ import { DailyRevenueChart } from './components/charts/DailyRevenueChart';
 import type { CustomTooltipFormatter } from './components/charts/ChartTooltips';
 import { MicroTrendChart } from './components/charts/MicroTrendChart';
 import { CopilotChat } from './components/copilot/CopilotChat';
+import { ProactiveInsightsBanner } from './components/ProactiveInsightsBanner';
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = 'var(--accent)';
@@ -2187,6 +2188,12 @@ export default function DashboardClient() {
               {isFilterPending && (
                 <p className="text-xs text-soft mt-1">Aplicando filtros…</p>
               )}
+
+              {/* Proactive AI Insights */}
+              <ProactiveInsightsBanner
+                dashboardData={insightsBaseline}
+                className="mb-2"
+              />
 
               <div className="grid gap-5 md:grid-cols-2">
                 <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
