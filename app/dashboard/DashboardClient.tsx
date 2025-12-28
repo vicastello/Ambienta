@@ -35,6 +35,7 @@ import { ChannelDistributionChart } from './components/charts/ChannelDistributio
 import { DailyRevenueChart } from './components/charts/DailyRevenueChart';
 import type { CustomTooltipFormatter } from './components/charts/ChartTooltips';
 import { MicroTrendChart } from './components/charts/MicroTrendChart';
+import { CopilotChat } from './components/copilot/CopilotChat';
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = 'var(--accent)';
@@ -3166,6 +3167,9 @@ export default function DashboardClient() {
           </div>
         </aside>
       </div >
+
+      {/* AI Copilot Chat */}
+      <CopilotChat dashboardData={insightsBaseline} />
     </>
   );
 }
