@@ -61,6 +61,17 @@ function getMarketplaceFromCanal(canal: string | null): 'magalu' | 'shopee' | 'm
   return null;
 }
 
+function normalizeMarketplaceOrderId(
+  marketplace: 'magalu' | 'shopee' | 'mercado_livre',
+  marketplaceOrderId: string
+): string {
+  const trimmed = marketplaceOrderId.trim();
+  if (marketplace === 'magalu') {
+    return trimmed.replace(/^LU-/i, '');
+  }
+  return trimmed;
+}
+
 /**
  * Vincula automaticamente pedidos dos últimos N dias
  */
@@ -135,15 +146,27 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
           continue;
         }
 
+        const normalizedMarketplaceOrderId = normalizeMarketplaceOrderId(marketplace, marketplaceOrderId);
+
         // Verificar se já existe vinculação
         try {
-          const existingLink = await getOrderLinkByMarketplaceOrder(marketplace, marketplaceOrderId);
+          const existingLink = await getOrderLinkByMarketplaceOrder(marketplace, normalizedMarketplaceOrderId);
           if (existingLink) {
             console.log(
-              `[autoLinkOrders] Pedido ${marketplaceOrderId} (${marketplace}) já vinculado ao Tiny #${existingLink.tiny_order_id}`
+              `[autoLinkOrders] Pedido ${normalizedMarketplaceOrderId} (${marketplace}) já vinculado ao Tiny #${existingLink.tiny_order_id}`
             );
             result.total_already_linked++;
             continue;
+          }
+          if (normalizedMarketplaceOrderId !== marketplaceOrderId) {
+            const legacyLink = await getOrderLinkByMarketplaceOrder(marketplace, marketplaceOrderId);
+            if (legacyLink) {
+              console.log(
+                `[autoLinkOrders] Pedido ${marketplaceOrderId} (${marketplace}) já vinculado ao Tiny #${legacyLink.tiny_order_id}`
+              );
+              result.total_already_linked++;
+              continue;
+            }
           }
         } catch (error: any) {
           // Continuar se não encontrado
@@ -159,13 +182,13 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
 
         // Verificar se o pedido do marketplace existe
         let marketplaceOrderExists = false;
-        let actualMarketplaceOrderId = marketplaceOrderId;
+        let actualMarketplaceOrderId = normalizedMarketplaceOrderId;
 
         if (marketplace === 'shopee') {
           const { data, error } = await supabaseAdmin
             .from('shopee_orders')
             .select('order_sn')
-            .eq('order_sn', marketplaceOrderId)
+            .eq('order_sn', normalizedMarketplaceOrderId)
             .single();
 
           if (!error && data) {
@@ -205,18 +228,15 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
             }
           }
         } else if (marketplace === 'magalu') {
-          const normalized = marketplaceOrderId.startsWith('LU-')
-            ? marketplaceOrderId.replace(/^LU-/, '')
-            : marketplaceOrderId;
           const { data, error } = await supabaseAdmin
             .from('magalu_orders')
             .select('id_order')
-            .eq('id_order', normalized)
+            .eq('id_order', normalizedMarketplaceOrderId)
             .single();
 
           if (!error && data) {
             marketplaceOrderExists = true;
-            actualMarketplaceOrderId = normalized;
+            actualMarketplaceOrderId = normalizedMarketplaceOrderId;
           }
         }
 
@@ -226,6 +246,28 @@ export async function autoLinkOrders(daysBack = 90): Promise<AutoLinkResult> {
           );
           result.total_not_found++;
           continue;
+        }
+
+        if (actualMarketplaceOrderId !== normalizedMarketplaceOrderId) {
+          try {
+            const existingActualLink = await getOrderLinkByMarketplaceOrder(marketplace, actualMarketplaceOrderId);
+            if (existingActualLink) {
+              console.log(
+                `[autoLinkOrders] Pedido ${actualMarketplaceOrderId} (${marketplace}) já vinculado ao Tiny #${existingActualLink.tiny_order_id}`
+              );
+              result.total_already_linked++;
+              continue;
+            }
+          } catch (error: any) {
+            if (error?.code !== 'PGRST116') {
+              console.error(
+                `[autoLinkOrders] Erro ao verificar link existente para ${actualMarketplaceOrderId}:`,
+                error
+              );
+              result.errors.push(`Erro ao verificar link: ${error.message}`);
+              continue;
+            }
+          }
         }
 
         // Criar vinculação automática
@@ -343,12 +385,21 @@ export async function autoLinkMarketplace(
           continue;
         }
 
+        const normalizedMarketplaceOrderId = normalizeMarketplaceOrderId(marketplace, marketplaceOrderId);
+
         // Verificar se já existe vinculação
         try {
-          const existingLink = await getOrderLinkByMarketplaceOrder(marketplace, marketplaceOrderId);
+          const existingLink = await getOrderLinkByMarketplaceOrder(marketplace, normalizedMarketplaceOrderId);
           if (existingLink) {
             result.total_already_linked++;
             continue;
+          }
+          if (normalizedMarketplaceOrderId !== marketplaceOrderId) {
+            const legacyLink = await getOrderLinkByMarketplaceOrder(marketplace, marketplaceOrderId);
+            if (legacyLink) {
+              result.total_already_linked++;
+              continue;
+            }
           }
         } catch (error: any) {
           if (error?.code !== 'PGRST116') {
@@ -359,13 +410,13 @@ export async function autoLinkMarketplace(
 
         // Verificar se o pedido existe no marketplace
         let exists = false;
-        let actualMarketplaceOrderId = marketplaceOrderId;
+        let actualMarketplaceOrderId = normalizedMarketplaceOrderId;
 
         if (marketplace === 'shopee') {
           const { data } = await supabaseAdmin
             .from('shopee_orders')
             .select('order_sn')
-            .eq('order_sn', marketplaceOrderId)
+            .eq('order_sn', normalizedMarketplaceOrderId)
             .single();
           exists = !!data;
         } else if (marketplace === 'mercado_livre') {
@@ -396,23 +447,35 @@ export async function autoLinkMarketplace(
             }
           }
         } else if (marketplace === 'magalu') {
-          const normalized = marketplaceOrderId.startsWith('LU-')
-            ? marketplaceOrderId.replace(/^LU-/, '')
-            : marketplaceOrderId;
           const { data } = await supabaseAdmin
             .from('magalu_orders')
             .select('id_order')
-            .eq('id_order', normalized)
+            .eq('id_order', normalizedMarketplaceOrderId)
             .single();
           exists = !!data;
           if (exists) {
-            actualMarketplaceOrderId = normalized;
+            actualMarketplaceOrderId = normalizedMarketplaceOrderId;
           }
         }
 
         if (!exists) {
           result.total_not_found++;
           continue;
+        }
+
+        if (actualMarketplaceOrderId !== normalizedMarketplaceOrderId) {
+          try {
+            const existingActualLink = await getOrderLinkByMarketplaceOrder(marketplace, actualMarketplaceOrderId);
+            if (existingActualLink) {
+              result.total_already_linked++;
+              continue;
+            }
+          } catch (error: any) {
+            if (error?.code !== 'PGRST116') {
+              result.errors.push(`Erro ao verificar link: ${error.message}`);
+              continue;
+            }
+          }
         }
 
         // Criar vinculação

@@ -18,9 +18,69 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ============================================================================
+// PRESERVATION HELPERS - Prevent overwriting existing data with empty values
+// ============================================================================
+
+/**
+ * Returns the first non-empty string, preferring existing value.
+ * Treats null, undefined, and empty/whitespace-only strings as "empty".
+ */
+function preferNonEmptyString(existing: string | null | undefined, incoming: string | null | undefined): string | null {
+  const existingTrimmed = typeof existing === 'string' ? existing.trim() : '';
+  const incomingTrimmed = typeof incoming === 'string' ? incoming.trim() : '';
+
+  // If existing has value, keep it
+  if (existingTrimmed.length > 0) return existing!;
+  // Otherwise, use incoming if it has value
+  if (incomingTrimmed.length > 0) return incoming!;
+  // Both empty
+  return null;
+}
+
+/**
+ * Returns the first non-null value, preferring existing.
+ * For numbers: also treats 0 and negative as "empty" for valor_frete.
+ */
+function preferNonNull<T>(existing: T | null | undefined, incoming: T | null | undefined): T | null {
+  if (existing !== null && existing !== undefined) return existing;
+  if (incoming !== null && incoming !== undefined) return incoming;
+  return null;
+}
+
+/**
+ * For valor_frete: prefer existing if > 0, otherwise use incoming if > 0
+ */
+function preferPositiveNumber(existing: number | null | undefined, incoming: number | null | undefined): number | null {
+  if (typeof existing === 'number' && existing > 0) return existing;
+  if (typeof incoming === 'number' && incoming > 0) return incoming;
+  return null;
+}
+
+// ============================================================================
+// SELF-CHECK: Verify helper functions work as expected
+// ============================================================================
+if (process.env.NODE_ENV === 'development') {
+  // preferNonEmptyString tests
+  console.assert(preferNonEmptyString('João', null) === 'João', 'preferNonEmptyString: existing wins over null');
+  console.assert(preferNonEmptyString('João', '') === 'João', 'preferNonEmptyString: existing wins over empty');
+  console.assert(preferNonEmptyString(null, 'João') === 'João', 'preferNonEmptyString: incoming wins when existing null');
+  console.assert(preferNonEmptyString('', 'João') === 'João', 'preferNonEmptyString: incoming wins when existing empty');
+  console.assert(preferNonEmptyString(null, null) === null, 'preferNonEmptyString: both null returns null');
+  console.assert(preferNonEmptyString('  ', 'João') === 'João', 'preferNonEmptyString: whitespace treated as empty');
+
+  // preferPositiveNumber tests
+  console.assert(preferPositiveNumber(10, null) === 10, 'preferPositiveNumber: existing wins');
+  console.assert(preferPositiveNumber(null, 10) === 10, 'preferPositiveNumber: incoming wins when existing null');
+  console.assert(preferPositiveNumber(0, 10) === 10, 'preferPositiveNumber: zero treated as empty');
+  console.assert(preferPositiveNumber(-5, 10) === 10, 'preferPositiveNumber: negative treated as empty');
+}
+
 /**
  * Upsert inteligente: preserva campos enriquecidos (valor_frete, canal) se já existirem
  * EXPORTADA para uso em cron jobs
+ * 
+ * REGRA: Nunca sobrescrever campos essenciais com valores vazios/null
  */
 export async function upsertOrdersPreservingEnriched(rows: any[]) {
   if (!rows.length) return { error: null };
@@ -39,25 +99,29 @@ export async function upsertOrdersPreservingEnriched(rows: any[]) {
     );
   };
 
-  // Buscar pedidos existentes
+  // Buscar pedidos existentes - inclui TODOS os campos que serão preservados
   const tinyIds = rows.map(r => r.tiny_id);
   const { data: existing } = await supabaseAdmin
     .from('tiny_orders')
-    .select('tiny_id, valor_frete, canal, cidade, uf, raw_payload, is_enriched')
+    .select('tiny_id, valor_frete, canal, cidade, uf, cliente_nome, forma_pagamento, transportador_nome, numero_pedido_ecommerce, raw_payload, is_enriched')
     .in('tiny_id', tinyIds);
 
   const existingMap = new Map(
-    (existing || []).map(e => [e.tiny_id, { 
-      valor_frete: e.valor_frete, 
-      canal: e.canal, 
-      cidade: (e as any).cidade, 
+    (existing || []).map(e => [e.tiny_id, {
+      valor_frete: e.valor_frete,
+      canal: e.canal,
+      cidade: (e as any).cidade,
       uf: (e as any).uf,
+      cliente_nome: (e as any).cliente_nome,
+      forma_pagamento: (e as any).forma_pagamento,
+      transportador_nome: (e as any).transportador_nome,
+      numero_pedido_ecommerce: (e as any).numero_pedido_ecommerce,
       raw_payload: (e as any).raw_payload,
       is_enriched: (e as any).is_enriched,
     }])
   );
 
-  // Mesclar: preservar valor_frete e canal enriquecidos
+  // Mesclar: usar helpers para nunca sobrescrever com valores vazios
   const mergedRows = rows.map(row => {
     const exists = existingMap.get(row.tiny_id);
     if (!exists) return row; // Novo pedido, usar como está
@@ -65,25 +129,34 @@ export async function upsertOrdersPreservingEnriched(rows: any[]) {
     const keepDetalhe = payloadHasItens(exists.raw_payload);
     const mergedIsEnriched = (exists.is_enriched === true) ? true : (row.is_enriched ?? exists.is_enriched ?? null);
 
+    // Canal: prefer existing if it's not "Outros"
+    let mergedCanal = row.canal;
+    if (exists.canal && exists.canal !== 'Outros') {
+      mergedCanal = exists.canal;
+    } else {
+      mergedCanal = preferNonEmptyString(exists.canal, row.canal) ?? 'Outros';
+    }
+
     return {
       ...row,
-      // Preservar valor_frete se já existe e é maior que zero
-      valor_frete: (exists.valor_frete && exists.valor_frete > 0) 
-        ? exists.valor_frete 
-        : row.valor_frete,
-      // Preservar canal se já existe e não é "Outros"
-      canal: (exists.canal && exists.canal !== 'Outros') 
-        ? exists.canal 
-        : row.canal,
-      // Preservar cidade/uf já enriquecidos (não sobrescrever por nulo)
-      cidade: exists.cidade ?? row.cidade,
-      uf: exists.uf ?? row.uf,
+      // Valores numéricos: preferir > 0
+      valor_frete: preferPositiveNumber(exists.valor_frete, row.valor_frete),
+
+      // Canal: lógica especial (não sobrescrever com "Outros")
+      canal: mergedCanal,
+
+      // Strings essenciais: nunca sobrescrever com vazio
+      cidade: preferNonEmptyString(exists.cidade, row.cidade),
+      uf: preferNonEmptyString(exists.uf, row.uf),
+      cliente_nome: preferNonEmptyString(exists.cliente_nome, row.cliente_nome),
+      forma_pagamento: preferNonEmptyString(exists.forma_pagamento, row.forma_pagamento),
+      transportador_nome: preferNonEmptyString(exists.transportador_nome, row.transportador_nome),
+      numero_pedido_ecommerce: preferNonEmptyString(exists.numero_pedido_ecommerce, row.numero_pedido_ecommerce),
 
       // Nunca sobrescrever detalhe (raw_payload com itens) por payload lite.
-      // Se já existe detalhe, mantém.
       raw_payload: keepDetalhe
         ? exists.raw_payload
-        : (row.raw_payload ?? exists.raw_payload ?? null),
+        : preferNonNull(row.raw_payload, exists.raw_payload),
 
       // Se já foi enriquecido, preserva.
       is_enriched: mergedIsEnriched,
@@ -132,7 +205,7 @@ async function enrichFreteRange(opts: {
     if (!result.requested || result.remaining === 0) {
       break;
     }
-    
+
     // Se falhou muito, aumenta delay antes do próximo pass
     if (result.failed > result.updated * 2) {
       await sleep(5000);
@@ -359,11 +432,11 @@ export async function processJob(jobId: string) {
       while (cursor.getTime() <= end.getTime()) {
         // Parar se atingimos o limite de requisições
         if (totalRequests >= MAX_REQUESTS) {
-          await supabaseAdmin.from('sync_logs').insert({ 
-            job_id: jobId, 
-            level: 'warn', 
-            message: 'Limite de requisições atingido; parando chunking', 
-            meta: { totalRequests, MAX_REQUESTS } 
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'warn',
+            message: 'Limite de requisições atingido; parando chunking',
+            meta: { totalRequests, MAX_REQUESTS }
           });
           break;
         }
@@ -373,11 +446,11 @@ export async function processJob(jobId: string) {
         const janelaIniStr = janelaIni.toISOString().slice(0, 10);
         const janelaFimStr = janelaFim.toISOString().slice(0, 10);
 
-        await supabaseAdmin.from('sync_logs').insert({ 
-          job_id: jobId, 
-          level: 'info', 
-          message: `Processando janela [${janelaIniStr} até ${janelaFimStr}]`, 
-          meta: { janelaIni: janelaIniStr, janelaFim: janelaFimStr, janelaDias: batchDays } 
+        await supabaseAdmin.from('sync_logs').insert({
+          job_id: jobId,
+          level: 'info',
+          message: `Processando janela [${janelaIniStr} até ${janelaFimStr}]`,
+          meta: { janelaIni: janelaIniStr, janelaFim: janelaFimStr, janelaDias: batchDays }
         });
 
         // Paginação da janela atual
@@ -406,41 +479,41 @@ export async function processJob(jobId: string) {
               if (err instanceof TinyApiError && err.status === 429) {
                 attempt429 += 1;
                 if (attempt429 > MAX_429_ATTEMPTS) {
-                  await supabaseAdmin.from('sync_logs').insert({ 
-                    job_id: jobId, 
-                    level: 'error', 
-                    message: 'Muitas respostas 429; abortando janela', 
-                    meta: { janelaIni: janelaIniStr, janelaFim: janelaFimStr, attempts: attempt429 } 
+                  await supabaseAdmin.from('sync_logs').insert({
+                    job_id: jobId,
+                    level: 'error',
+                    message: 'Muitas respostas 429; abortando janela',
+                    meta: { janelaIni: janelaIniStr, janelaFim: janelaFimStr, attempts: attempt429 }
                   });
                   throw err;
                 }
                 const backoff = Math.min(15000 * Math.pow(2, attempt429 - 1), 60000);
-                await supabaseAdmin.from('sync_logs').insert({ 
-                  job_id: jobId, 
-                  level: 'warn', 
-                  message: `429 do Tiny — aguardando ${backoff}ms`, 
-                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, attempt: attempt429 } 
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'warn',
+                  message: `429 do Tiny — aguardando ${backoff}ms`,
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, attempt: attempt429 }
                 });
                 await sleep(backoff);
                 continue;
               }
               if (err instanceof TinyApiError && err.status === 400) {
                 // Fallback para listagem genérica com filtro client-side
-                await supabaseAdmin.from('sync_logs').insert({ 
-                  job_id: jobId, 
-                  level: 'warn', 
-                  message: 'Tiny rejeitou período (400); usando listagem genérica', 
-                  meta: { janela: `${janelaIniStr}/${janelaFimStr}` } 
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'warn',
+                  message: 'Tiny rejeitou período (400); usando listagem genérica',
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}` }
                 });
                 page = await listarPedidosTiny(accessToken!, { limit, offset, orderBy: 'desc' }, 'cron_pedidos');
                 totalRequests++;
                 pagesJanela++;
               } else {
-                await supabaseAdmin.from('sync_logs').insert({ 
-                  job_id: jobId, 
-                  level: 'error', 
-                  message: 'Erro ao chamar Tiny (janela)', 
-                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: err?.message ?? String(err) } 
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'error',
+                  message: 'Erro ao chamar Tiny (janela)',
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: err?.message ?? String(err) }
                 });
                 throw err;
               }
@@ -465,7 +538,7 @@ export async function processJob(jobId: string) {
                 skipIfHasFrete: true,
                 context: 'cron_pedidos',
               });
-              
+
               // Aplicar frete enriquecido aos itens (tanto no objeto quanto no raw)
               itens.forEach((item) => {
                 if (item.id && freteMap.has(item.id)) {
@@ -476,19 +549,19 @@ export async function processJob(jobId: string) {
               });
 
               if (freteEnriquecidos > 0) {
-                await supabaseAdmin.from('sync_logs').insert({ 
-                  job_id: jobId, 
-                  level: 'info', 
-                  message: `Enriquecimento inline: ${freteEnriquecidos} pedidos com frete`, 
-                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, enriquecidos: freteEnriquecidos, total: itens.length } 
+                await supabaseAdmin.from('sync_logs').insert({
+                  job_id: jobId,
+                  level: 'info',
+                  message: `Enriquecimento inline: ${freteEnriquecidos} pedidos com frete`,
+                  meta: { janela: `${janelaIniStr}/${janelaFimStr}`, enriquecidos: freteEnriquecidos, total: itens.length }
                 });
               }
             } catch (enrichError: any) {
-              await supabaseAdmin.from('sync_logs').insert({ 
-                job_id: jobId, 
-                level: 'warn', 
-                message: 'Falha no enriquecimento inline de frete', 
-                meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: enrichError?.message ?? String(enrichError) } 
+              await supabaseAdmin.from('sync_logs').insert({
+                job_id: jobId,
+                level: 'warn',
+                message: 'Falha no enriquecimento inline de frete',
+                meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: enrichError?.message ?? String(enrichError) }
               });
             }
           }
@@ -498,26 +571,26 @@ export async function processJob(jobId: string) {
             dataFinal: janelaFimStr,
           });
 
-        const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
-        const descartados = itens.length - validRows.length;
+          const validRows = rows.filter((r) => r.tiny_id && r.data_criacao);
+          const descartados = itens.length - validRows.length;
 
-        if (validRows.length) {
-          const { error: upsertError } = await upsertOrdersPreservingEnriched(validRows);
+          if (validRows.length) {
+            const { error: upsertError } = await upsertOrdersPreservingEnriched(validRows);
             if (upsertError) {
-              await supabaseAdmin.from('sync_logs').insert({ 
-                job_id: jobId, 
-                level: 'error', 
-                message: 'Erro ao salvar pedidos (janela)', 
-                meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: upsertError.message } 
+              await supabaseAdmin.from('sync_logs').insert({
+                job_id: jobId,
+                level: 'error',
+                message: 'Erro ao salvar pedidos (janela)',
+                meta: { janela: `${janelaIniStr}/${janelaFimStr}`, error: upsertError.message }
               });
               throw upsertError;
             }
             totalOrders += validRows.length;
-            await supabaseAdmin.from('sync_logs').insert({ 
-              job_id: jobId, 
-              level: 'info', 
-              message: `Janela: salvos ${validRows.length} pedidos`, 
-              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, salvos: validRows.length, descartados, totalOrders, freteEnriquecidos } 
+            await supabaseAdmin.from('sync_logs').insert({
+              job_id: jobId,
+              level: 'info',
+              message: `Janela: salvos ${validRows.length} pedidos`,
+              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, salvos: validRows.length, descartados, totalOrders, freteEnriquecidos }
             });
 
             // Fase B (apenas para recent/repair): buscar detalhe + itens/produtos imediatamente.
@@ -535,11 +608,11 @@ export async function processJob(jobId: string) {
               }
             }
           } else {
-            await supabaseAdmin.from('sync_logs').insert({ 
-              job_id: jobId, 
-              level: 'info', 
-              message: `Janela: nenhum pedido válido`, 
-              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, recebidos: itens.length, descartados } 
+            await supabaseAdmin.from('sync_logs').insert({
+              job_id: jobId,
+              level: 'info',
+              message: `Janela: nenhum pedido válido`,
+              meta: { janela: `${janelaIniStr}/${janelaFimStr}`, recebidos: itens.length, descartados }
             });
           }
 
@@ -548,11 +621,11 @@ export async function processJob(jobId: string) {
           if (!janelaAcabou) await sleep(500);
         }
 
-        await supabaseAdmin.from('sync_logs').insert({ 
-          job_id: jobId, 
-          level: 'info', 
-          message: `Janela completa`, 
-          meta: { janela: `${janelaIniStr}/${janelaFimStr}`, pages: pagesJanela } 
+        await supabaseAdmin.from('sync_logs').insert({
+          job_id: jobId,
+          level: 'info',
+          message: `Janela completa`,
+          meta: { janela: `${janelaIniStr}/${janelaFimStr}`, pages: pagesJanela }
         });
 
         cursor = new Date(janelaFim.getTime() + DAY_MS);
@@ -609,28 +682,28 @@ export async function processJob(jobId: string) {
         }
       }
 
-      await supabaseAdmin.from('sync_jobs').update({ 
-        status: 'finished', 
-        finished_at: new Date().toISOString(), 
-        total_requests: totalRequests, 
-        total_orders: totalOrders 
+      await supabaseAdmin.from('sync_jobs').update({
+        status: 'finished',
+        finished_at: new Date().toISOString(),
+        total_requests: totalRequests,
+        total_orders: totalOrders
       }).eq('id', jobId);
 
-      await supabaseAdmin.from('sync_logs').insert({ 
-        job_id: jobId, 
-        level: 'info', 
-        message: 'Sync por período (chunking) finalizado com sucesso', 
-        meta: { totalRequests, totalOrders } 
+      await supabaseAdmin.from('sync_logs').insert({
+        job_id: jobId,
+        level: 'info',
+        message: 'Sync por período (chunking) finalizado com sucesso',
+        meta: { totalRequests, totalOrders }
       });
 
       return { ok: true, jobId, totalRequests, totalOrders };
     }
 
     // Fallback: se não houver período ou se foi quebrado, usar listagem genérica com paginação simples
-    await supabaseAdmin.from('sync_logs').insert({ 
-      job_id: jobId, 
-      level: 'info', 
-      message: 'Usando listagem genérica de pedidos' 
+    await supabaseAdmin.from('sync_logs').insert({
+      job_id: jobId,
+      level: 'info',
+      message: 'Usando listagem genérica de pedidos'
     });
 
     let offset = 0;
@@ -652,29 +725,29 @@ export async function processJob(jobId: string) {
           if (err instanceof TinyApiError && err.status === 429) {
             attempt429 += 1;
             if (attempt429 > MAX_429_ATTEMPTS) {
-              await supabaseAdmin.from('sync_logs').insert({ 
-                job_id: jobId, 
-                level: 'error', 
-                message: 'Muitas respostas 429; abortando', 
-                meta: { attempt429 } 
+              await supabaseAdmin.from('sync_logs').insert({
+                job_id: jobId,
+                level: 'error',
+                message: 'Muitas respostas 429; abortando',
+                meta: { attempt429 }
               });
               throw err;
             }
             const backoff = Math.min(15000 * Math.pow(2, attempt429 - 1), 60000);
-            await supabaseAdmin.from('sync_logs').insert({ 
-              job_id: jobId, 
-              level: 'warn', 
-              message: `429 do Tiny — aguardando ${backoff}ms`, 
-              meta: { attempt: attempt429 } 
+            await supabaseAdmin.from('sync_logs').insert({
+              job_id: jobId,
+              level: 'warn',
+              message: `429 do Tiny — aguardando ${backoff}ms`,
+              meta: { attempt: attempt429 }
             });
             await sleep(backoff);
             continue;
           }
-          await supabaseAdmin.from('sync_logs').insert({ 
-            job_id: jobId, 
-            level: 'error', 
-            message: 'Erro ao chamar Tiny', 
-            meta: { error: err?.message ?? String(err) } 
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'error',
+            message: 'Erro ao chamar Tiny',
+            meta: { error: err?.message ?? String(err) }
           });
           throw err;
         }
@@ -684,10 +757,10 @@ export async function processJob(jobId: string) {
 
       const itens: TinyPedidoListaItem[] = (page as any).itens ?? [];
       if (!itens.length) {
-        await supabaseAdmin.from('sync_logs').insert({ 
-          job_id: jobId, 
-          level: 'info', 
-          message: 'Sem mais pedidos retornados pelo Tiny' 
+        await supabaseAdmin.from('sync_logs').insert({
+          job_id: jobId,
+          level: 'info',
+          message: 'Sem mais pedidos retornados pelo Tiny'
         });
         break;
       }
@@ -702,11 +775,11 @@ export async function processJob(jobId: string) {
       if (validRows.length) {
         const { error: upsertError } = await upsertOrdersPreservingEnriched(validRows);
         if (upsertError) {
-          await supabaseAdmin.from('sync_logs').insert({ 
-            job_id: jobId, 
-            level: 'error', 
-            message: 'Erro ao salvar pedidos no banco', 
-            meta: { error: upsertError.message } 
+          await supabaseAdmin.from('sync_logs').insert({
+            job_id: jobId,
+            level: 'error',
+            message: 'Erro ao salvar pedidos no banco',
+            meta: { error: upsertError.message }
           });
           throw upsertError;
         }
@@ -755,11 +828,11 @@ export async function processJob(jobId: string) {
         }
 
         totalOrders += validRows.length;
-        await supabaseAdmin.from('sync_logs').insert({ 
-          job_id: jobId, 
-          level: 'info', 
-          message: 'Pedidos salvos no banco', 
-          meta: { quantidade: validRows.length, descartados: rows.length - validRows.length, totalOrders } 
+        await supabaseAdmin.from('sync_logs').insert({
+          job_id: jobId,
+          level: 'info',
+          message: 'Pedidos salvos no banco',
+          meta: { quantidade: validRows.length, descartados: rows.length - validRows.length, totalOrders }
         });
       }
 
@@ -783,14 +856,14 @@ export async function processJob(jobId: string) {
         limit: 100,
         maxRequests: 50,
       });
-      
+
       await supabaseAdmin.from('sync_logs').insert({
         job_id: jobId,
         level: 'info',
         message: 'Itens sincronizados automaticamente',
         meta: itensResult,
       });
-      
+
       console.log(`[Sync] Itens sincronizados: ${itensResult.totalItens} itens de ${itensResult.sucesso} pedidos`);
     } catch (error: any) {
       console.error('[Sync] Erro ao sincronizar itens automaticamente:', error);
@@ -802,18 +875,18 @@ export async function processJob(jobId: string) {
       });
     }
 
-    await supabaseAdmin.from('sync_jobs').update({ 
-      status: 'finished', 
-      finished_at: new Date().toISOString(), 
-      total_requests: totalRequests, 
-      total_orders: totalOrders 
+    await supabaseAdmin.from('sync_jobs').update({
+      status: 'finished',
+      finished_at: new Date().toISOString(),
+      total_requests: totalRequests,
+      total_orders: totalOrders
     }).eq('id', jobId);
 
-    await supabaseAdmin.from('sync_logs').insert({ 
-      job_id: jobId, 
-      level: 'info', 
-      message: 'Sync finalizado com sucesso', 
-      meta: { totalRequests, totalOrders } 
+    await supabaseAdmin.from('sync_logs').insert({
+      job_id: jobId,
+      level: 'info',
+      message: 'Sync finalizado com sucesso',
+      meta: { totalRequests, totalOrders }
     });
 
     // Enrichment is now handled by dedicated cron job: /api/tiny/sync/enrich-background

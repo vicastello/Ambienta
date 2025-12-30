@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { normalizarCanalTiny, descricaoSituacao } from "@/lib/tinyMapping";
 import { getErrorMessage } from "@/lib/errors";
+import { jsonWithCache } from "@/src/lib/httpCache";
 import type { Database } from "@/src/types/db-public";
 
 const MAX_PAGE_SIZE = 200;
@@ -401,7 +402,7 @@ export async function GET(req: NextRequest) {
       )
     );
 
-    return NextResponse.json({
+    return jsonWithCache({
       orders,
       pageInfo: {
         page,
@@ -430,7 +431,7 @@ export async function GET(req: NextRequest) {
         sortBy,
         sortDir: sortDirParam,
       },
-    });
+    }, 30, 120); // Cache 30s, stale-while-revalidate 2min
   } catch (error: unknown) {
     const details = getErrorMessage(error);
     console.error("[API] /api/orders", error);

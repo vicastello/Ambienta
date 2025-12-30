@@ -12,7 +12,7 @@ const MAX_BACKUPS = 5;
  */
 export function saveBackup(configs: Record<string, any>, label?: string): void {
     try {
-        const backups = getBackups();
+        let backups = getBackups();
 
         const newBackup: ConfigBackup = {
             timestamp: new Date().toISOString(),
@@ -27,7 +27,20 @@ export function saveBackup(configs: Record<string, any>, label?: string): void {
             backups.splice(MAX_BACKUPS);
         }
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(backups));
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(backups));
+        } catch (quotaError) {
+            // If quota exceeded, clear old backups and try again with fewer
+            console.warn('LocalStorage quota exceeded, clearing old backups...');
+            backups = backups.slice(0, 2); // Keep only last 2
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(backups));
+            } catch {
+                // If still failing, clear everything and save only current
+                localStorage.removeItem(STORAGE_KEY);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify([newBackup]));
+            }
+        }
     } catch (error) {
         console.error('Error saving backup:', error);
     }

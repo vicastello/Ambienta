@@ -1,38 +1,28 @@
 'use client';
 
 /**
- * Painel de configuração da Shopee - Layout 2 colunas
- * Simulação de Impacto e Ações movidas para sidebar da página principal
+ * Painel de configuração da Shopee - Layout simplificado
+ * Apenas configurações base - períodos históricos são configurados via FeePeriodsPanel
  */
 
 import { useState } from 'react';
-import { Coins, TrendingUp, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
-import { ShopeeConfig, Campaign } from '../../lib/types';
-import { Tooltip } from '@/components/ui/Tooltip';
-import { AppDatePicker } from '@/components/ui/AppDatePicker';
+import { Coins, ChevronDown, ChevronUp } from 'lucide-react';
+import { ShopeeConfig } from '../../lib/types';
 import { FeeRateInput, FixedCostInput } from '../Shared';
-import { CampaignManager } from '@/components/configuracoes/CampaignManager';
 
 interface ShopeeConfigPanelProps {
     /** Configuração atual da Shopee */
     config: ShopeeConfig;
     /** Callback para atualizar configuração */
     onUpdate: (updates: Partial<ShopeeConfig>) => void;
-    /** Erro de data (se houver) */
-    dateError?: string | null;
-    /** Callback para auto-save após mudanças de campanha - recebe campanhas atualizadas */
-    onAutoSave?: (updatedCampaigns: Campaign[]) => void;
 }
 
 export function ShopeeConfigPanel({
     config,
     onUpdate,
-    dateError,
-    onAutoSave,
 }: ShopeeConfigPanelProps) {
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         commissions: true,
-        campaigns: true,
     });
 
     const toggleSection = (section: string) => {
@@ -52,7 +42,7 @@ export function ShopeeConfigPanel({
     }) => (
         <button
             onClick={() => toggleSection(id)}
-            className="flex items-center justify-between w-full mb-4"
+            className="flex items-center justify-between w-full mb-4 px-4 py-2 rounded-full bg-white/30 dark:bg-white/10 hover:bg-white/50 dark:hover:bg-white/15 transition-colors border border-white/20 dark:border-white/10"
             aria-expanded={expandedSections[id]}
         >
             <div className="flex items-center gap-2">
@@ -71,7 +61,7 @@ export function ShopeeConfigPanel({
         <div className="space-y-6">
             {/* Comissões e Programa + Custos Fixos */}
             <div className="glass-panel glass-tint rounded-[32px] p-6 border border-white/30 dark:border-white/10">
-                <SectionHeader id="commissions" icon={Coins} color="text-blue-500" title="Comissões e Programa" />
+                <SectionHeader id="commissions" icon={Coins} color="text-blue-500" title="Comissões e Custos" />
 
                 {expandedSections.commissions && (
                     <div className="space-y-6">
@@ -124,93 +114,11 @@ export function ShopeeConfigPanel({
                             />
                         </div>
 
-                    </div>
-                )}
-            </div>
-
-            {/* Taxas de Campanha */}
-            <div className="glass-panel glass-tint rounded-[32px] p-6 border border-white/30 dark:border-white/10">
-                <SectionHeader id="campaigns" icon={TrendingUp} color="text-emerald-500" title="Taxas de Campanha" />
-
-                {expandedSections.campaigns && (
-                    <div className="space-y-6">
-                        {/* All 4 fields in one row */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <FeeRateInput
-                                value={config.campaign_fee_default}
-                                onChange={(value) => onUpdate({ campaign_fee_default: value })}
-                                label="Taxa Padrão (%)"
-                                tooltip="Taxa adicional durante campanhas regulares (9.9, 10.10, etc)"
-                                colorScheme="emerald"
-                            />
-
-                            <FeeRateInput
-                                value={config.campaign_fee_nov_dec}
-                                onChange={(value) => onUpdate({ campaign_fee_nov_dec: value })}
-                                label="Taxa Nov/Dez (%)"
-                                tooltip="Taxa especial durante Black Friday, Natal, Ano Novo"
-                                colorScheme="emerald"
-                            />
-
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 min-h-[20px]">
-                                    <label className="block text-sm font-medium text-main">Início Nov/Dez</label>
-                                </div>
-                                <AppDatePicker
-                                    value={config.campaign_start_date?.split('T')[0] || ''}
-                                    onChange={(value) => onUpdate({ campaign_start_date: value ? `${value}T00:00` : '' })}
-                                    placeholder="Selecionar"
-                                    className="max-w-[140px] app-input-compact"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2 min-h-[20px]">
-                                    <label className="block text-sm font-medium text-main">Término Nov/Dez</label>
-                                </div>
-                                <AppDatePicker
-                                    value={config.campaign_end_date?.split('T')[0] || ''}
-                                    onChange={(value) => onUpdate({ campaign_end_date: value ? `${value}T23:59` : '' })}
-                                    placeholder="Selecionar"
-                                    className="max-w-[140px] app-input-compact"
-                                />
-                            </div>
-                        </div>
-
-                        {dateError && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                                <p className="text-xs text-red-700 dark:text-red-300 font-medium">{dateError}</p>
-                            </div>
-                        )}
-
                         <p className="text-[10px] text-muted italic">
-                            * Fora deste período, o sistema utilizará a Taxa de Campanha Padrão.
+                            * Para taxas de outros períodos (históricos ou campanhas), use o &quot;Histórico de Taxas&quot; abaixo.
                         </p>
                     </div>
                 )}
-            </div>
-
-            {/* Períodos de Campanha Personalizados */}
-            <div className="glass-panel glass-tint rounded-[32px] p-6 border border-white/30 dark:border-white/10">
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-purple-500" />
-                        <h2 className="text-lg font-semibold text-main">Períodos de Campanha</h2>
-                    </div>
-                    <Tooltip content="Configure múltiplos períodos de campanha com datas e taxas personalizadas. Campanhas ativas sobrescrevem a taxa padrão.">
-                        <span className="text-muted text-xs cursor-help">ⓘ</span>
-                    </Tooltip>
-                </div>
-
-                <CampaignManager
-                    campaigns={config.campaigns || []}
-                    onChange={(newCampaigns: Campaign[]) => onUpdate({ campaigns: newCampaigns })}
-                    onAutoSave={onAutoSave}
-                />
-
-                <p className="text-[10px] text-muted italic mt-4">
-                    * Campanhas ativas sobrescrevem a taxa padrão durante seu período de vigência.
-                </p>
             </div>
         </div>
     );

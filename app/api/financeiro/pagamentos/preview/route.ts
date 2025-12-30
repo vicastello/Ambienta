@@ -11,6 +11,47 @@ export const config = {
     },
 };
 
+const getMeliRefundAmount = (raw: any): number => {
+    const payments = Array.isArray(raw?.payments) ? raw.payments : [];
+    const refunded = payments.reduce((sum: number, p: any) => {
+        return sum + (Number(p?.transaction_amount_refunded) || 0);
+    }, 0);
+    return refunded > 0 ? refunded : 0;
+};
+
+const getShopeeRefundAmountFromEscrow = (escrowDetail: any): number => {
+    if (!escrowDetail || typeof escrowDetail !== 'object') return 0;
+    const drcRefund = Number(escrowDetail.drc_adjustable_refund || 0);
+    if (drcRefund > 0) return drcRefund;
+    const sellerReturnRefund = Math.abs(Number(escrowDetail.seller_return_refund || 0));
+    if (sellerReturnRefund > 0) return sellerReturnRefund;
+    const buyerTotal = Number(escrowDetail.buyer_total_amount || 0);
+    const selling = Number(escrowDetail.order_selling_price || 0);
+    const delta = buyerTotal - selling;
+    if (buyerTotal > 0 && delta > 0) return delta;
+    return 0;
+};
+
+const FULL_REFUND_EPSILON = 0.01;
+const isFullRefund = (refundAmount: number, originalValue: number | null) => {
+    if (!(refundAmount > 0 && typeof originalValue === 'number' && originalValue > 0)) return false;
+    return refundAmount >= originalValue - FULL_REFUND_EPSILON;
+};
+
+const applyFullRefundOverride = (feeCalc: any) => {
+    feeCalc.commissionFee = 0;
+    feeCalc.campaignFee = 0;
+    feeCalc.fixedCost = 0;
+    feeCalc.sellerVoucher = undefined;
+    feeCalc.amsCommissionFee = undefined;
+    feeCalc.totalFees = 0;
+    feeCalc.netValue = 0;
+    if (feeCalc.breakdown) {
+        feeCalc.breakdown.fixedCostPerUnit = 0;
+        feeCalc.breakdown.units = 0;
+    }
+};
+
 export type PreviewPayment = ParsedPayment & {
     tags: string[];
     isAdjustment: boolean;
@@ -30,6 +71,7 @@ export type PreviewPayment = ParsedPayment & {
     };
     relatedPayments?: string[]; // Other marketplace order IDs in same group
     netBalance?: number;
+    diferenca?: number; // Difference between netAmount and valorEsperado for sorting
 };
 
 export type PreviewResponse = {
@@ -58,7 +100,6 @@ export async function POST(request: NextRequest) {
         const file = formData.get('file') as File;
         const marketplace = formData.get('marketplace') as 'magalu' | 'mercado_livre' | 'shopee';
 
-        console.log('[PaymentPreview] Start:', { marketplace, filename: file?.name });
 
         if (!file) {
             return NextResponse.json({ error: 'Arquivo não fornecido' }, { status: 400 });
@@ -70,7 +111,6 @@ export async function POST(request: NextRequest) {
 
         // 1. Parse file
         const parseResult = await parsePaymentFile(file, marketplace);
-        console.log(`[PaymentPreview] Parsed ${parseResult.payments.length} payments in ${Date.now() - startTime}ms`);
 
         // Clear cache to ensure we have the latest config
         const { clearFeeConfigCache } = await import('@/lib/marketplace-fees');
@@ -88,51 +128,18 @@ export async function POST(request: NextRequest) {
         }
 
         // 2. Fetch rules from new auto_rules table + system rules
+        // NOTE: User rules are NOT applied automatically during preview.
+        // They are fetched by the frontend and shown as "suggestions" for manual approval.
+        // Only system rules are applied automatically for basic tagging.
         let rulesEngine: RulesEngine;
         try {
-            // Note: Using 'as any' until auto_rules table is added to Supabase types
-            const { data: dbRules } = await (supabaseAdmin as any)
-                .from('auto_rules')
-                .select('*')
-                .eq('enabled', true)
-                .order('priority', { ascending: false });
+            // Initialize RulesEngine with ONLY system rules
+            // User rules will be suggested on the frontend
+            const systemRules = getSystemRules();
+            rulesEngine = new RulesEngine(systemRules);
 
-            // Convert DB rows to AutoRule format
-            const userRules: AutoRule[] = (dbRules || []).map((row: any) => ({
-                id: row.id,
-                name: row.name,
-                description: row.description,
-                marketplace: row.marketplace,
-                conditions: row.conditions || [],
-                conditionLogic: row.condition_logic || 'AND',
-                actions: row.actions || [],
-                priority: row.priority,
-                enabled: row.enabled,
-                stopOnMatch: row.stop_on_match,
-                isSystemRule: row.is_system_rule,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-            }));
-
-            // Combine user rules with system rules
-            const allRules = [...userRules, ...getSystemRules()];
-            rulesEngine = new RulesEngine(allRules);
-
-            console.log(`[Preview] Loaded ${userRules.length} user rules + ${getSystemRules().length} system rules for ${marketplace}`);
-
-            // Detailed logging of user rules for debugging
-            if (userRules.length > 0) {
-                console.log('[Preview] User rules details:', userRules.map(r => ({
-                    id: r.id,
-                    name: r.name,
-                    marketplace: r.marketplace,
-                    enabled: r.enabled,
-                    conditions: r.conditions,
-                    actions: r.actions,
-                })));
-            }
         } catch (error) {
-            console.warn('[Preview] Error loading new rules, falling back to empty:', error);
+            console.warn('[Preview] Error loading rules, falling back to empty:', error);
             rulesEngine = new RulesEngine(getSystemRules());
         }
 
@@ -154,37 +161,51 @@ export async function POST(request: NextRequest) {
         const orderIdsArray = Array.from(allOrderIds);
         const baseOrderIds = [...new Set(Array.from(baseOrderIdMap.values()))];
 
-        console.log(`[PaymentPreview] Fetching data for ${orderIdsArray.length} order IDs (${baseOrderIds.length} unique base IDs)`);
 
         // 3b. BATCH QUERY: Fetch all marketplace_order_links at once
+        // Split into batches of 200 to avoid URL size limits
         const batchQueryStart = Date.now();
-        const { data: allLinks } = await supabaseAdmin
-            .from('marketplace_order_links')
-            .select(`
-                marketplace_order_id,
-                tiny_order_id,
-                tiny_orders!inner(
-                    id,
-                    numero_pedido,
-                    cliente_nome,
-                    valor_total_pedido,
-                    valor,
-                    valor_frete,
-                    data_criacao
-                )
-            `)
-            .eq('marketplace', marketplace)
-            .in('marketplace_order_id', orderIdsArray);
-
-        // Create lookup map for O(1) access
-        // Using 'any' to work around Supabase TypeScript inference issues
+        const BATCH_SIZE = 200;
         const linksMap = new Map<string, any>();
-        if (allLinks) {
-            for (const link of allLinks as any[]) {
-                linksMap.set(link.marketplace_order_id, link);
+        let totalLinksFound = 0;
+
+        for (let i = 0; i < orderIdsArray.length; i += BATCH_SIZE) {
+            const batch = orderIdsArray.slice(i, i + BATCH_SIZE);
+            const { data: batchLinks, error: linksError } = await supabaseAdmin
+                .from('marketplace_order_links')
+                .select(`
+                    marketplace_order_id,
+                    tiny_order_id,
+                    tiny_orders!inner(
+                        id,
+                        numero_pedido,
+                        cliente_nome,
+                        valor_total_pedido,
+                        valor_total_produtos,
+                        valor,
+                        valor_frete,
+                        data_criacao
+                    )
+                `)
+                .eq('marketplace', marketplace)
+                .in('marketplace_order_id', batch);
+
+            if (linksError) {
+                console.error(`[PaymentPreview] Links query error (batch ${i}):`, linksError.message);
+            }
+
+            if (batchLinks) {
+                for (const link of batchLinks as any[]) {
+                    linksMap.set(link.marketplace_order_id, link);
+                }
+                totalLinksFound += batchLinks.length;
             }
         }
-        console.log(`[PaymentPreview] Fetched ${allLinks?.length || 0} order links in ${Date.now() - batchQueryStart}ms`);
+
+        // Debug logging for link detection
+        console.log(`[PaymentPreview] Marketplace: ${marketplace}`);
+        console.log(`[PaymentPreview] Order IDs from file (first 5): ${orderIdsArray.slice(0, 5).join(', ')}`);
+        console.log(`[PaymentPreview] Total order IDs: ${orderIdsArray.length}, Links found: ${totalLinksFound}`);
 
         // 3c. BATCH QUERY: Fetch all shopee_order_items at once (for Shopee only)
         type ShopeeOrderItem = { order_sn: string; quantity: number | null; discounted_price: number | null; original_price: number | null };
@@ -192,20 +213,32 @@ export async function POST(request: NextRequest) {
 
         if (marketplace === 'shopee' && baseOrderIds.length > 0) {
             const itemsQueryStart = Date.now();
-            const { data: allItems } = await supabaseAdmin
-                .from('shopee_order_items')
-                .select('order_sn, quantity, discounted_price, original_price')
-                .in('order_sn', baseOrderIds);
 
-            // Group items by order_sn
-            if (allItems) {
-                for (const item of allItems) {
-                    const existing = itemsByOrderSn.get(item.order_sn) || [];
-                    existing.push(item);
-                    itemsByOrderSn.set(item.order_sn, existing);
+            // Batch query shopee_order_items to avoid URL size limits
+            const BATCH_SIZE = 200;
+            let totalItemsFound = 0;
+
+            for (let i = 0; i < baseOrderIds.length; i += BATCH_SIZE) {
+                const batch = baseOrderIds.slice(i, i + BATCH_SIZE);
+                const { data: batchItems, error: itemsError } = await supabaseAdmin
+                    .from('shopee_order_items')
+                    .select('order_sn, quantity, discounted_price, original_price')
+                    .in('order_sn', batch);
+
+                if (itemsError) {
+                    console.error(`[PaymentPreview] Shopee items query error (batch ${i}):`, itemsError.message);
+                }
+
+                if (batchItems) {
+                    for (const item of batchItems) {
+                        const existing = itemsByOrderSn.get(item.order_sn) || [];
+                        existing.push(item);
+                        itemsByOrderSn.set(item.order_sn, existing);
+                    }
+                    totalItemsFound += batchItems.length;
                 }
             }
-            console.log(`[PaymentPreview] Fetched ${allItems?.length || 0} shopee items for ${itemsByOrderSn.size} orders in ${Date.now() - itemsQueryStart}ms`);
+            console.log(`[PaymentPreview] Shopee items query: found ${totalItemsFound} items across ${baseOrderIds.length} orders`);
         }
 
         // 3d. BATCH QUERY: Fetch all shopee_orders at once (for Shopee only)
@@ -220,32 +253,104 @@ export async function POST(request: NextRequest) {
             order_discounted_price: number | null;
             seller_discount: number | null;
             escrow_amount: number | null;
+            raw_payload?: any;
         };
         const shopeeOrdersMap = new Map<string, ShopeeOrderData>();
 
         if (marketplace === 'shopee' && baseOrderIds.length > 0) {
             const ordersQueryStart = Date.now();
-            // Using 'as any' to work around Supabase TypeScript column validation issues
-            const { data: allShopeeOrders } = await (supabaseAdmin as any)
-                .from('shopee_orders')
-                .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount')
-                .in('order_sn', baseOrderIds);
 
-            if (allShopeeOrders) {
-                for (const order of allShopeeOrders as any[]) {
-                    shopeeOrdersMap.set(order.order_sn, order as ShopeeOrderData);
+            // Debug: Check if specific order is in baseOrderIds
+            const testOrderId = '250324E753MYUP';
+            if (baseOrderIds.includes(testOrderId)) {
+                console.log('[DEBUG] Order', testOrderId, 'IS in baseOrderIds');
+            } else {
+                console.log('[DEBUG] Order', testOrderId, 'NOT in baseOrderIds! First 5 baseOrderIds:', baseOrderIds.slice(0, 5));
+            }
+
+            // Batch query shopee_orders to avoid URL size limits (same fix as marketplace_order_links)
+            const BATCH_SIZE = 200;
+            let totalShopeeOrdersFound = 0;
+
+            for (let i = 0; i < baseOrderIds.length; i += BATCH_SIZE) {
+                const batch = baseOrderIds.slice(i, i + BATCH_SIZE);
+                const { data: batchOrders, error: shopeeError } = await (supabaseAdmin as any)
+                    .from('shopee_orders')
+                    .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount, raw_payload')
+                    .in('order_sn', batch);
+
+                if (shopeeError) {
+                    console.error(`[PaymentPreview] Shopee orders query error (batch ${i}):`, shopeeError.message);
+                }
+
+                if (batchOrders) {
+                    for (const order of batchOrders as any[]) {
+                        shopeeOrdersMap.set(order.order_sn, order as ShopeeOrderData);
+                    }
+                    totalShopeeOrdersFound += batchOrders.length;
                 }
             }
-            console.log(`[PaymentPreview] Fetched ${allShopeeOrders?.length || 0} shopee orders in ${Date.now() - ordersQueryStart}ms`);
+
+            console.log(`[PaymentPreview] Shopee orders query: ${baseOrderIds.length} IDs, found ${totalShopeeOrdersFound} orders`);
+
+            // Debug: Check if specific order was found
+            const testOrder = shopeeOrdersMap.get(testOrderId);
+            if (testOrder) {
+                console.log('[DEBUG] Order', testOrderId, 'found in shopee_orders with data:', {
+                    order_selling_price: testOrder.order_selling_price,
+                    seller_discount: testOrder.seller_discount,
+                    escrow_amount: testOrder.escrow_amount
+                });
+            } else {
+                console.log('[DEBUG] Order', testOrderId, 'NOT found in shopee_orders results');
+            }
         }
 
-        console.log(`[PaymentPreview] All batch queries completed in ${Date.now() - batchQueryStart}ms`);
+        // 3e. BATCH QUERY: Fetch all Mercado Livre orders at once (for ML only)
+        const meliTotalsById = new Map<string, number>();
+        const meliRefundsById = new Map<string, number>();
+        if (marketplace === 'mercado_livre' && baseOrderIds.length > 0) {
+            const numericIds = baseOrderIds
+                .map(id => id.trim())
+                .filter(id => /^\d+$/.test(id))
+                .map(id => Number(id));
+
+            const BATCH_SIZE = 200;
+            for (let i = 0; i < numericIds.length; i += BATCH_SIZE) {
+                const batch = numericIds.slice(i, i + BATCH_SIZE);
+                const { data: meliOrders, error: meliError } = await supabaseAdmin
+                    .from('meli_orders')
+                    .select('meli_order_id, total_amount, total_amount_with_shipping, raw_payload')
+                    .in('meli_order_id', batch);
+
+                if (meliError) {
+                    console.error(`[PaymentPreview] Meli orders query error (batch ${i}):`, meliError.message);
+                }
+
+                if (meliOrders) {
+                    for (const order of meliOrders as any[]) {
+                        const totalWithShipping = Number(order.total_amount_with_shipping || 0);
+                        const totalAmount = Number(order.total_amount || 0);
+                        const resolved = totalWithShipping > 0 ? totalWithShipping : totalAmount;
+                        if (resolved > 0) {
+                            meliTotalsById.set(String(order.meli_order_id), resolved);
+                        }
+                        if (order.raw_payload) {
+                            const refund = getMeliRefundAmount(order.raw_payload);
+                            if (refund > 0) {
+                                meliRefundsById.set(String(order.meli_order_id), refund);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
 
         // 4. Process payments using cached data (no more individual queries!)
         const previewPayments: PreviewPayment[] = [];
         const processStart = Date.now();
 
-        console.log(`[Preview] Starting to process ${parseResult.payments.length} payments with ${rulesEngine.getRules().length} active rules`);
 
         for (const payment of parseResult.payments) {
             // Create PaymentInput for the engine
@@ -272,36 +377,6 @@ export async function POST(request: NextRequest) {
             const isFreightAdjustment = engineResult.tags.includes('ajuste') &&
                 freightFeePatterns.some(p => p.test(fullText));
 
-            // Debug logging for rule matching (only log first 5 to avoid spam)
-            if (previewPayments.length < 5) {
-                console.log(`[Preview] Payment ${previewPayments.length + 1}:`, {
-                    orderId: payment.marketplaceOrderId,
-                    desc: payment.transactionDescription?.substring(0, 60),
-                    inputToEngine: {
-                        description: paymentInput.transactionDescription?.substring(0, 60),
-                        type: paymentInput.transactionType,
-                    },
-                    tags: engineResult.tags,
-                    totalRulesEvaluated: engineResult.totalRulesEvaluated,
-                    matchedRules: engineResult.matchedRules.filter(r => r.matched).map(r => ({
-                        name: r.ruleName,
-                        conditions: r.conditionResults,
-                    })),
-                });
-            }
-
-            // ALWAYS log when user-defined rules match (to verify they're working)
-            const userRuleMatches = engineResult.matchedRules.filter(r =>
-                r.matched && !r.ruleName.startsWith('Sistema:')
-            );
-            if (userRuleMatches.length > 0) {
-                console.log(`[Preview] ✓ USER RULE MATCHED:`, {
-                    orderId: payment.marketplaceOrderId,
-                    desc: payment.transactionDescription?.substring(0, 60),
-                    tags: engineResult.tags,
-                    matchedUserRules: userRuleMatches.map(r => r.ruleName),
-                });
-            }
 
             // Look up order link from pre-fetched map (O(1) instead of DB query)
             const baseMarketplaceOrderId = baseOrderIdMap.get(payment.marketplaceOrderId) || payment.marketplaceOrderId;
@@ -320,6 +395,8 @@ export async function POST(request: NextRequest) {
             let orderDiscountedPrice = 0;
             let sellerDiscount = 0;
             let escrowAmount = 0;
+            let meliRefundAmount = 0;
+            let meliOriginalOrderValue = 0;
 
             if (marketplace === 'shopee' && payment.marketplaceOrderId) {
                 // Get items from pre-fetched map (O(1) instead of DB query)
@@ -337,7 +414,26 @@ export async function POST(request: NextRequest) {
                 // Get shopee order data from pre-fetched map (O(1) instead of DB query)
                 const escrowData = shopeeOrdersMap.get(baseMarketplaceOrderId);
 
-                if (escrowData && shopeeOrderValue && shopeeOrderValue > 0) {
+                const escrowDetail = escrowData?.raw_payload?.escrow_detail;
+                const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
+                const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+
+                if (escrowBuyerTotal > 0) {
+                    shopeeOrderValue = escrowBuyerTotal;
+                    originalOrderValue = escrowBuyerTotal;
+                }
+
+                if (escrowRefund > 0 && shopeeOrderValue && shopeeOrderValue > 0) {
+                    originalProductCount = productCount;
+                    originalOrderValue = shopeeOrderValue;
+                    refundAmount = escrowRefund;
+
+                    const actualOrderValue = Math.max(0, shopeeOrderValue - escrowRefund);
+                    const refundRatio = actualOrderValue / shopeeOrderValue;
+                    const adjustedCount = Math.round(productCount * refundRatio);
+                    productCount = Math.max(1, adjustedCount);
+                    shopeeOrderValue = actualOrderValue;
+                } else if (escrowData && shopeeOrderValue && shopeeOrderValue > 0) {
                     const totalAmount = Number(escrowData.total_amount) || 0;
                     const sellingPrice = Number(escrowData.order_selling_price) || 0;
                     const actualOrderValue = totalAmount > 0 ? totalAmount : sellingPrice;
@@ -360,7 +456,7 @@ export async function POST(request: NextRequest) {
                 if (escrowData?.ams_commission_fee) {
                     amsCommissionFee = Number(escrowData.ams_commission_fee) || 0;
                 }
-                if (escrowData?.order_selling_price) {
+                if (escrowData?.order_selling_price != null) {
                     orderSellingPrice = Number(escrowData.order_selling_price) || 0;
                 }
                 if (escrowData?.order_discounted_price) {
@@ -376,10 +472,24 @@ export async function POST(request: NextRequest) {
                     voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
                 }
 
-                // Determine if this is "leve mais pague menos"
-                const isLeveMaisPagueMenos = sellerDiscount > 0 &&
-                    orderSellingPrice > 0 &&
-                    (sellerDiscount / orderSellingPrice) <= 0.05;
+                // Determine if order has seller discount (e.g., leve mais pague menos, promoção loja)
+                // Use the difference between selling and discounted price to find REAL discounts
+                // This avoids flagging strike-through prices (fake original prices) as discounts
+                // Also account for seller voucher to avoid double tagging (Cupom Loja already covers that)
+                let hasSellerDiscountTag = false;
+
+                if (orderSellingPrice > 0 && orderDiscountedPrice > 0) {
+                    const discountDelta = orderSellingPrice - orderDiscountedPrice;
+                    // Check if there is a discount BEYOND the seller voucher (with small tolerance)
+                    if (discountDelta > (voucherFromSeller + 0.05)) {
+                        hasSellerDiscountTag = true;
+                    }
+                } else if (sellerDiscount > 0 && orderDiscountedPrice === 0) {
+                    // Fallback if orderDiscountedPrice is missing but sellerDiscount is large?
+                    // Probably better to be conservative and NOT tag if we are unsure, to avoid false positives.
+                    // The user complaint is about false positives.
+                    hasSellerDiscountTag = false;
+                }
 
                 // Add automatic tags based on escrow data
                 if (voucherFromSeller > 0) {
@@ -388,9 +498,13 @@ export async function POST(request: NextRequest) {
                 if (amsCommissionFee > 0) {
                     engineResult.tags.push('comissão afiliado');
                 }
-                if (isLeveMaisPagueMenos) {
-                    engineResult.tags.push('leve mais pague menos');
+                if (hasSellerDiscountTag) {
+                    engineResult.tags.push('desconto loja');
                 }
+            }
+
+            if (marketplace === 'mercado_livre') {
+                meliRefundAmount = meliRefundsById.get(baseMarketplaceOrderId) || 0;
             }
 
             // Calculate expected fees if order is linked
@@ -406,25 +520,70 @@ export async function POST(request: NextRequest) {
                     const orderDate = normalizedDateStr ? new Date(normalizedDateStr) : new Date();
 
                     let orderValue: number;
-                    const isLeveMaisPagueMenos = sellerDiscount > 0 &&
-                        orderSellingPrice > 0 &&
-                        (sellerDiscount / orderSellingPrice) <= 0.05;
+                    // When seller_discount > 0, use order_discounted_price for fee calculation
+                    // This is the correct base that Shopee uses (escrow API provides this directly)
+                    const hasSellerDiscount = sellerDiscount > 0 && orderDiscountedPrice > 0;
+                    const tinyOrder = (linkData as any).tiny_orders;
+                    const tinyFrete = Number(tinyOrder.valor_frete || 0);
+                    const tinyProdutos = Number(tinyOrder.valor_total_produtos || 0);
+                    let tinyTotal = Number(tinyOrder.valor_total_pedido || tinyOrder.valor || 0);
+                    if (tinyTotal <= 0) {
+                        if (tinyProdutos > 0 && tinyFrete > 0) {
+                            tinyTotal = tinyProdutos + tinyFrete;
+                        } else if (tinyProdutos > 0) {
+                            tinyTotal = tinyProdutos;
+                        }
+                    }
 
                     if (marketplace === 'shopee') {
                         if (refundAmount > 0 && shopeeOrderValue !== null && shopeeOrderValue > 0) {
                             orderValue = shopeeOrderValue;
-                        } else if (isLeveMaisPagueMenos && orderDiscountedPrice > 0) {
+                        } else if (hasSellerDiscount) {
                             orderValue = orderDiscountedPrice;
                         } else if (orderSellingPrice > 0) {
                             orderValue = orderSellingPrice;
                         } else if (shopeeOrderValue !== null && shopeeOrderValue > 0) {
                             orderValue = shopeeOrderValue;
                         } else {
-                            orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
+                            orderValue = Math.max(0, tinyTotal - tinyFrete);
                         }
+                    } else if (marketplace === 'mercado_livre') {
+                        if (tinyTotal > 0) {
+                            meliOriginalOrderValue = tinyTotal;
+                        } else {
+                            const meliTotal = meliTotalsById.get(baseMarketplaceOrderId);
+                            meliOriginalOrderValue = meliTotal ?? 0;
+                        }
+                        orderValue = meliRefundAmount > 0
+                            ? Math.max(0, meliOriginalOrderValue - meliRefundAmount)
+                            : meliOriginalOrderValue;
                     } else {
-                        orderValue = Math.max(0, Number((linkData as any).tiny_orders.valor || (linkData as any).tiny_orders.valor_total_pedido || 0) - Number((linkData as any).tiny_orders.valor_frete || 0));
+                        orderValue = Math.max(0, tinyTotal);
                     }
+
+                    // Use AMS fee from payment parsing (realized) if available, otherwise DB (expected)
+                    const realizedAmsFee = payment.fee_overrides?.amsCommissionFee;
+                    const finalAmsFee = realizedAmsFee !== undefined ? realizedAmsFee : amsCommissionFee;
+
+                    // Debug logging for specific order
+                    if (baseMarketplaceOrderId === '250324E753MYUP') {
+                        console.log('[DEBUG 250324E753MYUP] Fee Calc Input:', {
+                            orderValue,
+                            orderSellingPrice,
+                            orderDiscountedPrice,
+                            sellerDiscount,
+                            hasSellerDiscount,
+                            productCount,
+                            voucherFromSeller,
+                            finalAmsFee
+                        });
+                    }
+
+                    const fullRefund = marketplace === 'shopee'
+                        ? isFullRefund(refundAmount, originalOrderValue)
+                        : marketplace === 'mercado_livre'
+                            ? isFullRefund(meliRefundAmount, meliOriginalOrderValue)
+                            : false;
 
                     const feeCalc = await calculateMarketplaceFees({
                         marketplace: marketplace as 'shopee' | 'mercado_livre' | 'magalu',
@@ -435,8 +594,23 @@ export async function POST(request: NextRequest) {
                         usesFreeShipping: undefined,
                         isCampaignOrder: false,
                         sellerVoucher: marketplace === 'shopee' ? voucherFromSeller : undefined,
-                        amsCommissionFee: marketplace === 'shopee' ? amsCommissionFee : undefined,
+                        amsCommissionFee: marketplace === 'shopee' ? finalAmsFee : undefined,
                     });
+
+                    if (fullRefund) {
+                        applyFullRefundOverride(feeCalc);
+                        productCount = 0;
+                    }
+
+                    // Debug logging for specific order
+                    if (baseMarketplaceOrderId === '250324E753MYUP') {
+                        console.log('[DEBUG 250324E753MYUP] Fee Calc Result:', {
+                            grossValue: feeCalc.grossValue,
+                            totalFees: feeCalc.totalFees,
+                            netValue: feeCalc.netValue,
+                            breakdown: feeCalc.breakdown
+                        });
+                    }
 
                     valorEsperado = feeCalc.netValue;
 
@@ -454,12 +628,38 @@ export async function POST(request: NextRequest) {
                             refundAmount,
                             originalProductCount,
                             originalOrderValue,
-                            isLeveMaisPagueMenos: sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05,
+                            hasSellerDiscount: sellerDiscount > 0,
                             escrowDifference: escrowAmount > 0 ? feeCalc.netValue - escrowAmount : 0,
                         } : undefined,
                     };
+                    if (marketplace === 'mercado_livre' && meliRefundAmount > 0) {
+                        feesBreakdown.refundAmount = meliRefundAmount;
+                        feesBreakdown.refundOriginalValue = meliOriginalOrderValue;
+                    }
                 } catch (error) {
                     console.error('[Preview API] Fee calculation error:', error);
+                }
+            }
+
+            let resolvedTinyTotal: number | undefined;
+            if (linkData && linkData.tiny_orders) {
+                const tinyOrder = (linkData as any).tiny_orders;
+                const tinyFrete = Number(tinyOrder.valor_frete || 0);
+                const tinyProdutos = Number(tinyOrder.valor_total_produtos || 0);
+                let baseTotal = Number(tinyOrder.valor_total_pedido || tinyOrder.valor || 0);
+                if (baseTotal <= 0) {
+                    if (tinyProdutos > 0 && tinyFrete > 0) {
+                        baseTotal = tinyProdutos + tinyFrete;
+                    } else if (tinyProdutos > 0) {
+                        baseTotal = tinyProdutos;
+                    }
+                }
+                resolvedTinyTotal = baseTotal;
+                if (marketplace === 'mercado_livre' && resolvedTinyTotal <= 0) {
+                    const meliTotal = meliTotalsById.get(baseMarketplaceOrderId);
+                    if (meliTotal && meliTotal > 0) {
+                        resolvedTinyTotal = meliTotal;
+                    }
                 }
             }
 
@@ -482,11 +682,13 @@ export async function POST(request: NextRequest) {
                     id: (linkData as any).tiny_orders.id || linkData.tiny_order_id,
                     numero_pedido: (linkData as any).tiny_orders.numero_pedido || '',
                     cliente_nome: (linkData as any).tiny_orders.cliente_nome || '',
-                    valor_total_pedido: Number((linkData as any).tiny_orders.valor_total_pedido || (linkData as any).tiny_orders.valor || 0),
+                    valor_total_pedido: resolvedTinyTotal || 0,
                     valor_esperado: valorEsperado,
                     fees_breakdown: feesBreakdown,
                     data_criacao: (linkData as any).tiny_orders.data_criacao || null,
                 } : undefined,
+                // Add diferenca for sorting (netAmount - valorEsperado)
+                diferenca: valorEsperado !== undefined ? payment.netAmount - valorEsperado : undefined,
             });
         }
 

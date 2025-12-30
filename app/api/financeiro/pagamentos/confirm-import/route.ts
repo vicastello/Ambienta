@@ -103,42 +103,181 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                // Insert or update marketplace_payment
-                const { data: insertedPayment, error: insertError } = await supabaseAdmin
-                    .from('marketplace_payments')
-                    .upsert({
-                        marketplace: session.marketplace,
-                        marketplace_order_id: payment.marketplaceOrderId,
-                        upload_batch_id: batch.id,
-                        payment_date: payment.paymentDate,
-                        settlement_date: payment.settlementDate,
-                        gross_amount: payment.grossAmount,
-                        net_amount: payment.netAmount,
-                        fees: payment.fees,
-                        discount: payment.discount,
-                        status: payment.status,
-                        payment_method: payment.paymentMethod,
-                        transaction_type: payment.transactionType,
-                        transaction_description: payment.transactionDescription,
-                        balance_after: payment.balanceAfter,
-                        is_adjustment: payment.isAdjustment,
-                        is_refund: payment.isRefund,
-                        is_expense: payment.isExpense || false,
-                        expense_category: expenseCategory,
-                        tags: payment.tags,
-                        tiny_order_id: payment.tinyOrderId,
-                        matched_at: payment.tinyOrderId ? new Date().toISOString() : null,
-                        match_confidence: payment.tinyOrderId ? 'exact' : null,
-                        raw_data: payment.rawData,
-                        fee_overrides: payment.fee_overrides,
-                    }, {
-                        onConflict: 'marketplace,marketplace_order_id',
-                    })
-                    .select()
-                    .single();
+                // On-Demand Sync: If not matched in preview, try to fetch from Tiny now
+                let tinyOrderId = payment.tinyOrderId;
+                let matchConfidence = payment.tinyOrderId ? 'exact' : null;
+                let matchedAt = payment.tinyOrderId ? new Date().toISOString() : null;
 
-                if (insertError) {
-                    console.error('[ConfirmImport] Error inserting payment:', insertError);
+                // Helper to extract base order ID (strip suffixes like _AJUSTE, _REEMBOLSO)
+                const getBaseOrderId = (orderId: string): string => {
+                    return orderId.replace(/_(AJUSTE|REEMBOLSO|FRETE|COMISSAO)\d*$/i, '');
+                };
+
+                if (!tinyOrderId) {
+                    const baseOrderId = getBaseOrderId(payment.marketplaceOrderId);
+                    const isAdjustment = baseOrderId !== payment.marketplaceOrderId;
+
+                    if (isAdjustment) {
+                        // First try to find the parent payment's tiny_order_id
+                        const { data: parentPayment } = await supabaseAdmin
+                            .from('marketplace_payments')
+                            .select('tiny_order_id')
+                            .eq('marketplace', session.marketplace)
+                            .eq('marketplace_order_id', baseOrderId)
+                            .not('tiny_order_id', 'is', null)
+                            .maybeSingle();
+
+                        if (parentPayment?.tiny_order_id) {
+                            tinyOrderId = parentPayment.tiny_order_id;
+                            matchConfidence = 'derived';
+                            matchedAt = new Date().toISOString();
+                            console.log(`[ConfirmImport] Linked adjustment ${payment.marketplaceOrderId} to parent ${baseOrderId} -> ID ${tinyOrderId}`);
+                        } else {
+                            // Parent not found in payments, try to sync the base order
+                            try {
+                                const syncRes = await fetchAndSaveTinyOrder(baseOrderId, session.marketplace);
+                                if (syncRes.success && syncRes.tinyOrderId) {
+                                    tinyOrderId = syncRes.tinyOrderId;
+                                    matchConfidence = 'derived';
+                                    matchedAt = new Date().toISOString();
+                                    console.log(`[ConfirmImport] Synced parent ${baseOrderId} for adjustment: ID ${tinyOrderId}`);
+                                }
+                            } catch (e) {
+                                console.warn(`[ConfirmImport] Failed to sync parent for adjustment ${payment.marketplaceOrderId}`, e);
+                            }
+                        }
+                    } else {
+                        // Normal order - try to sync from Tiny
+                        try {
+                            const syncRes = await fetchAndSaveTinyOrder(payment.marketplaceOrderId, session.marketplace);
+                            if (syncRes.success && syncRes.tinyOrderId) {
+                                tinyOrderId = syncRes.tinyOrderId;
+                                matchConfidence = 'high';
+                                matchedAt = new Date().toISOString();
+                                console.log(`[ConfirmImport] On-Demand Sync Success for ${payment.marketplaceOrderId}: ID ${tinyOrderId}`);
+                            }
+                        } catch (e) {
+                            console.warn(`[ConfirmImport] Failed on-demand sync for ${payment.marketplaceOrderId}`, e);
+                        }
+                    }
+                }
+
+                // Check if payment already exists
+                const { data: existingPayment } = await supabaseAdmin
+                    .from('marketplace_payments')
+                    .select('id')
+                    .eq('marketplace', session.marketplace)
+                    .eq('marketplace_order_id', payment.marketplaceOrderId)
+                    .maybeSingle();
+
+                let insertedPayment: any = null;
+                let operationError: any = null;
+
+                // Prepare payload with potentially updated tinyOrderId
+                const payload = {
+                    marketplace: session.marketplace,
+                    marketplace_order_id: payment.marketplaceOrderId,
+                    upload_batch_id: batch.id,
+                    payment_date: payment.paymentDate,
+                    settlement_date: payment.settlementDate,
+                    gross_amount: payment.grossAmount,
+                    net_amount: payment.netAmount,
+                    fees: payment.fees,
+                    discount: payment.discount,
+                    status: payment.status,
+                    payment_method: payment.paymentMethod,
+                    transaction_type: payment.transactionType,
+                    transaction_description: payment.transactionDescription,
+                    balance_after: payment.balanceAfter,
+                    is_adjustment: payment.isAdjustment,
+                    is_refund: payment.isRefund,
+                    is_expense: payment.isExpense || false,
+                    expense_category: expenseCategory,
+                    tags: payment.tags,
+                    tiny_order_id: tinyOrderId,
+                    matched_at: matchedAt,
+                    match_confidence: matchConfidence,
+                    raw_data: payment.rawData,
+                    // fee_overrides: excluded (column missing)
+                };
+
+                if (existingPayment) {
+                    // UPDATE
+                    const { data, error } = await supabaseAdmin
+                        .from('marketplace_payments')
+                        .update(payload)
+                        .eq('id', existingPayment.id)
+                        .select()
+                        .single();
+
+                    if (error) operationError = error;
+                    else insertedPayment = data;
+                } else {
+                    // INSERT (With FK Retry AND Re-Sync)
+                    const { data, error } = await supabaseAdmin
+                        .from('marketplace_payments')
+                        .insert(payload)
+                        .select()
+                        .single();
+
+                    if (error) {
+                        // Check for FK violation
+                        if (error.code === '23503') { // foreign_key_violation
+                            console.warn(`[ConfirmImport] TinyOrder ID ${tinyOrderId} invalid. Trying RE-SYNC...`);
+
+                            // Try to re-sync because ID might be stale/deleted
+                            let newTinyId = null;
+                            try {
+                                const syncRes = await fetchAndSaveTinyOrder(payment.marketplaceOrderId, session.marketplace, true);
+                                if (syncRes.success && syncRes.tinyOrderId) {
+                                    newTinyId = syncRes.tinyOrderId;
+                                }
+                            } catch (e) {
+                                console.warn(`[ConfirmImport] Re-sync failed`, e);
+                            }
+
+                            if (newTinyId) {
+                                // Retry with New ID
+                                const newPayload = {
+                                    ...payload,
+                                    tiny_order_id: newTinyId,
+                                    matched_at: new Date().toISOString(),
+                                    match_confidence: 'exact'
+                                };
+                                const { data: retryData, error: retryError } = await supabaseAdmin
+                                    .from('marketplace_payments')
+                                    .insert(newPayload)
+                                    .select()
+                                    .single();
+                                if (retryError) operationError = retryError;
+                                else insertedPayment = retryData;
+                            } else {
+                                // Final Fallback: Unlinked
+                                const fallbackPayload = {
+                                    ...payload,
+                                    tiny_order_id: null,
+                                    matched_at: null,
+                                    match_confidence: null
+                                };
+                                const { data: fbData, error: fbError } = await supabaseAdmin
+                                    .from('marketplace_payments')
+                                    .insert(fallbackPayload)
+                                    .select()
+                                    .single();
+
+                                if (fbError) operationError = fbError;
+                                else insertedPayment = fbData;
+                            }
+                        } else {
+                            operationError = error;
+                        }
+                    } else {
+                        insertedPayment = data;
+                    }
+                }
+
+                if (operationError) {
+                    console.error('[ConfirmImport] Error upserting payment:', operationError);
                     continue;
                 }
 

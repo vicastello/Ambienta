@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listProdutos } from '@/src/repositories/tinyProdutosRepository';
 import { getErrorMessage } from '@/lib/errors';
+import { jsonWithCache } from '@/src/lib/httpCache';
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,12 +18,12 @@ export async function GET(req: NextRequest) {
 
     const { produtos, total } = await listProdutos({ search, situacao, tipo, fornecedor, limit, offset });
 
-    return NextResponse.json({
+    return jsonWithCache({
       produtos,
       total,
       limit,
       offset,
-    });
+    }, 60, 300); // Cache 60s, stale-while-revalidate 5min
   } catch (error: unknown) {
     const message = getErrorMessage(error) ?? 'Erro ao buscar produtos';
     console.error('[API Produtos] Erro:', error);

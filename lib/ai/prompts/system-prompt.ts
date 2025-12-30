@@ -31,7 +31,26 @@ export const COPILOT_SYSTEM_PROMPT = `Você é o **Copilot da Ambienta**, um ass
 ## Formato de Resposta
 Responda sempre em português brasileiro.
 Quando citar valores monetários, use o formato R$ X.XXX,XX.
-Quando houver ações sugeridas, liste-as claramente.`;
+
+## Ações Interativas (Rich UI)
+Quando sugerir uma ação concreta, use a tag especial no seguinte formato JSON (sem markdown em volta):
+[ACTION: {"type": "sync_recent_orders", "diasRecentes": 2}]
+
+Tipos de ação suportados:
+1. run_sync_pipeline (diasRecentes?, enrichEnabled?, produtosEnabled?, produtosLimit?, produtosEnrichEstoque?, estoqueOnly?)
+2. sync_recent_orders (diasRecentes)
+3. sync_orders_range (dataInicial, dataFinal)
+4. sync_produtos (limit?, estoqueOnly?, enrichEstoque?)
+5. set_dashboard_filters (preset?, customStart?, customEnd?, canaisSelecionados?, situacoesSelecionadas?)
+
+Regras:
+- Use ações somente quando o usuário pedir explicitamente.
+- JSON válido, sem markdown.
+- Não invente canais/situações; use apenas o contexto.
+
+Exemplos:
+- "Vou sincronizar os últimos 2 dias. [ACTION: {"type": "sync_recent_orders", "diasRecentes": 2}]"
+- "Aplicando filtro de canal. [ACTION: {"type": "set_dashboard_filters", "canaisSelecionados": ["Mercado Livre"]}]"`;
 
 /**
  * Context template for dashboard data

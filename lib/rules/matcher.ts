@@ -130,15 +130,28 @@ export function evaluateCondition(
 
     let matched: boolean;
 
-    // Determine if this is a numeric or text comparison
-    if (condition.field === 'amount' || typeof actualValue === 'number') {
-        matched = evaluateNumericOperator(
-            condition.operator,
-            typeof actualValue === 'number' ? actualValue : parseFloat(String(actualValue)) || 0,
-            typeof expectedValue === 'number' ? expectedValue : parseFloat(String(expectedValue)) || 0,
-            condition.value2
-        );
+    if (actualValue === undefined || actualValue === null) {
+        matched = false;
+    } else if (typeof actualValue === 'number') {
+        // If condition expects string but we have number, convert to string for text operators
+        if (['equals', 'not_equals', 'greater_than', 'less_than', 'between'].includes(condition.operator)) {
+            // Basic numeric operators
+            matched = evaluateNumericOperator(
+                condition.operator,
+                actualValue,
+                Number(expectedValue),
+                condition.value2 ? Number(condition.value2) : undefined
+            );
+        } else {
+            // Fallback or other operators - cast to string
+            matched = evaluateTextOperator(
+                condition.operator,
+                String(actualValue),
+                String(expectedValue)
+            );
+        }
     } else {
+        // Handle text comparisons
         matched = evaluateTextOperator(
             condition.operator,
             String(actualValue),

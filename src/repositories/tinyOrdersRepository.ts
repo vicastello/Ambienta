@@ -31,10 +31,10 @@ export async function findOrderByTinyId(tinyId: number) {
 export async function listRecentOrders(limit = 20) {
   const { data, error } = await supabaseAdmin
     .from('tiny_orders')
-    .select('*')
+    .select('id, tiny_id, numero_pedido, data_criacao, valor, canal, situacao, cliente_nome, updated_at')
     .order('data_criacao', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
-  return (data || []) as TinyOrdersRow[];
+  return (data || []) as Pick<TinyOrdersRow, 'id' | 'tiny_id' | 'numero_pedido' | 'data_criacao' | 'valor' | 'canal' | 'situacao' | 'cliente_nome' | 'updated_at'>[];
 }

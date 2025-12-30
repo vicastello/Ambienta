@@ -68,6 +68,36 @@ export async function listMeliOrders(params: ListMeliOrdersParams): Promise<Meli
   return data;
 }
 
+export async function getMeliOrder(params: {
+  orderId: string | number;
+  accessToken: string;
+  refreshToken?: string;
+  onTokenRefreshed?: (tokens: { access_token: string; refresh_token?: string; expires_at?: string }) => Promise<void>;
+}): Promise<Record<string, unknown>> {
+  const { orderId, accessToken } = params;
+  const url = `${MELI_BASE_URL}/orders/${orderId}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    if (res.status === 401 && params.refreshToken && params.onTokenRefreshed) {
+      const refreshed = await refreshMeliToken(params.refreshToken);
+      await params.onTokenRefreshed(refreshed);
+      return getMeliOrder({ ...params, accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token });
+    }
+
+    const text = await res.text();
+    throw new Error(`Erro ao buscar pedido ML (${res.status}): ${text || res.statusText}`);
+  }
+
+  return (await res.json()) as Record<string, unknown>;
+}
+
 async function refreshMeliToken(refreshToken: string): Promise<{ access_token: string; refresh_token?: string; expires_at?: string }> {
   const clientId = process.env.ML_APP_ID?.trim();
   const clientSecret = process.env.ML_CLIENT_SECRET?.trim();

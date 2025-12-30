@@ -21,6 +21,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { GlassHorizontalNav, GlassVerticalNav } from '@/src/components/navigation/GlassVerticalNav';
+import { NerveCenterDock } from '@/components/ai/NerveCenterDock';
 
 type AppLayoutProps = {
   title?: string;
@@ -98,6 +99,19 @@ export function AppLayout({ title, children }: AppLayoutProps) {
     []
   );
   const navTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [aiCollapsed, setAiCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('ai_sidebar_v2:collapsed');
+      if (raw) {
+        setAiCollapsed(JSON.parse(raw));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -113,6 +127,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       router.prefetch?.(item.href);
     });
   }, [router]);
+
+  const aiPaddingClass = aiCollapsed ? 'lg:pr-[120px]' : 'lg:pr-[360px]';
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -720,7 +736,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       {/* Main content */}
       <main className="flex-1 min-w-0 transition-all duration-300 ml-0 lg:ml-[4.5rem]">
         <div className="w-full max-w-[1600px] mx-auto relative z-10">
-          <div className="relative min-h-screen px-4 sm:px-6 lg:px-12 pt-20 pb-28 lg:pt-8 lg:pb-10">
+          <div className={`relative min-h-screen px-4 sm:px-6 lg:px-12 pt-20 pb-28 lg:pt-8 lg:pb-10 ${aiPaddingClass}`}>
             <div className="pointer-events-none fixed inset-0 overflow-hidden flex justify-center">
               <div className="relative w-full max-w-[1600px] h-full">
                 <div className="absolute -top-20 left-20 h-64 w-64 rounded-full bg-[#c7d7ff] blur-[140px] opacity-70" />
@@ -742,6 +758,11 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           </div>
         </div>
       </main>
+
+      <NerveCenterDock
+        collapsed={aiCollapsed}
+        onToggle={setAiCollapsed}
+      />
 
       {/* Bottom nav (mobile) */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-center pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 bg-transparent">

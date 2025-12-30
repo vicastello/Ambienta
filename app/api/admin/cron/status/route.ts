@@ -4,7 +4,7 @@ import { getSyncSettings, normalizeCronSettings } from '@/src/repositories/syncR
 import { getErrorMessage } from '@/lib/errors';
 import type { Database } from '@/src/types/db-public';
 
-type StepName = 'orders' | 'enrich' | 'produtos';
+type StepName = 'orders' | 'returns' | 'enrich' | 'produtos';
 type SyncLogsRow = Database['public']['Tables']['sync_logs']['Row'];
 type SelectedLogFields = Pick<SyncLogsRow, 'id' | 'created_at' | 'level' | 'message' | 'meta'>;
 
@@ -18,7 +18,7 @@ type StepSnapshot = {
   ok: boolean;
 };
 
-const STEP_ORDER: StepName[] = ['orders', 'enrich', 'produtos'];
+const STEP_ORDER: StepName[] = ['orders', 'returns', 'enrich', 'produtos'];
 const RUN_WINDOW_MS = 5 * 60 * 1000; // 5 minutos para agrupar passos da mesma execução
 
 type LogWithMeta = SelectedLogFields & { meta: Record<string, unknown> };

@@ -454,12 +454,13 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                 const idxTransaction = getColumnIndex(['Taxa de transação', 'Transaction Fee']);
                 const idxAffiliate = getColumnIndex(['Comissão de afiliado', 'Affiliate Commission', 'Custo de campanha']); // Affiliate/Campaign
 
-                const commission = idxCommission !== -1 ? Math.abs(parseAmount(row[idxCommission])) : 0;
-                const service = idxService !== -1 ? Math.abs(parseAmount(row[idxService])) : 0;
-                const transaction = idxTransaction !== -1 ? Math.abs(parseAmount(row[idxTransaction])) : 0;
-                const affiliate = idxAffiliate !== -1 ? Math.abs(parseAmount(row[idxAffiliate])) : 0;
+                const commission = idxCommission !== -1 ? Math.abs(parseAmount(row[idxCommission])) : undefined;
+                const service = idxService !== -1 ? Math.abs(parseAmount(row[idxService])) : undefined;
+                const transaction = idxTransaction !== -1 ? Math.abs(parseAmount(row[idxTransaction])) : undefined;
+                // If column missing, calculate as undefined to allow DB fallback
+                const affiliate = idxAffiliate !== -1 ? Math.abs(parseAmount(row[idxAffiliate])) : undefined;
 
-                const totalFees = commission + service + transaction + affiliate;
+                const totalFees = (commission || 0) + (service || 0) + (transaction || 0) + (affiliate || 0);
 
                 const amount = parseAmount(row[idxAmount]);
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';
@@ -475,19 +476,23 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
                     amount < 0 ||
                     !!isAdsOrRecharge;
 
-                // Shopee "Amount" is usually the Net Amount (already deducted fees)
-                // So Gross = Net + Fees
-                const netVal = Math.abs(amount);
+                // Shopee "Amount" is typically the Net Amount (already deducted fees)
 
-                // If it's an order income, Gross is typically higher.
-                // If it's an expense, fees might not apply in the same way, but usually they are deducted.
+                // Allow negative values (do NOT use Math.abs)
+                let netVal = amount;
+
+                // Safety: If recognized as expense but positive, negate it
+                // (Unless it's a "reversal" of an expense? Unlikely in standard CSV)
+                if (isExpense && netVal > 0) {
+                    netVal = -netVal;
+                }
 
                 payments.push({
                     marketplaceOrderId: orderId || 'NO_ORDER_ID', // For expenses without order
                     paymentDate: parseDate(row[idxDate]),
                     settlementDate: parseDate(row[idxDate]),
                     grossAmount: isExpense ? netVal : (netVal + totalFees), // Reconstruct Gross for income
-                    netAmount: netVal, // Use absolute value, direction is in metadata
+                    netAmount: netVal, // Preserves sign
                     fees: totalFees,
                     discount: 0,
                     status: String(row[idxStatus] || 'completed'),

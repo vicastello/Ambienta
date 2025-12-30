@@ -1,8 +1,12 @@
+'use client';
+
 import dynamic from 'next/dynamic';
 import { AppLayout } from '@/components/layout/AppLayout';
 
 const ComprasClient = dynamic(() => import('./ComprasClient'), {
   loading: () => <ComprasSkeleton />,
+  // Carrega apenas no cliente para evitar qualquer flicker/hidratação indevida
+  ssr: false,
 });
 
 export default function ComprasPage() {

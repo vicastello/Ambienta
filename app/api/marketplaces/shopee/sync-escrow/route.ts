@@ -15,12 +15,20 @@ export async function POST(req: Request) {
         // Parse body
         let orderSnList: string[] | undefined;
         let periodDays = 30; // Default: últimos 30 dias
+        let concurrency: number | undefined;
+        let delayMs: number | undefined;
 
         try {
             const body = await req.json();
             orderSnList = body.orderSnList;
             if (body.periodDays && typeof body.periodDays === 'number') {
                 periodDays = Math.min(body.periodDays, 180);
+            }
+            if (typeof body.concurrency === 'number') {
+                concurrency = body.concurrency;
+            }
+            if (typeof body.delayMs === 'number') {
+                delayMs = body.delayMs;
             }
         } catch {
             // Body vazio ou inválido, usar defaults
@@ -58,8 +66,33 @@ export async function POST(req: Request) {
             });
         }
 
+        const rawPayloadByOrderSn = new Map<string, any>();
+        if (orderSnList.length > 0) {
+            const { data: rawRows } = await supabaseAdmin
+                .from('shopee_orders')
+                .select('order_sn, raw_payload')
+                .in('order_sn', orderSnList);
+
+            rawRows?.forEach((row: any) => {
+                rawPayloadByOrderSn.set(row.order_sn, row.raw_payload);
+            });
+        }
+
+        const mergeEscrowDetail = (rawPayload: any, escrow: any) => {
+            const base = rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+                ? rawPayload
+                : {};
+            return {
+                ...base,
+                escrow_detail: escrow,
+            };
+        };
+
         // Buscar dados de escrow da API Shopee
-        const escrowMap = await getShopeeEscrowDetailsForOrders(orderSnList);
+        const escrowMap = await getShopeeEscrowDetailsForOrders(orderSnList, {
+            concurrency,
+            delayMs,
+        });
 
         console.log(`[Shopee Escrow Sync] Recebido escrow para ${escrowMap.size} pedidos`);
 
@@ -70,6 +103,7 @@ export async function POST(req: Request) {
         let withSellerDiscount = 0;
 
         for (const [orderSn, escrow] of escrowMap) {
+            const nextRawPayload = mergeEscrowDetail(rawPayloadByOrderSn.get(orderSn), escrow);
             const { error } = await (supabaseAdmin as any)
                 .from('shopee_orders')
                 .update({
@@ -81,6 +115,7 @@ export async function POST(req: Request) {
                     order_selling_price: escrow.order_selling_price, // Selling price after bulk discounts
                     // order_discounted_price: escrow.order_discounted_price, // TODO: Uncomment after running migration
                     seller_discount: escrow.seller_discount, // Seller-provided discount (e.g., 2%)
+                    raw_payload: nextRawPayload,
                     escrow_fetched_at: new Date().toISOString(),
                 })
                 .eq('order_sn', orderSn);
@@ -113,6 +148,8 @@ export async function POST(req: Request) {
                 escrowFetched: escrowMap.size,
                 ordersUpdated: updated,
                 ordersWithSellerVoucher: withSellerVoucher,
+                concurrency: concurrency ?? null,
+                delayMs: delayMs ?? null,
                 durationMs: Date.now() - startTime,
             },
         });

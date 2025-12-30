@@ -429,6 +429,9 @@ export interface ShopeeEscrowDetail {
   order_selling_price: number; // Selling price after bulk discounts (before order-level discounts)
   order_discounted_price: number; // Price after seller discount (base for fee calculation)
   seller_discount: number; // Seller-provided discount (e.g., 2% for buying more items)
+  order_original_price: number;
+  seller_return_refund: number;
+  drc_adjustable_refund: number;
 }
 
 interface ShopeeEscrowDetailResponse {
@@ -505,6 +508,9 @@ export async function getShopeeEscrowDetail(orderSn: string): Promise<ShopeeEscr
       order_selling_price: (orderIncome as any).order_selling_price ?? 0, // Selling price after bulk discounts
       order_discounted_price: (orderIncome as any).order_discounted_price ?? 0, // Price after seller discount (base for fee calc)
       seller_discount: (orderIncome as any).seller_discount ?? 0, // Seller-provided discount (e.g., 2%)
+      order_original_price: (orderIncome as any).order_original_price ?? 0,
+      seller_return_refund: (orderIncome as any).seller_return_refund ?? 0,
+      drc_adjustable_refund: (orderIncome as any).drc_adjustable_refund ?? 0,
     };
 
     // Log when there's a seller voucher
@@ -547,20 +553,22 @@ export async function getShopeeEscrowDetail(orderSn: string): Promise<ShopeeEscr
  * @returns Map de order_sn para escrow details
  */
 export async function getShopeeEscrowDetailsForOrders(
-  orderSnList: string[]
+  orderSnList: string[],
+  options?: { concurrency?: number; delayMs?: number }
 ): Promise<Map<string, ShopeeEscrowDetail>> {
   const results = new Map<string, ShopeeEscrowDetail>();
 
   // A API get_escrow_detail aceita apenas um pedido por vez
   // Processamos em paralelo com limite de concorrência
-  const CONCURRENCY = 5;
-  const batches: string[][] = [];
+  const envConcurrency = Number(process.env.SHOPEE_ESCROW_CONCURRENCY || 0);
+  const envDelayMs = Number(process.env.SHOPEE_ESCROW_DELAY_MS || 0);
+  const concurrencyRaw = options?.concurrency ?? (Number.isFinite(envConcurrency) && envConcurrency > 0 ? envConcurrency : 5);
+  const delayRaw = options?.delayMs ?? (Number.isFinite(envDelayMs) && envDelayMs >= 0 ? envDelayMs : 200);
+  const concurrency = Math.min(20, Math.max(1, Math.floor(concurrencyRaw)));
+  const delayMs = Math.max(0, Math.floor(delayRaw));
 
-  for (let i = 0; i < orderSnList.length; i += CONCURRENCY) {
-    batches.push(orderSnList.slice(i, i + CONCURRENCY));
-  }
-
-  for (const batch of batches) {
+  for (let i = 0; i < orderSnList.length; i += concurrency) {
+    const batch = orderSnList.slice(i, i + concurrency);
     const promises = batch.map(async (orderSn) => {
       const escrow = await getShopeeEscrowDetail(orderSn);
       if (escrow) {
@@ -571,87 +579,133 @@ export async function getShopeeEscrowDetailsForOrders(
     await Promise.all(promises);
 
     // Rate limiting entre batches
-    if (batches.indexOf(batch) < batches.length - 1) {
-      await new Promise((r) => setTimeout(r, 200));
+    if (delayMs > 0 && i + concurrency < orderSnList.length) {
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
   return results;
 }
+
+function extractCityState(fullAddress: string | undefined): { city: string | null; state: string | null } {
+  if (!fullAddress) return { city: null, state: null };
+
+  const patterns = [
+    /[-,]\s*([^-,]+)\s*[-/]\s*([A-Z]{2})\s*$/i,
+    /\b([A-Za-zÀ-ÿ\s]+)\s*[-/]\s*([A-Z]{2})\s*$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = fullAddress.match(pattern);
+    if (match) {
+      return {
+        city: match[1].trim(),
+        state: match[2].toUpperCase(),
+      };
+    }
+  }
+
+  return { city: null, state: null };
+}
+
 /**
- * Fetch and save Shopee order (and its escrow details) to database
+ * Busca pedido e escrow na Shopee e salva no banco (shopee_orders).
+ * Usado pelo Force Sync.
  */
 export async function fetchAndSaveShopeeOrder(orderSn: string): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Fetch Order Details (Items, Address, etc)
-    const orders = await getShopeeOrderDetails([orderSn]);
-    if (orders.length === 0) {
+    const { shopId } = getShopeeConfig();
+
+    // 1. Fetch Basic Details to ensure we have the order record
+    // We try to fetch details even if it exists, to ensure fresh status
+    const details = await getShopeeOrderDetails([orderSn]);
+    if (!details || details.length === 0) {
       return { success: false, error: 'Pedido não encontrado na Shopee' };
     }
-    const order = orders[0];
+    const order = details[0];
 
-    // 2. Fetch Escrow Details (Financials, Affiliate Fees)
+    // 2. Fetch Escrow Details for financial data
     const escrow = await getShopeeEscrowDetail(orderSn);
 
-    // 3. Save Order to Database
-    const { error: orderError } = await (supabaseAdmin as any)
+    // 3. Merge Data
+    const { city, state } = extractCityState(order.recipient_address?.full_address);
+    const orderIncome = (order as any).order_income || {}; // Details might have it?
+
+    // Escrow data overrides or fills blanks
+    let orderSellingPrice = (orderIncome as any).order_selling_price || 0;
+    let orderDiscountedPrice = (orderIncome as any).order_discounted_price || 0;
+    let sellerDiscount = (orderIncome as any).seller_discount || 0;
+    let escrowAmount = (orderIncome as any).escrow_amount || 0;
+    let voucherFromSeller = (orderIncome as any).voucher_from_seller || 0;
+    let voucherFromShopee = (orderIncome as any).voucher_from_shopee || 0;
+    let commissionFee = (orderIncome as any).commission_fee || 0;
+    let serviceFee = (orderIncome as any).service_fee || 0;
+    let amsCommissionFee = (orderIncome as any).order_ams_commission_fee || 0;
+    let actualShippingFee = (orderIncome as any).actual_shipping_fee || 0;
+
+    if (escrow) {
+      orderSellingPrice = escrow.order_selling_price || orderSellingPrice;
+      orderDiscountedPrice = escrow.order_discounted_price || orderDiscountedPrice;
+      sellerDiscount = escrow.seller_discount || sellerDiscount;
+      escrowAmount = escrow.escrow_amount || escrowAmount;
+      voucherFromSeller = escrow.voucher_from_seller || voucherFromSeller;
+      voucherFromShopee = escrow.voucher_from_shopee || voucherFromShopee;
+      commissionFee = escrow.commission_fee || commissionFee;
+      serviceFee = escrow.service_fee || serviceFee;
+      amsCommissionFee = escrow.ams_commission_fee || amsCommissionFee;
+      actualShippingFee = escrow.actual_shipping_fee || actualShippingFee;
+    }
+
+    const orderDiscounted = Number(orderDiscountedPrice || order.total_amount || 0) || 0;
+    // buyer_total_amount isn't strictly in ShopeeOrder type but might be in raw payload. 
+    // We'll use order.total_amount as fallback.
+
+    // 4. Upsert to DB
+    const { error: upsertError } = await supabaseAdmin
       .from('shopee_orders')
       .upsert({
         order_sn: order.order_sn,
+        shop_id: parseInt(shopId, 10),
         order_status: order.order_status,
-        total_amount: order.total_amount,
-        shipping_carrier: order.shipping_carrier,
         create_time: new Date(order.create_time * 1000).toISOString(),
-        buyer_user_id: (order as any).buyer_user_id,
-        // Escrow fields
-        voucher_from_seller: escrow?.voucher_from_seller,
-        voucher_from_shopee: escrow?.voucher_from_shopee,
-        seller_voucher_code: escrow?.seller_voucher_code?.[0], // Store first code?
-        ams_commission_fee: escrow?.ams_commission_fee,
-        order_selling_price: escrow?.order_selling_price,
-        order_discounted_price: escrow?.order_discounted_price,
-        seller_discount: escrow?.seller_discount,
-        escrow_amount: escrow?.escrow_amount,
-        updated_at: new Date().toISOString(),
-      });
+        update_time: new Date(order.update_time * 1000).toISOString(),
+        currency: order.currency || 'BRL',
+        total_amount: parseFloat(order.total_amount) || 0,
+        shipping_carrier: order.shipping_carrier || null,
+        cod: order.cod || false,
+        // buyer_user_id not directly available in minimal ShopeeOrder type unless we cast
+        // assuming generic mapping for now
+        recipient_name: order.recipient_address?.name || null,
+        recipient_phone: order.recipient_address?.phone || null,
+        recipient_full_address: order.recipient_address?.full_address || null,
+        recipient_city: city,
+        recipient_state: state,
+        raw_payload: order as any,
 
-    if (orderError) {
-      console.error('[Shopee Sync] Error saving order:', orderError);
-      return { success: false, error: 'Erro ao salvar pedido no banco' };
-    }
+        // Financials
+        order_selling_price: orderSellingPrice,
+        order_discounted_price: orderDiscountedPrice,
+        seller_discount: sellerDiscount,
+        escrow_amount: escrowAmount,
+        voucher_from_seller: voucherFromSeller,
+        voucher_from_shopee: voucherFromShopee,
+        commission_fee: commissionFee,
+        service_fee: serviceFee,
+        ams_commission_fee: amsCommissionFee,
+        actual_shipping_fee: actualShippingFee,
 
-    // 4. Save Items
-    if (order.order_items && order.order_items.length > 0) {
-      const itemsToSave = order.order_items.map((item: any) => ({
-        order_sn: order.order_sn,
-        item_id: item.item_id,
-        item_name: item.item_name,
-        item_sku: item.item_sku,
-        model_id: item.model_id,
-        model_name: item.model_name,
-        model_sku: item.model_sku,
-        image_url: item.image_info?.image_url,
-        quantity: item.model_quantity_purchased,
-        original_price: item.model_original_price,
-        discounted_price: item.model_discounted_price,
-      }));
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'order_sn' });
 
-      // Delete existing items first to avoid duplicates/stale data
-      await (supabaseAdmin as any).from('shopee_order_items').delete().eq('order_sn', order.order_sn);
-
-      const { error: itemsError } = await (supabaseAdmin as any)
-        .from('shopee_order_items')
-        .insert(itemsToSave);
-
-      if (itemsError) {
-        console.error('[Shopee Sync] Error saving items:', itemsError);
-        // Don't fail the whole sync for items, but log it
-      }
+    if (upsertError) {
+      console.error('[ShopeeClient] Error saving order:', upsertError);
+      return { success: false, error: upsertError.message };
     }
 
     return { success: true };
-  } catch (error: any) {
-    console.error('[Shopee Sync] Critical error:', error);
-    return { success: false, error: error.message };
+
+  } catch (err: any) {
+    console.error('[ShopeeClient] Error in fetchAndSaveShopeeOrder:', err);
+    return { success: false, error: err.message };
   }
 }

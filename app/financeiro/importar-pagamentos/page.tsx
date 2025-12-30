@@ -1,5 +1,8 @@
 'use client';
 
+import { forceSyncOrder } from '@/app/financeiro/actions';
+
+
 import { useState, useEffect, useMemo } from 'react';
 import { CheckCircle, AlertCircle, Loader2, ArrowLeft, ArrowRight, Settings, Link as LinkIcon } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -9,13 +12,14 @@ import ManualLinkModal from '../fluxo-caixa/components/ManualLinkModal';
 import EditTagsModal from '../fluxo-caixa/components/EditTagsModal';
 import RulesManager from '../fluxo-caixa/components/RulesManager';
 import { cn } from '@/lib/utils';
+import type { AutoRule } from '@/lib/rules';
 
-// New components
 import { FileUploadZone } from './components/FileUploadZone';
 import { ImportStepper, type StepperStep } from './components/ImportStepper';
 import { MarketplaceSelector, getMarketplaceConfig, type Marketplace } from './components/MarketplaceSelector';
 import { ImportHistory, type ImportHistoryItem } from './components/ImportHistory';
 import { ImportCalendar, type ImportedDate } from './components/ImportCalendar';
+import { SyncBanner } from './components/SyncBanner';
 
 type ImportStep = 'upload' | 'preview' | 'complete';
 
@@ -56,6 +60,8 @@ export default function ImportarPagamentosPage() {
     const [history, setHistory] = useState<ImportHistoryItem[]>([]);
     const [showManualLinkModal, setShowManualLinkModal] = useState(false);
     const [showEditTagsModal, setShowEditTagsModal] = useState(false);
+    const [syncKey, setSyncKey] = useState(0); // Key to reset sync banner
+    const [syncCompleted, setSyncCompleted] = useState(false); // Prevents sync loop after completion
     const [selectedPayment, setSelectedPayment] = useState<PreviewPayment | null>(null);
     const [ruleFeedback, setRuleFeedback] = useState<{ message: string; count: number } | null>(null);
 
@@ -99,6 +105,7 @@ export default function ImportarPagamentosPage() {
     const handleFileSelect = (selectedFile: File | null) => {
         setFile(selectedFile);
         setPreviewData(null); // Clear any previous errors
+        setSyncCompleted(false); // Reset sync state for new file
     };
 
     const handleMarketplaceChange = (newMarketplace: Marketplace) => {
@@ -361,11 +368,131 @@ export default function ImportarPagamentosPage() {
         setShowEditTagsModal(false);
     };
 
+    const handleForceSync = async (payment: PreviewPayment) => {
+        if (!payment.marketplaceOrderId) return;
+
+        try {
+            console.log(`Syncing order ${payment.marketplaceOrderId}...`);
+            await forceSyncOrder(payment.marketplaceOrderId, marketplace);
+
+            // Re-run preview logic to refresh data locally if needed, 
+            // or just assume revalidatePath handled it and trigger a re-render
+            // Since preview data is state-based (previewData), we technically need to refresh it.
+            // But revalidatePath only refreshes server components or data fetches.
+            // Our preview data came from a file upload (POST). 
+            // To update the *preview* table, we might need to re-fetch the 'link' info for this specific item?
+            // Actually, simply re-running handlePreview() might be heavy if file is large.
+            // A lighter way is to update the specific payment in state with new tinyOrderInfo.
+            // For now, let's try just notifying. 
+            // BUT: The user wants to see the data appear. 
+            // The table displays `payment.tinyOrderInfo`. This comes from `preview/route.ts` which queried the DB.
+            // If DB updated, we need to re-fetch that info.
+
+            // Let's rely on re-running handlePreview for correctness, assuming file is in state `file`.
+            if (file) {
+                await handlePreview();
+            } else {
+                alert('Pedido sincronizado com Tiny! Por favor, re-importe o arquivo para ver os dados atualizados.');
+            }
+
+        } catch (error) {
+            console.error('Error syncing order:', error);
+            alert('Erro ao sincronizar pedido. Verifique o console.');
+        }
+    };
+
+    const handleBulkApplyRules = (matches: { paymentId: string; rule: AutoRule }[]) => {
+        if (!previewData) return;
+
+        const updatedPayments = previewData.payments.map(p => {
+            const match = matches.find(m => m.paymentId === p.marketplaceOrderId);
+            if (match) {
+                const { rule } = match;
+                const updatedP = { ...p };
+
+                // Track applied rule
+                const newMatchedRules = [...(updatedP.matchedRuleNames || [])];
+                if (!newMatchedRules.includes(rule.name)) {
+                    newMatchedRules.push(rule.name);
+                }
+                updatedP.matchedRuleNames = newMatchedRules;
+
+                // Apply actions
+                rule.actions.forEach(action => {
+                    if (action.type === 'add_tags') {
+                        const tagsToAdd = action.tags || [];
+                        updatedP.tags = [...new Set([...(updatedP.tags || []), ...tagsToAdd])];
+                    }
+                    else if (action.type === 'set_type') {
+                        if (action.transactionType) updatedP.transactionType = action.transactionType;
+                    }
+                    else if (action.type === 'set_category') {
+                        if (action.category) {
+                            updatedP.expenseCategory = action.category;
+                            updatedP.isExpense = true;
+                        }
+                    }
+                    else if (action.type === 'set_description') {
+                        if (action.description) updatedP.transactionDescription = action.description;
+                    }
+                });
+
+                return updatedP;
+            }
+            return p;
+        });
+
+        setPreviewData({ ...previewData, payments: updatedPayments });
+
+        setRuleFeedback({
+            message: `✅ ${matches.length} regras aplicadas com sucesso`,
+            count: matches.length
+        });
+        setTimeout(() => setRuleFeedback(null), 3000);
+    };
+
+
+
     const handleStartOver = () => {
         setStep('upload');
         setFile(null);
         setPreviewData(null);
         setConfirmResult(null);
+    };
+
+    // Get unique unlinked orders for batch sync
+    const unmatchedOrders = useMemo(() => {
+        if (!previewData) return [];
+
+        // Filter to only unlinked orders, get unique base IDs
+        const seen = new Set<string>();
+        return previewData.payments
+            .filter(p => p.matchStatus === 'unmatched')
+            .filter(p => {
+                // Extract base order ID (remove suffixes)
+                const baseId = p.marketplaceOrderId
+                    .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+                if (seen.has(baseId)) return false;
+                seen.add(baseId);
+                return true;
+            })
+            .map(p => ({
+                marketplaceOrderId: p.marketplaceOrderId,
+                marketplace: previewData.marketplace,
+            }));
+    }, [previewData]);
+
+    const handleSyncComplete = async () => {
+        console.log('[ImportarPagamentos] Sync complete, refreshing preview...');
+        // Mark sync as completed to prevent loop
+        setSyncCompleted(true);
+        // Re-run preview to refresh the data
+        if (file) {
+            await handlePreview();
+            console.log('[ImportarPagamentos] Preview refresh complete');
+        } else {
+            console.warn('[ImportarPagamentos] No file available for preview refresh');
+        }
     };
 
     const marketplaceConfig = getMarketplaceConfig(marketplace);
@@ -576,16 +703,28 @@ export default function ImportarPagamentosPage() {
                                         </div>
                                     )}
 
+                                    {/* Auto-Sync Banner - only show if sync hasn't completed yet */}
+                                    {!syncCompleted && unmatchedOrders.length > 0 && (
+                                        <SyncBanner
+                                            key={syncKey}
+                                            orders={unmatchedOrders}
+                                            onComplete={handleSyncComplete}
+                                            autoStart={true}
+                                        />
+                                    )}
+
                                     <PaymentPreviewTable
                                         payments={previewData.payments}
                                         marketplace={previewData.marketplace}
                                         onManualLink={handleManualLink}
                                         onEditTags={handleEditTags}
+                                        onForceSync={handleForceSync}
+                                        onBulkApplyRules={handleBulkApplyRules}
                                     />
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center justify-between flex-wrap gap-4">
                                     <button
                                         onClick={handleStartOver}
                                         className="app-btn-secondary inline-flex items-center gap-2"
@@ -593,23 +732,26 @@ export default function ImportarPagamentosPage() {
                                         <ArrowLeft className="w-4 h-4" />
                                         Cancelar
                                     </button>
-                                    <button
-                                        onClick={handleConfirmImport}
-                                        disabled={confirming}
-                                        className="app-btn-primary inline-flex items-center gap-2"
-                                    >
-                                        {confirming ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Importando...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <CheckCircle className="w-4 h-4" />
-                                                Confirmar Importação ({previewData.summary.total} pagamentos)
-                                            </>
-                                        )}
-                                    </button>
+
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={handleConfirmImport}
+                                            disabled={confirming}
+                                            className="app-btn-primary inline-flex items-center gap-2"
+                                        >
+                                            {confirming ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Importando...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircle className="w-4 h-4" />
+                                                    Confirmar Importação ({previewData.summary.total} pagamentos)
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -697,6 +839,6 @@ export default function ImportarPagamentosPage() {
                     </>
                 )}
             </div>
-        </AppLayout>
+        </AppLayout >
     );
 }

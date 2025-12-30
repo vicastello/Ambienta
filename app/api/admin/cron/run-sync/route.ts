@@ -2,13 +2,15 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { callInternalJson } from '@/lib/internalApi';
 import { getErrorMessage } from '@/lib/errors';
+import { getAccessTokenFromDbOrRefresh } from '@/lib/tinyAuth';
+import { listarPedidosTinyPorPeriodo } from '@/lib/tinyApi';
 import {
   getSyncSettings,
   normalizeCronSettings,
 } from '@/src/repositories/syncRepository';
 import type { Database, Json } from '@/src/types/db-public';
 
-type StepName = 'orders' | 'enrich' | 'produtos';
+type StepName = 'orders' | 'returns' | 'enrich' | 'produtos';
 type StepResult = {
   name: StepName;
   ok: boolean;
@@ -61,6 +63,157 @@ type ProdutosSyncCronResponse = {
 };
 
 export const maxDuration = 300;
+const RETURNS_TAG_NAME = 'devolucao';
+const DEFAULT_RETURNS_MARKER = 'devolvido';
+const RETURNS_PAGE_LIMIT = 100;
+const RETURNS_DELAY_MS = 650;
+const RETURNS_CHUNK_SIZE = 200;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toChunks = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+};
+
+const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+async function ensureReturnsTag() {
+  const { data, error } = await supabaseAdmin
+    .from('available_tags')
+    .select('id')
+    .eq('name', RETURNS_TAG_NAME)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[run-sync] Erro ao buscar available_tags', error);
+    return;
+  }
+
+  if (!data) {
+    const { error: insertError } = await supabaseAdmin
+      .from('available_tags')
+      .insert({ name: RETURNS_TAG_NAME, color: '#f97316', usage_count: 0 });
+
+    if (insertError) {
+      console.error('[run-sync] Erro ao criar tag devolucao', insertError);
+    }
+  }
+}
+
+async function tagTinyReturns(diasRecentes: number) {
+  const markerEnv = process.env.TINY_RETURNS_MARKER ?? DEFAULT_RETURNS_MARKER;
+  const markers = markerEnv
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (markers.length === 0) {
+    return { tagged: 0, matched: 0, skipped: true };
+  }
+
+  await ensureReturnsTag();
+
+  const accessToken = await getAccessTokenFromDbOrRefresh();
+
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - Math.max(1, diasRecentes));
+
+  const dataInicial = formatDate(startDate);
+  const dataFinal = formatDate(endDate);
+
+  let offset = 0;
+  let matchedTinyIds: number[] = [];
+  let totalFetched = 0;
+
+  while (true) {
+    const page = await listarPedidosTinyPorPeriodo(
+      accessToken,
+      {
+        dataInicial,
+        dataFinal,
+        limit: RETURNS_PAGE_LIMIT,
+        offset,
+        orderBy: 'desc',
+        marcadores: markers,
+        fields: 'valorFrete,valorTotalPedido,valorTotalProdutos,valorDesconto,valorOutrasDespesas,transportador',
+      },
+      'cron_tiny_returns'
+    );
+
+    const items = page.itens ?? [];
+    if (items.length === 0) {
+      break;
+    }
+
+    totalFetched += items.length;
+    matchedTinyIds.push(
+      ...items.map((item) => (typeof item.id === 'number' ? item.id : null)).filter(Boolean)
+    );
+
+    if (items.length < RETURNS_PAGE_LIMIT) {
+      break;
+    }
+
+    offset += RETURNS_PAGE_LIMIT;
+    await sleep(RETURNS_DELAY_MS);
+  }
+
+  matchedTinyIds = [...new Set(matchedTinyIds)];
+
+  if (matchedTinyIds.length === 0) {
+    return { tagged: 0, matched: 0, fetched: totalFetched };
+  }
+
+  const orderIdMap = new Map<number, number>();
+  for (const chunk of toChunks(matchedTinyIds, RETURNS_CHUNK_SIZE)) {
+    const { data: orders, error } = await supabaseAdmin
+      .from('tiny_orders')
+      .select('id, tiny_id')
+      .in('tiny_id', chunk);
+
+    if (error) {
+      console.error('[run-sync] Erro ao buscar tiny_orders', error);
+      continue;
+    }
+
+    orders?.forEach((order) => {
+      if (order.tiny_id) {
+        orderIdMap.set(order.tiny_id, order.id);
+      }
+    });
+  }
+
+  const rows = matchedTinyIds
+    .map((tinyId) => orderIdMap.get(tinyId))
+    .filter((orderId): orderId is number => typeof orderId === 'number')
+    .map((orderId) => ({ order_id: orderId, tag_name: RETURNS_TAG_NAME }));
+
+  let inserted = 0;
+  for (const chunk of toChunks(rows, RETURNS_CHUNK_SIZE)) {
+    const { error: insertError } = await supabaseAdmin
+      .from('order_tags')
+      .upsert(chunk, { onConflict: 'order_id,tag_name' });
+
+    if (insertError) {
+      console.error('[run-sync] Erro ao inserir order_tags devolucao', insertError);
+    } else {
+      inserted += chunk.length;
+    }
+  }
+
+  return {
+    tagged: inserted,
+    matched: matchedTinyIds.length,
+    fetched: totalFetched,
+    markers,
+    range: { dataInicial, dataFinal },
+  };
+}
 
 async function logStep(step: StepName, status: 'ok' | 'error', message: string, meta?: LogMeta) {
   const metaPayload = { step, status, ...(meta ?? {}) };
@@ -182,6 +335,32 @@ export async function POST(req: Request) {
       error: detail,
     });
     return NextResponse.json({ ok: false, steps }, { status: 500 });
+  }
+
+  try {
+    const returnsResult = await tagTinyReturns(diasRecentes);
+    const returnsStep: StepResult = {
+      name: 'returns',
+      ok: true,
+      processed: returnsResult.tagged,
+      detail: 'marcadores Tiny',
+      meta: returnsResult,
+    };
+    steps.push(returnsStep);
+    await logStep('returns', 'ok', 'Tags de devolucao sincronizadas', {
+      diasRecentes,
+      result: returnsResult,
+      processed: returnsResult.tagged,
+    });
+  } catch (error: unknown) {
+    const detail = formatErrorDetail(error, 'Erro ao sincronizar tags de devolucao');
+    const failedStep: StepResult = { name: 'returns', ok: false, detail };
+    steps.push(failedStep);
+    partial = true;
+    await logStep('returns', 'error', 'Falha ao sincronizar tags de devolucao', {
+      diasRecentes,
+      error: detail,
+    });
   }
 
   if (enrichEnabled) {

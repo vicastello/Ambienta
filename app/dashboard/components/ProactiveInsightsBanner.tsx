@@ -8,8 +8,10 @@ import {
     Lightbulb,
     X,
     ChevronRight,
+    ChevronLeft,
     Sparkles,
     RefreshCw,
+    Zap,
 } from 'lucide-react';
 import type { ProactiveInsight, InsightType, InsightPriority } from '@/lib/ai/proactive-insights';
 
@@ -28,18 +30,31 @@ const ICON_MAP: Record<InsightType, typeof AlertTriangle> = {
     risk: AlertTriangle,
 };
 
-const PRIORITY_COLORS: Record<InsightPriority, string> = {
-    critical: 'bg-red-500/20 border-red-500/40 text-red-300',
-    high: 'bg-orange-500/20 border-orange-500/40 text-orange-300',
-    medium: 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300',
-    low: 'bg-blue-500/20 border-blue-500/40 text-blue-300',
-};
-
-const PRIORITY_ICON_COLORS: Record<InsightPriority, string> = {
-    critical: 'text-red-400',
-    high: 'text-orange-400',
-    medium: 'text-yellow-400',
-    low: 'text-blue-400',
+const PRIORITY_STYLES: Record<InsightPriority, { bg: string; border: string; text: string; icon: string }> = {
+    critical: {
+        bg: 'bg-gradient-to-r from-red-500/20 to-red-500/10',
+        border: 'border-red-500/30',
+        text: 'text-red-200',
+        icon: 'text-red-400',
+    },
+    high: {
+        bg: 'bg-gradient-to-r from-orange-500/20 to-orange-500/10',
+        border: 'border-orange-500/30',
+        text: 'text-orange-200',
+        icon: 'text-orange-400',
+    },
+    medium: {
+        bg: 'bg-gradient-to-r from-yellow-500/15 to-yellow-500/5',
+        border: 'border-yellow-500/25',
+        text: 'text-yellow-200',
+        icon: 'text-yellow-400',
+    },
+    low: {
+        bg: 'bg-gradient-to-r from-blue-500/15 to-blue-500/5',
+        border: 'border-blue-500/25',
+        text: 'text-blue-200',
+        icon: 'text-blue-400',
+    },
 };
 
 export function ProactiveInsightsBanner({
@@ -50,11 +65,13 @@ export function ProactiveInsightsBanner({
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const [isLoading, setIsLoading] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [hasAttempted, setHasAttempted] = useState(false);
 
     const fetchInsights = useCallback(async () => {
         if (!dashboardData) return;
 
         setIsLoading(true);
+        setHasAttempted(true);
         try {
             const response = await fetch('/api/ai/proactive', {
                 method: 'POST',
@@ -75,12 +92,13 @@ export function ProactiveInsightsBanner({
     }, [dashboardData]);
 
     useEffect(() => {
-        fetchInsights();
-    }, [fetchInsights]);
+        if (dashboardData && !hasAttempted) {
+            fetchInsights();
+        }
+    }, [dashboardData, hasAttempted, fetchInsights]);
 
     const handleDismiss = (id: string) => {
         setDismissedIds(prev => new Set([...prev, id]));
-        // Move to next insight
         if (currentIndex < visibleInsights.length - 1) {
             setCurrentIndex(prev => prev + 1);
         } else if (currentIndex > 0) {
@@ -91,41 +109,68 @@ export function ProactiveInsightsBanner({
     const visibleInsights = insights.filter(i => !dismissedIds.has(i.id));
     const currentInsight = visibleInsights[currentIndex];
 
+    // Loading state while fetching
+    if (isLoading && insights.length === 0) {
+        return (
+            <div className={`relative ${className}`}>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-accent/20 bg-accent/5 animate-pulse">
+                    <Zap size={18} className="text-accent animate-pulse" />
+                    <span className="text-sm text-muted">Analisando insights...</span>
+                </div>
+            </div>
+        );
+    }
+
+    // No insights or all dismissed
     if (!currentInsight || visibleInsights.length === 0) {
-        return null;
+        // Don't show anything if no insights after analysis
+        if (hasAttempted) return null;
+
+        // Waiting for data
+        return (
+            <div className={`relative ${className}`}>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/5 bg-white/5">
+                    <Sparkles size={18} className="text-muted" />
+                    <span className="text-sm text-muted">Aguardando dados para análise...</span>
+                </div>
+            </div>
+        );
     }
 
     const Icon = ICON_MAP[currentInsight.type] || Lightbulb;
-    const priorityClass = PRIORITY_COLORS[currentInsight.priority];
-    const iconColor = PRIORITY_ICON_COLORS[currentInsight.priority];
+    const style = PRIORITY_STYLES[currentInsight.priority];
 
     return (
         <div className={`relative ${className}`}>
             <div
                 className={`
-          flex items-center gap-3 px-4 py-3 rounded-xl border
-          ${priorityClass}
-          transition-all duration-300
-        `}
+                    relative flex items-center gap-3 px-4 py-3 rounded-xl border
+                    ${style.bg} ${style.border}
+                    transition-all duration-300 animate-fade-scale
+                    overflow-hidden
+                `}
             >
+                {/* Glow line */}
+                <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-current to-transparent ${style.icon} opacity-30`} />
+
                 {/* Icon */}
-                <div className={`flex-shrink-0 ${iconColor}`}>
-                    <Icon size={20} />
+                <div className={`flex-shrink-0 p-2 rounded-lg bg-black/20 ${style.icon}`}>
+                    <Icon size={18} />
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">
+                        <span className={`font-medium text-sm truncate ${style.text}`}>
                             {currentInsight.title}
                         </span>
                         {currentInsight.metric?.change != null && (
-                            <span className={`text-xs font-mono ${currentInsight.metric.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            <span className={`text-xs font-mono px-2 py-0.5 rounded-full ${currentInsight.metric.change >= 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
                                 {currentInsight.metric.change >= 0 ? '+' : ''}{currentInsight.metric.change.toFixed(1)}%
                             </span>
                         )}
                     </div>
-                    <p className="text-xs text-white/70 truncate mt-0.5">
+                    <p className="text-xs text-white/60 truncate mt-0.5">
                         {currentInsight.body}
                     </p>
                 </div>
@@ -133,15 +178,22 @@ export function ProactiveInsightsBanner({
                 {/* Navigation */}
                 {visibleInsights.length > 1 && (
                     <div className="flex items-center gap-1 flex-shrink-0">
-                        <span className="text-xs text-white/50">
+                        <button
+                            onClick={() => setCurrentIndex(prev => (prev - 1 + visibleInsights.length) % visibleInsights.length)}
+                            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                            aria-label="Anterior"
+                        >
+                            <ChevronLeft size={16} className="text-white/50" />
+                        </button>
+                        <span className="text-xs text-white/40 tabular-nums min-w-[2rem] text-center">
                             {currentIndex + 1}/{visibleInsights.length}
                         </span>
                         <button
                             onClick={() => setCurrentIndex(prev => (prev + 1) % visibleInsights.length)}
-                            className="p-1 hover:bg-white/10 rounded-md transition-colors"
-                            aria-label="Próximo insight"
+                            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                            aria-label="Próximo"
                         >
-                            <ChevronRight size={16} />
+                            <ChevronRight size={16} className="text-white/50" />
                         </button>
                     </div>
                 )}
@@ -150,7 +202,7 @@ export function ProactiveInsightsBanner({
                 {currentInsight.action && (
                     <a
                         href={currentInsight.action.href}
-                        className="flex-shrink-0 text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                        className="flex-shrink-0 text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors font-medium"
                     >
                         {currentInsight.action.label}
                     </a>
@@ -159,19 +211,19 @@ export function ProactiveInsightsBanner({
                 {/* Dismiss */}
                 <button
                     onClick={() => handleDismiss(currentInsight.id)}
-                    className="flex-shrink-0 p-1 hover:bg-white/10 rounded-md transition-colors"
+                    className="flex-shrink-0 p-1.5 hover:bg-white/10 rounded-lg transition-colors"
                     aria-label="Dispensar"
                 >
-                    <X size={16} />
+                    <X size={16} className="text-white/40" />
                 </button>
-            </div>
 
-            {/* Refresh indicator */}
-            {isLoading && (
-                <div className="absolute top-1 right-1">
-                    <RefreshCw size={12} className="animate-spin text-white/30" />
-                </div>
-            )}
+                {/* Refresh indicator */}
+                {isLoading && (
+                    <div className="absolute top-2 right-2">
+                        <RefreshCw size={10} className="animate-spin text-white/20" />
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -206,13 +258,13 @@ export function ProactiveInsightsPill({
         <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={`
-        flex items-center gap-2 px-3 py-1.5 rounded-full text-sm
-        transition-all duration-200
-        ${criticalCount > 0
+                flex items-center gap-2 px-3 py-1.5 rounded-full text-sm
+                transition-all duration-200
+                ${criticalCount > 0
                     ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30'
                     : 'bg-accent/20 text-accent hover:bg-accent/30'
                 }
-      `}
+            `}
         >
             <Sparkles size={14} />
             <span>{insights.length} insight{insights.length > 1 ? 's' : ''}</span>

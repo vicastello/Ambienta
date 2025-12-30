@@ -1,6 +1,7 @@
 // app/api/dashboard/fluxo-caixa/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { jsonWithCache } from '@/src/lib/httpCache';
 
 /**
  * Endpoint para métricas de Fluxo de Caixa
@@ -27,11 +28,12 @@ export async function GET(request: NextRequest) {
         // Buscar pedidos faturados (situação 1) - A RECEBER
         const { data: pedidosFaturados, error: errorFaturados } = await supabaseAdmin
             .from('tiny_orders')
-            .select('id, tiny_id, valor, data_criacao, canal, raw')
+            .select('id, tiny_id, valor, data_criacao, canal, cliente_nome')
             .eq('situacao', 1) // Faturado
             .gte('data_criacao', dataInicial)
             .lte('data_criacao', dataFinal)
-            .order('data_criacao', { ascending: true });
+            .order('data_criacao', { ascending: true })
+            .limit(500);
 
         if (errorFaturados) {
             console.error('[FluxoCaixa] Erro ao buscar faturados:', errorFaturados);
@@ -70,9 +72,8 @@ export async function GET(request: NextRequest) {
                 aReceberProximos30dias += valor;
             }
 
-            // Cliente do raw
-            const raw = pedido.raw as any;
-            const cliente = raw?.pedido?.cliente?.nome || raw?.cliente?.nome || 'Cliente não identificado';
+            // Cliente direto da coluna (antes: extraído do raw)
+            const cliente = (pedido as any).cliente_nome || 'Cliente não identificado';
 
             pedidosDetalhados.push({
                 id: pedido.id,
@@ -137,7 +138,7 @@ export async function GET(request: NextRequest) {
             nota: "💡 Valores 'A Pagar' estimados em 20% da receita. Configure custos reais para maior precisão.",
         };
 
-        return NextResponse.json(response);
+        return jsonWithCache(response, 60, 300); // Cache 60s, stale-while-revalidate 5min
     } catch (error) {
         console.error('[FluxoCaixa] Erro inesperado:', error);
         return NextResponse.json(

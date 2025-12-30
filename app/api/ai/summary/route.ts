@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getErrorMessage } from '@/lib/errors';
-import { GroqClient } from '@/lib/ai/groq-client';
+import { createOpenAICompatibleClient, resolveAiRuntimeConfig } from '@/lib/ai/ai-runtime';
 import { buildDashboardContext, truncateContext } from '@/lib/ai/context-builder';
 import { buildDashboardContextPrompt } from '@/lib/ai/prompts/system-prompt';
 
@@ -15,8 +15,6 @@ interface ExecutiveSummary {
     recommendation: string;
     generatedAt: string;
 }
-
-const groq = new GroqClient();
 
 const SUMMARY_SYSTEM_PROMPT = `Você é um analista de e-commerce da Ambienta.
 Gere um resumo executivo CONCISO dos dados abaixo.
@@ -39,12 +37,14 @@ Regras:
 
 export async function POST(req: NextRequest): Promise<NextResponse<{ data: ExecutiveSummary } | { message: string; details?: string }>> {
     try {
-        if (!groq.isConfigured()) {
+        const runtime = await resolveAiRuntimeConfig();
+        if (!runtime.apiKey) {
             return NextResponse.json(
-                { message: 'GROQ_API_KEY não configurada' },
+                { message: 'IA não configurada. Configure as chaves em /configuracoes.' },
                 { status: 500 }
             );
         }
+        const aiClient = createOpenAICompatibleClient(runtime);
 
         const body = await req.json().catch(() => null) as SummaryRequest | null;
 
@@ -59,13 +59,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<{ data: Execu
         const truncated = truncateContext(context, 1500);
         const contextPrompt = buildDashboardContextPrompt(truncated);
 
-        const response = await groq.chat({
+        const response = await aiClient.chat({
             messages: [
                 { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
                 { role: 'user', content: contextPrompt },
             ],
-            temperature: 0.5,
-            maxTokens: 400,
+            model: runtime.modelQuick,
+            temperature: Math.min(runtime.temperature, 0.6),
+            maxTokens: Math.max(runtime.maxTokens, 400),
         });
 
         // Parse JSON response

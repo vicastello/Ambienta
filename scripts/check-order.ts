@@ -28,7 +28,7 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function main() {
-    const orderSn = '251211491BC33U';
+    const orderSn = '250119TRFA9K1J';
 
     console.log('='.repeat(60));
     console.log(`Verificando dados de escrow para: ${orderSn}`);
@@ -51,9 +51,12 @@ async function main() {
     console.log('  Total Amount:', order.total_amount);
     console.log('  Status:', order.order_status);
 
-    console.log('\n� DADOS DE ESCROW:');
+    console.log('\n💰 DADOS DE ESCROW:');
     console.log('  Voucher do Vendedor:', order.voucher_from_seller ?? 'não disponível');
     console.log('  Voucher da Shopee:', order.voucher_from_shopee ?? 'não disponível');
+    console.log('  AMS Commission Fee:', order.ams_commission_fee ?? 'não disponível');
+    console.log('  Commission Fee:', order.commission_fee ?? 'não disponível');
+    console.log('  Service Fee:', order.service_fee ?? 'não disponível');
     console.log('  Seller Voucher Codes:', order.seller_voucher_code ?? []);
     console.log('  Escrow Amount:', order.escrow_amount ?? 'não disponível');
     console.log('  Escrow Fetched At:', order.escrow_fetched_at ?? 'não buscado ainda');
@@ -76,11 +79,26 @@ async function main() {
 
     // Calcular diferença
     if (order.voucher_from_seller !== null) {
-        console.log('\n� ANÁLISE:');
+        console.log('\n🔍 ANÁLISE:');
         const itemValue = items?.reduce((sum: number, item: any) => sum + (item.discounted_price * item.quantity), 0) || 0;
         console.log(`  Valor dos Itens (discounted_price): R$ ${itemValue.toFixed(2)}`);
         console.log(`  Valor que você perde (voucher_from_seller): R$ ${order.voucher_from_seller ?? 0}`);
         console.log(`  Valor base para taxas: R$ ${(itemValue - (order.voucher_from_seller ?? 0)).toFixed(2)}`);
+    }
+
+    // Check Link
+    const { data: link } = await supabase
+        .from('marketplace_order_links')
+        .select('*')
+        .eq('marketplace_order_id', orderSn)
+        .eq('marketplace', 'shopee')
+        .maybeSingle();
+
+    console.log('\n🔗 LINK STATUS:');
+    if (link) {
+        console.log('  ✅ Link encontrado:', link);
+    } else {
+        console.log('  ❌ Link NÃO encontrado na tabela marketplace_order_links');
     }
 
     console.log('\n' + '='.repeat(60));

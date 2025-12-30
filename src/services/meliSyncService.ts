@@ -1,4 +1,4 @@
-import { listMeliOrders } from '@/lib/mercadoLivreClient';
+import { getMeliOrder, listMeliOrders } from '@/lib/mercadoLivreClient';
 import { upsertMeliOrderItems } from '@/src/repositories/meliOrderItemsRepository';
 import { upsertMeliOrders } from '@/src/repositories/meliOrdersRepository';
 import type { MeliOrderItemsInsert, MeliOrdersInsert } from '@/src/types/db-public';
@@ -10,6 +10,9 @@ export interface MeliSyncParams {
   periodDays: number;
   pageLimit?: number;
   pageSize?: number;
+  includeDetails?: boolean;
+  detailConcurrency?: number;
+  detailDelayMs?: number;
 }
 
 export interface MeliSyncResult {
@@ -66,6 +69,9 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
 
   const pageSize = Math.min(params.pageSize ?? 50, 50);
   const maxPages = params.pageLimit ?? 3;
+  const includeDetails = params.includeDetails ?? params.periodDays <= 7;
+  const detailConcurrency = Math.max(1, params.detailConcurrency ?? 4);
+  const detailDelayMs = Math.max(0, params.detailDelayMs ?? 200);
 
   let offset = 0;
   let page = 0;
@@ -85,53 +91,67 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
     const ordersApi = result.results ?? [];
     if (!ordersApi.length) break;
 
+    const detailsById =
+      includeDetails && ordersApi.length > 0
+        ? await fetchMeliOrderDetails(
+            ordersApi.map((order) => order.id),
+            params.accessToken,
+            detailConcurrency,
+            detailDelayMs,
+          )
+        : new Map<string, Record<string, unknown>>();
+
     const ordersInserts: MeliOrdersInsert[] = ordersApi.map((order: MeliOrder) => {
-      const buyerFirst = order.buyer?.first_name?.trim() ?? '';
-      const buyerLast = order.buyer?.last_name?.trim() ?? '';
-      const nick = order.buyer?.nickname?.trim() ?? null;
+      const detail = detailsById.get(String(order.id));
+      const source = (detail ?? order) as MeliOrder;
+      const buyerFirst = source.buyer?.first_name?.trim() ?? '';
+      const buyerLast = source.buyer?.last_name?.trim() ?? '';
+      const nick = source.buyer?.nickname?.trim() ?? null;
       const buyerFullName = `${buyerFirst} ${buyerLast}`.trim() || nick || null;
       const shippingCity =
-        (order.shipping as any)?.receiver_address?.city?.name ??
-        (order.shipping as any)?.receiver_address?.city?.id ??
+        (source.shipping as any)?.receiver_address?.city?.name ??
+        (source.shipping as any)?.receiver_address?.city?.id ??
         null;
       const shippingState =
-        (order.shipping as any)?.receiver_address?.state?.name ??
-        (order.shipping as any)?.receiver_address?.state?.id ??
+        (source.shipping as any)?.receiver_address?.state?.name ??
+        (source.shipping as any)?.receiver_address?.state?.id ??
         null;
 
       return {
-        meli_order_id: typeof order.id === 'string' ? Number(order.id) : order.id,
-        seller_id: (order as any).seller?.id ?? Number(params.sellerId),
-        status: order.status,
-        date_created: order.date_created,
+        meli_order_id: typeof source.id === 'string' ? Number(source.id) : source.id,
+        seller_id: (source as any).seller?.id ?? Number(params.sellerId),
+        status: source.status,
+        date_created: source.date_created,
         last_updated:
-          (order as any).date_last_updated ??
-          order.date_closed ??
-          order.date_created,
-        currency_id: order.currency_id,
-        total_amount: Number(order.total_amount ?? 0),
+          (source as any).date_last_updated ??
+          source.date_closed ??
+          source.date_created,
+        currency_id: source.currency_id,
+        total_amount: Number(source.total_amount ?? 0),
         total_amount_with_shipping:
-          (order as any).total_amount_with_shipping != null
-            ? Number((order as any).total_amount_with_shipping)
+          (source as any).total_amount_with_shipping != null
+            ? Number((source as any).total_amount_with_shipping)
             : null,
         shipping_cost:
-          (order as any).total_shipping != null
-            ? Number((order as any).total_shipping)
+          (source as any).total_shipping != null
+            ? Number((source as any).total_shipping)
             : null,
-        buyer_id: order.buyer?.id ?? null,
-        buyer_nickname: order.buyer?.nickname ?? null,
+        buyer_id: source.buyer?.id ?? null,
+        buyer_nickname: source.buyer?.nickname ?? null,
         buyer_full_name: buyerFullName,
-        buyer_email: order.buyer?.email ?? null,
+        buyer_email: source.buyer?.email ?? null,
         shipping_city: shippingCity,
         shipping_state: shippingState,
-        tags: (order as any).tags ?? null,
-        raw_payload: order as any,
+        tags: (source as any).tags ?? null,
+        raw_payload: (detail ?? order) as any,
       };
     });
 
     const itemsInserts: MeliOrderItemsInsert[] = [];
     for (const order of ordersApi) {
-      for (const oi of (order.order_items as MeliOrderItem[]) ?? []) {
+      const detail = detailsById.get(String(order.id));
+      const source = (detail ?? order) as MeliOrder;
+      for (const oi of (source.order_items as MeliOrderItem[]) ?? []) {
         const rawItem = oi.item;
         const pictureFromArray =
           rawItem?.pictures && rawItem.pictures.length > 0
@@ -143,7 +163,7 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
           rawItem?.thumbnail?.trim() ||
           null;
         itemsInserts.push({
-          meli_order_id: typeof order.id === 'string' ? Number(order.id) : order.id,
+          meli_order_id: typeof source.id === 'string' ? Number(source.id) : source.id,
           item_id: oi.item.id,
           title: oi.item.title,
           sku: extractMeliSku(oi),
@@ -184,4 +204,42 @@ export async function syncMeliOrdersToSupabase(params: MeliSyncParams): Promise<
     itemsUpserted: totalItemsUpserted,
     pagesFetched: page,
   };
+}
+
+async function fetchMeliOrderDetails(
+  orderIds: Array<string | number>,
+  accessToken: string,
+  concurrency: number,
+  delayMs: number,
+): Promise<Map<string, Record<string, unknown>>> {
+  const uniqueIds = Array.from(new Set(orderIds.map((id) => String(id))));
+  const results = new Map<string, Record<string, unknown>>();
+
+  for (let i = 0; i < uniqueIds.length; i += concurrency) {
+    const batch = uniqueIds.slice(i, i + concurrency);
+    const responses = await Promise.all(
+      batch.map(async (orderId) => {
+        try {
+          const data = await getMeliOrder({ orderId, accessToken });
+          return { orderId, data };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[MeliSync] Erro ao buscar detalhes do pedido ${orderId}:`, message);
+          return null;
+        }
+      }),
+    );
+
+    responses.forEach((result) => {
+      if (result?.data) {
+        results.set(String(result.orderId), result.data);
+      }
+    });
+
+    if (delayMs > 0 && i + concurrency < uniqueIds.length) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+
+  return results;
 }

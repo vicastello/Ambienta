@@ -1,8 +1,7 @@
 // app/layout.tsx
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
-import { ToastProvider } from '@/app/components/ui/Toast';
-import { Toaster } from '@/components/ui/Toaster';
+import { AppProviders } from './providers';
 import './globals.css';
 
 const inter = Inter({
@@ -54,8 +53,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/favicon.ico" />
       </head>
       <body suppressHydrationWarning>
-        <ToastProvider>{children}</ToastProvider>
-        <Toaster />
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { TODAS_SITUACOES } from '@/lib/tinyMapping';
+import { jsonWithCache } from '@/src/lib/httpCache';
 
 /**
  * Endpoint para métricas financeiras estratégicas
@@ -122,7 +123,7 @@ export async function GET(request: NextRequest) {
             nota: "💡 Valores de margem estimados com base em benchmarks de e-commerce. Configure custos reais em Configurações para cálculos precisos.",
         };
 
-        return NextResponse.json(response);
+        return jsonWithCache(response, 60, 120); // Cache 60s, stale-while-revalidate 2min
     } catch (error) {
         console.error('[Financeiro] Erro inesperado:', error);
         return NextResponse.json(

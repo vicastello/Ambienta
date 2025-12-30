@@ -17,6 +17,7 @@ export type SmartTagResult = {
     tags: string[];
     isAdjustment: boolean;
     isRefund: boolean;
+    isFreightAdjustment: boolean; // Freight/weight adjustments - don't show expected/difference
     matchedRules: string[];
 };
 
@@ -81,6 +82,7 @@ export function applySmartTags(
     const matchedRules: string[] = [];
     let isAdjustment = false;
     let isRefund = false;
+    let isFreightAdjustment = false;
 
     const normalizedDesc = normalizeText(transactionDescription);
     const normalizedType = transactionType ? normalizeText(transactionType) : '';
@@ -109,10 +111,30 @@ export function applySmartTags(
         }
     }
 
+    // Detect freight/weight FEE adjustments - these shouldn't show expected/difference
+    // Must be specific patterns about freight FEES, NOT about products lost during shipping
+    // Good: "frete de devolução", "peso diferente", "cobrança de frete"
+    // Bad: "item perdido no envio" (this is about the product, not freight fees)
+    const freightFeePatterns = [
+        /frete\s+de\s+devolu/i,           // frete de devolução
+        /devolucao.*frete/i,               // devolução...frete
+        /cobran[çc]a.*frete/i,             // cobrança de frete
+        /peso\s+diferente/i,               // peso diferente
+        /ajuste.*peso/i,                   // ajuste de peso
+        /diferen[çc]a.*peso/i,             // diferença de peso
+        /taxa.*frete/i,                    // taxa de frete
+        /tarifa.*frete/i,                  // tarifa de frete
+    ];
+
+    if (isAdjustment && freightFeePatterns.some(pattern => pattern.test(fullText))) {
+        isFreightAdjustment = true;
+    }
+
     return {
         tags: Array.from(allTags),
         isAdjustment,
         isRefund,
+        isFreightAdjustment,
         matchedRules,
     };
 }

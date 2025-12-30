@@ -19,6 +19,7 @@ type TinyOrder = {
     valor_total_pedido: number;
     data_pedido: string;
     marketplace?: string;
+    numero_pedido_ecommerce?: string;
 };
 
 type FetchResult = {
@@ -116,6 +117,7 @@ export async function fetchTinyOrderByMarketplaceId(
                         : (pedido.valorTotalPedido || 0),
                     data_pedido: pedido.dataCriacao || new Date().toISOString(),
                     marketplace: pedido.ecommerce?.canal || marketplace,
+                    numero_pedido_ecommerce: pedido.ecommerce?.numeroPedidoEcommerce || marketplaceOrderId,
                 });
             }
         }
@@ -151,8 +153,9 @@ export async function fetchTinyOrderByMarketplaceId(
  */
 export async function fetchAndSaveTinyOrder(
     marketplaceOrderId: string,
-    marketplace: string
-): Promise<{ success: boolean; tinyOrderId?: number; error?: string }> {
+    marketplace: string,
+    forceUpdate: boolean = false
+): Promise<{ success: boolean; tinyOrderId?: number; error?: string; productCount?: number }> {
     const result = await fetchTinyOrderByMarketplaceId(marketplaceOrderId, marketplace);
 
     if (result.error || result.rateLimited) {
@@ -171,36 +174,116 @@ export async function fetchAndSaveTinyOrder(
 
     const order = result.orders[0];
 
-    // Save to tiny_orders if not exists
+    // CRITICAL: Ensure numero_pedido_ecommerce is set to the marketplace ID we searched for
+    // The Tiny API may not return this field, but we need it for search to work
+    order.numero_pedido_ecommerce = order.numero_pedido_ecommerce || marketplaceOrderId;
+
+    // Check strict by tiny_id (external ID) not internal ID
     const { data: existing } = await supabaseAdmin
         .from('tiny_orders')
         .select('id')
-        .eq('id', order.id)
+        .eq('tiny_id', order.id)
         .maybeSingle();
 
-    if (!existing) {
-        const { error: insertError } = await supabaseAdmin
-            .from('tiny_orders')
-            .insert({
-                tiny_id: order.id,
-                numero_pedido: order.numero_pedido,
-                cliente_nome: order.cliente_nome,
-                valor_total_pedido: order.valor_total_pedido,
-                data_criacao: order.data_pedido,
-                canal: order.marketplace,
-            } as any);
+    // Common function to fetch product count
+    const fetchProductCount = async (tinyId: number) => {
+        try {
+            const token = await getTinyToken();
+            if (token) {
+                const { tinyGet } = await import('./tinyApi');
+                const details = await tinyGet<any>(`/pedidos/${tinyId}`, token);
+                const pedidoData = details.pedido || details;
+                if (pedidoData.itens && Array.isArray(pedidoData.itens)) {
+                    return pedidoData.itens.reduce((acc: number, curr: any) => acc + Number(curr.quantidade || 0), 0);
+                }
+            }
+        } catch (e) {
+            console.warn('[TinyClient] Failed to fetch details for product count:', e);
+        }
+        return 1; // Default
+    };
 
-        if (insertError) {
-            console.error('[TinyClient] Error saving order:', insertError);
+    if (existing) {
+        if (forceUpdate) {
+            // Update existing record
+            const { error: updateError } = await supabaseAdmin
+                .from('tiny_orders')
+                .update({
+                    numero_pedido: Number(order.numero_pedido),
+                    cliente_nome: order.cliente_nome,
+                    valor_total_pedido: order.valor_total_pedido,
+                    data_criacao: order.data_pedido,
+                    canal: order.marketplace,
+                    numero_pedido_ecommerce: order.numero_pedido_ecommerce,
+                    updated_at: new Date().toISOString(), // Update timestamp
+                    // Don't update tiny_id as it's the same
+                })
+                .eq('id', existing.id);
+
+            if (updateError) {
+                console.error('[TinyClient] Error updating order:', updateError);
+                return {
+                    success: false,
+                    error: 'Erro ao atualizar pedido no banco de dados',
+                };
+            }
+
+            // Fetch updated count
+            const count = await fetchProductCount(order.id);
+
+            // Return success with EXTERNAL Tiny ID (used by marketplace_payments FK)
             return {
-                success: false,
-                error: 'Erro ao salvar pedido no banco de dados',
+                success: true,
+                tinyOrderId: order.id, // Use external Tiny ID, not internal DB id
+                productCount: count,
             };
         }
+
+        // Return current count even if not updating
+        const count = await fetchProductCount(order.id);
+
+        // If exists and not forcing update, just return success
+        return {
+            success: true,
+            tinyOrderId: order.id, // Use external Tiny ID
+            productCount: count,
+        };
     }
+
+    // Insert if not exists
+    const { error: insertError } = await supabaseAdmin
+        .from('tiny_orders')
+        .insert({
+            tiny_id: order.id,
+            numero_pedido: Number(order.numero_pedido),
+            cliente_nome: order.cliente_nome,
+            valor_total_pedido: order.valor_total_pedido,
+            data_criacao: order.data_pedido,
+            canal: order.marketplace,
+            numero_pedido_ecommerce: order.numero_pedido_ecommerce,
+        } as any);
+
+    if (insertError) {
+        console.error('[TinyClient] Error saving order:', insertError);
+        return {
+            success: false,
+            error: 'Erro ao salvar pedido no banco de dados',
+        };
+    }
+
+    // Fetch details to get accurate product count
+    const productCount = await fetchProductCount(order.id);
+
+    // Fetch the ID of the inserted record to be safe
+    const { data: inserted } = await supabaseAdmin
+        .from('tiny_orders')
+        .select('id')
+        .eq('tiny_id', order.id)
+        .maybeSingle();
 
     return {
         success: true,
-        tinyOrderId: order.id,
+        tinyOrderId: order.id, // Use external Tiny ID (the one from Tiny API)
+        productCount,
     };
 }

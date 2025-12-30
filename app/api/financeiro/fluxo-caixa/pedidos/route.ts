@@ -243,6 +243,7 @@ export async function GET(request: NextRequest) {
                 tiny_data_faturamento,
                 cliente_nome,
                 valor_total_pedido,
+                valor_total_produtos,
                 valor,
                 situacao,
                 canal,
@@ -250,7 +251,11 @@ export async function GET(request: NextRequest) {
                 payment_received_at,
                 marketplace_payment_id,
                 marketplace_order_links (
-                    marketplace_order_id
+                    marketplace_order_id,
+                    product_count,
+                    is_kit,
+                    uses_free_shipping,
+                    is_campaign_order
                 ),
                 marketplace_payments!marketplace_payments_tiny_order_id_fkey (
                     net_amount,
@@ -274,7 +279,9 @@ export async function GET(request: NextRequest) {
             .from('tiny_orders')
             .select(`
                 valor_total_pedido, 
+                valor_total_produtos,
                 valor, 
+                numero_pedido_ecommerce,
                 payment_received, 
                 data_criacao, 
                 canal,
@@ -320,13 +327,20 @@ export async function GET(request: NextRequest) {
                     .select('net_amount, payment_date, transaction_description, transaction_type, marketplace')
                     .is('tiny_order_id', null);
 
-                // Apply filters
-                if (dataInicio) q = q.gte('payment_date', dataInicio);
-                if (dataFim) q = q.lte('payment_date', dataFim);
+                // Apply date filters ONLY if not searching (same logic as main query)
+                if (!busca) {
+                    if (dataInicio) q = q.gte('payment_date', dataInicio);
+                    if (dataFim) q = q.lte('payment_date', dataFim);
+                }
 
                 // Marketplace filter
                 if (marketplace !== 'todos') {
                     q = q.eq('marketplace', marketplace);
+                }
+
+                // Search functionality for orphans
+                if (busca) {
+                    q = q.or(`marketplace_order_id.ilike.%${busca}%,transaction_description.ilike.%${busca}%`);
                 }
 
                 return q;
@@ -341,6 +355,240 @@ export async function GET(request: NextRequest) {
             console.error('[CashFlowAPI] Summary error:', summaryRes.error);
             throw summaryRes.error;
         }
+
+        const getMarketplaceFromCanal = (
+            canal: string | null
+        ): 'shopee' | 'mercado_livre' | 'magalu' | undefined => {
+            const normalized = canal?.toLowerCase() || '';
+            if (normalized.includes('shopee')) return 'shopee';
+            if (normalized.includes('mercado') || normalized.includes('meli')) return 'mercado_livre';
+            if (normalized.includes('magalu') || normalized.includes('magazine')) return 'magalu';
+            return undefined;
+        };
+
+        const resolveTinyOrderTotal = (order: any) => {
+            const totalPedido = Number(order.valor_total_pedido || 0);
+            if (totalPedido > 0) return totalPedido;
+
+            const totalValor = Number(order.valor || 0);
+            if (totalValor > 0) return totalValor;
+
+            const totalProdutos = Number(order.valor_total_produtos || 0);
+            const totalFrete = Number(order.valor_frete || 0);
+            if (totalProdutos > 0 && totalFrete > 0) return totalProdutos + totalFrete;
+            if (totalProdutos > 0) return totalProdutos;
+
+            return 0;
+        };
+
+        const getMeliOrderId = (order: any) => {
+            const rawId = order.numero_pedido_ecommerce || order.marketplace_order_links?.[0]?.marketplace_order_id;
+            if (!rawId) return null;
+            const normalized = String(rawId).trim();
+            if (!/^\d+$/.test(normalized)) return null;
+            return Number(normalized);
+        };
+
+        const getMagaluOrderId = (order: any) => {
+            const rawId = order.marketplace_order_links?.[0]?.marketplace_order_id || order.numero_pedido_ecommerce;
+            if (!rawId) return null;
+            let normalized = String(rawId).trim();
+            if (normalized.toLowerCase().startsWith('lu-')) {
+                normalized = normalized.slice(3);
+            }
+            if (!/^\d+$/.test(normalized)) return null;
+            return normalized;
+        };
+
+        const getMeliRefundAmount = (raw: any): number => {
+            const payments = Array.isArray(raw?.payments) ? raw.payments : [];
+            const refunded = payments.reduce((sum: number, p: any) => {
+                return sum + (Number(p?.transaction_amount_refunded) || 0);
+            }, 0);
+            return refunded > 0 ? refunded : 0;
+        };
+
+        const getMagaluRefundAmount = (raw: any): number => {
+            if (!raw) return 0;
+            const orderNormalizer = Number(raw?.amounts?.normalizer) || 100;
+            const deliveries = Array.isArray(raw?.deliveries) ? raw.deliveries : [];
+            const refundedFromDeliveries = deliveries.reduce((sum: number, delivery: any) => {
+                const status = String(delivery?.status || '').toLowerCase();
+                if (status !== 'cancelled' && status !== 'canceled') return sum;
+                const normalizer = Number(delivery?.amounts?.normalizer) || orderNormalizer;
+                const total = Number(delivery?.amounts?.total) || 0;
+                if (total <= 0) return sum;
+                return sum + (total / normalizer);
+            }, 0);
+
+            if (refundedFromDeliveries > 0) {
+                return refundedFromDeliveries;
+            }
+
+            const orderStatus = String(raw?.status || '').toLowerCase();
+            if (orderStatus === 'cancelled' || orderStatus === 'canceled') {
+                const total = Number(raw?.amounts?.total) || 0;
+                return total > 0 ? total / orderNormalizer : 0;
+            }
+
+            return 0;
+        };
+
+        const getShopeeRefundAmountFromEscrow = (escrowDetail: any): number => {
+            if (!escrowDetail || typeof escrowDetail !== 'object') return 0;
+            const drcRefund = Number(escrowDetail.drc_adjustable_refund || 0);
+            if (drcRefund > 0) return drcRefund;
+            const sellerReturnRefund = Math.abs(Number(escrowDetail.seller_return_refund || 0));
+            if (sellerReturnRefund > 0) return sellerReturnRefund;
+            const buyerTotal = Number(escrowDetail.buyer_total_amount || 0);
+            const selling = Number(escrowDetail.order_selling_price || 0);
+            if (buyerTotal > 0 && buyerTotal > selling) {
+                return buyerTotal - selling;
+            }
+            return 0;
+        };
+
+        const FULL_REFUND_EPSILON = 0.01;
+        const isFullRefund = (refundAmount: number, originalValue: number) => {
+            if (!(refundAmount > 0 && originalValue > 0)) return false;
+            return refundAmount >= originalValue - FULL_REFUND_EPSILON;
+        };
+
+        const applyFullRefundOverride = (feeCalc: any) => {
+            feeCalc.commissionFee = 0;
+            feeCalc.campaignFee = 0;
+            feeCalc.fixedCost = 0;
+            feeCalc.sellerVoucher = undefined;
+            feeCalc.amsCommissionFee = undefined;
+            feeCalc.totalFees = 0;
+            feeCalc.netValue = 0;
+            if (feeCalc.breakdown) {
+                feeCalc.breakdown.fixedCostPerUnit = 0;
+                feeCalc.breakdown.units = 0;
+            }
+        };
+
+        const meliTotalsById = new Map<number, number>();
+        const meliRefundsById = new Map<number, number>();
+        const meliOrderIdsForRaw = new Set<number>();
+        const meliOrderIdsForTotals = new Set<number>();
+        const magaluRefundsById = new Map<string, number>();
+        const magaluOrderIdsForRaw = new Set<string>();
+
+        const hasMarketplacePayments = (row: any) => {
+            const payments = Array.isArray(row.marketplace_payments)
+                ? row.marketplace_payments
+                : (row.marketplace_payments ? [row.marketplace_payments] : []);
+            return payments.length > 0;
+        };
+
+        listRes.data.forEach((order) => {
+            const marketplaceType = getMarketplaceFromCanal(order.canal || null);
+            if (marketplaceType === 'mercado_livre') {
+                const meliOrderId = getMeliOrderId(order);
+                if (!meliOrderId) return;
+                meliOrderIdsForRaw.add(meliOrderId);
+                const total = resolveTinyOrderTotal(order);
+                if (total <= 0) meliOrderIdsForTotals.add(meliOrderId);
+                return;
+            }
+            if (marketplaceType === 'magalu') {
+                const magaluOrderId = getMagaluOrderId(order);
+                if (magaluOrderId) magaluOrderIdsForRaw.add(magaluOrderId);
+            }
+        });
+
+        summaryRes.data.forEach((order) => {
+            const marketplaceType = getMarketplaceFromCanal(order.canal || null);
+            if (marketplaceType === 'mercado_livre') {
+                const total = resolveTinyOrderTotal(order);
+                if (total <= 0) {
+                    const meliOrderId = getMeliOrderId(order);
+                    if (meliOrderId) meliOrderIdsForTotals.add(meliOrderId);
+                }
+                const meliOrderId = getMeliOrderId(order);
+                if (meliOrderId && order.payment_received && !hasMarketplacePayments(order)) {
+                    meliOrderIdsForRaw.add(meliOrderId);
+                }
+                return;
+            }
+            if (marketplaceType === 'magalu') {
+                const magaluOrderId = getMagaluOrderId(order);
+                if (magaluOrderId && order.payment_received && !hasMarketplacePayments(order)) {
+                    magaluOrderIdsForRaw.add(magaluOrderId);
+                }
+            }
+        });
+
+        const fetchMeliOrders = async (ids: number[], includeRaw: boolean) => {
+            if (ids.length === 0) return;
+            const BATCH_SIZE = 200;
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                const { data: meliOrders, error: meliError } = await supabaseAdmin
+                    .from('meli_orders')
+                    .select(includeRaw
+                        ? 'meli_order_id, total_amount, total_amount_with_shipping, raw_payload'
+                        : 'meli_order_id, total_amount, total_amount_with_shipping')
+                    .in('meli_order_id', batch);
+
+                if (meliError) {
+                    console.error('[CashFlowAPI] Meli lookup error:', meliError);
+                    continue;
+                }
+
+                if (meliOrders) {
+                    meliOrders.forEach((meliOrder: any) => {
+                        const totalWithShipping = Number(meliOrder.total_amount_with_shipping || 0);
+                        const totalAmount = Number(meliOrder.total_amount || 0);
+                        const resolved = totalWithShipping > 0 ? totalWithShipping : totalAmount;
+                        if (resolved > 0) {
+                            meliTotalsById.set(Number(meliOrder.meli_order_id), resolved);
+                        }
+                        if (includeRaw && meliOrder.raw_payload) {
+                            const refund = getMeliRefundAmount(meliOrder.raw_payload);
+                            if (refund > 0) {
+                                meliRefundsById.set(Number(meliOrder.meli_order_id), refund);
+                            }
+                        }
+                    });
+                }
+            }
+        };
+
+        await fetchMeliOrders(Array.from(meliOrderIdsForRaw), true);
+
+        const remainingTotals = Array.from(meliOrderIdsForTotals).filter((id) => !meliTotalsById.has(id));
+        await fetchMeliOrders(remainingTotals, false);
+
+        const fetchMagaluOrders = async (ids: string[]) => {
+            if (ids.length === 0) return;
+            const BATCH_SIZE = 200;
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                const { data: magaluOrders, error: magaluError } = await supabaseAdmin
+                    .from('magalu_orders')
+                    .select('id_order, raw_payload')
+                    .in('id_order', batch);
+
+                if (magaluError) {
+                    console.error('[CashFlowAPI] Magalu lookup error:', magaluError);
+                    continue;
+                }
+
+                if (magaluOrders) {
+                    magaluOrders.forEach((magaluOrder: any) => {
+                        if (!magaluOrder?.raw_payload) return;
+                        const refund = getMagaluRefundAmount(magaluOrder.raw_payload);
+                        if (refund > 0) {
+                            magaluRefundsById.set(String(magaluOrder.id_order), refund);
+                        }
+                    });
+                }
+            }
+        };
+
+        await fetchMagaluOrders(Array.from(magaluOrderIdsForRaw));
 
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Normalize to start of day for correct date comparison
@@ -365,7 +613,7 @@ export async function GET(request: NextRequest) {
             // Fetch Orders Data (financials)
             const { data: sOrders } = await supabaseAdmin
                 .from('shopee_orders')
-                .select('order_sn, order_selling_price, seller_discount, voucher_from_seller, ams_commission_fee, escrow_amount, order_discounted_price, voucher_from_shopee, total_amount')
+                .select('order_sn, order_selling_price, seller_discount, voucher_from_seller, ams_commission_fee, escrow_amount, order_discounted_price, voucher_from_shopee, total_amount, raw_payload')
                 .in('order_sn', shopeeOrderIds) as any;
 
             if (sOrders) {
@@ -405,47 +653,127 @@ export async function GET(request: NextRequest) {
                 }
             }
 
-            const vTotal = Number(order.valor || order.valor_total_pedido || 0);
+            const marketplace = getMarketplaceFromCanal(order.canal || null);
+            let vTotal = resolveTinyOrderTotal(order);
             const vFrete = Number(order.valor_frete || 0);
+
+            const meliOrderId = marketplace === 'mercado_livre' ? getMeliOrderId(order) : null;
+            if (marketplace === 'mercado_livre' && vTotal <= 0 && meliOrderId) {
+                const meliTotal = meliTotalsById.get(meliOrderId);
+                if (meliTotal && meliTotal > 0) {
+                    vTotal = meliTotal;
+                }
+            }
+
             let valorOriginal = vTotal; // The original total - will be updated for Shopee refunds
-            const baseTaxas = Math.max(0, vTotal - vFrete); // Base for fees is total minus freight
+            let fallbackReceivedValue = vTotal;
+            let meliRefundAmount = 0;
+            let magaluRefundAmount = 0;
+            let shopeeRefundAmount = 0;
+
+            if (marketplace === 'mercado_livre' && meliOrderId) {
+                meliRefundAmount = meliRefundsById.get(meliOrderId) || 0;
+                if (meliRefundAmount > 0) {
+                    fallbackReceivedValue = Math.max(0, valorOriginal - meliRefundAmount);
+                }
+            }
+
+            if (marketplace === 'magalu') {
+                const magaluOrderId = getMagaluOrderId(order);
+                if (magaluOrderId) {
+                    magaluRefundAmount = magaluRefundsById.get(magaluOrderId) || 0;
+                    if (magaluRefundAmount > 0) {
+                        fallbackReceivedValue = Math.max(0, valorOriginal - magaluRefundAmount);
+                    }
+                }
+            }
+
+            if (marketplace === 'shopee' && order.numero_pedido_ecommerce) {
+                const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
+                if (sOrder) {
+                    const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                    const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
+                    const totalAmount = Number(sOrder.total_amount) || 0;
+                    const orderSellingRaw = Number(sOrder.order_selling_price);
+                    const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+
+                    if (escrowBuyerTotal > 0) {
+                        valorOriginal = escrowBuyerTotal;
+                        fallbackReceivedValue = escrowBuyerTotal;
+                    } else if (totalAmount > 0) {
+                        valorOriginal = totalAmount;
+                        fallbackReceivedValue = totalAmount;
+                    }
+
+                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+                    if (escrowRefund > 0) {
+                        shopeeRefundAmount = escrowRefund;
+                        fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    } else if (totalAmount > 0 && orderSellingPrice > 0 && totalAmount > orderSellingPrice) {
+                        shopeeRefundAmount = totalAmount - orderSellingPrice;
+                        fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    }
+                }
+            }
+
+            let baseTaxas = Math.max(0, vTotal - vFrete); // Default: total minus freight
+            if (marketplace === 'magalu') {
+                baseTaxas = magaluRefundAmount > 0
+                    ? Math.max(0, valorOriginal - magaluRefundAmount)
+                    : valorOriginal;
+            } else if (marketplace === 'mercado_livre') {
+                baseTaxas = meliRefundAmount > 0
+                    ? Math.max(0, valorOriginal - meliRefundAmount)
+                    : valorOriginal;
+            }
 
             // If we have matched payments (array), calculate the Effective Net Amount
             // Sum of all payments linked to this order (handling adjustments)
             const payments = Array.isArray(order.marketplace_payments) ? order.marketplace_payments : (order.marketplace_payments ? [order.marketplace_payments] : []);
 
+            // Calculate total adjustment amount (refunds, etc.) for difference calculation
+            // This allows us to show the "real" difference (discrepancies) vs "expected" adjustments
+            // IMPORTANT: Use Math.abs because net_amount is negative for expenses, 
+            // but we want a positive total to subtract from expected
+            const totalAjustes = payments
+                .filter((p: any) => p.is_expense === true)
+                .reduce((sum: number, p: any) => sum + Math.abs(Number(p.net_amount || 0)), 0);
+
+            const refundAdjustmentAmount = marketplace === 'mercado_livre'
+                ? meliRefundAmount
+                : marketplace === 'magalu'
+                    ? magaluRefundAmount
+                    : marketplace === 'shopee'
+                        ? shopeeRefundAmount
+                        : 0;
+
             let valorEfetivo = 0; // Default to 0 (Not received yet)
 
             if (payments.length > 0) {
                 // Sum all net amounts (subtract expenses/adjustments)
+                // IMPORTANT: Use Math.abs because net_amount may already be negative for expenses
+                // and we need consistent sign handling based on is_expense flag
                 const totalPaid = payments.reduce((sum: number, p: any) => {
                     const val = Number(p.net_amount || 0);
-                    return sum + (p.is_expense ? -val : val);
+                    return sum + (p.is_expense ? -Math.abs(val) : Math.abs(val));
                 }, 0);
                 valorEfetivo = totalPaid;
+                if (refundAdjustmentAmount > 0) {
+                    const refundGap = Math.max(0, refundAdjustmentAmount - totalAjustes);
+                    if (refundGap > 0) {
+                        valorEfetivo = Math.max(0, valorEfetivo - refundGap);
+                    }
+                }
             } else if (financialStatus === 'pago') {
                 // Fallback: If Tiny says it's paid but we have no payments linked,
                 // assume the Original Value is what was received (Legacy behavior)
-                valorEfetivo = valorOriginal;
+                valorEfetivo = fallbackReceivedValue;
             }
-
-            // Calculate total adjustment amount (refunds, etc.) for difference calculation
-            // This allows us to show the "real" difference (discrepancies) vs "expected" adjustments
-            const totalAjustes = payments
-                .filter((p: any) => p.is_expense === true)
-                .reduce((sum: number, p: any) => sum + Number(p.net_amount || 0), 0);
 
             // Calculate expected fees
             let valorEsperado: number | undefined;
             let diferenca: number | undefined;
             let feesBreakdown: any;
-
-            // Try to determine marketplace from canal
-            const canal = order.canal?.toLowerCase() || '';
-            let marketplace: 'shopee' | 'mercado_livre' | 'magalu' | undefined;
-            if (canal.includes('shopee')) marketplace = 'shopee';
-            else if (canal.includes('mercado') || canal.includes('meli')) marketplace = 'mercado_livre';
-            else if (canal.includes('magalu') || canal.includes('magazine')) marketplace = 'magalu';
 
             if (marketplace && valorOriginal > 0) {
                 try {
@@ -476,14 +804,23 @@ export async function GET(request: NextRequest) {
                         }
 
                         if (sOrder && sItems && sItems.length > 0) {
-                            const orderSellingPrice = Number(sOrder.order_selling_price) || baseTaxas;
+                            const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                            const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
+                            const orderSellingRaw = Number(sOrder.order_selling_price);
+                            const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : baseTaxas;
                             const totalSellerDiscount = Number(sOrder.seller_discount) || 0;
 
-                            // Use Shopee's total_amount as the original order value for display
-                            // This shows the full product value before any refunds
+                            // Use Shopee's buyer_total_amount (escrow) as the original value when available
                             const shopeeTotalAmount = Number(sOrder.total_amount) || 0;
-                            if (shopeeTotalAmount > 0) {
+                            if (escrowBuyerTotal > 0) {
+                                valorOriginal = escrowBuyerTotal;
+                            } else if (shopeeTotalAmount > 0) {
                                 valorOriginal = shopeeTotalAmount;
+                            }
+
+                            const escrowRefundAmount = getShopeeRefundAmountFromEscrow(escrowDetail);
+                            if (escrowRefundAmount > 0) {
+                                shopeeRefundAmount = escrowRefundAmount;
                             }
 
                             // CALCULATE FEE BASE (Validation Mode)
@@ -515,6 +852,13 @@ export async function GET(request: NextRequest) {
 
                             // Use the calculated base (User Request: "We calculate to ensure correct logic")
                             feeBase = calculatedFeeBase;
+                            if (shopeeRefundAmount > 0) {
+                                const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                                const refundBase = escrowSelling > 0
+                                    ? escrowSelling
+                                    : Math.max(0, valorOriginal - shopeeRefundAmount);
+                                feeBase = refundBase;
+                            }
 
                             // Fallback/Safety: If calculation is wildly off from order_discounted_price (if available), 
                             // we might want to warn, but for now we trust our logic which fixes the Flash Sale vs Bundle Deal conflict.
@@ -537,15 +881,15 @@ export async function GET(request: NextRequest) {
                             // For now, we SKIP this check if bundle deal is present to avoid false positives (reducing count from 3 to 2).
                             const hasBundle = sItems.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
 
-                            if (!hasBundle && sOrder.order_selling_price && shopeeOrderValue > 0) {
-                                const actualOrderValue = Number(sOrder.order_selling_price) || 0;
-                                if (actualOrderValue < shopeeOrderValue && actualOrderValue > 0) {
-                                    // Refund detected! Calculate ratio and adjust count
-                                    const refundRatio = actualOrderValue / shopeeOrderValue;
-                                    const originalCount = sItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 1), 0);
-                                    const adjustedCount = Math.round(originalCount * refundRatio);
-                                    productCount = Math.max(1, adjustedCount);
-                                }
+                            const actualOrderValue = shopeeRefundAmount > 0
+                                ? Math.max(0, valorOriginal - shopeeRefundAmount)
+                                : orderSellingPrice;
+
+                            if (!hasBundle && actualOrderValue > 0 && shopeeOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
+                                const refundRatio = actualOrderValue / shopeeOrderValue;
+                                const originalCount = sItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 1), 0);
+                                const adjustedCount = Math.round(originalCount * refundRatio);
+                                productCount = Math.max(1, adjustedCount);
                             }
 
                             // 3. Extract Vouchers & Fees
@@ -583,13 +927,35 @@ export async function GET(request: NextRequest) {
                     }
 
                     if (feeCalc) {
+                        const refundAmount = marketplace === 'mercado_livre'
+                            ? meliRefundAmount
+                            : marketplace === 'magalu'
+                                ? magaluRefundAmount
+                                : marketplace === 'shopee'
+                                    ? shopeeRefundAmount
+                                    : 0;
+
+                        if (isFullRefund(refundAmount, valorOriginal)) {
+                            applyFullRefundOverride(feeCalc);
+                        }
+
                         // Attach Shopee Data for FeeBreakdownCard parity
                         if (marketplace === 'shopee' && order.numero_pedido_ecommerce) {
                             const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
                             if (sOrder) {
-                                const orderSellingPrice = Number(sOrder.order_selling_price) || 0;
+                                const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                                const orderSellingRaw = Number(sOrder.order_selling_price);
+                                const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
                                 const sellerDiscount = Number(sOrder.seller_discount) || 0;
                                 const isLeveMaisPagueMenos = sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05;
+                                const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
+                                const refundFromEscrow = getShopeeRefundAmountFromEscrow(escrowDetail);
+                                const refundAmount = refundFromEscrow > 0
+                                    ? refundFromEscrow
+                                    : Math.max(0, (Number(sOrder.total_amount) || 0) - orderSellingPrice);
+                                const originalOrderValue = escrowBuyerTotal > 0
+                                    ? escrowBuyerTotal
+                                    : (Number(sOrder.total_amount) || orderSellingPrice);
 
                                 (feeCalc as any).shopeeData = {
                                     orderSellingPrice,
@@ -603,27 +969,42 @@ export async function GET(request: NextRequest) {
                                     // Refund info
                                     // total_amount is the original order value before any refunds
                                     // order_selling_price is the current value (after refunds)
-                                    refundAmount: Math.max(0, (Number(sOrder.total_amount) || 0) - orderSellingPrice),
+                                    refundAmount,
                                     originalProductCount: productCount,
-                                    originalOrderValue: Number(sOrder.total_amount) || orderSellingPrice,
+                                    originalOrderValue,
                                     escrowDifference: 0 // Calculated on frontend if needed
                                 };
                             }
                         }
+                        if (marketplace === 'mercado_livre' && meliRefundAmount > 0) {
+                            (feeCalc as any).refundAmount = meliRefundAmount;
+                            (feeCalc as any).refundOriginalValue = valorOriginal;
+                        }
+                        if (marketplace === 'magalu' && magaluRefundAmount > 0) {
+                            (feeCalc as any).refundAmount = magaluRefundAmount;
+                            (feeCalc as any).refundOriginalValue = valorOriginal;
+                        }
 
                         valorEsperado = feeCalc.netValue;
 
-                        // Calculate difference only if PAID or if there are payments
-                        // Avoid showing difference for pending orders where we naturally have 0 received
+                        // Calculate difference: Recebido - Esperado (simple comparison)
+                        // The "valorEfetivo" already incorporates all payments (incl. refunds)
+                        // So we compare directly: net received vs expected from original order
                         if (financialStatus === 'pago' || payments.length > 0) {
-                            const valorEsperadoAjustado = valorEsperado - totalAjustes;
-                            const rawDiferenca = valorEfetivo - valorEsperadoAjustado;
+                            const rawDiferenca = valorEfetivo - valorEsperado;
                             diferenca = Math.abs(rawDiferenca) < 0.01 ? 0 : Math.round(rawDiferenca * 100) / 100;
                         }
 
                         feesBreakdown = feeCalc;
+
+                        if (order.numero_pedido_ecommerce === 'LU-1403770435288096') {
+                            console.log('[DEBUG LU] Success:', { feeCalc, valorEsperado, diferenca });
+                        }
                     }
                 } catch (error) {
+                    if (order.numero_pedido_ecommerce === 'LU-1403770435288096') {
+                        console.error('[DEBUG LU] Error:', error);
+                    }
                     console.error('[CashFlowAPI] Fee calculation error for order:', order.id, error);
                 }
             }
@@ -680,23 +1061,124 @@ export async function GET(request: NextRequest) {
 
         // Helper to process summary item asynchronously
         const processSummaryItem = async (o: any) => {
-            const vTotal = Number(o.valor || o.valor_total_pedido || 0);
+            const marketplace = getMarketplaceFromCanal(o.canal || null);
+            let vTotal = resolveTinyOrderTotal(o);
             const vFrete = Number(o.valor_frete || 0);
-            const valorOriginal = vTotal;
-            const baseTaxas = Math.max(0, vTotal - vFrete);
+
+            if (marketplace === 'mercado_livre' && vTotal <= 0) {
+                const meliOrderId = getMeliOrderId(o);
+                if (meliOrderId) {
+                    const meliTotal = meliTotalsById.get(meliOrderId);
+                    if (meliTotal && meliTotal > 0) {
+                        vTotal = meliTotal;
+                    }
+                }
+            }
+
+            let valorOriginal = vTotal;
+            let fallbackReceivedValue = vTotal;
+            let meliRefundAmount = 0;
+            let magaluRefundAmount = 0;
+            let shopeeRefundAmount = 0;
+
+            if (marketplace === 'mercado_livre') {
+                const meliOrderId = getMeliOrderId(o);
+                if (meliOrderId) {
+                    meliRefundAmount = meliRefundsById.get(meliOrderId) || 0;
+                    if (meliRefundAmount > 0) {
+                        fallbackReceivedValue = Math.max(0, valorOriginal - meliRefundAmount);
+                    }
+                }
+            }
+
+            if (marketplace === 'magalu') {
+                const magaluOrderId = getMagaluOrderId(o);
+                if (magaluOrderId) {
+                    magaluRefundAmount = magaluRefundsById.get(magaluOrderId) || 0;
+                    if (magaluRefundAmount > 0) {
+                        fallbackReceivedValue = Math.max(0, valorOriginal - magaluRefundAmount);
+                    }
+                }
+            }
+
+            if (marketplace === 'shopee' && o.numero_pedido_ecommerce) {
+                const sOrder = shopeeOrdersMap.get(o.numero_pedido_ecommerce);
+                if (sOrder) {
+                    const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                    const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
+                    const totalAmount = Number(sOrder.total_amount) || 0;
+                    const orderSellingRaw = Number(sOrder.order_selling_price);
+                    const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+
+                    if (escrowBuyerTotal > 0) {
+                        valorOriginal = escrowBuyerTotal;
+                        fallbackReceivedValue = escrowBuyerTotal;
+                    } else if (totalAmount > 0) {
+                        valorOriginal = totalAmount;
+                        fallbackReceivedValue = totalAmount;
+                    }
+
+                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+                    if (escrowRefund > 0) {
+                        shopeeRefundAmount = escrowRefund;
+                        fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    } else if (totalAmount > 0 && orderSellingPrice > 0 && totalAmount > orderSellingPrice) {
+                        shopeeRefundAmount = totalAmount - orderSellingPrice;
+                        fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    }
+                }
+            }
+
+            let baseTaxas = Math.max(0, vTotal - vFrete);
+            if (marketplace === 'magalu') {
+                baseTaxas = magaluRefundAmount > 0
+                    ? Math.max(0, valorOriginal - magaluRefundAmount)
+                    : valorOriginal;
+            } else if (marketplace === 'mercado_livre') {
+                baseTaxas = meliRefundAmount > 0
+                    ? Math.max(0, valorOriginal - meliRefundAmount)
+                    : valorOriginal;
+            } else if (marketplace === 'shopee') {
+                baseTaxas = shopeeRefundAmount > 0
+                    ? Math.max(0, valorOriginal - shopeeRefundAmount)
+                    : baseTaxas;
+            }
+
+            const refundAmount = marketplace === 'mercado_livre'
+                ? meliRefundAmount
+                : marketplace === 'magalu'
+                    ? magaluRefundAmount
+                    : marketplace === 'shopee'
+                        ? shopeeRefundAmount
+                        : 0;
+            const fullRefund = isFullRefund(refundAmount, valorOriginal);
 
             // Re-calculate fee if there's an override for summary accuracy
             let vEsperado: number | undefined;
             if (o.fee_overrides) {
-                const overrides = o.fee_overrides as any;
-                const totalFees = (Number(overrides.commissionFee) || 0) +
-                    (Number(overrides.fixedCost) || 0) +
-                    (Number(overrides.campaignFee) || 0);
-                vEsperado = baseTaxas - totalFees;
+                if (fullRefund) {
+                    vEsperado = 0;
+                } else {
+                    const overrides = o.fee_overrides as any;
+                    const totalFees = (Number(overrides.commissionFee) || 0) +
+                        (Number(overrides.fixedCost) || 0) +
+                        (Number(overrides.campaignFee) || 0);
+                    vEsperado = baseTaxas - totalFees;
+                }
             }
 
             // Prefer Net Amount from payment(s) if available
             const payments = Array.isArray(o.marketplace_payments) ? o.marketplace_payments : (o.marketplace_payments ? [o.marketplace_payments] : []);
+            const totalAjustes = payments
+                .filter((p: any) => p.is_expense === true)
+                .reduce((sum: number, p: any) => sum + Math.abs(Number(p.net_amount || 0)), 0);
+            const refundAdjustmentAmount = marketplace === 'mercado_livre'
+                ? meliRefundAmount
+                : marketplace === 'magalu'
+                    ? magaluRefundAmount
+                    : marketplace === 'shopee'
+                        ? shopeeRefundAmount
+                        : 0;
 
             let valor = o.fee_overrides ? (vEsperado || 0) : valorOriginal;
             let usedEstimatedValue = false;
@@ -708,20 +1190,23 @@ export async function GET(request: NextRequest) {
                     // Expenses subtract, Income adds
                     return sum + (p.is_expense ? -Math.abs(val) : Math.abs(val));
                 }, 0);
+                if (refundAdjustmentAmount > 0) {
+                    const refundGap = Math.max(0, refundAdjustmentAmount - totalAjustes);
+                    if (refundGap > 0) {
+                        valor = Math.max(0, valor - refundGap);
+                    }
+                }
             } else if (!o.payment_received) {
                 // If Pending and NO Payments, use Expected Net Value (Calculated)
                 // This answers the user request: "Pending card should show expected value"
 
-                if (vEsperado !== undefined) {
+                if (fullRefund) {
+                    valor = 0;
+                    usedEstimatedValue = true;
+                } else if (vEsperado !== undefined) {
                     valor = vEsperado;
                 } else {
                     // Calculate expected fees on fly using cached configs
-                    const canal = o.canal?.toLowerCase() || '';
-                    let marketplace: 'shopee' | 'mercado_livre' | 'magalu' | undefined;
-                    if (canal.includes('shopee')) marketplace = 'shopee';
-                    else if (canal.includes('mercado') || canal.includes('meli')) marketplace = 'mercado_livre';
-                    else if (canal.includes('magalu') || canal.includes('magazine')) marketplace = 'magalu';
-
                     if (marketplace) {
                         try {
                             const linkData = o.marketplace_order_links?.[0] as any;
@@ -747,7 +1232,10 @@ export async function GET(request: NextRequest) {
                                 }
 
                                 // CRITICAL FIX: Use calculated fee base to ensure correctness across Flash Sale / Bundle Deals
-                                const orderSellingPrice = Number(sOrder?.order_selling_price) || (Number(o.valor) || baseTaxas);
+                                const orderSellingRaw = Number(sOrder?.order_selling_price);
+                                const orderSellingPrice = Number.isFinite(orderSellingRaw)
+                                    ? orderSellingRaw
+                                    : (Number(o.valor) || baseTaxas);
                                 const totalSellerDiscount = Number(sOrder?.seller_discount) || 0;
                                 feeBase = orderSellingPrice;
 
@@ -769,6 +1257,15 @@ export async function GET(request: NextRequest) {
                                     feeBase = orderSellingPrice - effectiveBundleDiscount;
                                 }
 
+                                if (shopeeRefundAmount > 0) {
+                                    const escrowDetail = sOrder?.raw_payload?.escrow_detail;
+                                    const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                                    const refundBase = escrowSelling > 0
+                                        ? escrowSelling
+                                        : Math.max(0, valorOriginal - shopeeRefundAmount);
+                                    feeBase = refundBase;
+                                }
+
                                 // Extract AMS Commission for more accurate pending value estimation
                                 if (sOrder?.ams_commission_fee) {
                                     amsCommissionFee = Number(sOrder.ams_commission_fee) || 0;
@@ -785,6 +1282,9 @@ export async function GET(request: NextRequest) {
                                 isCampaignOrder: linkData?.is_campaign_order || false,
                                 orderDate: new Date(o.data_criacao || new Date())
                             });
+                            if (fullRefund) {
+                                applyFullRefundOverride(feeCalc);
+                            }
                             valor = feeCalc.netValue;
                             usedEstimatedValue = true;
                         } catch (e) {
@@ -796,7 +1296,7 @@ export async function GET(request: NextRequest) {
             } else if (o.payment_received) {
                 // Paid in Tiny but no payments synced?
                 // Probably manual link or legacy. Use Gross.
-                valor = valorOriginal;
+                valor = fallbackReceivedValue;
             }
 
             // --- Accumulate ---
@@ -1002,8 +1502,23 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        // Transform orphan payments to a display format (when searching)
+        const orphanPayments = (busca && sectionOrphansRes?.data)
+            ? sectionOrphansRes.data.map((p: any) => ({
+                id: `orphan-${p.marketplace_order_id || p.id}`,
+                marketplace_order_id: p.marketplace_order_id,
+                payment_date: p.payment_date,
+                net_amount: p.net_amount,
+                transaction_type: p.transaction_type,
+                transaction_description: p.transaction_description,
+                marketplace: p.marketplace,
+                is_orphan: true,
+            }))
+            : [];
+
         return NextResponse.json({
             orders,
+            orphanPayments, // NEW: Orphan payments for search results
             chartOrders: sparklineItems
                 .filter(i => i.type === 'income')
                 .map(i => ({
@@ -1028,4 +1543,3 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Erro interno: ' + error.message }, { status: 500 });
     }
 }
-

@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
                 id,
                 canal,
                 valor_total_pedido,
+                valor_total_produtos,
                 valor,
                 valor_frete,
                 data_criacao,
@@ -54,7 +55,20 @@ export async function POST(req: NextRequest) {
                 if (!marketplace) continue;
 
                 const linkData = order.marketplace_order_links?.[0] as any;
-                const orderValue = Math.max(0, Number(order.valor || order.valor_total_pedido || 0) - Number(order.valor_frete || 0));
+                const totalProdutos = Number(order.valor_total_produtos || 0);
+                const totalFrete = Number(order.valor_frete || 0);
+                let orderTotal = Number(order.valor_total_pedido || order.valor || 0);
+                if (orderTotal <= 0) {
+                    if (totalProdutos > 0 && totalFrete > 0) {
+                        orderTotal = totalProdutos + totalFrete;
+                    } else if (totalProdutos > 0) {
+                        orderTotal = totalProdutos;
+                    }
+                }
+                let orderValue = Math.max(0, orderTotal - Number(order.valor_frete || 0));
+                if (marketplace === 'magalu' || marketplace === 'mercado_livre') {
+                    orderValue = Math.max(0, orderTotal);
+                }
 
                 if (orderValue <= 0) continue;
 

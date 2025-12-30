@@ -14,6 +14,8 @@ interface FeeBreakdownCardProps {
         totalFees: number;
         netValue: number;
         productCount?: number;
+        refundAmount?: number;
+        refundOriginalValue?: number;
         // Breakdown details
         breakdown?: {
             commissionRate: number;
@@ -156,6 +158,10 @@ export default function FeeBreakdownCard({
 }: FeeBreakdownCardProps) {
     const shopeeData = breakdown.shopeeData;
     const isShopee = marketplace === 'shopee' && shopeeData;
+    const genericRefundAmount = !isShopee ? (breakdown.refundAmount || 0) : 0;
+    const genericOriginalValue = breakdown.refundOriginalValue ?? (
+        genericRefundAmount > 0 ? breakdown.grossValue + genericRefundAmount : breakdown.grossValue
+    );
 
     // Format date helper
     const formatDate = (dateStr: string | undefined) => {
@@ -167,15 +173,30 @@ export default function FeeBreakdownCard({
         }
     };
 
-    // Calculate subtotals
-    const subtotalMarketplaceFees =
-        (overrides.commissionFee ?? breakdown.commissionFee) +
-        (overrides.fixedCost ?? breakdown.fixedCost) +
-        (overrides.campaignFee ?? (breakdown.campaignFee || 0));
+    // Calculate values using overrides when available
+    const effectiveCommissionFee = overrides.commissionFee ?? breakdown.commissionFee;
+    const effectiveFixedCost = overrides.fixedCost ?? breakdown.fixedCost;
+    const effectiveCampaignFee = overrides.campaignFee ?? (breakdown.campaignFee || 0);
 
-    const subtotalSellerCosts =
-        (breakdown.sellerVoucher || 0) +
-        (breakdown.amsCommissionFee || 0);
+    // Get effective rates from overrides or breakdown
+    const effectiveCommissionRate = (overrides as any).commissionRate ?? breakdown.breakdown?.commissionRate ?? 0;
+    const effectiveCampaignRate = (overrides as any).campaignRate ?? breakdown.breakdown?.campaignRate ?? 0;
+    const effectiveFixedCostPerUnit = (overrides as any).fixedCostPerProduct ?? breakdown.breakdown?.fixedCostPerUnit ?? 0;
+    const effectiveUnits = breakdown.productCount ?? breakdown.breakdown?.units ?? 1;
+
+    // Calculate subtotals with override values
+    const subtotalMarketplaceFees = effectiveCommissionFee + effectiveFixedCost + effectiveCampaignFee;
+    const subtotalSellerCosts = (breakdown.sellerVoucher || 0) + (breakdown.amsCommissionFee || 0);
+
+    // Calculate total deductions and net value with overrides
+    const totalDeductions = subtotalMarketplaceFees + subtotalSellerCosts;
+    const netValueCalculated = breakdown.grossValue - totalDeductions;
+
+    // Check if we have any overrides applied
+    const hasOverrides = overrides.commissionFee !== undefined ||
+        overrides.fixedCost !== undefined ||
+        overrides.campaignFee !== undefined ||
+        (overrides as any).commissionRate !== undefined;
 
     return (
         <div className="space-y-6">
@@ -245,6 +266,27 @@ export default function FeeBreakdownCard({
                                         color="green"
                                     />
                                 </>
+                            ) : genericRefundAmount > 0 ? (
+                                <>
+                                    <FeeRow
+                                        label="Valor Total"
+                                        value={genericOriginalValue}
+                                        isNegative={false}
+                                        color="default"
+                                    />
+                                    <FeeRow
+                                        label="Reembolso"
+                                        value={genericRefundAmount}
+                                        color="orange"
+                                    />
+                                    <FeeRow
+                                        label="Base para Cálculo"
+                                        value={breakdown.grossValue}
+                                        isNegative={false}
+                                        isSubtotal
+                                        color="green"
+                                    />
+                                </>
                             ) : (
                                 <FeeRow
                                     label="Preço de Venda"
@@ -261,18 +303,18 @@ export default function FeeBreakdownCard({
                         <SectionHeader title="Taxas do Marketplace" icon="🏪" />
                         <div className="bg-white/5 rounded-2xl p-2 border border-white/5">
                             <FeeRow
-                                label={`Comissão (${breakdown.breakdown?.commissionRate || 0}%)`}
-                                value={overrides.commissionFee ?? breakdown.commissionFee}
+                                label={`Comissão (${effectiveCommissionRate}%)${hasOverrides ? ' ⚙️' : ''}`}
+                                value={effectiveCommissionFee}
                                 color="red"
                             />
                             <FeeRow
-                                label={`Campanha (${breakdown.breakdown?.campaignRate || 0}%)`}
-                                value={overrides.campaignFee ?? (breakdown.campaignFee || 0)}
+                                label={`Campanha (${effectiveCampaignRate}%)${hasOverrides ? ' ⚙️' : ''}`}
+                                value={effectiveCampaignFee}
                                 color="red"
                             />
                             <FeeRow
-                                label={`Custo Fixo (R$ ${breakdown.breakdown?.fixedCostPerUnit || 0} × ${breakdown.productCount || breakdown.breakdown?.units || 1} un)`}
-                                value={overrides.fixedCost ?? breakdown.fixedCost}
+                                label={`Custo Fixo (R$ ${effectiveFixedCostPerUnit} × ${effectiveUnits} un)${hasOverrides ? ' ⚙️' : ''}`}
+                                value={effectiveFixedCost}
                                 color="red"
                             />
                             <FeeRow
@@ -312,17 +354,17 @@ export default function FeeBreakdownCard({
                 <div className="space-y-6">
                     {/* Result Section */}
                     <div className="rounded-[24px] bg-gradient-to-br from-emerald-500/10 to-blue-500/10 border border-white/10 p-2">
-                        <SectionHeader title="Resultado" icon="✨" />
+                        <SectionHeader title={`Resultado${hasOverrides ? ' (Taxas Sobrescritas)' : ''}`} icon="✨" />
                         <div className="space-y-1">
                             <FeeRow
                                 label="Total Deduções"
-                                value={breakdown.totalFees}
+                                value={totalDeductions}
                                 color="red"
                             />
                             <div className="pt-2">
                                 <FeeRow
                                     label="Valor Líquido Calculado"
-                                    value={breakdown.netValue}
+                                    value={netValueCalculated}
                                     isNegative={false}
                                     isTotal
                                     color="green"

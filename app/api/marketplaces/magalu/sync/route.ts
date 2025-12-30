@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import {
-  listMagaluOrdersV2,
   getAllMagaluOrdersForPeriod,
   mapMagaluOrderToDb,
   mapMagaluOrderItemsToDb,
@@ -34,6 +33,7 @@ export async function POST(req: NextRequest) {
     // Parâmetros do request
     let periodDays = INCREMENTAL_PERIOD_DAYS;
     let statusResyncOnly = false;
+    let useUpdatedAt = true;
 
     try {
       const body = await req.json();
@@ -48,6 +48,9 @@ export async function POST(req: NextRequest) {
         if (!body.periodDays) {
           periodDays = DEFAULT_PERIOD_DAYS;
         }
+      }
+      if (body.useUpdatedAt === false) {
+        useUpdatedAt = false;
       }
     } catch {
       // Body vazio ou inválido, usar padrão
@@ -74,12 +77,15 @@ export async function POST(req: NextRequest) {
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - periodDays);
 
-    console.log(`[Magalu Sync] Buscando pedidos de ${fromDate.toISOString()} a ${toDate.toISOString()} (${periodDays} dias)`);
+    console.log(
+      `[Magalu Sync] Buscando pedidos de ${fromDate.toISOString()} a ${toDate.toISOString()} (${periodDays} dias, filtro=${useUpdatedAt ? 'updated_at' : 'placed_at'})`,
+    );
 
     // Buscar todos os pedidos do período
     const orders = await getAllMagaluOrdersForPeriod({
       fromDate,
       toDate,
+      filterBy: useUpdatedAt ? 'updated_at' : 'placed_at',
       onProgress: ({ loaded, total }) => {
         console.log(`[Magalu Sync] ${loaded}/${total} pedidos carregados`);
       },
@@ -211,23 +217,20 @@ export async function POST(req: NextRequest) {
 async function handleStatusResyncOnly(periodDays: number, startTime: number) {
   console.log(`[Magalu StatusResync] Iniciando resync de status dos últimos ${periodDays} dias`);
 
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - periodDays);
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - periodDays);
+  const toDate = new Date();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existingOrders, error: fetchError } = await (supabaseAdmin as any)
-    .from('magalu_orders')
-    .select('id_order, order_status')
-    .gte('purchased_date', cutoffDate.toISOString());
+  const updatedOrders = await getAllMagaluOrdersForPeriod({
+    fromDate,
+    toDate,
+    filterBy: 'updated_at',
+    onProgress: ({ loaded, total }) => {
+      console.log(`[Magalu StatusResync] ${loaded}/${total} pedidos atualizados carregados`);
+    },
+  });
 
-  if (fetchError) {
-    throw new Error(`Erro ao buscar pedidos existentes: ${fetchError.message}`);
-  }
-
-  const orderCodes = existingOrders?.map((o: { id_order: string }) => o.id_order) || [];
-  console.log(`[Magalu StatusResync] Encontrados ${orderCodes.length} pedidos para verificar`);
-
-  if (orderCodes.length === 0) {
+  if (updatedOrders.length === 0) {
     return NextResponse.json({
       ok: true,
       data: {
@@ -240,72 +243,64 @@ async function handleStatusResyncOnly(periodDays: number, startTime: number) {
     });
   }
 
-  // Buscar pedidos atualizados da API em batches
-  let statusUpdated = 0;
+  const orderCodes = updatedOrders.map((order) => order.code);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existingOrders, error: fetchError } = await (supabaseAdmin as any)
+    .from('magalu_orders')
+    .select('id_order, order_status')
+    .in('id_order', orderCodes);
+
+  if (fetchError) {
+    throw new Error(`Erro ao buscar pedidos existentes: ${fetchError.message}`);
+  }
+
+  const existingStatusMap = new Map<string, string>(
+    (existingOrders || []).map((o: { id_order: string; order_status: string }) => [o.id_order, o.order_status]),
+  );
+
   const statusChanges: Array<{ code: string; from: string; to: string }> = [];
-  const batchSize = 100;
-
-  for (let i = 0; i < orderCodes.length; i += batchSize) {
-    const batchCodes = orderCodes.slice(i, i + batchSize);
-
-    try {
-      // Para cada batch, buscar da API
-      const response = await listMagaluOrdersV2({
-        limit: batchSize,
-        offset: 0,
-        placed_at_from: cutoffDate.toISOString(),
+  for (const order of updatedOrders) {
+    const currentStatus = existingStatusMap.get(order.code);
+    if (currentStatus && currentStatus !== order.status) {
+      statusChanges.push({
+        code: order.code,
+        from: currentStatus,
+        to: order.status,
       });
-
-      // Criar mapa de status atual
-      const existingStatusMap = new Map<string, string>(
-        existingOrders
-          .filter((o: { id_order: string }) => batchCodes.includes(o.id_order))
-          .map((o: { id_order: string; order_status: string }) => [o.id_order, o.order_status] as [string, string])
-      );
-
-      // Verificar mudanças
-      for (const order of response.results) {
-        const currentStatus = existingStatusMap.get(order.code);
-        if (currentStatus && currentStatus !== order.status) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: updateError } = await (supabaseAdmin as any)
-            .from('magalu_orders')
-            .update({
-              order_status: order.status,
-              updated_date: order.updated_at,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id_order', order.code);
-
-          if (!updateError) {
-            statusUpdated++;
-            statusChanges.push({
-              code: order.code,
-              from: currentStatus,
-              to: order.status,
-            });
-          }
-        }
-      }
-
-      // Rate limiting
-      if (i + batchSize < orderCodes.length) {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    } catch (batchError) {
-      console.error(`[Magalu StatusResync] Erro no batch ${i / batchSize + 1}:`, batchError);
     }
   }
 
-  console.log(`[Magalu StatusResync] Concluído: ${orderCodes.length} verificados, ${statusUpdated} atualizados`);
+  const ordersToUpsert = updatedOrders.map((o) => mapMagaluOrderToDb(o));
+  let ordersUpserted = 0;
+  for (let i = 0; i < ordersToUpsert.length; i += 500) {
+    const batch = ordersToUpsert.slice(i, i + 500);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: ordersError } = await (supabaseAdmin as any)
+      .from('magalu_orders')
+      .upsert(batch, {
+        onConflict: 'id_order',
+        ignoreDuplicates: false,
+      });
+
+    if (ordersError) {
+      console.error(`[Magalu StatusResync] Erro ao upsert batch ${i / 500 + 1}:`, ordersError);
+      throw new Error(`Erro ao salvar pedidos: ${ordersError.message}`);
+    }
+    ordersUpserted += batch.length;
+  }
+
+  console.log(
+    `[Magalu StatusResync] Concluído: ${updatedOrders.length} verificados, ${statusChanges.length} alterados, ${ordersUpserted} atualizados`,
+  );
 
   return NextResponse.json({
     ok: true,
     data: {
       mode: 'statusResyncOnly',
-      ordersChecked: orderCodes.length,
-      statusUpdated,
+      ordersChecked: updatedOrders.length,
+      statusUpdated: statusChanges.length,
       statusChanges: statusChanges.slice(0, 50),
+      ordersUpserted,
       periodDays,
       durationMs: Date.now() - startTime,
     },

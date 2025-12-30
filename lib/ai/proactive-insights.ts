@@ -3,7 +3,7 @@
  * Analyzes dashboard data and generates alerts/opportunities automatically
  */
 
-import { getGroqClient } from './groq-client';
+import { createOpenAICompatibleClient, resolveAiRuntimeConfig } from './ai-runtime';
 import { buildDashboardContext, type DashboardContext } from './context-builder';
 
 export type InsightType =
@@ -175,11 +175,11 @@ export function detectMetricInsights(context: DashboardContext): ProactiveInsigh
  * Generate AI-powered insights using LLM
  */
 export async function generateAIInsights(context: DashboardContext): Promise<ProactiveInsight[]> {
-    const groq = getGroqClient();
-
-    if (!groq.isConfigured()) {
+    const runtime = await resolveAiRuntimeConfig();
+    if (!runtime.apiKey) {
         return [];
     }
+    const aiClient = createOpenAICompatibleClient(runtime);
 
     const prompt = `Analise os dados de e-commerce abaixo e identifique até 3 insights acionáveis.
 Para cada insight, retorne um JSON array com objetos contendo:
@@ -194,8 +194,13 @@ ${JSON.stringify(context, null, 2)}
 Responda APENAS com o JSON array, sem texto adicional.`;
 
     try {
-        const response = await groq.complete(prompt);
-        const cleanJson = response.replace(/```json\n?|\n?```/g, '').trim();
+        const response = await aiClient.chat({
+            messages: [{ role: 'user', content: prompt }],
+            model: runtime.modelQuick,
+            temperature: Math.min(runtime.temperature, 0.6),
+            maxTokens: Math.min(runtime.maxTokens, 600),
+        });
+        const cleanJson = response.content.replace(/```json\n?|\n?```/g, '').trim();
         const parsed = JSON.parse(cleanJson) as Array<{
             type: string;
             priority: string;

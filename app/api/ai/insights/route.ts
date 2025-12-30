@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getErrorMessage } from '@/lib/errors';
-
-// Groq API configuration (free tier)
-const apiKey = process.env.GROQ_API_KEY;
-const modelName = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-const apiBaseUrl = process.env.GROQ_API_BASE_URL || 'https://api.groq.com/openai/v1';
+import { createOpenAICompatibleClient, resolveAiRuntimeConfig } from '@/lib/ai/ai-runtime';
+import { buildDbInsightIndex, buildIndexPrompt, buildInsightBullets } from '@/lib/ai/db-insight-index';
 
 type InsightsPayload = {
   resumoAtual?: unknown;
@@ -80,16 +77,20 @@ function summarizeForAI(data: unknown): Record<string, unknown> {
 }
 
 export async function POST(req: NextRequest) {
+  let parsedBody: InsightsPayload | null = null;
   try {
-    if (!apiKey) {
+    const runtime = await resolveAiRuntimeConfig();
+    if (!runtime.apiKey) {
       return NextResponse.json(
-        { message: 'GROQ_API_KEY não configurada no ambiente' },
+        { message: 'IA não configurada. Configure as chaves em /configuracoes.' },
         { status: 500 }
       );
     }
+    const aiClient = createOpenAICompatibleClient(runtime);
 
     const rawBody = await req.json().catch(() => null);
     const body = isRecord(rawBody) ? (rawBody as InsightsPayload) : null;
+    parsedBody = body;
 
     if (!body || !body.resumoAtual) {
       return NextResponse.json(
@@ -102,8 +103,28 @@ export async function POST(req: NextRequest) {
 
     // Summarize data to fit token limits
     const resumoReduzido = summarizeForAI(resumoAtual);
+    const filtros = filtrosVisuais || {};
+    const canaisSelecionados = Array.isArray((filtros as any).canaisSelecionados)
+      ? (filtros as any).canaisSelecionados.filter((c: unknown) => typeof c === 'string')
+      : null;
+    const situacoesSelecionadas = Array.isArray((filtros as any).situacoesSelecionadas)
+      ? (filtros as any).situacoesSelecionadas.filter((n: unknown) => typeof n === 'number')
+      : null;
 
-    console.debug('[AI] Modelo Groq ativo:', modelName);
+    const resumoAtualObj = resumoAtual as Record<string, unknown>;
+    const periodoInicio = typeof resumoAtualObj?.dataInicial === 'string' ? resumoAtualObj.dataInicial : null;
+    const periodoFim = typeof resumoAtualObj?.dataFinal === 'string' ? resumoAtualObj.dataFinal : null;
+
+    const dbIndex = periodoInicio && periodoFim
+      ? await buildDbInsightIndex({
+        inicio: periodoInicio,
+        fim: periodoFim,
+        canais: canaisSelecionados,
+        situacoes: situacoesSelecionadas,
+      })
+      : null;
+
+    console.debug('[AI] Modelo ativo:', runtime.modelDeep);
     console.debug('[AI] Resumo reduzido tamanho:', JSON.stringify(resumoReduzido).length, 'chars');
 
     const systemPrompt = `Você é um consultor de operações de e-commerce da Ambienta.
@@ -112,37 +133,60 @@ Tom profissional em português do Brasil. Cite números específicos.`;
 
     const userPrompt = `Contexto: ${contexto ?? 'Dashboard Ambienta'}
 Filtros: ${JSON.stringify(filtrosVisuais ?? {})}
-Dados: ${JSON.stringify(resumoReduzido)}`;
+Dados: ${JSON.stringify(resumoReduzido)}
+${dbIndex ? `\n${buildIndexPrompt(dbIndex)}` : ''}`;
 
-    const response = await fetch(`${apiBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 512,
-      }),
+    const response = await aiClient.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      model: runtime.modelQuick,
+      temperature: runtime.temperature,
+      maxTokens: Math.max(runtime.maxTokens, 512),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Groq respondeu ${response.status}: ${errorText}`);
-    }
+    const data: GroqChatResponse = {
+      choices: [
+        {
+          message: { content: response.content },
+        },
+      ],
+    };
 
-    const data: GroqChatResponse = await response.json();
-
-    const text = data.choices?.[0]?.message?.content?.trim() ?? '';
+    const aiText = data.choices?.[0]?.message?.content?.trim() ?? '';
+    const fallbackText = dbIndex ? buildInsightBullets(dbIndex) : '';
+    const text = aiText || fallbackText;
 
     return NextResponse.json({ insights: text });
   } catch (err: unknown) {
     console.error('[API] Erro em /api/ai/insights', err);
+    try {
+      const resumoAtual = parsedBody?.resumoAtual as Record<string, unknown> | undefined;
+      const filtros = (parsedBody?.filtrosVisuais ?? {}) as Record<string, unknown>;
+      const canaisSelecionados = Array.isArray((filtros as any).canaisSelecionados)
+        ? (filtros as any).canaisSelecionados.filter((c: unknown) => typeof c === 'string')
+        : null;
+      const situacoesSelecionadas = Array.isArray((filtros as any).situacoesSelecionadas)
+        ? (filtros as any).situacoesSelecionadas.filter((n: unknown) => typeof n === 'number')
+        : null;
+      const periodoInicio = typeof resumoAtual?.dataInicial === 'string' ? resumoAtual.dataInicial : null;
+      const periodoFim = typeof resumoAtual?.dataFinal === 'string' ? resumoAtual.dataFinal : null;
+
+      if (periodoInicio && periodoFim) {
+        const dbIndex = await buildDbInsightIndex({
+          inicio: periodoInicio,
+          fim: periodoFim,
+          canais: canaisSelecionados,
+          situacoes: situacoesSelecionadas,
+        });
+        if (dbIndex) {
+          return NextResponse.json({ insights: buildInsightBullets(dbIndex) });
+        }
+      }
+    } catch (fallbackError) {
+      console.error('[API] Fallback DB insights failed', fallbackError);
+    }
     return NextResponse.json(
       {
         message: 'Erro ao gerar insights inteligentes',

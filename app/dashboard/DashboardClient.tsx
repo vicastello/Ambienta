@@ -35,9 +35,6 @@ import { ChannelDistributionChart } from './components/charts/ChannelDistributio
 import { DailyRevenueChart } from './components/charts/DailyRevenueChart';
 import type { CustomTooltipFormatter } from './components/charts/ChartTooltips';
 import { MicroTrendChart } from './components/charts/MicroTrendChart';
-import { CopilotChat } from './components/copilot/CopilotChat';
-import { ProactiveInsightsBanner } from './components/ProactiveInsightsBanner';
-import { ExecutiveSummaryWidget } from './components/ExecutiveSummaryWidget';
 
 // Ambienta colors
 const AMBIENTA_PRIMARY = 'var(--accent)';
@@ -257,6 +254,11 @@ type DatePreset =
   | 'year'
   | 'custom';
 
+const DATE_PRESETS: DatePreset[] = ['today', 'yesterday', '7d', 'month', '3m', 'year', 'custom'];
+
+const isDatePreset = (value: unknown): value is DatePreset =>
+  typeof value === 'string' && DATE_PRESETS.includes(value as DatePreset);
+
 type SavedFilters = {
   preset: DatePreset;
   customStart: string | null;
@@ -265,7 +267,16 @@ type SavedFilters = {
   situacoesSelecionadas: number[];
 };
 
+type AiDashboardFilterPayload = Partial<SavedFilters> & {
+  preset?: DatePreset;
+  customStart?: string | null;
+  customEnd?: string | null;
+  canaisSelecionados?: string[];
+  situacoesSelecionadas?: number[];
+};
+
 const FILTERS_STORAGE_KEY = 'tiny_dash_filters_v1';
+const AI_DASHBOARD_CONTEXT_KEY = 'ai_context_v1:dashboard';
 const DASHBOARD_CACHE_PREFIX = 'tiny_dash_state_v1';
 const RESUMO_CACHE_PREFIX = `${DASHBOARD_CACHE_PREFIX}:resumo`;
 const GLOBAL_CACHE_PREFIX = `${DASHBOARD_CACHE_PREFIX}:global`;
@@ -774,12 +785,66 @@ export default function DashboardClient() {
   const dashboardSource = deferredResumo ?? resumo;
   const dashboardGlobalSource = deferredResumoGlobal ?? resumoGlobal;
   const dashboardChartSource = deferredResumoChart ?? resumoChart;
+  const aiDashboardData = insightsBaseline ?? resumo ?? resumoGlobal ?? resumoChart;
   const [nowTick, setNowTick] = useState<number>(Date.now());
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!aiDashboardData || typeof window === 'undefined') return;
+    const payload = {
+      screen: 'dashboard',
+      dashboardData: aiDashboardData,
+      filters: {
+        canaisSelecionados,
+        situacoesSelecionadas,
+      },
+    };
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('ai:context', { detail: payload }));
+      try {
+        window.localStorage.setItem(AI_DASHBOARD_CONTEXT_KEY, JSON.stringify(payload));
+      } catch {
+        // ignore storage failures
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [aiDashboardData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<AiDashboardFilterPayload>).detail;
+      if (!detail) return;
+      startTransition(() => {
+        if (isDatePreset(detail.preset)) {
+          setPreset(detail.preset);
+          if (detail.preset !== 'custom') {
+            setCustomStart(null);
+            setCustomEnd(null);
+          }
+        }
+        if (typeof detail.customStart === 'string') {
+          setCustomStart(detail.customStart);
+        }
+        if (typeof detail.customEnd === 'string') {
+          setCustomEnd(detail.customEnd);
+        }
+        if (Array.isArray(detail.canaisSelecionados)) {
+          setCanaisSelecionados(detail.canaisSelecionados);
+        }
+        if (Array.isArray(detail.situacoesSelecionadas)) {
+          setSituacoesSelecionadas(detail.situacoesSelecionadas);
+        }
+      });
+    };
+
+    window.addEventListener('ai:dashboard-filters', handler as EventListener);
+    return () => window.removeEventListener('ai:dashboard-filters', handler as EventListener);
+  }, [startTransition]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) return null;
@@ -2190,17 +2255,6 @@ export default function DashboardClient() {
                 <p className="text-xs text-soft mt-1">Aplicando filtros…</p>
               )}
 
-              {/* Proactive AI Insights */}
-              <ProactiveInsightsBanner
-                dashboardData={insightsBaseline}
-                className="mb-2"
-              />
-
-              {/* Executive Summary Widget */}
-              <ExecutiveSummaryWidget
-                dashboardData={insightsBaseline}
-                className="mb-4"
-              />
 
               <div className="grid gap-5 md:grid-cols-2">
                 <div className="rounded-[28px] glass-panel glass-tint p-5 sm:p-6 space-y-5 sm:space-y-6">
@@ -2384,74 +2438,6 @@ export default function DashboardClient() {
             </div>
           </div>
 
-          <aside
-            className="hidden xl:flex rounded-[36px] glass-panel glass-tint p-6 flex-col gap-6 self-start overflow-hidden"
-            style={panelMaxHeight ? { height: panelMaxHeight, maxHeight: panelMaxHeight } : undefined}
-          >
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-soft">Insights de IA</p>
-              <h3 className="text-2xl font-semibold text-main mt-2">Ambienta Copilot</h3>
-              <p className="text-sm text-muted">Análises automáticas geradas com IA.</p>
-            </div>
-            <button
-              onClick={() => gerarInsights(false)}
-              className="w-full rounded-2xl bg-[image:var(--cta-primary)] hover:bg-[image:var(--cta-primary-hover)] text-white text-sm font-semibold py-2.5 disabled:opacity-60"
-              disabled={loadingInsights || !insightsBaseline}
-            >
-              {loadingInsights ? 'Gerando insights…' : 'Atualizar com IA'}
-            </button>
-            <div className="relative flex-1 min-h-0 overflow-hidden">
-              <div
-                ref={insightsScrollRef}
-                className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-10"
-              >
-                {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
-                {!erroInsights && insights.length === 0 && !loadingInsights && (
-                  <p className="text-sm text-soft">Carregue o dashboard para receber recomendações inteligentes.</p>
-                )}
-                {loadingInsights && (
-                  <div className="space-y-2 text-sm text-soft">
-                    <div className="h-2 rounded-full bg-slate-100/60" />
-                    <div className="h-2 rounded-full bg-slate-100/60 w-3/4" />
-                    <div className="h-2 rounded-full bg-slate-100/60 w-1/2" />
-                  </div>
-                )}
-                {!loadingInsights &&
-                  insights.map((card) => {
-                    const theme = INSIGHT_THEMES[card.tone] ?? INSIGHT_THEMES.info;
-                    const Icon = theme.icon;
-                    return (
-                      <div
-                        key={card.id}
-                        className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border} dark:border-transparent`}
-                      >
-                        <div className={`mt-0.5 rounded-xl p-2 ${theme.iconBg} ${theme.iconColor}`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 leading-relaxed">
-                          <p className="text-sm font-semibold text-main">
-                            {card.title || theme.label}
-                          </p>
-                          {card.body && (
-                            <p className="text-sm text-muted mt-1">{card.body}</p>
-                          )}
-                        </div>
-                        {card.dismissible !== false && (
-                          <button
-                            type="button"
-                            onClick={() => dismissInsightCard(card.id)}
-                            className="rounded-full p-1 text-soft hover:text-muted hover:bg-white/60 dark:hover:bg-slate-800/80 transition"
-                            aria-label="Fechar insight"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          </aside>
         </section>
 
         {isInitialLoading && !dashboardSource && (
@@ -3108,82 +3094,6 @@ export default function DashboardClient() {
           </div>
         )}
       </div >
-
-      {/* Copilot mobile-only (rendered no final do app) */}
-      < div className="xl:hidden pb-12 mt-8" >
-        <aside
-          className="w-full min-w-0 mx-auto rounded-[32px] glass-panel glass-tint p-6 flex flex-col gap-5 overflow-hidden"
-        >
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-soft">Insights de IA</p>
-            <h3 className="text-xl font-semibold text-main">Ambienta Copilot</h3>
-            <p className="text-sm text-muted leading-relaxed">Análises automáticas geradas com IA.</p>
-          </div>
-          <button
-            onClick={() => gerarInsights(false)}
-            className="w-full rounded-2xl bg-[image:var(--cta-primary)] hover:bg-[image:var(--cta-primary-hover)] text-white text-sm font-semibold py-2.5 disabled:opacity-60"
-            disabled={loadingInsights || !insightsBaseline}
-          >
-            {loadingInsights ? 'Gerando insights…' : 'Atualizar com IA'}
-          </button>
-          <div className="relative flex-1 min-h-0 overflow-hidden">
-            <div
-              ref={insightsScrollRef}
-              className="insights-scroll space-y-3 h-full min-h-0 overflow-y-auto pr-2 pb-6"
-              style={{ maxHeight: '50vh' }}
-            >
-              {erroInsights && <p className="text-xs text-rose-500">{erroInsights}</p>}
-              {!erroInsights && insights.length === 0 && !loadingInsights && (
-                <p className="text-sm text-soft">Carregue o dashboard para receber recomendações inteligentes.</p>
-              )}
-              {loadingInsights && (
-                <div className="space-y-2 text-sm text-soft">
-                  <div className="h-2 rounded-full bg-slate-100/60" />
-                  <div className="h-2 rounded-full bg-slate-100/60 w-3/4" />
-                  <div className="h-2 rounded-full bg-slate-100/60 w-1/2" />
-                </div>
-              )}
-              {!loadingInsights &&
-                insights.map((card) => {
-                  const theme = INSIGHT_THEMES[card.tone] ?? INSIGHT_THEMES.info;
-                  const Icon = theme.icon;
-                  return (
-                    <div
-                      key={card.id}
-                      className={`rounded-2xl border px-4 py-3 text-sm flex items-start gap-3 ${theme.bg} ${theme.border} dark:border-transparent`}
-                    >
-                      <div className={`mt-0.5 rounded-xl p-2 ${theme.iconBg} ${theme.iconColor}`}>
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 leading-relaxed">
-                        <p className="text-sm font-semibold text-main">
-                          {card.title || theme.label}
-                        </p>
-                        {card.body && (
-                          <p className="text-sm text-muted mt-1">{card.body}</p>
-                        )}
-                      </div>
-                      {card.dismissible !== false && (
-                        <button
-                          type="button"
-                          onClick={() => dismissInsightCard(card.id)}
-                          className="rounded-full p-1 text-soft hover:text-muted hover:bg-white/60 dark:hover:bg-slate-800/80 transition"
-                          aria-label="Fechar insight"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-white/90 via-white/60 to-transparent dark:from-slate-900/90 dark:via-slate-900/60" />
-          </div>
-        </aside>
-      </div >
-
-      {/* AI Copilot Chat */}
-      <CopilotChat dashboardData={insightsBaseline} />
     </>
   );
 }

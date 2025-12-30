@@ -22,7 +22,14 @@ export async function POST(req: NextRequest) {
 
   const body = (await req
     .json()
-    .catch(() => ({}))) as Partial<{ periodDays: number; pageLimit: number; pageSize: number }>;
+    .catch(() => ({}))) as Partial<{
+    periodDays: number;
+    pageLimit: number;
+    pageSize: number;
+    includeDetails: boolean;
+    detailConcurrency: number;
+    detailDelayMs: number;
+  }>;
 
   const periodDays =
     typeof body?.periodDays === 'number' && body.periodDays > 0
@@ -36,6 +43,9 @@ export async function POST(req: NextRequest) {
       periodDays,
       pageLimit: body?.pageLimit ?? 3,
       pageSize: body?.pageSize ?? 50,
+      includeDetails: body?.includeDetails,
+      detailConcurrency: body?.detailConcurrency,
+      detailDelayMs: body?.detailDelayMs,
     });
 
     return NextResponse.json(

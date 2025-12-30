@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { getAllShopeeOrdersForPeriod, getShopeeOrderDetails } from '@/lib/shopeeClient';
+import { getAllShopeeOrdersForPeriod, getShopeeEscrowDetailsForOrders, getShopeeOrderDetails } from '@/lib/shopeeClient';
 import type { ShopeeOrder } from '@/src/types/shopee';
 
 const DEFAULT_PERIOD_DAYS = 90; // Sync inicial: 90 dias
@@ -26,6 +26,17 @@ function getOrderItems(order: ShopeeOrder): JsonRecord[] {
 function toNumber(value: unknown, fallback = 0): number {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   return Number.isFinite(n) ? n : fallback;
+}
+
+function mergeEscrowDetail(rawPayload: unknown, escrow: unknown) {
+  const base =
+    rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+      ? (rawPayload as Record<string, unknown>)
+      : {};
+  return {
+    ...base,
+    escrow_detail: escrow,
+  };
 }
 
 // Extrai cidade e UF do endereço completo
@@ -187,6 +198,7 @@ export async function POST(req: Request) {
     // Parâmetros do request
     let periodDays = INCREMENTAL_PERIOD_DAYS;
     let statusResyncOnly = false;
+    let includeEscrow: boolean | null = null;
     try {
       const body = await req.json();
       if (body.periodDays && typeof body.periodDays === 'number') {
@@ -202,8 +214,16 @@ export async function POST(req: Request) {
           periodDays = DEFAULT_PERIOD_DAYS;
         }
       }
+      if (body.includeEscrow === true) {
+        includeEscrow = true;
+      } else if (body.includeEscrow === false) {
+        includeEscrow = false;
+      }
     } catch {
       // Body vazio ou inválido, usar padrão
+    }
+    if (includeEscrow === null) {
+      includeEscrow = periodDays <= 7;
     }
 
     // ============ MODO STATUS RESYNC ONLY ============
@@ -310,6 +330,72 @@ export async function POST(req: Request) {
       }
     }
 
+    let escrowUpdated = 0;
+    let escrowRequested = 0;
+    if (includeEscrow && orders.length > 0) {
+      try {
+        const orderSnList = orders.map((o) => o.order_sn);
+        const orderPayloadBySn = new Map<string, ShopeeOrder>();
+        for (const order of orders) {
+          orderPayloadBySn.set(order.order_sn, order);
+        }
+
+        const escrowPending: string[] = [];
+        const rawPayloadBySn = new Map<string, unknown>();
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < orderSnList.length; i += BATCH_SIZE) {
+          const batch = orderSnList.slice(i, i + BATCH_SIZE);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: existingRows } = await (supabaseAdmin as any)
+            .from('shopee_orders')
+            .select('order_sn, raw_payload, escrow_fetched_at')
+            .in('order_sn', batch);
+
+          (existingRows || []).forEach((row: any) => {
+            rawPayloadBySn.set(row.order_sn, row.raw_payload);
+            if (!row.escrow_fetched_at) {
+              escrowPending.push(row.order_sn);
+            }
+          });
+        }
+
+        if (escrowPending.length > 0) {
+          escrowRequested = escrowPending.length;
+          const escrowMap = await getShopeeEscrowDetailsForOrders(escrowPending);
+          for (const [orderSn, escrow] of escrowMap) {
+            const basePayload =
+              rawPayloadBySn.get(orderSn) ??
+              orderPayloadBySn.get(orderSn) ??
+              null;
+            const nextRawPayload = mergeEscrowDetail(basePayload, escrow);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: updateError } = await (supabaseAdmin as any)
+              .from('shopee_orders')
+              .update({
+                voucher_from_seller: escrow.voucher_from_seller,
+                voucher_from_shopee: escrow.voucher_from_shopee,
+                seller_voucher_code: escrow.seller_voucher_code,
+                escrow_amount: escrow.escrow_amount,
+                ams_commission_fee: escrow.ams_commission_fee,
+                order_selling_price: escrow.order_selling_price,
+                seller_discount: escrow.seller_discount,
+                raw_payload: nextRawPayload,
+                escrow_fetched_at: new Date().toISOString(),
+              })
+              .eq('order_sn', orderSn);
+
+            if (!updateError) {
+              escrowUpdated++;
+            } else {
+              console.error(`[Shopee Sync] Erro ao atualizar escrow ${orderSn}:`, updateError.message);
+            }
+          }
+        }
+      } catch (escrowError) {
+        console.error('[Shopee Sync] Falha ao enriquecer escrow:', escrowError);
+      }
+    }
+
     // Encontrar o update_time mais recente
     const latestUpdateTime = orders.reduce((latest, o) => {
       return o.update_time > latest ? o.update_time : latest;
@@ -341,6 +427,8 @@ export async function POST(req: Request) {
       data: {
         ordersProcessed: ordersUpserted,
         itemsProcessed: itemsUpserted,
+        escrowRequested,
+        escrowUpdated,
         periodDays,
         latestUpdateTime: new Date(latestUpdateTime * 1000).toISOString(),
         durationMs: Date.now() - startTime,

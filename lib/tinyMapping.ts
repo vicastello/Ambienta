@@ -102,14 +102,30 @@ export function normalizarCanalTiny(raw: string | null | undefined): string {
 }
 
 export function deriveCanalFromRaw(raw: any): string {
-  const canalBruto = firstNonEmptyString(
+  const candidates = [
     raw?.canal,
     raw?.canalVenda,
     raw?.ecommerce?.canal,
     raw?.ecommerce?.nome,
-    raw?.origem
-  );
-  return normalizarCanalTiny(canalBruto);
+    raw?.origem,
+    raw?.['Observações'],
+    raw?.observacoes,
+    raw?.['Número da ordem de compra'],
+    raw?.numeroOrdemCompra,
+    raw?.numero_pedido_ecommerce
+  ];
+
+  const KNOWN_CHANNELS = ['Shopee', 'Mercado Livre', 'Magalu', 'Olist', 'Amazon', 'Loja própria'];
+
+  for (const c of candidates) {
+    if (typeof c !== 'string' || !c.trim()) continue;
+    const norm = normalizarCanalTiny(c);
+    if (KNOWN_CHANNELS.includes(norm)) {
+      return norm;
+    }
+  }
+
+  return 'Outros';
 }
 
 // Extrai cidade e UF do objeto bruto do Tiny (melhor esforço)

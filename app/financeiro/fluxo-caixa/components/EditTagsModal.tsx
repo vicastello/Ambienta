@@ -151,13 +151,40 @@ export default function EditTagsModal({
 
     const handleApplyRule = (rule: AutoRule) => {
         setAppliedRuleId(rule.id);
-        // Extract tags from rule actions
-        const ruleTags = rule.actions
-            .filter(a => a.type === 'add_tags')
-            .flatMap(a => a.tags || []);
-        // Merge rule tags with current tags (avoiding duplicates)
-        const newTags = [...new Set([...tags, ...ruleTags])];
-        setTags(newTags);
+
+        const newTags = [...tags];
+        let hasNewTags = false;
+
+        rule.actions.forEach(action => {
+            // Handle Tags
+            if (action.type === 'add_tags' && action.tags) {
+                action.tags.forEach(tag => {
+                    if (!newTags.includes(tag)) {
+                        newTags.push(tag);
+                        hasNewTags = true;
+                    }
+                });
+            }
+
+            // Handle Type Override
+            if (action.type === 'set_type' && action.transactionType) {
+                setTransactionType(action.transactionType);
+            }
+
+            // Handle Description Override
+            if (action.type === 'set_description' && action.description) {
+                setTransactionDescription(action.description);
+            }
+
+            // Handle Category Override
+            if (action.type === 'set_category' && action.category) {
+                setExpenseCategory(action.category);
+            }
+        });
+
+        if (hasNewTags) {
+            setTags(newTags);
+        }
     };
 
     const handleUnlinkRule = () => {

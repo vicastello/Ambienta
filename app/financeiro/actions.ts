@@ -283,6 +283,58 @@ export async function markOrdersAsUnpaid(orderIds: number[]) {
     }
 
     revalidatePath('/financeiro/fluxo-caixa');
+    // Also revalidate the preview page where this action might be called
+    revalidatePath('/financeiro/importar-pagamentos');
 
     return { updatedCount: count ?? orderIds.length };
+}
+
+/**
+ * Forces a sync of a specific order from Tiny API.
+ * Useful to recover missing data or fix sync errors.
+ */
+export async function forceSyncOrder(marketplaceOrderId: string, marketplace: string) {
+    if (!marketplaceOrderId || !marketplace) {
+        throw new Error('ID do pedido e marketplace são obrigatórios.');
+    }
+
+    // Dynamic import to avoid circular dependencies if any
+    const { fetchAndSaveTinyOrder } = await import('@/lib/tinyClient');
+
+    console.log(`[Action] Force syncing order ${marketplaceOrderId} (${marketplace})`);
+
+    // Force overwrite: we might want to pass a flag to update even if exists
+    // For now, fetchAndSaveTinyOrder only inserts if missing. 
+    // TODO: Update fetchAndSaveTinyOrder to support 'upsert' or 'force update'
+
+    // For now, let's call it. If it exists, it assumes it's fine.
+    // Ideally user wants to REFRESH data. 
+    // Let's modify fetchAndSaveTinyOrder to support force update? 
+    // Or just re-fetching is enough?
+
+    // Actually, the user says "errors de 429", suggesting they want to fetch it because it failed before.
+    // If it failed before, it's NOT in the DB. So fetchAndSaveTinyOrder is correct.
+
+    // We now pass true to force update existing records with fresh data from API
+    const result = await fetchAndSaveTinyOrder(marketplaceOrderId, marketplace, true);
+
+    if (!result.success) {
+        throw new Error(result.error || 'Falha ao sincronizar pedido.');
+    }
+
+    // If Shopee, also try to fetch/update details from Shopee API (escrow, etc)
+    if (marketplace === 'shopee') {
+        try {
+            const { fetchAndSaveShopeeOrder } = await import('@/lib/shopeeClient');
+            console.log(`[Action] Fetching extra details from Shopee for ${marketplaceOrderId}...`);
+            await fetchAndSaveShopeeOrder(marketplaceOrderId);
+        } catch (shopeeErr) {
+            console.error('[Action] Warning: Failed to sync Shopee details:', shopeeErr);
+            // Non-blocking, we still return success if Tiny worked
+        }
+    }
+
+    revalidatePath('/financeiro/importar-pagamentos');
+
+    return { success: true, tinyOrderId: result.tinyOrderId };
 }

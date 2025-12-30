@@ -357,8 +357,10 @@ export async function getAllMagaluOrdersForPeriod(params: {
   fromDate: Date;
   toDate: Date;
   onProgress?: (info: { loaded: number; total: number }) => void;
+  filterBy?: 'placed_at' | 'updated_at';
 }): Promise<MagaluOrder[]> {
   const { fromDate, toDate, onProgress } = params;
+  const filterBy = params.filterBy ?? 'placed_at';
   const allOrders: MagaluOrder[] = [];
   // API impõe max_limit = 50 (mesmo se solicitarmos 100)
   const limit = 50;
@@ -370,8 +372,15 @@ export async function getAllMagaluOrdersForPeriod(params: {
     const response = await listMagaluOrdersV2({
       limit,
       offset,
-      placed_at_from: fromDate.toISOString(),
-      placed_at_to: toDate.toISOString(),
+      ...(filterBy === 'updated_at'
+        ? {
+            updated_at_from: fromDate.toISOString(),
+            updated_at_to: toDate.toISOString(),
+          }
+        : {
+            placed_at_from: fromDate.toISOString(),
+            placed_at_to: toDate.toISOString(),
+          }),
     });
 
     allOrders.push(...response.results);

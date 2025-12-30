@@ -46,7 +46,7 @@ type SyncLogEntry = {
 };
 
 type CronStatusStep = {
-  name: "orders" | "enrich" | "produtos";
+  name: "orders" | "returns" | "enrich" | "produtos";
   createdAt: string;
   level: string;
   message: string;
@@ -153,6 +153,7 @@ const SECTION_PANEL_CLASS = "glass-panel glass-tint rounded-3xl border border-wh
 const CARD_PANEL_CLASS = "glass-panel glass-tint rounded-2xl border border-white/15";
 const CRON_STEP_LABELS: Record<CronStatusStep["name"], string> = {
   orders: "Pedidos recentes",
+  returns: "Tags devolucao",
   enrich: "Enrich background",
   produtos: "Produtos/estoque",
 };

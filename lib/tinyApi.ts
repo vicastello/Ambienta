@@ -201,12 +201,13 @@ export async function listarPedidosTiny(
     offset?: number;
     orderBy?: "asc" | "desc";
     situacao?: number; // 0,1,2,... conforme enum
+    marcadores?: string[];
     fields?: string;
     dataAtualizacao?: string; // yyyy-mm-dd - busca pedidos atualizados desde essa data
   },
   context?: string
 ): Promise<TinyListarPedidosResponse> {
-  const { limit = 100, offset = 0, orderBy = "desc", situacao, fields, dataAtualizacao } = options ?? {};
+  const { limit = 100, offset = 0, orderBy = "desc", situacao, marcadores, fields, dataAtualizacao } = options ?? {};
 
   const params: TinyGetParams = {
     limit,
@@ -218,6 +219,10 @@ export async function listarPedidosTiny(
 
   if (typeof situacao === "number") {
     params.situacao = situacao;
+  }
+
+  if (marcadores && marcadores.length > 0) {
+    params.marcadores = marcadores.join(',');
   }
 
   if (dataAtualizacao) {
@@ -244,6 +249,7 @@ export async function listarPedidosTinyPorPeriodo(
     offset?: number;
     orderBy?: "asc" | "desc";
     situacao?: number;
+    marcadores?: string[];
     fields?: string; // comma-separated fields to include
   },
   context?: string
@@ -255,6 +261,7 @@ export async function listarPedidosTinyPorPeriodo(
     offset = 0,
     orderBy = "desc",
     situacao,
+    marcadores,
     fields,
   } = options;
 
@@ -270,6 +277,10 @@ export async function listarPedidosTinyPorPeriodo(
 
   if (typeof situacao === "number") {
     params.situacao = situacao;
+  }
+
+  if (marcadores && marcadores.length > 0) {
+    params.marcadores = marcadores.join(',');
   }
 
   return tinyGet<TinyListarPedidosResponse>("/pedidos", accessToken, params, {

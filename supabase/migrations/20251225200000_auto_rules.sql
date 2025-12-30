@@ -57,7 +57,7 @@ SELECT
     jsonb_build_array(
         jsonb_build_object(
             'type', 'add_tags',
-            'tags', COALESCE(tags, '[]'::jsonb)
+            'tags', COALESCE(to_jsonb(tags), '[]'::jsonb)
         )
     ) AS actions,
     COALESCE(priority, 50) AS priority,

@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { DollarSign, Settings, Bell } from 'lucide-react';
+import { DollarSign, Settings, Bell, Brain } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import ConfigFinanceiro from './tabs/ConfigFinanceiro';
 import ConfigGeral from './tabs/ConfigGeral';
+import ConfigAI from './tabs/ConfigAI';
 
-type TabId = 'financeiro' | 'geral' | 'notificacoes';
+type TabId = 'financeiro' | 'geral' | 'ia' | 'notificacoes';
 
 const tabs = [
   {
@@ -18,6 +19,11 @@ const tabs = [
     id: 'geral' as TabId,
     label: 'Geral',
     icon: Settings,
+  },
+  {
+    id: 'ia' as TabId,
+    label: 'IA',
+    icon: Brain,
   },
   {
     id: 'notificacoes' as TabId,
@@ -72,6 +78,8 @@ export default function ConfiguracoesPage() {
             {activeTab === 'financeiro' && <ConfigFinanceiro />}
 
             {activeTab === 'geral' && <ConfigGeral />}
+
+            {activeTab === 'ia' && <ConfigAI />}
 
             {activeTab === 'notificacoes' && (
               <div className="text-center py-16 text-muted">
