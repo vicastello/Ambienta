@@ -11,7 +11,7 @@ type SyncStats = {
 };
 
 type SyncBannerProps = {
-    orders: Array<{ marketplaceOrderId: string; marketplace: string }>;
+    orders: Array<{ marketplaceOrderId: string; marketplace: string; syncType?: 'link' | 'escrow' }>;
     onComplete: () => void;
     autoStart?: boolean;
 };
@@ -154,11 +154,11 @@ export function SyncBanner({ orders, onComplete, autoStart = true }: SyncBannerP
                             {status === 'completed' && errors.length > 0 && `Sincronização concluída com ${errors.length} erro(s)`}
                             {status === 'error' && 'Erro na sincronização'}
                         </span>
-                        {stats && status === 'completed' && (
-                            <span className="text-xs text-muted ml-2">
-                                ({stats.linked} vinculados, {stats.skipped} ignorados)
-                            </span>
-                        )}
+                    {stats && status === 'completed' && (
+                        <span className="text-xs text-muted ml-2">
+                            ({stats.synced} atualizados, {stats.linked} vinculados, {stats.skipped} ignorados)
+                        </span>
+                    )}
                     </div>
                 </div>
 

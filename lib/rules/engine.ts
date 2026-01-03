@@ -73,6 +73,7 @@ export class RulesEngine {
      */
     process(payment: PaymentInput, marketplace: string = 'all'): RuleEngineResult {
         const startTime = performance.now();
+        const targetMarketplace = marketplace?.toLowerCase() || 'all';
 
         // Check cache
         if (this.cacheEnabled) {
@@ -98,9 +99,11 @@ export class RulesEngine {
         };
 
         // Get applicable rules (matching marketplace or 'all')
-        const applicableRules = this.rules.filter(
-            r => r.marketplace === 'all' || r.marketplace === marketplace
-        );
+        const applicableRules = this.rules.filter((rule) => {
+            if (!rule.marketplaces || rule.marketplaces.length === 0) return true;
+            if (targetMarketplace === 'all') return true;
+            return rule.marketplaces.includes(targetMarketplace);
+        });
 
         // Process each rule
         for (const rule of applicableRules) {
@@ -230,7 +233,13 @@ export class RulesEngine {
         const byMarketplace: Record<string, number> = {};
 
         for (const rule of this.rules) {
-            byMarketplace[rule.marketplace] = (byMarketplace[rule.marketplace] || 0) + 1;
+            if (!rule.marketplaces || rule.marketplaces.length === 0) {
+                byMarketplace.all = (byMarketplace.all || 0) + 1;
+                continue;
+            }
+            rule.marketplaces.forEach((mp) => {
+                byMarketplace[mp] = (byMarketplace[mp] || 0) + 1;
+            });
         }
 
         return {

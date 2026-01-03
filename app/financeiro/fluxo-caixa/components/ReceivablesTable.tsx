@@ -100,6 +100,16 @@ const formatDate = (dateStr: string | null) => {
     }
 };
 
+const getAutoTags = (order: Order) => {
+    const tags: string[] = [];
+    const shopeeData = order.fees_breakdown?.shopeeData;
+    const refundAmount = Number(shopeeData?.refundAmount ?? order.fees_breakdown?.refundAmount ?? 0);
+    if (refundAmount > 0) tags.push('devolucao');
+    const freightDiscount = Number(shopeeData?.freightDiscount ?? 0);
+    if (freightDiscount > 0) tags.push('frete descontado');
+    return tags;
+};
+
 // Marketplace badge configuration
 const marketplaceBadges: Record<string, { bg: string; text: string; icon: any; label: string }> = {
     'Shopee': { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', icon: ShoppingBag, label: 'Shopee' },
@@ -1134,7 +1144,9 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                 {formatCurrency(order.valor_original || order.valor)}
                                             </td>
                                             <td className="py-4 px-4 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
-                                                {order.valor_esperado ? formatCurrency(order.valor_esperado) : '-'}
+                                                {order.valor_esperado !== undefined && order.valor_esperado !== null
+                                                    ? formatCurrency(order.valor_esperado)
+                                                    : '-'}
                                             </td>
                                             <td className="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-200">
                                                 {formatCurrency(order.valor)}
@@ -1206,10 +1218,20 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                     {/* Import tags from payments_breakdown */}
                                                     {(() => {
                                                         const importTags = new Set<string>();
+                                                        const tagMeta = new Map<string, string>();
                                                         order.payments_breakdown?.forEach((p: any) => {
                                                             if (p.tags && Array.isArray(p.tags)) {
-                                                                p.tags.forEach((t: string) => importTags.add(t));
+                                                                p.tags.forEach((t: string) => {
+                                                                    importTags.add(t);
+                                                                    tagMeta.set(t, 'Tag do extrato');
+                                                                });
                                                             }
+                                                        });
+                                                        getAutoTags(order).forEach((t) => {
+                                                            if (!importTags.has(t)) {
+                                                                tagMeta.set(t, 'Tag automática');
+                                                            }
+                                                            importTags.add(t);
                                                         });
                                                         return Array.from(importTags).map((tag, idx) => {
                                                             const colors = getTagColor(tag);
@@ -1220,7 +1242,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                                                                         "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
                                                                         colors.bg, colors.text
                                                                     )}
-                                                                    title="Tag do extrato"
+                                                                    title={tagMeta.get(tag) || 'Tag do extrato'}
                                                                 >
                                                                     {formatTagName(tag)}
                                                                 </span>
@@ -1358,7 +1380,8 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
                             p.tags.forEach((t: string) => importTags.add(t));
                         }
                     });
-                    return [...new Set([...manualTags, ...importTags])];
+                    const autoTags = order ? getAutoTags(order) : [];
+                    return [...new Set([...manualTags, ...importTags, ...autoTags])];
                 })()}
                 availableTags={availableTags}
                 onAddTag={addTagToOrder}

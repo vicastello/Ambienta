@@ -7,7 +7,24 @@ export const maxDuration = 300; // 5 minutes max
 type SyncItem = {
     marketplaceOrderId: string;
     marketplace: 'shopee' | 'mercado_livre' | 'magalu';
+    syncType?: 'link' | 'escrow';
 };
+
+const ESCROW_BATCH_SIZE = 25;
+const ESCROW_CONCURRENCY = 6;
+const ESCROW_DELAY_MS = 120;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const chunkArray = <T,>(items: T[], size: number) => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+};
+const normalizeOrderId = (orderId: string) =>
+    orderId
+        .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$/i, '')
+        .replace(/_\d+$/, '');
 
 type ProgressEvent = {
     type: 'progress' | 'success' | 'error' | 'complete';
@@ -67,22 +84,43 @@ export async function POST(request: NextRequest) {
                 // Dynamic imports to avoid loading heavy modules up front
                 const { fetchAndSaveTinyOrder } = await import('@/lib/tinyClient');
                 const { fetchAndSaveShopeeOrder } = await import('@/lib/shopeeClient');
+                const { syncShopeeEscrowForOrders } = await import('@/lib/shopeeEscrowSync');
 
-                // Process orders one by one with delays to avoid rate limits
-                for (let i = 0; i < orders.length; i++) {
-                    const { marketplaceOrderId, marketplace } = orders[i];
+                const normalizedOrders = orders.map((order) => ({
+                    ...order,
+                    syncType: order.syncType ?? 'link',
+                }));
 
-                    // Extract base order ID (remove suffixes like _AJUSTE, _2, etc.)
-                    const baseOrderId = marketplaceOrderId
-                        .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+                const linkOrders = normalizedOrders.filter((order) => order.syncType !== 'escrow');
+                const escrowOrders = normalizedOrders.filter((order) => order.syncType === 'escrow');
+
+                let current = 0;
+
+                // Process link orders (Tiny + optional Shopee detail)
+                for (const order of linkOrders) {
+                    const { marketplaceOrderId, marketplace } = order;
+                    const baseOrderId = normalizeOrderId(marketplaceOrderId);
+                    current += 1;
 
                     sendEvent({
                         type: 'progress',
-                        current: i + 1,
+                        current,
                         total,
                         orderId: baseOrderId,
                         message: `Sincronizando ${baseOrderId}...`,
                     });
+
+                    if (!baseOrderId) {
+                        stats.skipped++;
+                        sendEvent({
+                            type: 'error',
+                            current,
+                            total,
+                            orderId: marketplaceOrderId,
+                            message: 'Pedido inválido para sincronização',
+                        });
+                        continue;
+                    }
 
                     try {
                         // Check if link already exists
@@ -95,6 +133,13 @@ export async function POST(request: NextRequest) {
 
                         if (existingLink) {
                             stats.skipped++;
+                            sendEvent({
+                                type: 'success',
+                                current,
+                                total,
+                                orderId: baseOrderId,
+                                message: `⟳ ${baseOrderId} já vinculado`,
+                            });
                             continue;
                         }
 
@@ -105,6 +150,13 @@ export async function POST(request: NextRequest) {
                             // Not finding in Tiny might be expected for some transaction types
                             if (tinyResult.error?.includes('não encontrado')) {
                                 stats.skipped++;
+                                sendEvent({
+                                    type: 'success',
+                                    current,
+                                    total,
+                                    orderId: baseOrderId,
+                                    message: `⟳ ${baseOrderId} não encontrado no Tiny`,
+                                });
                                 continue;
                             }
                             throw new Error(tinyResult.error || 'Falha ao sincronizar do Tiny');
@@ -146,10 +198,9 @@ export async function POST(request: NextRequest) {
                             stats.linked++;
                         }
 
-
                         sendEvent({
                             type: 'success',
-                            current: i + 1,
+                            current,
                             total,
                             orderId: baseOrderId,
                             message: `✓ ${baseOrderId} sincronizado`,
@@ -163,7 +214,7 @@ export async function POST(request: NextRequest) {
 
                         sendEvent({
                             type: 'error',
-                            current: i + 1,
+                            current,
                             total,
                             orderId: baseOrderId,
                             message: errorMsg,
@@ -171,14 +222,159 @@ export async function POST(request: NextRequest) {
 
                         // If rate limited, add longer delay
                         if (orderError.message?.includes('429') || orderError.message?.includes('rate')) {
-                            await new Promise(r => setTimeout(r, 5000));
+                            await sleep(5000);
                         }
                     }
 
                     // Small delay to avoid overwhelming the APIs
                     // Tiny API has ~60 requests/min limit
-                    if (i < orders.length - 1) {
-                        await new Promise(r => setTimeout(r, 300));
+                    if (current < total) {
+                        await sleep(300);
+                    }
+                }
+
+                // Process escrow-only orders (Shopee only)
+                const escrowShopeeOrders = escrowOrders.filter((order) => order.marketplace === 'shopee');
+                const escrowOtherOrders = escrowOrders.filter((order) => order.marketplace !== 'shopee');
+
+                for (const order of escrowOtherOrders) {
+                    const baseOrderId = normalizeOrderId(order.marketplaceOrderId);
+                    current += 1;
+                    stats.skipped++;
+                    sendEvent({
+                        type: 'progress',
+                        current,
+                        total,
+                        orderId: baseOrderId,
+                        message: `Escrow não aplicável para ${baseOrderId}`,
+                    });
+                    sendEvent({
+                        type: 'success',
+                        current,
+                        total,
+                        orderId: baseOrderId,
+                        message: `⟳ ${baseOrderId} ignorado (sem escrow)`,
+                    });
+                }
+
+                const escrowChunks = chunkArray(escrowShopeeOrders, ESCROW_BATCH_SIZE);
+                for (const chunk of escrowChunks) {
+                    const orderIds = chunk
+                        .map((order) => normalizeOrderId(order.marketplaceOrderId))
+                        .filter((orderId) => orderId.length > 0);
+                    const uniqueOrderIds = Array.from(new Set(orderIds));
+
+                    if (uniqueOrderIds.length > 0) {
+                        try {
+                            const escrowResult = await syncShopeeEscrowForOrders(uniqueOrderIds, {
+                                concurrency: ESCROW_CONCURRENCY,
+                                delayMs: ESCROW_DELAY_MS,
+                            });
+                            const failed = new Set(escrowResult.failedOrders || []);
+                            const skipped = new Set(escrowResult.skippedOrders || []);
+
+                            for (const order of chunk) {
+                                const baseOrderId = normalizeOrderId(order.marketplaceOrderId);
+                                current += 1;
+                                sendEvent({
+                                    type: 'progress',
+                                    current,
+                                    total,
+                                    orderId: baseOrderId,
+                                    message: `Buscando escrow ${baseOrderId}...`,
+                                });
+
+                                if (!baseOrderId) {
+                                    stats.skipped++;
+                                    sendEvent({
+                                        type: 'error',
+                                        current,
+                                        total,
+                                        orderId: order.marketplaceOrderId,
+                                        message: 'Pedido inválido para escrow',
+                                    });
+                                    continue;
+                                }
+
+                                if (failed.has(baseOrderId)) {
+                                    stats.failed++;
+                                    const errorMsg = `${baseOrderId}: Falha ao sincronizar escrow`;
+                                    errors.push(errorMsg);
+                                    sendEvent({
+                                        type: 'error',
+                                        current,
+                                        total,
+                                        orderId: baseOrderId,
+                                        message: errorMsg,
+                                    });
+                                } else if (skipped.has(baseOrderId)) {
+                                    stats.skipped++;
+                                    sendEvent({
+                                        type: 'success',
+                                        current,
+                                        total,
+                                        orderId: baseOrderId,
+                                        message: `⟳ ${baseOrderId} já atualizado`,
+                                    });
+                                } else {
+                                    stats.synced++;
+                                    sendEvent({
+                                        type: 'success',
+                                        current,
+                                        total,
+                                        orderId: baseOrderId,
+                                        message: `✓ ${baseOrderId} escrow atualizado`,
+                                    });
+                                }
+                            }
+                        } catch (escrowError: any) {
+                            console.error('[BatchSync] Shopee escrow sync failed:', escrowError);
+                            for (const order of chunk) {
+                                const baseOrderId = normalizeOrderId(order.marketplaceOrderId);
+                                current += 1;
+                                stats.failed++;
+                                const errorMsg = `${baseOrderId}: Falha ao sincronizar escrow`;
+                                errors.push(errorMsg);
+                                sendEvent({
+                                    type: 'progress',
+                                    current,
+                                    total,
+                                    orderId: baseOrderId,
+                                    message: `Buscando escrow ${baseOrderId}...`,
+                                });
+                                sendEvent({
+                                    type: 'error',
+                                    current,
+                                    total,
+                                    orderId: baseOrderId,
+                                    message: errorMsg,
+                                });
+                            }
+                        }
+                    } else {
+                        for (const order of chunk) {
+                            const baseOrderId = normalizeOrderId(order.marketplaceOrderId);
+                            current += 1;
+                            stats.skipped++;
+                            sendEvent({
+                                type: 'progress',
+                                current,
+                                total,
+                                orderId: baseOrderId,
+                                message: `Escrow não aplicável para ${baseOrderId}`,
+                            });
+                            sendEvent({
+                                type: 'success',
+                                current,
+                                total,
+                                orderId: baseOrderId,
+                                message: `⟳ ${baseOrderId} ignorado (sem escrow)`,
+                            });
+                        }
+                    }
+
+                    if (chunk !== escrowChunks[escrowChunks.length - 1]) {
+                        await sleep(200);
                     }
                 }
 
@@ -187,7 +383,7 @@ export async function POST(request: NextRequest) {
                     type: 'complete',
                     current: total,
                     total,
-                    message: `Sincronização concluída: ${stats.linked} vinculados, ${stats.failed} erros, ${stats.skipped} ignorados`,
+                    message: `Sincronização concluída: ${stats.synced} atualizados, ${stats.linked} vinculados, ${stats.failed} erros, ${stats.skipped} ignorados`,
                     errors: errors.length > 0 ? errors : undefined,
                     stats,
                 });

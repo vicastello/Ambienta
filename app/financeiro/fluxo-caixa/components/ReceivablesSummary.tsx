@@ -153,7 +153,7 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
             let apiValue = status;
             if (status === 'pago') apiValue = 'pagos';
             else if (status === 'pendente') apiValue = 'pendentes';
-            else if (status === 'atrasado') apiValue = 'pendentes'; // atrasado is within pendentes
+            else if (status === 'atrasado') apiValue = 'atrasados';
 
             params.set('statusPagamento', apiValue);
         } else {
@@ -186,8 +186,9 @@ export function ReceivablesSummary({ summary, loading }: ReceivablesSummaryProps
 
     // Convert back to internal filterValue for UI state
     const currentStatus = currentStatusPagamento === 'pagos' ? 'pago'
-        : currentStatusPagamento === 'pendentes' ? 'pendente' // could be pendente or atrasado, we'll simplify
-            : null;
+        : currentStatusPagamento === 'pendentes' ? 'pendente'
+            : currentStatusPagamento === 'atrasados' ? 'atrasado'
+                : null;
 
     const cards = [
         {

@@ -11,14 +11,19 @@ import {
     type CreateRulePayload,
     type PaymentInput,
     type AutoRule,
+    normalizeMarketplaces,
 } from '@/lib/rules';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { rule, testPayments } = body as {
-            rule: CreateRulePayload;
+        const { rule: rawRule, testPayments } = body as {
+            rule: CreateRulePayload & { marketplace?: string };
             testPayments: PaymentInput[];
+        };
+        const rule: CreateRulePayload = {
+            ...rawRule,
+            marketplaces: normalizeMarketplaces((rawRule as Record<string, unknown>).marketplaces as string[] | undefined ?? rawRule.marketplace),
         };
 
         // Validate the rule
@@ -49,10 +54,11 @@ export async function POST(request: NextRequest) {
 
         // Create engine with just this rule (no system rules for isolated testing)
         const engine = new RulesEngine([testRule]);
+        const testMarketplace = 'all';
 
         // Test each payment
         const results = testPayments.map(payment => {
-            const result = engine.process(payment, rule.marketplace);
+            const result = engine.process(payment, testMarketplace);
             const matchResult = result.matchedRules.find(r => r.ruleId === 'test_rule');
 
             return {

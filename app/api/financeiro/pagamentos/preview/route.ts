@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { syncShopeeEscrowForOrders } from '@/lib/shopeeEscrowSync';
 import { parsePaymentFile, type ParsedPayment } from '@/lib/paymentParsers';
 import { applySmartTags, detectMultiEntry, convertDbRulesToTagRules } from '@/lib/smartTagger';
 import { calculateMarketplaceFees } from '@/lib/marketplace-fees';
-import { RulesEngine, getSystemRules, type AutoRule, type PaymentInput } from '@/lib/rules';
+import {
+    RulesEngine,
+    getSystemRules,
+    getCachedRules,
+    setCachedRules,
+    normalizeMarketplaces,
+    normalizeConditionField,
+    type AutoRule,
+    type PaymentInput,
+} from '@/lib/rules';
 
 export const config = {
     api: {
@@ -19,16 +29,16 @@ const getMeliRefundAmount = (raw: any): number => {
     return refunded > 0 ? refunded : 0;
 };
 
-const getShopeeRefundAmountFromEscrow = (escrowDetail: any): number => {
+const getShopeeRefundAmountFromEscrow = (escrowDetail: any, orderStatus?: string): number => {
     if (!escrowDetail || typeof escrowDetail !== 'object') return 0;
+    const sellerReturnRefund = Number(escrowDetail.seller_return_refund || 0);
+    if (sellerReturnRefund !== 0) return Math.abs(sellerReturnRefund);
     const drcRefund = Number(escrowDetail.drc_adjustable_refund || 0);
     if (drcRefund > 0) return drcRefund;
-    const sellerReturnRefund = Math.abs(Number(escrowDetail.seller_return_refund || 0));
-    if (sellerReturnRefund > 0) return sellerReturnRefund;
     const buyerTotal = Number(escrowDetail.buyer_total_amount || 0);
-    const selling = Number(escrowDetail.order_selling_price || 0);
-    const delta = buyerTotal - selling;
-    if (buyerTotal > 0 && delta > 0) return delta;
+    const orderSelling = Number(escrowDetail.order_selling_price || 0);
+    const escrowAmount = Number(escrowDetail.escrow_amount || 0);
+    if (buyerTotal > 0 && orderSelling <= 0 && escrowAmount <= 0) return buyerTotal;
     return 0;
 };
 
@@ -58,6 +68,17 @@ export type PreviewPayment = ParsedPayment & {
     isRefund: boolean;
     isFreightAdjustment: boolean; // Freight/weight adjustments - don't show expected/difference
     matchedRuleNames?: string[];   // Rules that were automatically applied
+    matchedRuleDetails?: PreviewRuleMatchDetail[];
+    autoRuleAppliedNames?: string[];
+    autoRuleSnapshot?: {
+        tags: string[];
+        transactionType?: string;
+        transactionDescription?: string;
+        expenseCategory?: string | null;
+        isExpense?: boolean;
+        matchedRuleNames?: string[];
+    };
+    autoRuleOptOut?: boolean;
     matchStatus: 'linked' | 'unmatched' | 'multiple_entries';
     tinyOrderId?: number;
     tinyOrderInfo?: {
@@ -73,6 +94,73 @@ export type PreviewPayment = ParsedPayment & {
     netBalance?: number;
     diferenca?: number; // Difference between netAmount and valorEsperado for sorting
 };
+
+type PreviewRuleMatchDetail = {
+    ruleId: string;
+    ruleName: string;
+    matchedConditions: number;
+    totalConditions: number;
+    conditionResults: Array<{
+        conditionId: string;
+        field: string;
+        operator: string;
+        expectedValue: string | number;
+        actualValue: string | number;
+        matched: boolean;
+    }>;
+    appliedActions: any[];
+    stoppedProcessing: boolean;
+    isSystemRule: boolean;
+};
+
+const dbRowToRule = (row: any): AutoRule => {
+    const normalizedConditions = Array.isArray(row.conditions)
+        ? row.conditions.map((condition: any) => ({
+            ...condition,
+            field: normalizeConditionField(String(condition.field || '')),
+        }))
+        : [];
+
+    return {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        marketplaces: normalizeMarketplaces(row.marketplaces ?? row.marketplace),
+        conditions: normalizedConditions,
+        conditionLogic: row.condition_logic || 'AND',
+        actions: row.actions || [],
+        priority: row.priority,
+        enabled: row.enabled,
+        stopOnMatch: row.stop_on_match,
+        isSystemRule: row.is_system_rule,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+    };
+};
+
+const loadUserRules = async (marketplace: string) => {
+    const cached = getCachedRules(marketplace);
+    if (cached) return cached;
+
+    const { data, error } = await supabaseAdmin
+        .from('auto_rules')
+        .select('*')
+        .eq('enabled', true);
+
+    if (error) {
+        console.warn('[Preview] Error loading user rules:', error);
+        return [];
+    }
+
+    let rules = (data || []).map(dbRowToRule);
+    if (marketplace && marketplace !== 'all') {
+        rules = rules.filter((rule) => rule.marketplaces.includes(marketplace));
+    }
+    setCachedRules(marketplace, rules);
+    return rules;
+};
+const RUN_INLINE_ESCROW_SYNC = true; // Enable inline for small batches; large batches fall back to pending list
+const INLINE_ESCROW_LIMIT = 100; // Max orders to fetch inline to avoid long blocking
 
 export type PreviewResponse = {
     success: boolean;
@@ -90,6 +178,9 @@ export type PreviewResponse = {
         multiEntry: number;
         matchRate: string;
     };
+    rulesAppliedBackend?: boolean;
+    pendingEscrowOrders?: string[];
+    escrowSyncErrors?: { orderSn: string; reason: string }[];
     errors?: string[];
 };
 
@@ -127,21 +218,27 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // 2. Fetch rules from new auto_rules table + system rules
-        // NOTE: User rules are NOT applied automatically during preview.
-        // They are fetched by the frontend and shown as "suggestions" for manual approval.
-        // Only system rules are applied automatically for basic tagging.
-        let rulesEngine: RulesEngine;
-        try {
-            // Initialize RulesEngine with ONLY system rules
-            // User rules will be suggested on the frontend
-            const systemRules = getSystemRules();
-            rulesEngine = new RulesEngine(systemRules);
+        // 2. Fetch rules from auto_rules table + system rules
+        // User rules are applied server-side to keep preview consistent.
+        let systemRules: AutoRule[] = [];
+        let userRules: AutoRule[] = [];
+        let systemEngine: RulesEngine;
+        let userEngine: RulesEngine;
 
+        try {
+            systemRules = getSystemRules();
+            userRules = await loadUserRules(marketplace);
+            systemEngine = new RulesEngine(systemRules);
+            userEngine = new RulesEngine(userRules);
         } catch (error) {
-            console.warn('[Preview] Error loading rules, falling back to empty:', error);
-            rulesEngine = new RulesEngine(getSystemRules());
+            console.warn('[Preview] Error loading rules, falling back to system rules only:', error);
+            systemRules = getSystemRules();
+            userRules = [];
+            systemEngine = new RulesEngine(systemRules);
+            userEngine = new RulesEngine([]);
         }
+
+        const systemRuleIds = new Set(systemRules.map((rule) => rule.id));
 
         // ============================================================
         // PERFORMANCE OPTIMIZATION: Batch queries instead of N+1
@@ -152,7 +249,7 @@ export async function POST(request: NextRequest) {
         const baseOrderIdMap = new Map<string, string>(); // marketplaceOrderId -> baseId
 
         for (const payment of parseResult.payments) {
-            const baseId = payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+            const baseId = payment.marketplaceOrderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$|_\d+$/, '');
             allOrderIds.add(payment.marketplaceOrderId);
             allOrderIds.add(baseId);
             baseOrderIdMap.set(payment.marketplaceOrderId, baseId);
@@ -160,6 +257,30 @@ export async function POST(request: NextRequest) {
 
         const orderIdsArray = Array.from(allOrderIds);
         const baseOrderIds = [...new Set(Array.from(baseOrderIdMap.values()))];
+        const paymentsByBaseId = new Map<string, ParsedPayment[]>();
+        const isExpensePayment = (p: ParsedPayment) => p.isExpense === true || Number(p.netAmount || 0) < 0;
+
+        for (const payment of parseResult.payments) {
+            const baseId = baseOrderIdMap.get(payment.marketplaceOrderId) || payment.marketplaceOrderId;
+            const existing = paymentsByBaseId.get(baseId) || [];
+            existing.push(payment);
+            paymentsByBaseId.set(baseId, existing);
+        }
+
+        if (marketplace === 'shopee' && baseOrderIds.length > 0 && RUN_INLINE_ESCROW_SYNC && baseOrderIds.length <= INLINE_ESCROW_LIMIT) {
+            const shopeeOrderIds = baseOrderIds.filter((orderId) => /\b2[0-9A-Z]{10,}\b/.test(orderId));
+            if (shopeeOrderIds.length > 0) {
+                try {
+                    const escrowResult = await syncShopeeEscrowForOrders(shopeeOrderIds, {
+                        concurrency: 6,
+                        delayMs: 120,
+                    });
+                    console.log('[PaymentPreview] Shopee escrow sync:', escrowResult);
+                } catch (error) {
+                    console.error('[PaymentPreview] Shopee escrow sync failed:', error);
+                }
+            }
+        }
 
 
         // 3b. BATCH QUERY: Fetch all marketplace_order_links at once
@@ -208,7 +329,14 @@ export async function POST(request: NextRequest) {
         console.log(`[PaymentPreview] Total order IDs: ${orderIdsArray.length}, Links found: ${totalLinksFound}`);
 
         // 3c. BATCH QUERY: Fetch all shopee_order_items at once (for Shopee only)
-        type ShopeeOrderItem = { order_sn: string; quantity: number | null; discounted_price: number | null; original_price: number | null };
+        type ShopeeOrderItem = {
+            order_sn: string;
+            quantity: number | null;
+            discounted_price: number | null;
+            original_price: number | null;
+            raw_payload?: any;
+            is_wholesale?: boolean | null;
+        };
         const itemsByOrderSn = new Map<string, ShopeeOrderItem[]>();
 
         if (marketplace === 'shopee' && baseOrderIds.length > 0) {
@@ -222,7 +350,7 @@ export async function POST(request: NextRequest) {
                 const batch = baseOrderIds.slice(i, i + BATCH_SIZE);
                 const { data: batchItems, error: itemsError } = await supabaseAdmin
                     .from('shopee_order_items')
-                    .select('order_sn, quantity, discounted_price, original_price')
+                    .select('order_sn, quantity, discounted_price, original_price, raw_payload, is_wholesale')
                     .in('order_sn', batch);
 
                 if (itemsError) {
@@ -256,6 +384,10 @@ export async function POST(request: NextRequest) {
             raw_payload?: any;
         };
         const shopeeOrdersMap = new Map<string, ShopeeOrderData>();
+        const shopeeOrdersMissingEscrow: string[] = [];
+
+        const pendingEscrowOrders: string[] = [];
+        const escrowSyncErrors: { orderSn: string; reason: string }[] = [];
 
         if (marketplace === 'shopee' && baseOrderIds.length > 0) {
             const ordersQueryStart = Date.now();
@@ -286,6 +418,10 @@ export async function POST(request: NextRequest) {
                 if (batchOrders) {
                     for (const order of batchOrders as any[]) {
                         shopeeOrdersMap.set(order.order_sn, order as ShopeeOrderData);
+                        const hasEscrow = !!order.raw_payload?.escrow_detail || order.escrow_amount !== null;
+                        if (!hasEscrow) {
+                            shopeeOrdersMissingEscrow.push(order.order_sn);
+                        }
                     }
                     totalShopeeOrdersFound += batchOrders.length;
                 }
@@ -303,6 +439,43 @@ export async function POST(request: NextRequest) {
                 });
             } else {
                 console.log('[DEBUG] Order', testOrderId, 'NOT found in shopee_orders results');
+            }
+
+            // Collect pending escrow orders so the client can sync with progress UI
+            pendingEscrowOrders.push(...new Set(shopeeOrdersMissingEscrow));
+
+            // Inline escrow sync for small batches (fast refresh) with conservative rate limits
+            if (RUN_INLINE_ESCROW_SYNC && pendingEscrowOrders.length > 0 && pendingEscrowOrders.length <= INLINE_ESCROW_LIMIT) {
+                try {
+                    const inlineIds = [...new Set(pendingEscrowOrders)];
+                    const escrowResult = await syncShopeeEscrowForOrders(inlineIds, { concurrency: 6, delayMs: 120 });
+                    // Remove successful ones from pending
+                    const succeeded = escrowResult.updated > 0 ? new Set(inlineIds.filter(id => ! (escrowResult.failedOrders || []).includes(id))) : new Set<string>();
+                    const remaining = new Set(inlineIds.filter(id => !succeeded.has(id)));
+                    // Reload only the synced orders to update maps
+                    if (succeeded.size > 0) {
+                        const { data: refreshed, error: refreshErr } = await (supabaseAdmin as any)
+                            .from('shopee_orders')
+                            .select('order_sn, total_amount, voucher_from_seller, voucher_from_shopee, seller_voucher_code, ams_commission_fee, order_selling_price, order_discounted_price, seller_discount, escrow_amount, raw_payload')
+                            .in('order_sn', Array.from(succeeded));
+                        if (refreshErr) {
+                            console.error('[PaymentPreview] Reload synced shopee_orders error:', refreshErr);
+                        } else if (refreshed) {
+                            for (const order of refreshed as any[]) {
+                                shopeeOrdersMap.set(order.order_sn, order as ShopeeOrderData);
+                            }
+                        }
+                    }
+                    pendingEscrowOrders.length = 0;
+                    pendingEscrowOrders.push(...Array.from(remaining));
+                    if (escrowResult.failedOrders && escrowResult.failedOrders.length > 0) {
+                        escrowResult.failedOrders.forEach((orderSn) => {
+                            escrowSyncErrors.push({ orderSn, reason: 'update_failed' });
+                        });
+                    }
+                } catch (err) {
+                    console.error('[PaymentPreview] Inline Shopee escrow sync failed:', err);
+                }
             }
         }
 
@@ -362,8 +535,26 @@ export async function POST(request: NextRequest) {
                 paymentDate: payment.paymentDate || new Date().toISOString(),
             };
 
-            // Process through the new rules engine
-            const engineResult = rulesEngine.process(paymentInput, marketplace);
+            const systemResult = systemEngine.process(paymentInput, marketplace);
+            const userResult = userEngine.process(paymentInput, marketplace);
+            const matchedSystemRules = systemResult.matchedRules.filter((rule) => rule.matched);
+            const matchedUserRules = userResult.matchedRules.filter((rule) => rule.matched);
+            const matchedRuleNames = [...matchedSystemRules, ...matchedUserRules].map((rule) => rule.ruleName);
+            const matchedUserRuleNames = matchedUserRules.map((rule) => rule.ruleName);
+
+            const baseTransactionType = systemResult.transactionType || payment.transactionType;
+            const baseTransactionDescription = systemResult.transactionDescription || payment.transactionDescription;
+            const baseCategory = systemResult.category;
+            let baseIsExpense = payment.isExpense || systemResult.isExpense;
+            if (systemResult.isIncome) baseIsExpense = false;
+
+            const baseTags = Array.from(new Set([...(payment.tags || []), ...systemResult.tags]));
+            const tagSet = new Set(baseTags);
+            userResult.tags.forEach((tag) => tagSet.add(tag));
+
+            const hasRefundTag = Array.from(tagSet).some((tag) =>
+                ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(tag)
+            );
 
             // Check for freight-related adjustments (specific patterns)
             const freightFeePatterns = [
@@ -374,13 +565,31 @@ export async function POST(request: NextRequest) {
                 /ajuste.*peso/i,
             ];
             const fullText = `${payment.transactionDescription || ''} ${payment.transactionType || ''}`;
-            const isFreightAdjustment = engineResult.tags.includes('ajuste') &&
+            const isFreightAdjustment = tagSet.has('ajuste') &&
                 freightFeePatterns.some(p => p.test(fullText));
 
 
             // Look up order link from pre-fetched map (O(1) instead of DB query)
             const baseMarketplaceOrderId = baseOrderIdMap.get(payment.marketplaceOrderId) || payment.marketplaceOrderId;
             const linkData = linksMap.get(payment.marketplaceOrderId) || linksMap.get(baseMarketplaceOrderId);
+            const orderPayments = paymentsByBaseId.get(baseMarketplaceOrderId) || [];
+            const hasIncomePayment = orderPayments.some((p) => !isExpensePayment(p) && Number(p.netAmount || 0) > 0);
+            const hasExpensePayment = orderPayments.some((p) => isExpensePayment(p) && Math.abs(Number(p.netAmount || 0)) > 0);
+            const hasOnlyExpensePayments = !hasIncomePayment && hasExpensePayment;
+            const tinyTotalFromLink = linkData?.tiny_orders
+                ? (() => {
+                    const tiny = (linkData as any).tiny_orders;
+                    const totalPedido = Number(tiny.valor_total_pedido || 0);
+                    const totalValor = Number(tiny.valor || 0);
+                    const totalProdutos = Number(tiny.valor_total_produtos || 0);
+                    const totalFrete = Number(tiny.valor_frete || 0);
+                    if (totalPedido > 0) return totalPedido;
+                    if (totalValor > 0) return totalValor;
+                    if (totalProdutos > 0 && totalFrete > 0) return totalProdutos + totalFrete;
+                    if (totalProdutos > 0) return totalProdutos;
+                    return 0;
+                })()
+                : 0;
 
             // Get Shopee-specific data from pre-fetched maps
             let productCount = 1;
@@ -394,7 +603,13 @@ export async function POST(request: NextRequest) {
             let orderSellingPrice = 0;
             let orderDiscountedPrice = 0;
             let sellerDiscount = 0;
+            let hasShopeeItems = false;
+            let hasBundleDeal = false;
+            let hasExplicitDiscountedPrice = false;
+            let hasOrderLevelDiscount = false;
+            let effectiveBundleDiscount = 0;
             let escrowAmount = 0;
+            let freightDiscount = 0;
             let meliRefundAmount = 0;
             let meliOriginalOrderValue = 0;
 
@@ -403,23 +618,84 @@ export async function POST(request: NextRequest) {
                 const itemsData = itemsByOrderSn.get(baseMarketplaceOrderId);
 
                 if (itemsData && itemsData.length > 0) {
+                    hasShopeeItems = true;
                     productCount = itemsData.reduce((sum, item) => sum + (item.quantity || 1), 0);
                     shopeeOrderValue = itemsData.reduce((sum, item) => {
                         const price = item.discounted_price || item.original_price || 0;
                         const qty = item.quantity || 1;
                         return sum + (price * qty);
                     }, 0);
+                    hasBundleDeal = itemsData.some(item =>
+                        item.raw_payload?.promotion_type === 'bundle_deal' || item.is_wholesale === true
+                    );
                 }
 
                 // Get shopee order data from pre-fetched map (O(1) instead of DB query)
                 const escrowData = shopeeOrdersMap.get(baseMarketplaceOrderId);
 
                 const escrowDetail = escrowData?.raw_payload?.escrow_detail;
+                const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
+                if (escrowData?.voucher_from_seller) {
+                    voucherFromSeller = Number(escrowData.voucher_from_seller) || 0;
+                }
+                if (escrowData?.ams_commission_fee) {
+                    amsCommissionFee = Number(escrowData.ams_commission_fee) || 0;
+                }
+                if (escrowData?.order_selling_price != null) {
+                    orderSellingPrice = Number(escrowData.order_selling_price) || 0;
+                }
+                const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                    orderSellingPrice = escrowSelling;
+                }
+                if (escrowData?.order_discounted_price != null) {
+                    orderDiscountedPrice = Number(escrowData.order_discounted_price) || 0;
+                    if (orderDiscountedPrice > 0) {
+                        hasExplicitDiscountedPrice = true;
+                    }
+                }
+                if (escrowData?.seller_discount) {
+                    sellerDiscount = Number(escrowData.seller_discount) || 0;
+                }
+                const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                if (!hasExplicitDiscountedPrice && escrowDiscounted > 0) {
+                    orderDiscountedPrice = escrowDiscounted;
+                    hasExplicitDiscountedPrice = true;
+                }
+                if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                    orderSellingPrice = orderDiscountedPrice;
+                }
+                if (hasExplicitDiscountedPrice && orderSellingPrice > 0 && orderDiscountedPrice < orderSellingPrice - 0.01) {
+                    hasOrderLevelDiscount = true;
+                }
+                if (sellerDiscount > 0 && hasBundleDeal && itemsData && itemsData.length > 0) {
+                    const nonBundleDiscounts = itemsData.reduce((acc, item) => {
+                        const promoType = item.raw_payload?.promotion_type;
+                        if (promoType && promoType !== 'bundle_deal' && item.is_wholesale !== true) {
+                            const orig = Number(item.original_price) || 0;
+                            const disc = Number(item.discounted_price) || 0;
+                            const qty = Number(item.quantity) || 1;
+                            if (orig > 0 && disc > 0 && orig > disc) {
+                                return acc + ((orig - disc) * qty);
+                            }
+                        }
+                        return acc;
+                    }, 0);
+                    effectiveBundleDiscount = Math.max(0, sellerDiscount - nonBundleDiscounts);
+                }
+                if (escrowData?.escrow_amount) {
+                    escrowAmount = Number(escrowData.escrow_amount) || 0;
+                }
+                if (escrowData?.voucher_from_shopee) {
+                    voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
+                }
                 const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
-                const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+                const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail, escrowData?.order_status);
 
                 if (escrowBuyerTotal > 0) {
-                    shopeeOrderValue = escrowBuyerTotal;
+                    if (!shopeeOrderValue || shopeeOrderValue <= 0) {
+                        shopeeOrderValue = escrowBuyerTotal;
+                    }
                     originalOrderValue = escrowBuyerTotal;
                 }
 
@@ -433,12 +709,32 @@ export async function POST(request: NextRequest) {
                     const adjustedCount = Math.round(productCount * refundRatio);
                     productCount = Math.max(1, adjustedCount);
                     shopeeOrderValue = actualOrderValue;
-                } else if (escrowData && shopeeOrderValue && shopeeOrderValue > 0) {
+                } else if (
+                    escrowData &&
+                    shopeeOrderValue &&
+                    shopeeOrderValue > 0 &&
+                    !hasBundleDeal &&
+                    !hasOrderLevelDiscount &&
+                    !hasEscrowDetail
+                ) {
                     const totalAmount = Number(escrowData.total_amount) || 0;
                     const sellingPrice = Number(escrowData.order_selling_price) || 0;
-                    const actualOrderValue = totalAmount > 0 ? totalAmount : sellingPrice;
+                    let actualOrderValue = 0;
+                    if (totalAmount > 0 && sellingPrice > 0) {
+                        actualOrderValue = Math.min(totalAmount, sellingPrice);
+                    } else if (totalAmount > 0) {
+                        actualOrderValue = totalAmount;
+                    } else {
+                        actualOrderValue = sellingPrice;
+                    }
 
-                    if (actualOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
+                    const discountAllowance = Math.max(0, sellerDiscount)
+                        + Math.max(0, voucherFromSeller)
+                        + Math.max(0, voucherFromShopee);
+                    const refundGap = shopeeOrderValue - actualOrderValue;
+                    const isImplicitRefundGap = refundGap > Math.max(0.1, discountAllowance + 0.05);
+
+                    if (actualOrderValue > 0 && actualOrderValue < shopeeOrderValue && isImplicitRefundGap) {
                         originalProductCount = productCount;
                         originalOrderValue = shopeeOrderValue;
                         refundAmount = shopeeOrderValue - actualOrderValue;
@@ -447,29 +743,56 @@ export async function POST(request: NextRequest) {
                         const adjustedCount = Math.round(productCount * refundRatio);
                         productCount = Math.max(1, adjustedCount);
                         shopeeOrderValue = actualOrderValue;
+                    } else {
+                        const hasNegativeEscrowRefund = escrowAmount < 0 && totalAmount <= 0 && sellingPrice <= 0;
+                        if (hasNegativeEscrowRefund && refundAmount <= 0) {
+                            originalProductCount = productCount;
+                            originalOrderValue = shopeeOrderValue;
+                            refundAmount = shopeeOrderValue;
+                        }
                     }
                 }
 
-                if (escrowData?.voucher_from_seller) {
-                    voucherFromSeller = Number(escrowData.voucher_from_seller) || 0;
+                const fallbackOrderValue = (originalOrderValue && originalOrderValue > 0)
+                    ? originalOrderValue
+                    : (shopeeOrderValue && shopeeOrderValue > 0 ? shopeeOrderValue : null);
+
+                if (refundAmount <= 0 && hasOnlyExpensePayments && fallbackOrderValue && fallbackOrderValue > 0 && hasRefundTag) {
+                    originalProductCount = productCount;
+                    originalOrderValue = fallbackOrderValue;
+                    refundAmount = fallbackOrderValue;
+                    const actualOrderValue = Math.max(0, fallbackOrderValue - refundAmount);
+                    shopeeOrderValue = actualOrderValue;
+                    orderSellingPrice = actualOrderValue;
                 }
-                if (escrowData?.ams_commission_fee) {
-                    amsCommissionFee = Number(escrowData.ams_commission_fee) || 0;
+
+                // Fallback 2: use sum of expense payments when tagged as refund and we still lack escrow detail
+                if (refundAmount <= 0 && hasRefundTag) {
+                    const totalExpensePayments = orderPayments
+                        .filter((p) => isExpensePayment(p))
+                        .reduce((sum, p) => sum + Math.abs(Number(p.netAmount || 0)), 0);
+                    if (totalExpensePayments > 0) {
+                        const fallbackOrderValue2 = fallbackOrderValue
+                            || (tinyTotalFromLink > 0 ? tinyTotalFromLink : null)
+                            || (orderSellingPrice > 0 ? orderSellingPrice : null)
+                            || (shopeeOrderValue && shopeeOrderValue > 0 ? shopeeOrderValue : null)
+                            || totalExpensePayments;
+                        originalProductCount = productCount;
+                        originalOrderValue = fallbackOrderValue2;
+                        refundAmount = totalExpensePayments;
+                        const actualOrderValue = Math.max(0, (fallbackOrderValue2 || 0) - refundAmount);
+                        shopeeOrderValue = actualOrderValue;
+                        orderSellingPrice = actualOrderValue;
+                    }
                 }
-                if (escrowData?.order_selling_price != null) {
-                    orderSellingPrice = Number(escrowData.order_selling_price) || 0;
-                }
-                if (escrowData?.order_discounted_price) {
-                    orderDiscountedPrice = Number(escrowData.order_discounted_price) || 0;
-                }
-                if (escrowData?.seller_discount) {
-                    sellerDiscount = Number(escrowData.seller_discount) || 0;
-                }
-                if (escrowData?.escrow_amount) {
-                    escrowAmount = Number(escrowData.escrow_amount) || 0;
-                }
-                if (escrowData?.voucher_from_shopee) {
-                    voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
+
+                if (refundAmount > 0 && freightDiscount <= 0) {
+                    const actualShippingFee = Number(escrowDetail?.actual_shipping_fee || 0);
+                    if (actualShippingFee > 0) {
+                        freightDiscount = actualShippingFee;
+                    } else if (escrowAmount < 0) {
+                        freightDiscount = Math.abs(escrowAmount);
+                    }
                 }
 
                 // Determine if order has seller discount (e.g., leve mais pague menos, promoção loja)
@@ -493,13 +816,13 @@ export async function POST(request: NextRequest) {
 
                 // Add automatic tags based on escrow data
                 if (voucherFromSeller > 0) {
-                    engineResult.tags.push('cupom loja');
+                    tagSet.add('cupom loja');
                 }
                 if (amsCommissionFee > 0) {
-                    engineResult.tags.push('comissão afiliado');
+                    tagSet.add('comissão afiliado');
                 }
                 if (hasSellerDiscountTag) {
-                    engineResult.tags.push('desconto loja');
+                    tagSet.add('desconto loja');
                 }
             }
 
@@ -520,9 +843,6 @@ export async function POST(request: NextRequest) {
                     const orderDate = normalizedDateStr ? new Date(normalizedDateStr) : new Date();
 
                     let orderValue: number;
-                    // When seller_discount > 0, use order_discounted_price for fee calculation
-                    // This is the correct base that Shopee uses (escrow API provides this directly)
-                    const hasSellerDiscount = sellerDiscount > 0 && orderDiscountedPrice > 0;
                     const tinyOrder = (linkData as any).tiny_orders;
                     const tinyFrete = Number(tinyOrder.valor_frete || 0);
                     const tinyProdutos = Number(tinyOrder.valor_total_produtos || 0);
@@ -536,16 +856,23 @@ export async function POST(request: NextRequest) {
                     }
 
                     if (marketplace === 'shopee') {
+                        const discountedBase = hasOrderLevelDiscount ? orderDiscountedPrice : 0;
+                        const bundleAdjustedBase = orderSellingPrice > 0 && effectiveBundleDiscount > 0
+                            ? Math.max(0, orderSellingPrice - effectiveBundleDiscount)
+                            : 0;
+                        const resolvedBase = discountedBase > 0
+                            ? discountedBase
+                            : bundleAdjustedBase > 0
+                                ? bundleAdjustedBase
+                                : orderSellingPrice > 0
+                                    ? orderSellingPrice
+                                    : (shopeeOrderValue !== null && shopeeOrderValue > 0)
+                                        ? shopeeOrderValue
+                                        : Math.max(0, tinyTotal - tinyFrete);
                         if (refundAmount > 0 && shopeeOrderValue !== null && shopeeOrderValue > 0) {
                             orderValue = shopeeOrderValue;
-                        } else if (hasSellerDiscount) {
-                            orderValue = orderDiscountedPrice;
-                        } else if (orderSellingPrice > 0) {
-                            orderValue = orderSellingPrice;
-                        } else if (shopeeOrderValue !== null && shopeeOrderValue > 0) {
-                            orderValue = shopeeOrderValue;
                         } else {
-                            orderValue = Math.max(0, tinyTotal - tinyFrete);
+                            orderValue = resolvedBase;
                         }
                     } else if (marketplace === 'mercado_livre') {
                         if (tinyTotal > 0) {
@@ -626,8 +953,10 @@ export async function POST(request: NextRequest) {
                             voucherFromShopee,
                             amsCommissionFee,
                             refundAmount,
+                            freightDiscount,
                             originalProductCount,
                             originalOrderValue,
+                            isLeveMaisPagueMenos: sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05,
                             hasSellerDiscount: sellerDiscount > 0,
                             escrowDifference: escrowAmount > 0 ? feeCalc.netValue - escrowAmount : 0,
                         } : undefined,
@@ -663,19 +992,63 @@ export async function POST(request: NextRequest) {
                 }
             }
 
+            const matchedSystemRuleNames = matchedSystemRules.map((rule) => rule.ruleName);
+            const finalTransactionType = userResult.transactionType || baseTransactionType;
+            const finalTransactionDescription = userResult.transactionDescription || baseTransactionDescription;
+            const finalCategory = userResult.category || baseCategory;
+            let finalIsExpense = baseIsExpense;
+            if (baseCategory) finalIsExpense = true;
+            if (userResult.category) finalIsExpense = true;
+            if (userResult.isExpense) finalIsExpense = true;
+            if (userResult.isIncome) finalIsExpense = false;
+
+            if (refundAmount > 0) {
+                tagSet.add('devolucao');
+            }
+            if (freightDiscount > 0) {
+                tagSet.add('frete descontado');
+            }
+
+            const finalTags = Array.from(tagSet);
+            const matchedRuleDetails = [...matchedSystemRules, ...matchedUserRules].map((rule) => ({
+                ruleId: rule.ruleId,
+                ruleName: rule.ruleName,
+                matchedConditions: rule.matchedConditions,
+                totalConditions: rule.totalConditions,
+                conditionResults: rule.conditionResults,
+                appliedActions: rule.appliedActions,
+                stoppedProcessing: rule.stoppedProcessing,
+                isSystemRule: systemRuleIds.has(rule.ruleId),
+            }));
+
+            const autoRuleSnapshot = matchedUserRuleNames.length > 0
+                ? {
+                    tags: baseTags,
+                    transactionType: baseTransactionType,
+                    transactionDescription: baseTransactionDescription,
+                    expenseCategory: baseCategory ?? null,
+                    isExpense: baseIsExpense,
+                    matchedRuleNames: matchedSystemRuleNames,
+                }
+                : undefined;
+
             previewPayments.push({
                 ...payment,
                 // Apply engine result modifications
-                transactionType: engineResult.transactionType || payment.transactionType,
-                transactionDescription: engineResult.transactionDescription || payment.transactionDescription,
-                tags: engineResult.tags,
-                isAdjustment: engineResult.tags.some(t => ['ajuste', 'compensacao', 'correcao'].includes(t)),
-                isRefund: engineResult.tags.some(t => ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(t)),
+                transactionType: finalTransactionType || payment.transactionType,
+                transactionDescription: finalTransactionDescription || payment.transactionDescription,
+                expenseCategory: finalCategory,
+                isExpense: finalIsExpense,
+                tags: finalTags,
+                isAdjustment: finalTags.some(t => ['ajuste', 'compensacao', 'correcao'].includes(t)),
+                isRefund: refundAmount > 0 || finalTags.some(t => ['reembolso', 'devolucao', 'estorno', 'chargeback'].includes(t)),
                 isFreightAdjustment: isFreightAdjustment,
+                autoRuleAppliedNames: matchedUserRuleNames,
+                autoRuleSnapshot,
+                autoRuleOptOut: false,
                 // Include matched rule names for visual indicator
-                matchedRuleNames: engineResult.matchedRules
-                    .filter(r => r.matched)
-                    .map(r => r.ruleName),
+                matchedRuleNames,
+                matchedRuleDetails,
                 matchStatus: linkData ? 'linked' : 'unmatched',
                 tinyOrderId: linkData?.tiny_order_id,
                 tinyOrderInfo: linkData && linkData.tiny_orders ? {
@@ -753,6 +1126,7 @@ export async function POST(request: NextRequest) {
             marketplace,
             dateRange,
             payments: previewPayments,
+            rulesAppliedBackend: true,
             summary: {
                 total: previewPayments.length,
                 linked,
@@ -762,6 +1136,8 @@ export async function POST(request: NextRequest) {
                     ? ((linked / previewPayments.length) * 100).toFixed(1) + '%'
                     : '0%',
             },
+            pendingEscrowOrders,
+            escrowSyncErrors,
         };
 
         console.log(`[PaymentPreview] Total request time: ${Date.now() - startTime}ms for ${previewPayments.length} payments`);

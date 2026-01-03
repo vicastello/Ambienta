@@ -160,8 +160,21 @@ export function generateShopeeSignature(
 async function shopeeRequest<T>(
   path: string,
   params: Record<string, string | number | undefined>,
-  options?: ShopeeSignatureOptions
+  options?: ShopeeSignatureOptions,
+  attempt = 1
 ): Promise<T> {
+  const maxAttempts = Number(process.env.SHOPEE_API_MAX_ATTEMPTS || 3);
+  const baseDelayMs = Number(process.env.SHOPEE_API_RETRY_BASE_DELAY_MS || 500);
+  const timeoutMs = Number(process.env.SHOPEE_API_TIMEOUT_MS || 20000);
+
+  const waitBeforeRetry = async (retryAfterMs?: number) => {
+    const delayMs = retryAfterMs && Number.isFinite(retryAfterMs)
+      ? retryAfterMs
+      : Math.min(8000, baseDelayMs * Math.pow(2, attempt - 1));
+    const jitter = Math.floor(Math.random() * 200);
+    await new Promise((resolve) => setTimeout(resolve, delayMs + jitter));
+  };
+
   const tokens = await ensureValidShopeeTokens();
   const timestamp = Math.floor(Date.now() / 1000);
   const isShopLevel = true;
@@ -190,35 +203,67 @@ async function shopeeRequest<T>(
     searchParams.set(key, String(value));
   }
 
-  const res = await fetch(url.toString(), { method: 'GET' });
+  const shouldTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const controller = shouldTimeout ? new AbortController() : null;
+  const timeoutId = shouldTimeout
+    ? setTimeout(() => controller?.abort(), timeoutMs)
+    : null;
 
-  let data: any;
   try {
-    data = await res.json();
-  } catch (err) {
-    throw new Error(`Shopee: failed to parse JSON (${String(err)})`);
-  }
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      signal: controller?.signal,
+    });
 
-  if (!res.ok) {
-    // Se 401/403, tentar refresh e refazer uma vez
-    if ((res.status === 401 || res.status === 403) && tokens.refresh_token) {
-      const refreshed = await refreshShopeeToken(tokens.refresh_token);
-      await saveShopeeTokens(refreshed);
-      return shopeeRequest<T>(path, params, options);
+    let data: any;
+    try {
+      data = await res.json();
+    } catch (err) {
+      throw new Error(`Shopee: failed to parse JSON (${String(err)})`);
     }
-    throw new Error(`Shopee request failed (${res.status}): ${data?.message ?? data?.error ?? 'Unknown error'}`);
-  }
 
-  const errorCode = data?.error;
-  const errorMessage = data?.message ?? data?.error_msg;
-  if (errorCode && errorCode !== '0') {
-    throw new Error(`Shopee error ${errorCode}: ${errorMessage ?? 'Unknown error'}`);
-  }
-  if (typeof errorMessage === 'string' && errorMessage && errorMessage.toLowerCase() !== 'success') {
-    throw new Error(`Shopee: ${errorMessage}`);
-  }
+    if (!res.ok) {
+      // Se 401/403, tentar refresh e refazer uma vez
+      if ((res.status === 401 || res.status === 403) && tokens.refresh_token) {
+        const refreshed = await refreshShopeeToken(tokens.refresh_token);
+        await saveShopeeTokens(refreshed);
+        return shopeeRequest<T>(path, params, options, attempt);
+      }
 
-  return data as T;
+      if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
+        const retryAfterHeader = res.headers.get('retry-after');
+        const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+        const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? retryAfterSeconds * 1000
+          : undefined;
+        await waitBeforeRetry(retryAfterMs);
+        return shopeeRequest<T>(path, params, options, attempt + 1);
+      }
+
+      throw new Error(`Shopee request failed (${res.status}): ${data?.message ?? data?.error ?? 'Unknown error'}`);
+    }
+
+    const errorCode = data?.error;
+    const errorMessage = data?.message ?? data?.error_msg;
+    if (errorCode && errorCode !== '0') {
+      throw new Error(`Shopee error ${errorCode}: ${errorMessage ?? 'Unknown error'}`);
+    }
+    if (typeof errorMessage === 'string' && errorMessage && errorMessage.toLowerCase() !== 'success') {
+      throw new Error(`Shopee: ${errorMessage}`);
+    }
+
+    return data as T;
+  } catch (err: any) {
+    if (attempt < maxAttempts) {
+      await waitBeforeRetry();
+      return shopeeRequest<T>(path, params, options, attempt + 1);
+    }
+    throw err;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 // Shopee limita time_range para no máximo 15 dias por requisição
@@ -562,8 +607,9 @@ export async function getShopeeEscrowDetailsForOrders(
   // Processamos em paralelo com limite de concorrência
   const envConcurrency = Number(process.env.SHOPEE_ESCROW_CONCURRENCY || 0);
   const envDelayMs = Number(process.env.SHOPEE_ESCROW_DELAY_MS || 0);
-  const concurrencyRaw = options?.concurrency ?? (Number.isFinite(envConcurrency) && envConcurrency > 0 ? envConcurrency : 5);
-  const delayRaw = options?.delayMs ?? (Number.isFinite(envDelayMs) && envDelayMs >= 0 ? envDelayMs : 200);
+  // Defaults tuned for faster escrow sync; clamped below to avoid API throttling
+  const concurrencyRaw = options?.concurrency ?? (Number.isFinite(envConcurrency) && envConcurrency > 0 ? envConcurrency : 12);
+  const delayRaw = options?.delayMs ?? (Number.isFinite(envDelayMs) && envDelayMs >= 0 ? envDelayMs : 50);
   const concurrency = Math.min(20, Math.max(1, Math.floor(concurrencyRaw)));
   const delayMs = Math.max(0, Math.floor(delayRaw));
 

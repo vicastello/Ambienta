@@ -89,7 +89,7 @@ export interface AutoRule {
     id: string;
     name: string;                           // Human-readable name
     description?: string;                   // Optional description
-    marketplace: string;                    // 'shopee', 'mercado_livre', etc. or 'all'
+    marketplaces: string[];                 // Marketplaces the rule applies to
     conditions: RuleCondition[];            // Conditions to evaluate
     conditionLogic: ConditionLogic;         // How to combine conditions
     actions: RuleAction[];                  // Actions to perform on match
@@ -99,12 +99,28 @@ export interface AutoRule {
     isSystemRule: boolean;                  // Built-in rule (can't be deleted)
     createdAt: string;                      // ISO date string
     updatedAt: string;                      // ISO date string
+    // Metrics
+    matchCount?: number;                    // Number of times this rule has matched
+    lastAppliedAt?: string | null;          // Last time the rule was applied
+    totalImpact?: number;                   // Total financial impact of matched payments
+    // Versioning
+    version?: number;                       // Version number (increments on publish)
+    status?: 'draft' | 'published' | 'archived';  // Rule status
+    publishedAt?: string | null;            // When current version was published
+    hasDraft?: boolean;                     // Has pending draft changes
 }
+
+/**
+ * Rule status type
+ */
+export type RuleStatus = 'draft' | 'published' | 'archived';
 
 /**
  * Rule creation payload (without system fields)
  */
-export type CreateRulePayload = Omit<AutoRule, 'id' | 'createdAt' | 'updatedAt' | 'isSystemRule'>;
+export type CreateRulePayload = Omit<AutoRule, 'id' | 'createdAt' | 'updatedAt' | 'isSystemRule' | 'matchCount' | 'lastAppliedAt' | 'totalImpact' | 'version' | 'publishedAt' | 'hasDraft'> & {
+    status?: RuleStatus;  // Allow specifying status on create
+};
 
 /**
  * Rule update payload (partial)

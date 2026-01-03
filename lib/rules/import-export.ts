@@ -6,6 +6,7 @@
 
 import type { AutoRule, CreateRulePayload } from './types';
 import { validateRule } from './validator';
+import { normalizeMarketplaces } from './marketplaces';
 
 /**
  * Export format for rules
@@ -30,7 +31,7 @@ export function exportRules(rules: AutoRule[], marketplace?: string): RulesExpor
             .map(r => ({
                 name: r.name,
                 description: r.description,
-                marketplace: r.marketplace,
+                marketplaces: r.marketplaces,
                 conditions: r.conditions,
                 conditionLogic: r.conditionLogic,
                 actions: r.actions,
@@ -74,10 +75,16 @@ export function parseImportedRules(jsonString: string): {
 
         // Validate each rule
         data.rules.forEach((rule, index) => {
+            const marketplaces = normalizeMarketplaces(
+                Array.isArray((rule as any).marketplaces)
+                    ? (rule as any).marketplaces
+                    : (rule as any).marketplace || 'all'
+            );
+
             const rulePayload: CreateRulePayload = {
                 name: rule.name || `Regra Importada ${index + 1}`,
                 description: rule.description,
-                marketplace: rule.marketplace || 'all',
+                marketplaces,
                 conditions: rule.conditions || [],
                 conditionLogic: rule.conditionLogic || 'AND',
                 actions: rule.actions || [],

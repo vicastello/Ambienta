@@ -26,6 +26,20 @@ function normalizeText(text: string): string {
 /**
  * Get the value of a field from payment data
  */
+function normalizeConditionField(field: RuleConditionField | string): RuleConditionField {
+    const normalized = String(field || '').trim().toLowerCase();
+    if (normalized === 'transaction_type' || normalized === 'transactiontype') {
+        return 'type';
+    }
+    if (normalized === 'descricao') {
+        return 'description';
+    }
+    if (['description', 'type', 'amount', 'order_id', 'full_text'].includes(normalized)) {
+        return normalized as RuleConditionField;
+    }
+    return field as RuleConditionField;
+}
+
 function getFieldValue(field: RuleConditionField, payment: PaymentInput): string | number {
     switch (field) {
         case 'description':
@@ -125,7 +139,8 @@ export function evaluateCondition(
     condition: RuleCondition,
     payment: PaymentInput
 ): ConditionEvalResult {
-    const actualValue = getFieldValue(condition.field, payment);
+    const normalizedField = normalizeConditionField(condition.field);
+    const actualValue = getFieldValue(normalizedField, payment);
     const expectedValue = condition.value;
 
     let matched: boolean;
@@ -161,7 +176,7 @@ export function evaluateCondition(
 
     return {
         conditionId: condition.id,
-        field: condition.field,
+        field: normalizedField,
         operator: condition.operator,
         expectedValue,
         actualValue,

@@ -35,6 +35,7 @@ interface FeeBreakdownCardProps {
             isLeveMaisPagueMenos: boolean; // True if seller_discount is small (<=5%)
             // Refund information
             refundAmount: number;
+            freightDiscount?: number;
             originalProductCount: number;
             originalOrderValue: number | null;
             escrowDifference: number;
@@ -236,6 +237,14 @@ export default function FeeBreakdownCard({
                                         value={shopeeData.refundAmount}
                                         color="orange"
                                     />
+                                    {shopeeData.freightDiscount && shopeeData.freightDiscount > 0 && (
+                                        <FeeRow
+                                            label="Desconto de Frete"
+                                            value={shopeeData.freightDiscount}
+                                            color="orange"
+                                            subLabel="Ajuste Shopee"
+                                        />
+                                    )}
                                     <FeeRow
                                         label="Preço de Venda"
                                         value={shopeeData.orderSellingPrice}

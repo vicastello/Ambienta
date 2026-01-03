@@ -1,9 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Power, PowerOff, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit2, Trash2, Power, PowerOff, ChevronDown, ChevronUp, History, List, GitBranch } from 'lucide-react';
+import RuleHistoryModal from './RuleHistoryModal';
+import RulePrecedenceView from './RulePrecedenceView';
 import { cn } from '@/lib/utils';
 import type { AutoRule } from '@/lib/rules';
+import {
+    RULE_MARKETPLACES,
+    RULE_MARKETPLACE_LABELS,
+    normalizeMarketplaces,
+    isAllMarketplaces,
+    type RuleMarketplace,
+} from '@/lib/rules';
 
 interface RulesListProps {
     onEdit: (rule: AutoRule) => void;
@@ -14,8 +23,10 @@ interface RulesListProps {
 export default function RulesList({ onEdit, onCreateNew, refreshTrigger }: RulesListProps) {
     const [rules, setRules] = useState<AutoRule[]>([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState<'all' | 'shopee' | 'mercado_livre' | 'magalu'>('all');
+    const [filter, setFilter] = useState<'all' | RuleMarketplace>('all');
     const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
+    const [historyRule, setHistoryRule] = useState<{ id: string; name: string } | null>(null);
+    const [viewMode, setViewMode] = useState<'list' | 'flow'>('list');
 
     useEffect(() => {
         fetchRules();
@@ -72,9 +83,11 @@ export default function RulesList({ onEdit, onCreateNew, refreshTrigger }: Rules
         });
     };
 
-    const filteredRules = rules.filter(r =>
-        filter === 'all' || r.marketplace === filter || r.marketplace === 'all'
-    );
+    const filteredRules = rules.filter((rule) => {
+        if (filter === 'all') return true;
+        const marketplaces = normalizeMarketplaces(rule.marketplaces);
+        return marketplaces.includes(filter);
+    });
 
     const groupedRules = {
         system: filteredRules.filter(r => r.isSystemRule),
@@ -106,26 +119,59 @@ export default function RulesList({ onEdit, onCreateNew, refreshTrigger }: Rules
                 </button>
             </div>
 
-            {/* Filter */}
-            <div className="flex gap-2">
-                {(['all', 'shopee', 'mercado_livre', 'magalu'] as const).map(mp => (
+            {/* Filter + View Toggle */}
+            <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                    {(['all', ...RULE_MARKETPLACES.map((mp) => mp.id)] as const).map(mp => (
+                        <button
+                            key={mp}
+                            onClick={() => setFilter(mp)}
+                            className={cn(
+                                'px-3 py-1.5 rounded-lg text-sm transition-colors',
+                                filter === mp
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-white/10 hover:bg-white/20 text-muted'
+                            )}
+                        >
+                            {mp === 'all' ? 'Todos' : (RULE_MARKETPLACE_LABELS[mp] || mp)}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex gap-1 bg-white/10 dark:bg-white/5 rounded-lg p-0.5">
                     <button
-                        key={mp}
-                        onClick={() => setFilter(mp)}
+                        onClick={() => setViewMode('list')}
                         className={cn(
-                            'px-3 py-1.5 rounded-lg text-sm transition-colors',
-                            filter === mp
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-white/10 hover:bg-white/20 text-muted'
+                            'p-2 rounded-md transition-colors',
+                            viewMode === 'list'
+                                ? 'bg-white dark:bg-gray-700 shadow-sm'
+                                : 'hover:bg-white/20'
                         )}
+                        title="Visualização em lista"
                     >
-                        {mp === 'all' ? 'Todos' : mp === 'mercado_livre' ? 'Mercado Livre' : mp.charAt(0).toUpperCase() + mp.slice(1)}
+                        <List className="w-4 h-4" />
                     </button>
-                ))}
+                    <button
+                        onClick={() => setViewMode('flow')}
+                        className={cn(
+                            'p-2 rounded-md transition-colors',
+                            viewMode === 'flow'
+                                ? 'bg-white dark:bg-gray-700 shadow-sm'
+                                : 'hover:bg-white/20'
+                        )}
+                        title="Visualização de fluxo"
+                    >
+                        <GitBranch className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
 
-            {/* User Rules */}
-            {groupedRules.user.length > 0 && (
+            {/* Flow View */}
+            {viewMode === 'flow' && (
+                <RulePrecedenceView rules={rules} marketplace={filter} />
+            )}
+
+            {/* List View */}
+            {viewMode === 'list' && groupedRules.user.length > 0 && (
                 <div className="space-y-3">
                     <h3 className="text-sm font-medium text-muted uppercase tracking-wide">Suas Regras</h3>
                     {groupedRules.user.map(rule => (
@@ -137,30 +183,33 @@ export default function RulesList({ onEdit, onCreateNew, refreshTrigger }: Rules
                             onEdit={() => onEdit(rule)}
                             onDelete={() => handleDelete(rule.id)}
                             onToggleEnabled={() => handleToggleEnabled(rule)}
+                            onShowHistory={() => setHistoryRule({ id: rule.id, name: rule.name })}
                         />
                     ))}
                 </div>
             )}
 
             {/* System Rules */}
-            <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted uppercase tracking-wide">
-                    Regras do Sistema
-                    <span className="ml-2 text-xs font-normal">(não podem ser excluídas)</span>
-                </h3>
-                {groupedRules.system.map(rule => (
-                    <RuleCard
-                        key={rule.id}
-                        rule={rule}
-                        expanded={expandedRules.has(rule.id)}
-                        onToggleExpand={() => toggleExpand(rule.id)}
-                        onEdit={() => { }}
-                        onDelete={() => { }}
-                        onToggleEnabled={() => handleToggleEnabled(rule)}
-                        isSystemRule
-                    />
-                ))}
-            </div>
+            {viewMode === 'list' && (
+                <div className="space-y-3">
+                    <h3 className="text-sm font-medium text-muted uppercase tracking-wide">
+                        Regras do Sistema
+                        <span className="ml-2 text-xs font-normal">(não podem ser excluídas)</span>
+                    </h3>
+                    {groupedRules.system.map(rule => (
+                        <RuleCard
+                            key={rule.id}
+                            rule={rule}
+                            expanded={expandedRules.has(rule.id)}
+                            onToggleExpand={() => toggleExpand(rule.id)}
+                            onEdit={() => { }}
+                            onDelete={() => { }}
+                            onToggleEnabled={() => handleToggleEnabled(rule)}
+                            isSystemRule
+                        />
+                    ))}
+                </div>
+            )}
 
             {filteredRules.length === 0 && (
                 <div className="text-center py-12 text-muted">
@@ -172,6 +221,17 @@ export default function RulesList({ onEdit, onCreateNew, refreshTrigger }: Rules
                         Criar primeira regra
                     </button>
                 </div>
+            )}
+
+            {/* History Modal */}
+            {historyRule && (
+                <RuleHistoryModal
+                    ruleId={historyRule.id}
+                    ruleName={historyRule.name}
+                    isOpen={true}
+                    onClose={() => setHistoryRule(null)}
+                    onRestored={() => fetchRules()}
+                />
             )}
         </div>
     );
@@ -185,6 +245,7 @@ function RuleCard({
     onEdit,
     onDelete,
     onToggleEnabled,
+    onShowHistory,
     isSystemRule = false,
 }: {
     rule: AutoRule;
@@ -193,6 +254,7 @@ function RuleCard({
     onEdit: () => void;
     onDelete: () => void;
     onToggleEnabled: () => void;
+    onShowHistory?: () => void;
     isSystemRule?: boolean;
 }) {
     const getMarketplaceColor = (mp: string) => {
@@ -200,6 +262,7 @@ function RuleCard({
             case 'shopee': return 'bg-orange-500/20 text-orange-500';
             case 'mercado_livre': return 'bg-yellow-500/20 text-yellow-600';
             case 'magalu': return 'bg-blue-500/20 text-blue-500';
+            case 'all': return 'bg-gray-500/20 text-gray-500';
             default: return 'bg-gray-500/20 text-gray-500';
         }
     };
@@ -227,6 +290,9 @@ function RuleCard({
         return actions.join(', ');
     };
 
+    const marketplaces = normalizeMarketplaces(rule.marketplaces);
+    const displayMarketplaces = isAllMarketplaces(marketplaces) ? ['all'] : marketplaces;
+
     return (
         <div className={cn(
             'glass-panel rounded-2xl border transition-all',
@@ -245,16 +311,40 @@ function RuleCard({
                         <span className="text-sm font-medium">{rule.priority}</span>
                     </div>
 
-                    {/* Marketplace badge */}
-                    <span className={cn(
-                        'px-2 py-0.5 rounded-lg text-xs font-medium',
-                        getMarketplaceColor(rule.marketplace)
-                    )}>
-                        {rule.marketplace === 'all' ? 'Todos' : rule.marketplace}
-                    </span>
+                    {/* Marketplace badges */}
+                    <div className="flex flex-wrap gap-1">
+                        {displayMarketplaces.map((mp) => (
+                            <span
+                                key={mp}
+                                className={cn(
+                                    'px-2 py-0.5 rounded-lg text-xs font-medium',
+                                    getMarketplaceColor(mp)
+                                )}
+                            >
+                                {mp === 'all' ? 'Todos' : (RULE_MARKETPLACE_LABELS[mp] || mp)}
+                            </span>
+                        ))}
+                    </div>
 
                     {/* Rule name */}
-                    <span className="font-medium text-main flex-1">{rule.name}</span>
+                    <span className="font-medium text-main flex-1 flex items-center gap-2">
+                        {rule.name}
+                        {rule.version && rule.version > 1 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-500">
+                                v{rule.version}
+                            </span>
+                        )}
+                        {rule.status === 'draft' && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                rascunho
+                            </span>
+                        )}
+                        {rule.hasDraft && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                alterações pendentes
+                            </span>
+                        )}
+                    </span>
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
@@ -280,6 +370,15 @@ function RuleCard({
                                 >
                                     <Edit2 className="w-4 h-4" />
                                 </button>
+                                {onShowHistory && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onShowHistory(); }}
+                                        className="p-1.5 rounded-lg text-purple-500 hover:bg-purple-500/10 transition-colors"
+                                        title="Ver histórico"
+                                    >
+                                        <History className="w-4 h-4" />
+                                    </button>
+                                )}
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
                                     className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors"
@@ -303,6 +402,27 @@ function RuleCard({
                     <span className="text-blue-400">SE</span> {getConditionSummary()}{' '}
                     <span className="text-emerald-400">ENTÃO</span> {getActionSummary()}
                 </div>
+
+                {/* Metrics row - only show if rule has been applied */}
+                {((rule.matchCount || 0) > 0 || rule.lastAppliedAt) && (
+                    <div className="mt-2 flex items-center gap-3 text-xs">
+                        {(rule.matchCount || 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
+                                <span className="font-semibold">{rule.matchCount}</span> matches
+                            </span>
+                        )}
+                        {(rule.totalImpact || 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                                R$ <span className="font-semibold">{(rule.totalImpact || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </span>
+                        )}
+                        {rule.lastAppliedAt && (
+                            <span className="text-gray-500 dark:text-gray-400">
+                                Última: {new Date(rule.lastAppliedAt).toLocaleDateString('pt-BR')}
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Expanded details */}

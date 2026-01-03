@@ -17,6 +17,8 @@ export type ParsedPayment = {
     transactionDescription?: string; // Full description from extract
     balanceAfter?: number; // Balance after transaction
     isExpense?: boolean; // True for outgoing transactions (fees, ads, etc)
+    expenseCategory?: string | null; // Optional expense category (set by rules or UI)
+    tags?: string[]; // Optional tags (set by rules or UI)
     fee_overrides?: any; // Parsed fee components (commission, affiliate, etc)
     rawData: any;
 };
@@ -267,14 +269,28 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
         const rows = data.slice(headerRowIndex + 1);
 
         const getColumnIndex = (targets: string[]): number => {
-            return headers.findIndex(h => {
-                // Check if header matches any of the target aliases (normalized)
-                return targets.some(t => h === normalizeKey(t) || h.includes(normalizeKey(t)));
-            });
+            for (const target of targets) {
+                const normalizedTarget = normalizeKey(target);
+                const exactIdx = headers.findIndex(h => h === normalizedTarget);
+                if (exactIdx !== -1) return exactIdx;
+                const partialIdx = headers.findIndex(h => h.includes(normalizedTarget));
+                if (partialIdx !== -1) return partialIdx;
+            }
+            return -1;
         };
 
         const idxOrder = getColumnIndex(['ID do pedido', 'Order ID', 'No. do pedido']);
-        const idxAmount = getColumnIndex(['Valor', 'Amount', 'Total amount']);
+        const idxAmount = getColumnIndex([
+            'Valor líquido',
+            'Valor liquido',
+            'Valor recebido',
+            'Valor creditado',
+            'Net amount',
+            'Amount',
+            'Valor',
+            'Total amount',
+            'Total',
+        ]);
         const idxDate = getColumnIndex(['Data', 'Date', 'Time', 'Data e Hora']);
         const idxStatus = getColumnIndex(['Status', 'Estado']);
         const idxDescription = getColumnIndex(['Descrição', 'Description', 'Detalhes']);
@@ -447,39 +463,71 @@ export async function parseShopeeXLSX(file: File): Promise<ParseResult> {
 
                 const idxBalanceAfter = getColumnIndex(['Balança após as transações', 'Balance after']);
                 // Check multiple possible column names for money direction
-                let idxMovementType = getColumnIndex(['Tipo de movimentação', 'Movement Type', 'Direção do dinheiro']);
+                let idxMovementType = getColumnIndex([
+                    'Tipo de movimentação',
+                    'Movimentação',
+                    'Movimento',
+                    'Direção do dinheiro',
+                    'Direção do fluxo',
+                    'Direção do fluxo de caixa',
+                    'Direção',
+                    'Entrada/Saída',
+                    'Movement Type',
+                    'Direction',
+                ]);
 
                 const idxCommission = getColumnIndex(['Taxa de comissão', 'Commission Fee']);
                 const idxService = getColumnIndex(['Taxa de serviço', 'Service Fee']);
                 const idxTransaction = getColumnIndex(['Taxa de transação', 'Transaction Fee']);
                 const idxAffiliate = getColumnIndex(['Comissão de afiliado', 'Affiliate Commission', 'Custo de campanha']); // Affiliate/Campaign
 
-                const commission = idxCommission !== -1 ? Math.abs(parseAmount(row[idxCommission])) : undefined;
-                const service = idxService !== -1 ? Math.abs(parseAmount(row[idxService])) : undefined;
-                const transaction = idxTransaction !== -1 ? Math.abs(parseAmount(row[idxTransaction])) : undefined;
-                // If column missing, calculate as undefined to allow DB fallback
-                const affiliate = idxAffiliate !== -1 ? Math.abs(parseAmount(row[idxAffiliate])) : undefined;
+                const parseOptionalAmount = (value: any): number | undefined => {
+                    if (value === null || value === undefined) return undefined;
+                    if (typeof value === 'string' && value.trim() === '') return undefined;
+                    return Math.abs(parseAmount(value));
+                };
+
+                const commission = idxCommission !== -1 ? parseOptionalAmount(row[idxCommission]) : undefined;
+                const service = idxService !== -1 ? parseOptionalAmount(row[idxService]) : undefined;
+                const transaction = idxTransaction !== -1 ? parseOptionalAmount(row[idxTransaction]) : undefined;
+                // If column missing or empty, keep undefined to allow DB fallback
+                const affiliate = idxAffiliate !== -1 ? parseOptionalAmount(row[idxAffiliate]) : undefined;
 
                 const totalFees = (commission || 0) + (service || 0) + (transaction || 0) + (affiliate || 0);
 
-                const amount = parseAmount(row[idxAmount]);
+                const amount = idxAmount !== -1 ? parseAmount(row[idxAmount]) : 0;
                 const movementType = idxMovementType !== -1 ? String(row[idxMovementType] || '') : '';
 
                 // Determine if it's an expense (saída) or income (entrada)
-                // Check for "Recarga" or "ADS" - but EXCLUDE refunds/reversals
-                const cleanDesc = (transactionType + transactionDesc).toLowerCase();
-                const isAdsOrRecharge = cleanDesc.match(/recarga|ads|publicidade/) &&
-                    !cleanDesc.match(/reembolso|estorno|cancelamento/);
+                // Check for "Recarga" or "ADS" - but EXCLUDE refunds/reversals.
+                // Avoid matching order IDs like 2504027ADS5JCU that contain "ADS".
+                const cleanDesc = (transactionType + ' ' + transactionDesc).toLowerCase();
+                const baseOrderIdForMatch = orderId.replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+                const cleanDescNoId = baseOrderIdForMatch
+                    ? cleanDesc.replace(baseOrderIdForMatch.toLowerCase(), '')
+                    : cleanDesc;
+                const isAdsOrRecharge = /\b(recarga|ads|publicidade)\b/.test(cleanDescNoId) &&
+                    !/\b(reembolso|estorno|cancelamento)\b/.test(cleanDescNoId);
 
+                const hasMovementType = movementType.trim().length > 0;
+                const isFeeLike = /\b(taxa|tarifa|comiss|fee|servi[cç]o|frete|multa|penalidade|juros|encargo|afiliad|campanha|custo)\b/.test(cleanDescNoId);
+                const isRefundLike = /\b(reembolso|estorno|devolu[cç]ao|chargeback|cancelamento)\b/.test(cleanDescNoId);
                 const isExpense = movementType.toLowerCase().includes('saída') ||
                     movementType.toLowerCase().includes('saida') ||
                     amount < 0 ||
-                    !!isAdsOrRecharge;
+                    !!isAdsOrRecharge ||
+                    (!hasMovementType && (isFeeLike || isRefundLike));
 
-                // Shopee "Amount" is typically the Net Amount (already deducted fees)
-
+                // Shopee "Amount" can be gross or net depending on export; infer from header when possible.
                 // Allow negative values (do NOT use Math.abs)
+                const amountHeader = idxAmount !== -1 ? headers[idxAmount] : '';
+                const amountLooksGross = /(total|bruto|gross|pedido|order)/.test(amountHeader) &&
+                    !/(liquido|liquid|net|recebid|creditad)/.test(amountHeader);
                 let netVal = amount;
+                if (!isExpense && amountLooksGross && totalFees > 0) {
+                    const inferredNet = amount - totalFees;
+                    if (inferredNet >= 0) netVal = inferredNet;
+                }
 
                 // Safety: If recognized as expense but positive, negate it
                 // (Unless it's a "reversal" of an expense? Unlikely in standard CSV)

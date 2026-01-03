@@ -378,6 +378,7 @@ export async function POST(req: Request) {
                 escrow_amount: escrow.escrow_amount,
                 ams_commission_fee: escrow.ams_commission_fee,
                 order_selling_price: escrow.order_selling_price,
+                order_discounted_price: escrow.order_discounted_price,
                 seller_discount: escrow.seller_discount,
                 raw_payload: nextRawPayload,
                 escrow_fetched_at: new Date().toISOString(),

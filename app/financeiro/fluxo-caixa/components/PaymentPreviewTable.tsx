@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Lightbulb, Sparkles, AlertCircle, Check, ChevronDown, ChevronUp, Edit2, ExternalLink, RefreshCw, Tag, TrendingDown, TrendingUp, X, Settings2, Link2, AlertTriangle, Calendar, Pencil, Link as LinkIcon } from 'lucide-react';
-import type { AutoRule } from '@/lib/rules';
+import { Sparkles, AlertCircle, Check, ChevronDown, ChevronUp, Edit2, ExternalLink, RefreshCw, Tag, TrendingDown, TrendingUp, X, Settings2, Link2, AlertTriangle, Calendar, Pencil, Link as LinkIcon } from 'lucide-react';
+import type { AutoRule, RuleAction, ConditionEvalResult } from '@/lib/rules';
+import { FIELD_LABELS, OPERATOR_LABELS } from '@/lib/rules';
 import { evaluateCondition } from '@/lib/rules/matcher';
 import { cn } from '@/lib/utils';
 import FeeBreakdownCard from './FeeBreakdownCard';
+import RuleMatchExplainer from '@/app/financeiro/importar-pagamentos/components/RuleMatchExplainer';
+
 
 export type PreviewPayment = {
     marketplaceOrderId: string;
@@ -39,6 +42,17 @@ export type PreviewPayment = {
     };
     relatedPayments?: string[];
     matchedRuleNames?: string[];  // Rules that were automatically applied
+    matchedRuleDetails?: MatchedRuleDetail[];
+    autoRuleSnapshot?: {
+        tags: string[];
+        transactionType?: string;
+        transactionDescription?: string;
+        expenseCategory?: string;
+        isExpense?: boolean;
+        matchedRuleNames?: string[];
+    };
+    autoRuleAppliedNames?: string[];
+    autoRuleOptOut?: boolean;
     netBalance?: number;
     diferenca?: number;
     fee_overrides?: {
@@ -53,6 +67,17 @@ export type PreviewPayment = {
     };
 };
 
+type MatchedRuleDetail = {
+    ruleId: string;
+    ruleName: string;
+    matchedConditions: number;
+    totalConditions: number;
+    conditionResults: ConditionEvalResult[];
+    appliedActions: RuleAction[];
+    stoppedProcessing: boolean;
+    isSystemRule?: boolean;
+};
+
 // Sorting types
 type SortField = 'paymentDate' | 'orderDate' | 'marketplaceOrderId' | 'transactionType' | 'valorPedido' | 'valorEsperado' | 'netAmount' | 'diferenca' | 'matchStatus';
 type SortDirection = 'asc' | 'desc';
@@ -64,7 +89,9 @@ interface PaymentPreviewTableProps {
     onEditTags?: (payment: PreviewPayment) => void;
     onForceSync?: (payment: PreviewPayment) => Promise<void>;
     onBulkFeeOverride?: (paymentIds: string[], overrides: { commissionFee?: number; fixedCost?: number; campaignFee?: number }) => void;
-    onBulkApplyRules?: (matches: { paymentId: string; rule: AutoRule }[]) => void;
+    onBulkApplyRules?: (matches: { paymentId: string; rule: AutoRule }[], options?: { mode?: 'auto' | 'manual' }) => void;
+    onBulkRemoveRules?: (paymentIds: string[]) => void;
+    autoApplyEnabled?: boolean;
 }
 
 const formatBRL = (value: number) => {
@@ -90,7 +117,7 @@ const formatDateFull = (dateStr: string | null) => {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-const MatchStatusBadge = ({ payment, hasSuggestion }: { payment: PreviewPayment; hasSuggestion?: boolean }) => {
+const MatchStatusBadge = ({ payment }: { payment: PreviewPayment }) => {
     const { matchStatus, isExpense, isAdjustment, isFreightAdjustment } = payment;
     const isOrder = !isExpense && !isAdjustment && !isFreightAdjustment;
 
@@ -99,15 +126,6 @@ const MatchStatusBadge = ({ payment, hasSuggestion }: { payment: PreviewPayment;
             <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <Link2 className="w-4 h-4" />
                 <span className="text-xs font-medium">Vinculado</span>
-            </div>
-        );
-    }
-
-    if (hasSuggestion) {
-        return (
-            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                <Lightbulb className="w-4 h-4" />
-                <span className="text-xs font-medium">Sugestão</span>
             </div>
         );
     }
@@ -154,7 +172,9 @@ export default function PaymentPreviewTable({
     onEditTags,
     onForceSync,
     onBulkFeeOverride,
-    onBulkApplyRules
+    onBulkApplyRules,
+    onBulkRemoveRules,
+    autoApplyEnabled = true
 }: PaymentPreviewTableProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'linked' | 'unmatched' | 'attention'>('all');
@@ -166,7 +186,7 @@ export default function PaymentPreviewTable({
 
     // Rule Suggestions State
     const [rules, setRules] = useState<AutoRule[]>([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [showRuleReview, setShowRuleReview] = useState(false);
 
     // Fetch rules on mount
     useEffect(() => {
@@ -187,18 +207,22 @@ export default function PaymentPreviewTable({
     }, [marketplace]);
 
     // Calculate matches
-    const suggestedMatches = useMemo(() => {
+    const autoApplyMatches = useMemo(() => {
         const matches = new Map<string, AutoRule>();
 
+        if (!autoApplyEnabled) return matches;
         if (rules.length === 0) return matches;
 
+        const userRules = rules.filter(rule => !rule.isSystemRule);
+        if (userRules.length === 0) return matches;
+
         payments.forEach(payment => {
-            // Find first matching rule that hasn't been applied yet
-            const matchedRule = rules.find(rule => {
-                // Skip if this rule is already in matchedRuleNames (prevent suggesting already applied rules)
+            if (payment.autoRuleOptOut) return;
+            if (payment.autoRuleAppliedNames && payment.autoRuleAppliedNames.length > 0) return;
+
+            const matchedRule = userRules.find(rule => {
                 if (payment.matchedRuleNames?.includes(rule.name)) return false;
 
-                // Check conditions using shared matcher logic
                 const paymentInput = {
                     transactionDescription: payment.transactionDescription || '',
                     transactionType: payment.transactionType || '',
@@ -207,12 +231,10 @@ export default function PaymentPreviewTable({
                     paymentDate: payment.paymentDate || '',
                 };
 
-                // Check based on condition logic (AND/OR)
                 if (rule.conditionLogic === 'OR') {
                     return rule.conditions.some(condition => evaluateCondition(condition, paymentInput).matched);
-                } else {
-                    return rule.conditions.every(condition => evaluateCondition(condition, paymentInput).matched);
                 }
+                return rule.conditions.every(condition => evaluateCondition(condition, paymentInput).matched);
             });
 
             if (matchedRule) {
@@ -221,25 +243,38 @@ export default function PaymentPreviewTable({
         });
 
         return matches;
-    }, [payments, rules]);
+    }, [payments, rules, autoApplyEnabled]);
 
-    // Auto-select all when entering suggestions mode
+    const autoApplyPayload = useMemo(() => {
+        return Array.from(autoApplyMatches.entries()).map(([paymentId, rule]) => ({ paymentId, rule }));
+    }, [autoApplyMatches]);
+
     useEffect(() => {
-        if (showSuggestions) {
-            setSelectedPayments(Array.from(suggestedMatches.keys()));
-        }
-    }, [showSuggestions, suggestedMatches]);
+        if (!autoApplyEnabled) return;
+        if (!onBulkApplyRules) return;
+        if (autoApplyPayload.length === 0) return;
+        onBulkApplyRules(autoApplyPayload, { mode: 'auto' });
+    }, [autoApplyPayload, onBulkApplyRules, autoApplyEnabled]);
 
-    const handleApplySuggestions = () => {
-        const matchesToApply = selectedPayments
-            .map(id => ({ paymentId: id, rule: suggestedMatches.get(id) }))
-            .filter(m => m.rule !== undefined) as { paymentId: string; rule: AutoRule }[];
+    const autoAppliedIds = useMemo(() => {
+        return payments
+            .filter(p => (p.autoRuleAppliedNames?.length || 0) > 0)
+            .map(p => p.marketplaceOrderId);
+    }, [payments]);
 
-        if (onBulkApplyRules && matchesToApply.length > 0) {
-            onBulkApplyRules(matchesToApply);
-            setShowSuggestions(false);
-            setSelectedPayments([]);
+    const autoAppliedSet = useMemo(() => new Set(autoAppliedIds), [autoAppliedIds]);
+
+    useEffect(() => {
+        if (showRuleReview) {
+            setSelectedPayments(autoAppliedIds);
         }
+    }, [showRuleReview, autoAppliedIds]);
+
+    const handleRemoveAutoRules = () => {
+        if (!onBulkRemoveRules || selectedPayments.length === 0) return;
+        onBulkRemoveRules(selectedPayments);
+        setShowRuleReview(false);
+        setSelectedPayments([]);
     };
 
 
@@ -247,8 +282,8 @@ export default function PaymentPreviewTable({
     const filteredPayments = useMemo(() => {
         let result = payments;
 
-        if (showSuggestions) {
-            result = result.filter(p => suggestedMatches.has(p.marketplaceOrderId));
+        if (showRuleReview) {
+            result = result.filter(p => autoAppliedSet.has(p.marketplaceOrderId));
         } else {
             // Existing filters
             if (activeStatusFilter !== 'all') {
@@ -291,7 +326,7 @@ export default function PaymentPreviewTable({
                     return 0;
             }
         });
-    }, [payments, searchTerm, activeStatusFilter, sortConfig, showSuggestions, suggestedMatches]);
+    }, [payments, searchTerm, activeStatusFilter, sortConfig, showRuleReview, autoAppliedSet]);
 
     const toggleSort = (field: SortField) => {
         setSortConfig(prev => ({
@@ -362,6 +397,29 @@ export default function PaymentPreviewTable({
         );
     };
 
+    const buildRuleDetailsTitle = (details?: MatchedRuleDetail[], fallback?: string[]) => {
+        if (!details || details.length === 0) {
+            return fallback && fallback.length > 0
+                ? `Regras aplicadas: ${fallback.join(', ')}`
+                : undefined;
+        }
+
+        const lines = details.map((detail) => {
+            const matchedConditions = detail.conditionResults.filter((result) => result.matched);
+            const conditionsText = matchedConditions.map((result) => {
+                const fieldLabel = FIELD_LABELS[result.field as keyof typeof FIELD_LABELS] || result.field;
+                const operatorLabel = OPERATOR_LABELS[result.operator as keyof typeof OPERATOR_LABELS] || result.operator;
+                const expected = String(result.expectedValue);
+                const actual = String(result.actualValue);
+                return `${fieldLabel} ${operatorLabel} "${expected}" (atual: "${actual}")`;
+            });
+
+            return `• ${detail.ruleName}${conditionsText.length > 0 ? `: ${conditionsText.join(' | ')}` : ''}`;
+        });
+
+        return lines.join('\n');
+    };
+
 
 
     const PaymentRow = ({
@@ -425,7 +483,9 @@ export default function PaymentPreviewTable({
             payment.transactionType?.toLowerCase().includes('sale') ||
             payment.transactionType?.toLowerCase().includes('receita');
 
+        const isAdjustmentId = /_(?:AJUSTE|REEMBOLSO)(?:_\d+)?$/i.test(payment.marketplaceOrderId);
         const isAdjustmentOrOther = payment.isFreightAdjustment ||
+            payment.isAdjustment ||
             payment.transactionType?.toLowerCase().includes('ajuste') ||
             payment.transactionType?.toLowerCase().includes('recarga') ||
             payment.transactionType?.toLowerCase().includes('reembolso') ||
@@ -434,8 +494,7 @@ export default function PaymentPreviewTable({
             payment.transactionType?.toLowerCase().includes('retirada') ||
             payment.transactionType?.toLowerCase().includes('diferença') ||
             payment.transactionType?.toLowerCase().includes('diferenca') ||
-            payment.marketplaceOrderId.endsWith('_AJUSTE') ||
-            payment.marketplaceOrderId.endsWith('_REEMBOLSO');
+            isAdjustmentId;
 
         const shouldShowExpected = !isAdjustmentOrOther && payment.tinyOrderInfo?.valor_esperado;
 
@@ -516,25 +575,32 @@ export default function PaymentPreviewTable({
                         ) : '-'}
                     </td>
                     <td className="px-2 py-2">
-                        <MatchStatusBadge payment={payment} hasSuggestion={suggestedMatches.has(payment.marketplaceOrderId)} />
+                        <MatchStatusBadge payment={payment} />
                     </td>
                     <td className="px-2 py-2 max-w-[100px]">
                         <div className="flex items-center gap-1">
-                            {/* Rule applied indicator */}
+                            {/* Rule applied indicator with explainer */}
                             {payment.matchedRuleNames && payment.matchedRuleNames.length > 0 && (
-                                <span
-                                    title={`Regras aplicadas: ${payment.matchedRuleNames.join(', ')}`}
-                                    className="flex-shrink-0 text-purple-500"
-                                >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                </span>
+                                <RuleMatchExplainer
+                                    details={payment.matchedRuleDetails}
+                                    fallbackNames={payment.matchedRuleNames}
+                                    compact
+                                    className="flex-shrink-0"
+                                />
                             )}
-                            <div className="flex flex-wrap gap-0.5">
-                                {payment.tags.slice(0, 1).map(tag => (
-                                    <TagBadge key={tag} tag={tag} />
-                                ))}
+                            <div className="relative group">
+                                <div className="flex flex-wrap gap-0.5">
+                                    {payment.tags.slice(0, 1).map(tag => (
+                                        <TagBadge key={tag} tag={tag} />
+                                    ))}
+                                    {payment.tags.length > 1 && (
+                                        <span className="text-[10px] text-gray-500">+{payment.tags.length - 1}</span>
+                                    )}
+                                </div>
                                 {payment.tags.length > 1 && (
-                                    <span className="text-[10px] text-gray-500">+{payment.tags.length - 1}</span>
+                                    <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[140px] max-w-[220px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-700 shadow-md group-hover:block dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                        {payment.tags.join(', ')}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -745,8 +811,8 @@ export default function PaymentPreviewTable({
 
     return (
         <div className="space-y-4">
-            {/* Rule Suggestions Banner */}
-            {suggestedMatches.size > 0 && !showSuggestions && (
+            {/* Auto Rules Banner */}
+            {autoAppliedIds.length > 0 && !showRuleReview && (
                 <div className="flex items-center justify-between p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
                     <div className="flex items-center gap-3">
                         <div className="p-2 rounded-full bg-amber-500/20">
@@ -754,24 +820,24 @@ export default function PaymentPreviewTable({
                         </div>
                         <div>
                             <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                                {suggestedMatches.size} Sugestões de Regras Encontradas
+                                {autoAppliedIds.length} Regras Aplicadas Automaticamente
                             </p>
                             <p className="text-xs text-amber-700 dark:text-amber-300">
-                                Regras compatíveis encontradas para {suggestedMatches.size} lançamentos.
+                                Regras automáticas aplicadas em {autoAppliedIds.length} lançamentos.
                             </p>
                         </div>
                     </div>
                     <button
-                        onClick={() => setShowSuggestions(true)}
+                        onClick={() => setShowRuleReview(true)}
                         className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 transition-colors"
                     >
-                        Revisar {suggestedMatches.size} Sugestões
+                        Revisar {autoAppliedIds.length} Regras
                     </button>
                 </div>
             )}
 
             {/* Suggestions Review Mode Banner */}
-            {showSuggestions && (
+            {showRuleReview && (
                 <div className="flex items-center justify-between p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
                     <div className="flex items-center gap-3">
                         <div className="p-2 rounded-full bg-blue-500/20">
@@ -779,17 +845,17 @@ export default function PaymentPreviewTable({
                         </div>
                         <div>
                             <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">
-                                Modo de Revisão de Regras ({selectedPayments.length} selecionados)
+                                Modo de Revisão de Regras Automáticas ({selectedPayments.length} selecionados)
                             </p>
                             <p className="text-xs text-blue-700 dark:text-blue-300">
-                                Selecione os itens e clique em Aplicar.
+                                Selecione os itens para desvincular as regras automáticas.
                             </p>
                         </div>
                     </div>
                     <div className="flex gap-2">
                         <button
                             onClick={() => {
-                                setShowSuggestions(false);
+                                setShowRuleReview(false);
                                 setSelectedPayments([]);
                             }}
                             className="px-4 py-2 rounded-lg text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -797,11 +863,11 @@ export default function PaymentPreviewTable({
                             Cancelar
                         </button>
                         <button
-                            onClick={handleApplySuggestions}
+                            onClick={handleRemoveAutoRules}
                             disabled={selectedPayments.length === 0}
                             className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
                         >
-                            Aplicar Regras ({selectedPayments.length})
+                            Desvincular Regras ({selectedPayments.length})
                         </button>
                     </div>
                 </div>
@@ -953,7 +1019,3 @@ function SortableHeader({
         </th>
     );
 }
-
-
-
-

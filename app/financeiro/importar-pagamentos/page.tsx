@@ -12,7 +12,7 @@ import ManualLinkModal from '../fluxo-caixa/components/ManualLinkModal';
 import EditTagsModal from '../fluxo-caixa/components/EditTagsModal';
 import RulesManager from '../fluxo-caixa/components/RulesManager';
 import { cn } from '@/lib/utils';
-import type { AutoRule } from '@/lib/rules';
+import { DEFAULT_RULE_MARKETPLACES, type AutoRule, evaluateConditions } from '@/lib/rules';
 
 import { FileUploadZone } from './components/FileUploadZone';
 import { ImportStepper, type StepperStep } from './components/ImportStepper';
@@ -39,6 +39,8 @@ type PreviewResponse = {
         multiEntry: number;
         matchRate: string;
     };
+    rulesAppliedBackend?: boolean;
+    pendingEscrowOrders?: string[];
     errors?: string[];
 };
 
@@ -64,6 +66,7 @@ export default function ImportarPagamentosPage() {
     const [syncCompleted, setSyncCompleted] = useState(false); // Prevents sync loop after completion
     const [selectedPayment, setSelectedPayment] = useState<PreviewPayment | null>(null);
     const [ruleFeedback, setRuleFeedback] = useState<{ message: string; count: number } | null>(null);
+    const [pendingEscrowOrders, setPendingEscrowOrders] = useState<string[]>([]);
 
     // Fetch import history on mount
     useEffect(() => {
@@ -133,6 +136,7 @@ export default function ImportarPagamentosPage() {
 
             if (data.success) {
                 setPreviewData(data);
+                setPendingEscrowOrders(data.pendingEscrowOrders || []);
                 setStep('preview');
             } else {
                 setPreviewData(data); // Show errors
@@ -204,7 +208,9 @@ export default function ImportarPagamentosPage() {
         updatedType?: string,
         updatedDescription?: string,
         expenseCategory?: string,
-        _ruleId?: string | null,
+        ruleId?: string | null,
+        updateSelectedRule?: boolean,
+        appliedRule?: AutoRule | null,
         ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean },
         ruleCondition?: { field: string; operator: string; value: string }
     ) => {
@@ -221,6 +227,63 @@ export default function ImportarPagamentosPage() {
 
         console.log('[ImportPage] Matching pattern:', patternKeyword);
 
+        const shouldReplicate = createRule || !!updateSelectedRule;
+        const conditionForPreview = ruleCondition?.value ? {
+            id: `cond_preview_${Date.now()}`,
+            field: ruleCondition.field,
+            operator: ruleCondition.operator,
+            value: ruleCondition.value,
+        } : null;
+
+        const normalizeField = (field: string) => {
+            const normalized = field.trim().toLowerCase();
+            if (normalized === 'transaction_type' || normalized === 'transactiontype') return 'type';
+            if (normalized === 'descricao') return 'description';
+            return normalized;
+        };
+
+        const buildPreviewRule = () => {
+            if (!updateSelectedRule || !appliedRule) return null;
+            const baseConditions = Array.isArray(appliedRule.conditions) ? appliedRule.conditions : [];
+            if (!conditionForPreview) {
+                return {
+                    conditions: baseConditions,
+                    logic: appliedRule.conditionLogic,
+                };
+            }
+
+            const textFields = new Set(['description', 'type', 'full_text', 'order_id']);
+            const shouldUseOr = baseConditions.length > 0 &&
+                baseConditions.every((condition) => textFields.has(normalizeField(String(condition.field || '')))) &&
+                textFields.has(normalizeField(String(conditionForPreview.field || '')));
+
+            return {
+                conditions: [...baseConditions, conditionForPreview],
+                logic: shouldUseOr ? 'OR' : appliedRule.conditionLogic,
+            };
+        };
+
+        const previewRule = buildPreviewRule();
+
+        const matchesPreviewCondition = (payment: PreviewPayment) => {
+            if (!shouldReplicate) return false;
+            if (previewRule) {
+                const paymentInput = {
+                    marketplaceOrderId: payment.marketplaceOrderId,
+                    transactionDescription: payment.transactionDescription || '',
+                    transactionType: payment.transactionType || '',
+                    amount: payment.netAmount,
+                    paymentDate: payment.paymentDate || '',
+                };
+                return evaluateConditions(previewRule.conditions, paymentInput, previewRule.logic).matched;
+            }
+            if (createRule && patternKeyword) {
+                const textToMatch = `${payment.transactionDescription || ''} ${payment.transactionType || ''}`.toLowerCase();
+                return textToMatch.includes(patternKeyword);
+            }
+            return false;
+        };
+
         // Update payments - if creating rule, apply to ALL matching entries
         const updatedPayments = previewData.payments.map(p => {
             // Always update the selected payment
@@ -235,35 +298,31 @@ export default function ImportarPagamentosPage() {
                 };
             }
 
-            // If creating rule, also update other matching entries using contains (not regex)
-            if (createRule && patternKeyword) {
-                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`.toLowerCase();
-                if (textToMatch.includes(patternKeyword)) {
-                    console.log('[ImportPage] ✓ Matched entry:', p.marketplaceOrderId, p.transactionDescription?.substring(0, 40));
-                    // Merge new tags with existing ones (avoid duplicates)
-                    const mergedTags = [...new Set([...p.tags, ...updatedTags])];
-                    return {
-                        ...p,
-                        tags: mergedTags,
-                        // Also apply transactionType if provided
-                        transactionType: updatedType || p.transactionType,
-                        // Also apply expenseCategory if provided
-                        expenseCategory: expenseCategory || p.expenseCategory,
-                        // Mark as expense if category is set
-                        isExpense: expenseCategory ? true : p.isExpense,
-                    };
-                }
+            // Replicate edits to matching entries when rule is being created or updated
+            if (matchesPreviewCondition(p)) {
+                console.log('[ImportPage] ✓ Matched entry:', p.marketplaceOrderId, p.transactionDescription?.substring(0, 40));
+                // Merge new tags with existing ones (avoid duplicates)
+                const mergedTags = [...new Set([...p.tags, ...updatedTags])];
+                return {
+                    ...p,
+                    tags: mergedTags,
+                    // Also apply transactionType if provided
+                    transactionType: updatedType || p.transactionType,
+                    // Also apply expenseCategory if provided
+                    expenseCategory: expenseCategory || p.expenseCategory,
+                    // Mark as expense if category is set
+                    isExpense: expenseCategory ? true : p.isExpense,
+                };
             }
 
             return p;
         });
 
         // Count how many entries were affected (excluding the selected one)
-        const otherMatchCount = createRule && patternKeyword
+        const otherMatchCount = shouldReplicate
             ? previewData.payments.filter(p => {
                 if (p.marketplaceOrderId === selectedPayment.marketplaceOrderId) return false;
-                const textToMatch = `${p.transactionDescription || ''} ${p.transactionType || ''}`.toLowerCase();
-                return textToMatch.includes(patternKeyword);
+                return matchesPreviewCondition(p);
             }).length
             : 0;
 
@@ -329,7 +388,7 @@ export default function ImportarPagamentosPage() {
                     body: JSON.stringify({
                         name: `Regra: ${originalDescription.substring(0, 30)}`,
                         description: `Criada automaticamente para: ${originalDescription}`,
-                        marketplace: previewData.marketplace,
+                        marketplaces: DEFAULT_RULE_MARKETPLACES,
                         conditions: [{
                             id: `cond_${Date.now()}`,
                             field: conditionToUse.field,
@@ -347,6 +406,16 @@ export default function ImportarPagamentosPage() {
                 const result = await response.json();
                 console.log('[ImportPage] Rule creation result:', result);
 
+                if (!response.ok || !result.success) {
+                    const conflictName = result?.conflict?.rule?.name;
+                    const baseMessage = result?.error || 'Erro ao criar regra';
+                    setRuleFeedback({
+                        message: conflictName ? `⚠️ ${baseMessage} (${conflictName})` : `⚠️ ${baseMessage}`,
+                        count: 0,
+                    });
+                    return;
+                }
+
                 // Show visual feedback with count
                 const totalApplied = otherMatchCount + 1;
                 setRuleFeedback({
@@ -362,6 +431,103 @@ export default function ImportarPagamentosPage() {
                 console.error('Error creating auto-rule:', error);
                 setRuleFeedback({ message: '❌ Erro ao criar regra', count: 0 });
                 setTimeout(() => setRuleFeedback(null), 3000);
+            }
+        }
+
+        if (ruleId && updateSelectedRule && ruleCondition?.value) {
+            try {
+                const rulesResponse = await fetch(`/api/financeiro/rules?marketplace=${marketplace}`);
+                const rulesData = await rulesResponse.json();
+                const targetRule = (rulesData.rules || []).find((r: AutoRule) => r.id === ruleId);
+
+                if (!targetRule) {
+                    console.warn('[ImportPage] Rule not found for update:', ruleId);
+                } else if (targetRule.isSystemRule) {
+                    console.warn('[ImportPage] Skip updating system rule:', ruleId);
+                } else {
+                    const normalizeText = (text: string) => text
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .trim();
+
+                    const normalizeField = (field: string) => {
+                        const normalized = field.trim().toLowerCase();
+                        if (normalized === 'transaction_type' || normalized === 'transactiontype') return 'type';
+                        if (normalized === 'descricao') return 'description';
+                        return normalized;
+                    };
+
+                    const normalizeConditionValue = (value: string, operator: string) => {
+                        if (operator === 'regex') return value.trim();
+                        return normalizeText(value);
+                    };
+
+                    const buildConditionKey = (condition: { field: string; operator: string; value: string; value2?: string }) => {
+                        return JSON.stringify({
+                            field: normalizeField(condition.field),
+                            operator: condition.operator,
+                            value: normalizeConditionValue(condition.value, condition.operator),
+                            value2: condition.value2 ? normalizeConditionValue(condition.value2, condition.operator) : undefined,
+                        });
+                    };
+
+                    const newCondition = {
+                        id: `cond_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                        field: normalizeField(ruleCondition.field),
+                        operator: ruleCondition.operator,
+                        value: ruleCondition.value,
+                    };
+
+                    const existingConditions = Array.isArray(targetRule.conditions) ? targetRule.conditions : [];
+                    const existingKeys = new Set(existingConditions.map((condition) => buildConditionKey({
+                        field: condition.field,
+                        operator: condition.operator,
+                        value: String(condition.value ?? ''),
+                        value2: condition.value2 ? String(condition.value2) : undefined,
+                    })));
+                    const newKey = buildConditionKey({
+                        field: newCondition.field,
+                        operator: newCondition.operator,
+                        value: String(newCondition.value),
+                    });
+
+                    if (!existingKeys.has(newKey)) {
+                        const updatedConditions = [...existingConditions, newCondition];
+                        const textFields = new Set(['description', 'type', 'full_text', 'order_id']);
+                        const shouldUseOr = existingConditions.length > 0 &&
+                            existingConditions.every((condition) => textFields.has(normalizeField(condition.field))) &&
+                            textFields.has(normalizeField(newCondition.field));
+                        const nextLogic = shouldUseOr ? 'OR' : targetRule.conditionLogic;
+
+                        const updateResponse = await fetch('/api/financeiro/rules', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                id: targetRule.id,
+                                conditions: updatedConditions,
+                                conditionLogic: nextLogic,
+                            }),
+                        });
+
+                        const updateData = await updateResponse.json();
+                        if (!updateResponse.ok || !updateData.success) {
+                            console.error('[ImportPage] Failed to update rule conditions:', updateData);
+                            setRuleFeedback({
+                                message: '⚠️ Não foi possível atualizar a regra selecionada',
+                                count: 0,
+                            });
+                        } else {
+                            setRuleFeedback({
+                                message: '✅ Regra atualizada com nova condição',
+                                count: 1,
+                            });
+                            setTimeout(() => setRuleFeedback(null), 3000);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[ImportPage] Error updating rule conditions:', error);
             }
         }
 
@@ -401,8 +567,9 @@ export default function ImportarPagamentosPage() {
         }
     };
 
-    const handleBulkApplyRules = (matches: { paymentId: string; rule: AutoRule }[]) => {
+    const handleBulkApplyRules = (matches: { paymentId: string; rule: AutoRule }[], options?: { mode?: 'auto' | 'manual' }) => {
         if (!previewData) return;
+        const mode = options?.mode ?? 'manual';
 
         const updatedPayments = previewData.payments.map(p => {
             const match = matches.find(m => m.paymentId === p.marketplaceOrderId);
@@ -410,12 +577,29 @@ export default function ImportarPagamentosPage() {
                 const { rule } = match;
                 const updatedP = { ...p };
 
+                if (mode === 'auto' && !updatedP.autoRuleSnapshot) {
+                    updatedP.autoRuleSnapshot = {
+                        tags: [...(updatedP.tags || [])],
+                        transactionType: updatedP.transactionType,
+                        transactionDescription: updatedP.transactionDescription,
+                        expenseCategory: updatedP.expenseCategory,
+                        isExpense: updatedP.isExpense,
+                        matchedRuleNames: updatedP.matchedRuleNames ? [...updatedP.matchedRuleNames] : [],
+                    };
+                }
+
                 // Track applied rule
                 const newMatchedRules = [...(updatedP.matchedRuleNames || [])];
                 if (!newMatchedRules.includes(rule.name)) {
                     newMatchedRules.push(rule.name);
                 }
                 updatedP.matchedRuleNames = newMatchedRules;
+                if (mode === 'auto') {
+                    const autoApplied = new Set(updatedP.autoRuleAppliedNames || []);
+                    autoApplied.add(rule.name);
+                    updatedP.autoRuleAppliedNames = Array.from(autoApplied);
+                    updatedP.autoRuleOptOut = false;
+                }
 
                 // Apply actions
                 rule.actions.forEach(action => {
@@ -444,9 +628,46 @@ export default function ImportarPagamentosPage() {
 
         setPreviewData({ ...previewData, payments: updatedPayments });
 
+        if (mode === 'manual') {
+            setRuleFeedback({
+                message: `✅ ${matches.length} regras aplicadas com sucesso`,
+                count: matches.length
+            });
+            setTimeout(() => setRuleFeedback(null), 3000);
+        }
+    };
+
+    const handleBulkRemoveRules = (paymentIds: string[]) => {
+        if (!previewData) return;
+
+        const updatedPayments = previewData.payments.map((payment) => {
+            if (!paymentIds.includes(payment.marketplaceOrderId)) return payment;
+            if (!payment.autoRuleSnapshot) {
+                return {
+                    ...payment,
+                    autoRuleAppliedNames: [],
+                    autoRuleOptOut: true,
+                };
+            }
+
+            const snapshot = payment.autoRuleSnapshot;
+            return {
+                ...payment,
+                tags: snapshot.tags,
+                transactionType: snapshot.transactionType,
+                transactionDescription: snapshot.transactionDescription,
+                expenseCategory: snapshot.expenseCategory,
+                isExpense: snapshot.isExpense,
+                matchedRuleNames: snapshot.matchedRuleNames,
+                autoRuleAppliedNames: [],
+                autoRuleOptOut: true,
+            };
+        });
+
+        setPreviewData({ ...previewData, payments: updatedPayments });
         setRuleFeedback({
-            message: `✅ ${matches.length} regras aplicadas com sucesso`,
-            count: matches.length
+            message: `↩️ ${paymentIds.length} regras automáticas removidas`,
+            count: paymentIds.length
         });
         setTimeout(() => setRuleFeedback(null), 3000);
     };
@@ -458,6 +679,9 @@ export default function ImportarPagamentosPage() {
         setFile(null);
         setPreviewData(null);
         setConfirmResult(null);
+        setPendingEscrowOrders([]);
+        setSyncCompleted(false);
+        setSyncKey((k) => k + 1);
     };
 
     // Get unique unlinked orders for batch sync
@@ -471,7 +695,8 @@ export default function ImportarPagamentosPage() {
             .filter(p => {
                 // Extract base order ID (remove suffixes)
                 const baseId = p.marketplaceOrderId
-                    .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA)(?:_\d+)?$|_\d+$/, '');
+                    .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$/i, '')
+                    .replace(/_\d+$/, '');
                 if (seen.has(baseId)) return false;
                 seen.add(baseId);
                 return true;
@@ -479,8 +704,33 @@ export default function ImportarPagamentosPage() {
             .map(p => ({
                 marketplaceOrderId: p.marketplaceOrderId,
                 marketplace: previewData.marketplace,
+                syncType: 'link' as const,
             }));
     }, [previewData]);
+
+    const syncOrders = useMemo(() => {
+        if (!previewData) return [];
+        const combined = [
+            ...unmatchedOrders,
+            ...(pendingEscrowOrders || []).map((id) => ({
+                marketplaceOrderId: id,
+                marketplace: previewData.marketplace,
+                syncType: 'escrow' as const,
+            })),
+        ];
+        const byBaseId = new Map<string, typeof combined[number]>();
+        for (const order of combined) {
+            const baseId = order.marketplaceOrderId
+                .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$/i, '')
+                .replace(/_\d+$/, '');
+            if (!baseId) continue;
+            const existing = byBaseId.get(baseId);
+            if (!existing || (existing.syncType === 'escrow' && order.syncType === 'link')) {
+                byBaseId.set(baseId, order);
+            }
+        }
+        return Array.from(byBaseId.values());
+    }, [previewData, unmatchedOrders, pendingEscrowOrders]);
 
     const handleSyncComplete = async () => {
         console.log('[ImportarPagamentos] Sync complete, refreshing preview...');
@@ -704,10 +954,10 @@ export default function ImportarPagamentosPage() {
                                     )}
 
                                     {/* Auto-Sync Banner - only show if sync hasn't completed yet */}
-                                    {!syncCompleted && unmatchedOrders.length > 0 && (
+                                    {!syncCompleted && syncOrders.length > 0 && (
                                         <SyncBanner
                                             key={syncKey}
-                                            orders={unmatchedOrders}
+                                            orders={syncOrders}
                                             onComplete={handleSyncComplete}
                                             autoStart={true}
                                         />
@@ -720,6 +970,8 @@ export default function ImportarPagamentosPage() {
                                         onEditTags={handleEditTags}
                                         onForceSync={handleForceSync}
                                         onBulkApplyRules={handleBulkApplyRules}
+                                        onBulkRemoveRules={handleBulkRemoveRules}
+                                        autoApplyEnabled={!previewData.rulesAppliedBackend}
                                     />
                                 </div>
 
@@ -828,6 +1080,7 @@ export default function ImportarPagamentosPage() {
                                     marketplaceOrderId: selectedPayment.marketplaceOrderId,
                                     transactionDescription: selectedPayment.transactionDescription,
                                     transactionType: selectedPayment.transactionType,
+                                    amount: selectedPayment.netAmount,
                                     tags: selectedPayment.tags,
                                     isExpense: selectedPayment.isExpense,
                                     expenseCategory: selectedPayment.expenseCategory,

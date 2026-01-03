@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { parsePaymentFile, type ParsedPayment } from '@/lib/paymentParsers';
+import { syncShopeeEscrowForOrders } from '@/lib/shopeeEscrowSync';
 
 export const config = {
     api: {
@@ -190,6 +191,28 @@ export async function POST(request: NextRequest) {
                 rows_skipped: rowsSkipped,
             })
             .eq('id', batch.id);
+
+        if (marketplace === 'shopee') {
+            const normalizeOrderId = (orderId: string) =>
+                orderId
+                    .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$/i, '')
+                    .replace(/_\d+$/, '');
+            const orderSnList = Array.from(new Set(
+                parseResult.payments
+                    .map((payment) => normalizeOrderId(payment.marketplaceOrderId))
+                    .filter((orderSn) => orderSn.length > 0)
+            ));
+
+            try {
+                const escrowResult = await syncShopeeEscrowForOrders(orderSnList, {
+                    concurrency: 6,
+                    delayMs: 120,
+                });
+                console.log('[PaymentUpload] Shopee escrow sync:', escrowResult);
+            } catch (error) {
+                console.error('[PaymentUpload] Shopee escrow sync failed:', error);
+            }
+        }
 
         return NextResponse.json({
             success: true,

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Play, CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
+import RuleSimulator from './RuleSimulator';
 import { cn } from '@/lib/utils';
 import {
     type AutoRule,
@@ -15,39 +16,63 @@ import {
     FIELD_LABELS,
     OPERATOR_LABELS,
     getOperatorsForField,
+    RULE_MARKETPLACES,
+    isAllMarketplaces,
 } from '@/lib/rules';
 
 interface RuleEditorProps {
     rule?: AutoRule;
+    initialPayload?: CreateRulePayload;  // For template prefill
     onSave: (rule: CreateRulePayload) => Promise<void>;
     onCancel: () => void;
 }
 
-export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) {
-    const [formData, setFormData] = useState<CreateRulePayload>(() =>
-        rule ? {
-            name: rule.name,
-            description: rule.description,
-            marketplace: rule.marketplace,
-            conditions: rule.conditions,
-            conditionLogic: rule.conditionLogic,
-            actions: rule.actions,
-            priority: rule.priority,
-            enabled: rule.enabled,
-            stopOnMatch: rule.stopOnMatch,
-        } : createEmptyRule()
-    );
+export default function RuleEditor({ rule, initialPayload, onSave, onCancel }: RuleEditorProps) {
+    const [formData, setFormData] = useState<CreateRulePayload>(() => {
+        // Priority: existing rule > template payload > empty
+        if (rule) {
+            return {
+                name: rule.name,
+                description: rule.description,
+                marketplaces: rule.marketplaces,
+                conditions: rule.conditions,
+                conditionLogic: rule.conditionLogic,
+                actions: rule.actions,
+                priority: rule.priority,
+                enabled: rule.enabled,
+                stopOnMatch: rule.stopOnMatch,
+            };
+        }
+        if (initialPayload) {
+            return initialPayload;
+        }
+        return createEmptyRule();
+    });
 
     const [testText, setTestText] = useState('');
     const [testResult, setTestResult] = useState<{ matched: boolean; tags: string[] } | null>(null);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
+    const [availableTags, setAvailableTags] = useState<string[]>([]);
 
     const updateCondition = (index: number, updates: Partial<RuleCondition>) => {
         const newConditions = [...formData.conditions];
         newConditions[index] = { ...newConditions[index], ...updates };
         setFormData({ ...formData, conditions: newConditions });
     };
+
+    useEffect(() => {
+        const fetchTags = async () => {
+            try {
+                const res = await fetch('/api/financeiro/tags');
+                const data = await res.json();
+                setAvailableTags(data.tags || []);
+            } catch (error) {
+                console.error('Error fetching tags:', error);
+            }
+        };
+        fetchTags();
+    }, []);
 
     const addCondition = () => {
         setFormData({
@@ -65,6 +90,19 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
     const updateAction = (index: number, updates: Partial<RuleAction>) => {
         const newActions = [...formData.actions];
         newActions[index] = { ...newActions[index], ...updates };
+        setFormData({ ...formData, actions: newActions });
+    };
+
+    const addAction = () => {
+        setFormData({
+            ...formData,
+            actions: [...formData.actions, { type: 'add_tags', tags: [] }],
+        });
+    };
+
+    const removeAction = (index: number) => {
+        if (formData.actions.length <= 1) return;
+        const newActions = formData.actions.filter((_, i) => i !== index);
         setFormData({ ...formData, actions: newActions });
     };
 
@@ -127,6 +165,10 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
             validationErrors.push('Adicione pelo menos uma tag');
         }
 
+        if (!formData.marketplaces || formData.marketplaces.length === 0) {
+            validationErrors.push('Selecione pelo menos um marketplace');
+        }
+
         if (validationErrors.length > 0) {
             setErrors(validationErrors);
             return;
@@ -135,7 +177,7 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
         setSaving(true);
         try {
             await onSave(formData);
-        } catch (_error) {
+        } catch (_error) { // eslint-disable-line @typescript-eslint/no-unused-vars
             setErrors(['Erro ao salvar regra']);
         } finally {
             setSaving(false);
@@ -174,16 +216,46 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-muted mb-1">Marketplace</label>
-                            <select
-                                value={formData.marketplace}
-                                onChange={e => setFormData({ ...formData, marketplace: e.target.value })}
-                                className="w-full px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="all">Todos</option>
-                                <option value="shopee">Shopee</option>
-                                <option value="mercado_livre">Mercado Livre</option>
-                                <option value="magalu">Magalu</option>
-                            </select>
+                            <div className="rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2">
+                                <div className="flex items-center justify-between text-xs text-muted">
+                                    <span>{isAllMarketplaces(formData.marketplaces) ? 'Todos selecionados' : 'Selecione os marketplaces'}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({
+                                            ...formData,
+                                            marketplaces: RULE_MARKETPLACES.map((mp) => mp.id),
+                                        })}
+                                        className="text-blue-500 hover:underline"
+                                    >
+                                        Selecionar todos
+                                    </button>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                    {RULE_MARKETPLACES.map((mp) => {
+                                        const checked = formData.marketplaces.includes(mp.id);
+                                        return (
+                                            <label key={mp.id} className="flex items-center gap-2 text-sm text-main">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => {
+                                                        const next = checked
+                                                            ? formData.marketplaces.filter((id) => id !== mp.id)
+                                                            : [...formData.marketplaces, mp.id];
+                                                        if (next.length === 0) return;
+                                                        const ordered = RULE_MARKETPLACES
+                                                            .map((item) => item.id)
+                                                            .filter((id) => next.includes(id));
+                                                        setFormData({ ...formData, marketplaces: ordered });
+                                                    }}
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                                                />
+                                                <span>{mp.label}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-muted mb-1">Prioridade (1-100)</label>
@@ -243,11 +315,28 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
                             <ActionRow
                                 key={index}
                                 action={action}
+                                canRemove={formData.actions.length > 1}
+                                availableTags={availableTags}
+                                tagDatalistId="rule-tag-suggestions"
                                 onChange={updates => updateAction(index, updates)}
                                 onAddTag={tag => addTag(index, tag)}
                                 onRemoveTag={tag => removeTag(index, tag)}
+                                onRemove={() => removeAction(index)}
                             />
                         ))}
+
+                        <button
+                            onClick={addAction}
+                            className="mt-3 flex items-center gap-2 text-sm text-blue-500 hover:text-blue-600"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Adicionar ação
+                        </button>
+                        <datalist id="rule-tag-suggestions">
+                            {availableTags.map((tag) => (
+                                <option key={tag} value={tag} />
+                            ))}
+                        </datalist>
                     </div>
 
                     {/* Test Area */}
@@ -293,6 +382,17 @@ export default function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) 
                                 )}
                             </div>
                         )}
+                    </div>
+
+                    {/* Batch Simulator - Test against historical payments */}
+                    <div className="p-4 rounded-xl bg-purple-50/50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                            🧪 Simular em Lote (pagamentos históricos)
+                        </label>
+                        <RuleSimulator
+                            rule={formData}
+                            marketplace={formData.marketplaces[0] || 'all'}
+                        />
                     </div>
 
                     {/* Errors */}
@@ -390,16 +490,25 @@ function ConditionRow({
 // Action Row Component - supports multiple action types
 function ActionRow({
     action,
+    canRemove,
+    availableTags,
+    tagDatalistId,
     onChange,
     onAddTag,
     onRemoveTag,
+    onRemove,
 }: {
     action: RuleAction;
+    canRemove: boolean;
+    availableTags: string[];
+    tagDatalistId: string;
     onChange: (updates: Partial<RuleAction>) => void;
     onAddTag: (tag: string) => void;
     onRemoveTag: (tag: string) => void;
+    onRemove: () => void;
 }) {
     const [newTag, setNewTag] = useState('');
+    const suggestedTags = availableTags.filter((tag) => tag && !action.tags?.includes(tag));
 
     const handleAddTag = () => {
         if (newTag.trim()) {
@@ -432,9 +541,21 @@ function ActionRow({
         <div className="space-y-3 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
             {/* Action Type Selector */}
             <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-                    Tipo de Ação
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Tipo de Ação
+                    </label>
+                    {canRemove && (
+                        <button
+                            type="button"
+                            onClick={onRemove}
+                            className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10"
+                            title="Remover ação"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
                 <select
                     value={action.type}
                     onChange={e => setActionType(e.target.value as RuleAction['type'])}
@@ -477,6 +598,7 @@ function ActionRow({
                             onChange={e => setNewTag(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleAddTag()}
                             placeholder="Nova tag..."
+                            list={tagDatalistId}
                             className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-sm"
                         />
                         <button
@@ -486,6 +608,26 @@ function ActionRow({
                             Adicionar
                         </button>
                     </div>
+                    {newTag.trim().length > 0 && suggestedTags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {suggestedTags
+                                .filter((tag) => tag.toLowerCase().includes(newTag.trim().toLowerCase()))
+                                .slice(0, 8)
+                                .map((tag) => (
+                                    <button
+                                        key={tag}
+                                        type="button"
+                                        onClick={() => {
+                                            onAddTag(tag);
+                                            setNewTag('');
+                                        }}
+                                        className="px-2 py-1 rounded-lg text-xs bg-white/70 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-blue-400"
+                                    >
+                                        {tag}
+                                    </button>
+                                ))}
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -131,7 +131,7 @@ export async function markEntryAsPaid(id: string, paidDate: string) {
 export async function listManualEntries(filters?: {
     dataInicio?: string;
     dataFim?: string;
-    statusPagamento?: 'todos' | 'pagos' | 'pendentes';
+    statusPagamento?: 'todos' | 'pagos' | 'pendentes' | 'atrasados';
     search?: string;
 }) {
     // 1. Fetch Manual Entries
@@ -147,6 +147,7 @@ export async function listManualEntries(filters?: {
     // Apply status filter
     if (filters?.statusPagamento === 'pagos') query = query.eq('status', 'confirmed');
     else if (filters?.statusPagamento === 'pendentes') query = query.in('status', ['pending', 'overdue']);
+    else if (filters?.statusPagamento === 'atrasados') query = query.eq('status', 'overdue');
 
     // Apply search
     if (filters?.search) {
@@ -166,7 +167,7 @@ export async function listManualEntries(filters?: {
     if (filters?.dataFim) importQuery = importQuery.lte('payment_date', filters.dataFim);
 
     // Apply status filter (all imports are confirmed/paid)
-    if (filters?.statusPagamento === 'pendentes') {
+    if (filters?.statusPagamento === 'pendentes' || filters?.statusPagamento === 'atrasados') {
         // If filtering for pending, imports (which are paid) should not be returned
         // So we return only manual entries
         return manualEntries || [];

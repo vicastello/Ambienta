@@ -244,7 +244,7 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
     // Extract filters from URL
     const dataInicio = searchParams.get('dataInicio') || undefined;
     const dataFim = searchParams.get('dataFim') || undefined;
-    const statusPagamento = (searchParams.get('statusPagamento') as 'todos' | 'pagos' | 'pendentes') || undefined;
+    const statusPagamento = (searchParams.get('statusPagamento') as 'todos' | 'pagos' | 'pendentes' | 'atrasados') || undefined;
     const search = searchParams.get('busca') || undefined;
 
     const fetchEntries = async () => {

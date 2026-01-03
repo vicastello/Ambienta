@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Save, Tag as TagIcon, Sparkles, LinkIcon, Unlink, Check, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Plus, Save, Tag as TagIcon, Sparkles, LinkIcon, Unlink, Check, AlertCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AutoRule } from '@/lib/rules';
+import type { AutoRule, RuleConditionField, RuleConditionOperator } from '@/lib/rules';
+import { evaluateConditions, FIELD_LABELS, OPERATOR_LABELS, getOperatorsForField } from '@/lib/rules';
 
 interface EditTagsModalProps {
     isOpen: boolean;
@@ -12,6 +13,7 @@ interface EditTagsModalProps {
         marketplaceOrderId: string;
         transactionDescription?: string;
         transactionType?: string;
+        amount?: number;
         tags: string[];
         isExpense?: boolean;
         expenseCategory?: string;
@@ -25,6 +27,8 @@ interface EditTagsModalProps {
         updatedDescription?: string,
         expenseCategory?: string,
         ruleId?: string | null,
+        updateSelectedRule?: boolean,
+        appliedRule?: AutoRule | null,
         ruleActionFlags?: { includeTags: boolean; includeType: boolean; includeCategory: boolean },
         ruleCondition?: { field: string; operator: string; value: string }
     ) => void;
@@ -37,12 +41,19 @@ export default function EditTagsModal({
     marketplace,
     onSave,
 }: EditTagsModalProps) {
+    const normalizeText = (text: string) => text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
     const [tags, setTags] = useState<string[]>(payment.tags || []);
     const [newTag, setNewTag] = useState('');
     const [transactionType, setTransactionType] = useState(payment.transactionType || '');
     const [transactionDescription, setTransactionDescription] = useState(payment.transactionDescription || '');
     const [expenseCategory, setExpenseCategory] = useState(payment.expenseCategory || '');
     const [createAutoRule, setCreateAutoRule] = useState(false);
+    const [updateSelectedRule, setUpdateSelectedRule] = useState(false);
 
     // Action selection for auto-rule
     const [includeTagsInRule, setIncludeTagsInRule] = useState(true);
@@ -50,8 +61,8 @@ export default function EditTagsModal({
     const [includeCategoryInRule, setIncludeCategoryInRule] = useState(true);
 
     // Condition editing for auto-rule
-    const [conditionField, setConditionField] = useState<'full_text' | 'description' | 'transaction_type'>('full_text');
-    const [conditionOperator, setConditionOperator] = useState<'contains' | 'equals' | 'regex'>('contains');
+    const [conditionField, setConditionField] = useState<RuleConditionField>('full_text');
+    const [conditionOperator, setConditionOperator] = useState<RuleConditionOperator>('contains');
     const [conditionValue, setConditionValue] = useState(
         (payment.transactionDescription || '').substring(0, 30).toLowerCase()
     );
@@ -61,6 +72,46 @@ export default function EditTagsModal({
     const [loadingRules, setLoadingRules] = useState(false);
     const [appliedRuleId, setAppliedRuleId] = useState<string | null>(payment.appliedRuleId || null);
     const [showRulesSection, setShowRulesSection] = useState(false);
+    const [overwriteInfo, setOverwriteInfo] = useState<Array<{ label: string; from: string; to: string }>>([]);
+
+    const buildOverwriteInfo = (
+        rule: AutoRule,
+        current: { transactionType: string; transactionDescription: string; expenseCategory: string }
+    ) => {
+        const info: Array<{ label: string; from: string; to: string }> = [];
+        const seen = new Set<string>();
+
+        rule.actions.forEach((action) => {
+            if (action.type === 'set_type' && action.transactionType && !seen.has('type')) {
+                const from = current.transactionType.trim();
+                const to = action.transactionType.trim();
+                if (from && normalizeText(from) !== normalizeText(to)) {
+                    info.push({ label: 'Tipo', from, to });
+                }
+                seen.add('type');
+            }
+
+            if (action.type === 'set_description' && action.description && !seen.has('description')) {
+                const from = current.transactionDescription.trim();
+                const to = action.description.trim();
+                if (from && normalizeText(from) !== normalizeText(to)) {
+                    info.push({ label: 'Descrição', from, to });
+                }
+                seen.add('description');
+            }
+
+            if (action.type === 'set_category' && action.category && !seen.has('category')) {
+                const from = current.expenseCategory.trim();
+                const to = action.category.trim();
+                if (from && normalizeText(from) !== normalizeText(to)) {
+                    info.push({ label: 'Categoria', from, to });
+                }
+                seen.add('category');
+            }
+        });
+
+        return info;
+    };
 
     // Fetch rules on mount from NEW API
     useEffect(() => {
@@ -68,6 +119,13 @@ export default function EditTagsModal({
             fetchRules();
         }
     }, [isOpen, marketplace]);
+
+    useEffect(() => {
+        const operators = getOperatorsForField(conditionField);
+        if (!operators.includes(conditionOperator)) {
+            setConditionOperator(operators[0]);
+        }
+    }, [conditionField, conditionOperator]);
 
     const fetchRules = async () => {
         setLoadingRules(true);
@@ -88,34 +146,24 @@ export default function EditTagsModal({
 
     // Find matching rules based on description using new condition system
     const matchingRules = useMemo(() => {
-        if (!transactionDescription && !transactionType) return [];
+        if (!transactionDescription && !transactionType && !payment.marketplaceOrderId) return [];
 
-        const textToMatch = `${transactionDescription} ${transactionType}`.toLowerCase();
+        const paymentInput = {
+            marketplaceOrderId: payment.marketplaceOrderId,
+            transactionDescription: transactionDescription || '',
+            transactionType: transactionType || '',
+            amount: payment.amount ?? 0,
+            paymentDate: new Date().toISOString(),
+        };
 
-        return allRules.filter(rule => {
-            if (!rule.enabled) return false;
-
-            // Check if any condition matches
-            return rule.conditions.some(condition => {
-                const valueToCheck = condition.value?.toString().toLowerCase() || '';
-
-                if (condition.field === 'full_text' || condition.field === 'description') {
-                    if (condition.operator === 'contains') {
-                        return textToMatch.includes(valueToCheck);
-                    } else if (condition.operator === 'equals') {
-                        return textToMatch === valueToCheck;
-                    } else if (condition.operator === 'regex') {
-                        try {
-                            return new RegExp(condition.value?.toString() || '', 'i').test(textToMatch);
-                        } catch {
-                            return false;
-                        }
-                    }
-                }
-                return false;
-            });
-        }).sort((a, b) => b.priority - a.priority);
-    }, [allRules, transactionDescription, transactionType]);
+        return allRules
+            .filter(rule => {
+                if (!rule.enabled) return false;
+                const evaluation = evaluateConditions(rule.conditions, paymentInput, rule.conditionLogic);
+                return evaluation.matched;
+            })
+            .sort((a, b) => b.priority - a.priority);
+    }, [allRules, transactionDescription, transactionType, payment.marketplaceOrderId, payment.amount]);
 
     // Get currently applied rule details
     const appliedRule = useMemo(() => {
@@ -151,6 +199,13 @@ export default function EditTagsModal({
 
     const handleApplyRule = (rule: AutoRule) => {
         setAppliedRuleId(rule.id);
+        setUpdateSelectedRule(true);
+        setCreateAutoRule(false);
+        setOverwriteInfo(buildOverwriteInfo(rule, {
+            transactionType,
+            transactionDescription,
+            expenseCategory,
+        }));
 
         const newTags = [...tags];
         let hasNewTags = false;
@@ -189,6 +244,8 @@ export default function EditTagsModal({
 
     const handleUnlinkRule = () => {
         setAppliedRuleId(null);
+        setUpdateSelectedRule(false);
+        setOverwriteInfo([]);
     };
 
     const handleSave = () => {
@@ -205,7 +262,8 @@ export default function EditTagsModal({
         } : undefined;
 
         // Custom condition for rule
-        const ruleCondition = createAutoRule ? {
+        const shouldIncludeCondition = createAutoRule || (appliedRuleId && updateSelectedRule);
+        const ruleCondition = shouldIncludeCondition ? {
             field: conditionField,
             operator: conditionOperator,
             value: conditionValue,
@@ -218,6 +276,8 @@ export default function EditTagsModal({
             transactionDescription,
             expenseCategory, // Always update category on current entry
             appliedRuleId,
+            updateSelectedRule,
+            appliedRule || null,
             ruleActionFlags,
             ruleCondition
         );
@@ -290,6 +350,66 @@ export default function EditTagsModal({
                                 <Unlink className="w-4 h-4" />
                                 Desvincular
                             </button>
+                        </div>
+                    )}
+
+                    {overwriteInfo.length > 0 && (
+                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm font-semibold">
+                                <AlertTriangle className="w-4 h-4" />
+                                Esta regra vai substituir valores já preenchidos
+                            </div>
+                            <div className="mt-2 space-y-1 text-sm text-amber-700 dark:text-amber-300">
+                                {overwriteInfo.map((info) => (
+                                    <div key={`${info.label}-${info.from}-${info.to}`} className="flex flex-wrap gap-1">
+                                        <span className="font-medium">{info.label}:</span>
+                                        <span className="text-amber-600 dark:text-amber-200">"{info.from}"</span>
+                                        <span>→</span>
+                                        <span className="text-amber-600 dark:text-amber-200">"{info.to}"</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Update Selected Rule */}
+                    {appliedRule && (
+                        <div className="glass-card p-5 rounded-2xl border border-blue-500/20 dark:border-blue-400/20">
+                            <label className="flex items-start gap-4 cursor-pointer group">
+                                <input
+                                    type="checkbox"
+                                    checked={updateSelectedRule}
+                                    onChange={(e) => setUpdateSelectedRule(e.target.checked)}
+                                    className="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 border-gray-300 dark:border-gray-600 cursor-pointer"
+                                />
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Sparkles className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+                                        <span className="font-semibold text-gray-900 dark:text-white">
+                                            Aplicar automaticamente sempre
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                                        Atualiza a regra selecionada adicionando uma nova condição para futuras importações
+                                    </p>
+                                </div>
+                            </label>
+
+                            {updateSelectedRule && (
+                                <div className="mt-4 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50">
+                                    <h4 className="text-sm font-semibold text-blue-700 dark:text-blue-300 mb-3">
+                                        🧩 Condição a adicionar na regra
+                                    </h4>
+                                    <ConditionEditor
+                                        conditionField={conditionField}
+                                        conditionOperator={conditionOperator}
+                                        conditionValue={conditionValue}
+                                        onChangeField={setConditionField}
+                                        onChangeOperator={setConditionOperator}
+                                        onChangeValue={setConditionValue}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -570,38 +690,14 @@ export default function EditTagsModal({
                                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
                                             Condição
                                         </span>
-                                        <div className="mt-2 flex flex-wrap gap-2 items-center">
-                                            {/* Field selector */}
-                                            <select
-                                                value={conditionField}
-                                                onChange={(e) => setConditionField(e.target.value as 'full_text' | 'description' | 'transaction_type')}
-                                                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
-                                            >
-                                                <option value="full_text">Texto completo</option>
-                                                <option value="description">Descrição</option>
-                                                <option value="transaction_type">Tipo de transação</option>
-                                            </select>
-
-                                            {/* Operator selector */}
-                                            <select
-                                                value={conditionOperator}
-                                                onChange={(e) => setConditionOperator(e.target.value as 'contains' | 'equals' | 'regex')}
-                                                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
-                                            >
-                                                <option value="contains">contém</option>
-                                                <option value="equals">é igual a</option>
-                                                <option value="regex">regex</option>
-                                            </select>
-
-                                            {/* Value input */}
-                                            <input
-                                                type="text"
-                                                value={conditionValue}
-                                                onChange={(e) => setConditionValue(e.target.value)}
-                                                placeholder="Valor a buscar..."
-                                                className="flex-1 min-w-[200px] px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-gray-900 dark:text-white placeholder-gray-400"
-                                            />
-                                        </div>
+                                        <ConditionEditor
+                                            conditionField={conditionField}
+                                            conditionOperator={conditionOperator}
+                                            conditionValue={conditionValue}
+                                            onChangeField={setConditionField}
+                                            onChangeOperator={setConditionOperator}
+                                            onChangeValue={setConditionValue}
+                                        />
                                         <p className="text-xs text-gray-500 mt-1">
                                             💡 A regra será aplicada quando o texto corresponder a esta condição
                                         </p>
@@ -728,6 +824,58 @@ export default function EditTagsModal({
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function ConditionEditor({
+    conditionField,
+    conditionOperator,
+    conditionValue,
+    onChangeField,
+    onChangeOperator,
+    onChangeValue,
+}: {
+    conditionField: RuleConditionField;
+    conditionOperator: RuleConditionOperator;
+    conditionValue: string;
+    onChangeField: (value: RuleConditionField) => void;
+    onChangeOperator: (value: RuleConditionOperator) => void;
+    onChangeValue: (value: string) => void;
+}) {
+    return (
+        <div className="mt-2 flex flex-wrap gap-2 items-center">
+            <select
+                value={conditionField}
+                onChange={(e) => onChangeField(e.target.value as RuleConditionField)}
+                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
+            >
+                {Object.entries(FIELD_LABELS).map(([field, label]) => (
+                    <option key={field} value={field}>
+                        {label}
+                    </option>
+                ))}
+            </select>
+
+            <select
+                value={conditionOperator}
+                onChange={(e) => onChangeOperator(e.target.value as RuleConditionOperator)}
+                className="px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300"
+            >
+                {getOperatorsForField(conditionField).map((op) => (
+                    <option key={op} value={op}>
+                        {OPERATOR_LABELS[op]}
+                    </option>
+                ))}
+            </select>
+
+            <input
+                type="text"
+                value={conditionValue}
+                onChange={(e) => onChangeValue(e.target.value)}
+                placeholder="Valor a buscar..."
+                className="flex-1 min-w-[200px] px-3 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 border border-purple-200 dark:border-purple-700 text-gray-900 dark:text-white placeholder-gray-400"
+            />
         </div>
     );
 }

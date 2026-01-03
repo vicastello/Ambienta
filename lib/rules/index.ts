@@ -25,6 +25,15 @@ export type {
     RuleValidationResult,
 } from './types';
 
+export {
+    RULE_MARKETPLACES,
+    DEFAULT_RULE_MARKETPLACES,
+    RULE_MARKETPLACE_LABELS,
+    normalizeMarketplaces,
+    isAllMarketplaces,
+    type RuleMarketplace,
+} from './marketplaces';
+
 // Engine
 export { RulesEngine, createRulesEngine, processPaymentWithRules } from './engine';
 
@@ -43,6 +52,7 @@ export {
     validateRule,
     sanitizeRule,
     generateConditionId,
+    normalizeConditionField,
     createEmptyCondition,
     createEmptyRule,
 } from './validator';
@@ -71,3 +81,12 @@ export {
     createRulesDownloadBlob,
     type RulesExport,
 } from './import-export';
+
+// Templates
+export {
+    RULE_TEMPLATES,
+    TEMPLATE_CATEGORIES,
+    getTemplatesByCategory,
+    templateToPayload,
+    type RuleTemplate,
+} from './templates';

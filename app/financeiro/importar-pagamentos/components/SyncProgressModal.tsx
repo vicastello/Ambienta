@@ -14,7 +14,7 @@ type SyncProgressModalProps = {
     isOpen: boolean;
     onClose: () => void;
     onComplete: () => void;
-    orders: Array<{ marketplaceOrderId: string; marketplace: string }>;
+    orders: Array<{ marketplaceOrderId: string; marketplace: string; syncType?: 'link' | 'escrow' }>;
 };
 
 export function SyncProgressModal({ isOpen, onClose, onComplete, orders }: SyncProgressModalProps) {

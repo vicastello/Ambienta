@@ -5,6 +5,7 @@
  */
 
 import type { AutoRule } from './types';
+import { DEFAULT_RULE_MARKETPLACES } from './marketplaces';
 
 /**
  * Generate a stable ID for system rules
@@ -25,7 +26,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('reembolso'),
         name: 'Reembolso',
         description: 'Detecta reembolsos, devoluções e estornos',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_refund_1',
@@ -51,7 +52,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('ajuste'),
         name: 'Ajuste',
         description: 'Detecta ajustes, compensações e correções',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_adjust_1',
@@ -77,7 +78,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('marketing_ads'),
         name: 'Marketing e ADS',
         description: 'Detecta gastos com publicidade e anúncios',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_ads_1',
@@ -106,7 +107,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('taxas'),
         name: 'Taxas e Tarifas',
         description: 'Detecta taxas, tarifas e comissões',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_fee_1',
@@ -128,7 +129,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('frete'),
         name: 'Frete',
         description: 'Detecta cobranças de frete e envio',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_frete_1',
@@ -154,7 +155,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('saque'),
         name: 'Saque',
         description: 'Detecta saques, retiradas e transferências',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_saque_1',
@@ -183,7 +184,7 @@ export const SYSTEM_RULES: AutoRule[] = [
         id: systemRuleId('desconto'),
         name: 'Desconto',
         description: 'Detecta descontos e cupons',
-        marketplace: 'all',
+        marketplaces: DEFAULT_RULE_MARKETPLACES,
         conditions: [
             {
                 id: 'cond_desc_1',

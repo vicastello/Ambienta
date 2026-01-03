@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         // Filters
         const dataInicio = searchParams.get('dataInicio');
         const dataFim = searchParams.get('dataFim');
-        const statusPagamento = searchParams.get('statusPagamento') || 'todos'; // todos, pagos, pendentes
+        const statusPagamento = searchParams.get('statusPagamento') || 'todos'; // todos, pagos, pendentes, atrasados
         const marketplace = searchParams.get('marketplace') || 'todos';
         const tagsParam = searchParams.get('tags');
         const filterTags = tagsParam ? tagsParam.split(',').filter(Boolean) : [];
@@ -124,6 +124,52 @@ export async function GET(request: NextRequest) {
             } catch (e) {
                 return dateStr;
             }
+        };
+
+        const formatLocalDate = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const buildStatusDateFilter = (status: 'pendentes' | 'atrasados') => {
+            const today = new Date();
+            const cutoff14 = new Date(today);
+            cutoff14.setDate(cutoff14.getDate() - 14);
+            const cutoff15 = new Date(today);
+            cutoff15.setDate(cutoff15.getDate() - 15);
+            const cutoff30 = new Date(today);
+            cutoff30.setDate(cutoff30.getDate() - 30);
+
+            const op = status === 'atrasados' ? 'lte' : 'gt';
+            const cutoff14Str = formatLocalDate(cutoff14);
+            const cutoff15Str = formatLocalDate(cutoff15);
+            const cutoff30Str = formatLocalDate(cutoff30);
+
+            const channelConditions = [
+                { channel: 'canal.ilike.%shopee%', date: `data_criacao.${op}.${cutoff14Str}` },
+                { channel: 'canal.ilike.%mercado%', date: `data_criacao.${op}.${cutoff15Str}` },
+                { channel: 'canal.ilike.%meli%', date: `data_criacao.${op}.${cutoff15Str}` },
+                { channel: 'canal.ilike.%magalu%', date: `data_criacao.${op}.${cutoff30Str}` },
+                { channel: 'canal.ilike.%magazine%', date: `data_criacao.${op}.${cutoff30Str}` },
+                { channel: 'canal.is.null', date: `data_criacao.${op}.${cutoff30Str}` },
+                {
+                    channel: 'canal.not.ilike.%shopee%,canal.not.ilike.%mercado%,canal.not.ilike.%meli%,canal.not.ilike.%magalu%,canal.not.ilike.%magazine%',
+                    date: `data_criacao.${op}.${cutoff30Str}`,
+                },
+            ];
+
+            const paymentConditions = ['payment_received.is.null', 'payment_received.eq.false'];
+            const orConditions: string[] = [];
+
+            paymentConditions.forEach((paymentCond) => {
+                channelConditions.forEach(({ channel, date }) => {
+                    orConditions.push(`and(${paymentCond},${channel},${date})`);
+                });
+            });
+
+            return orConditions.join(',');
         };
 
         // Helper to apply filters
@@ -157,8 +203,8 @@ export async function GET(request: NextRequest) {
             if (!busca) {
                 if (!ignoreStatus && statusPagamento === 'pagos') {
                     query = query.eq('payment_received', true);
-                } else if (!ignoreStatus && statusPagamento === 'pendentes') {
-                    query = query.or('payment_received.is.null,payment_received.eq.false');
+                } else if (!ignoreStatus && (statusPagamento === 'pendentes' || statusPagamento === 'atrasados')) {
+                    query = query.or(buildStatusDateFilter(statusPagamento));
                 }
             }
 
@@ -434,17 +480,16 @@ export async function GET(request: NextRequest) {
             return 0;
         };
 
-        const getShopeeRefundAmountFromEscrow = (escrowDetail: any): number => {
+        const getShopeeRefundAmountFromEscrow = (escrowDetail: any, orderStatus?: string): number => {
             if (!escrowDetail || typeof escrowDetail !== 'object') return 0;
+            const sellerReturnRefund = Number(escrowDetail.seller_return_refund || 0);
+            if (sellerReturnRefund !== 0) return Math.abs(sellerReturnRefund);
             const drcRefund = Number(escrowDetail.drc_adjustable_refund || 0);
             if (drcRefund > 0) return drcRefund;
-            const sellerReturnRefund = Math.abs(Number(escrowDetail.seller_return_refund || 0));
-            if (sellerReturnRefund > 0) return sellerReturnRefund;
             const buyerTotal = Number(escrowDetail.buyer_total_amount || 0);
-            const selling = Number(escrowDetail.order_selling_price || 0);
-            if (buyerTotal > 0 && buyerTotal > selling) {
-                return buyerTotal - selling;
-            }
+            const orderSelling = Number(escrowDetail.order_selling_price || 0);
+            const escrowAmount = Number(escrowDetail.escrow_amount || 0);
+            if (buyerTotal > 0 && orderSelling <= 0 && escrowAmount <= 0) return buyerTotal;
             return 0;
         };
 
@@ -635,6 +680,44 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        const normalizeMarketplaceOrderId = (orderId: string) =>
+            orderId
+                .replace(/_(?:AJUSTE|REEMBOLSO|RETIRADA|FRETE|COMISSAO)(?:_?\d+)?$/i, '')
+                .replace(/_\d+$/, '');
+
+        const orphanPaymentsByOrderId = new Map<string, any[]>();
+        const orphanOrderIds = Array.from(new Set(
+            listRes.data
+                .map((o) => o.marketplace_order_links?.[0]?.marketplace_order_id || o.numero_pedido_ecommerce)
+                .filter((id): id is string => !!id)
+                .map((id) => normalizeMarketplaceOrderId(String(id)))
+        ));
+
+        if (orphanOrderIds.length > 0) {
+            const orphanFilters = orphanOrderIds.flatMap((orderId) => ([
+                `marketplace_order_id.eq.${orderId}`,
+                `marketplace_order_id.ilike.${orderId}\\_%`
+            ]));
+            const { data: orphanPayments, error: orphanError } = await supabaseAdmin
+                .from('marketplace_payments')
+                .select('marketplace_order_id, net_amount, gross_amount, transaction_type, is_expense, tags')
+                .is('tiny_order_id', null)
+                .or(orphanFilters.join(','));
+
+            if (orphanError) {
+                console.error('[CashFlowAPI] Orphan payments lookup error:', orphanError);
+            }
+
+            if (orphanPayments) {
+                orphanPayments.forEach((payment: any) => {
+                    const key = normalizeMarketplaceOrderId(String(payment.marketplace_order_id));
+                    const current = orphanPaymentsByOrderId.get(key) || [];
+                    current.push(payment);
+                    orphanPaymentsByOrderId.set(key, current);
+                });
+            }
+        }
+
         // Processing List (async to calculate fees)
         const orders = await Promise.all(listRes.data.map(async (order) => {
             let financialStatus = 'pendente';
@@ -692,10 +775,31 @@ export async function GET(request: NextRequest) {
                 const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
                 if (sOrder) {
                     const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                    const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                     const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
                     const totalAmount = Number(sOrder.total_amount) || 0;
                     const orderSellingRaw = Number(sOrder.order_selling_price);
-                    const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                    let orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                    const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                    if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                        orderSellingPrice = escrowSelling;
+                    }
+                    const orderDiscountedRaw = Number(sOrder.order_discounted_price);
+                    let orderDiscountedPrice = Number.isFinite(orderDiscountedRaw) ? orderDiscountedRaw : 0;
+                    const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                    if (orderDiscountedPrice <= 0 && escrowDiscounted > 0) {
+                        orderDiscountedPrice = escrowDiscounted;
+                    }
+                    if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                        orderSellingPrice = orderDiscountedPrice;
+                    }
+                    const sellerDiscount = Number(sOrder.seller_discount) || 0;
+                    const voucherFromSeller = Number(sOrder.voucher_from_seller) || 0;
+                    const voucherFromShopee = Number(sOrder.voucher_from_shopee) || 0;
+                    const hasExplicitDiscountedPrice = orderDiscountedPrice > 0;
+                    const hasOrderLevelDiscount = hasExplicitDiscountedPrice &&
+                        orderSellingPrice > 0 &&
+                        orderDiscountedPrice < orderSellingPrice - 0.01;
 
                     if (escrowBuyerTotal > 0) {
                         valorOriginal = escrowBuyerTotal;
@@ -705,13 +809,31 @@ export async function GET(request: NextRequest) {
                         fallbackReceivedValue = totalAmount;
                     }
 
-                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail, sOrder.order_status);
                     if (escrowRefund > 0) {
                         shopeeRefundAmount = escrowRefund;
                         fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
-                    } else if (totalAmount > 0 && orderSellingPrice > 0 && totalAmount > orderSellingPrice) {
-                        shopeeRefundAmount = totalAmount - orderSellingPrice;
+                    } else if (
+                        totalAmount > 0 &&
+                        orderSellingPrice > 0 &&
+                        totalAmount > orderSellingPrice &&
+                        !hasOrderLevelDiscount &&
+                        !hasEscrowDetail
+                    ) {
+                        const discountAllowance = Math.max(0, sellerDiscount)
+                            + Math.max(0, voucherFromSeller)
+                            + Math.max(0, voucherFromShopee);
+                        const implicitRefund = totalAmount - orderSellingPrice;
+                        if (implicitRefund > Math.max(0.1, discountAllowance + 0.05)) {
+                            shopeeRefundAmount = implicitRefund;
+                        }
                         fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    } else {
+                        const escrowAmount = Number(sOrder.escrow_amount) || 0;
+                        if (shopeeRefundAmount <= 0 && escrowAmount < 0 && totalAmount <= 0 && orderSellingPrice <= 0 && valorOriginal > 0) {
+                            shopeeRefundAmount = valorOriginal;
+                            fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                        }
                     }
                 }
             }
@@ -729,14 +851,37 @@ export async function GET(request: NextRequest) {
 
             // If we have matched payments (array), calculate the Effective Net Amount
             // Sum of all payments linked to this order (handling adjustments)
-            const payments = Array.isArray(order.marketplace_payments) ? order.marketplace_payments : (order.marketplace_payments ? [order.marketplace_payments] : []);
+            const orderLink = order.marketplace_order_links?.[0] as any;
+            const marketplaceOrderId = orderLink?.marketplace_order_id || order.numero_pedido_ecommerce;
+            const linkedPayments = Array.isArray(order.marketplace_payments)
+                ? order.marketplace_payments
+                : (order.marketplace_payments ? [order.marketplace_payments] : []);
+            const orphanKey = marketplaceOrderId ? normalizeMarketplaceOrderId(String(marketplaceOrderId)) : null;
+            const orphanPayments = orphanKey ? orphanPaymentsByOrderId.get(orphanKey) : undefined;
+            const payments = linkedPayments.length > 0 || (orphanPayments && orphanPayments.length > 0)
+                ? [...linkedPayments, ...(orphanPayments || [])]
+                : [];
+            const isExpensePayment = (p: any) => p.is_expense === true || Number(p.net_amount || 0) < 0;
+            const hasIncomePayment = payments.some((p: any) => !isExpensePayment(p) && Number(p.net_amount || 0) > 0);
+            const hasExpensePayment = payments.some((p: any) => isExpensePayment(p) && Math.abs(Number(p.net_amount || 0)) > 0);
+            const hasOnlyExpensePayments = !hasIncomePayment && hasExpensePayment;
+            const refundFromPayments = marketplace === 'shopee' &&
+                shopeeRefundAmount <= 0 &&
+                hasOnlyExpensePayments &&
+                valorOriginal > 0;
+            const skipRefundGap = marketplace === 'shopee' && hasOnlyExpensePayments;
+
+            if (refundFromPayments) {
+                shopeeRefundAmount = valorOriginal;
+                fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+            }
 
             // Calculate total adjustment amount (refunds, etc.) for difference calculation
             // This allows us to show the "real" difference (discrepancies) vs "expected" adjustments
             // IMPORTANT: Use Math.abs because net_amount is negative for expenses, 
             // but we want a positive total to subtract from expected
             const totalAjustes = payments
-                .filter((p: any) => p.is_expense === true)
+                .filter((p: any) => isExpensePayment(p))
                 .reduce((sum: number, p: any) => sum + Math.abs(Number(p.net_amount || 0)), 0);
 
             const refundAdjustmentAmount = marketplace === 'mercado_livre'
@@ -755,10 +900,11 @@ export async function GET(request: NextRequest) {
                 // and we need consistent sign handling based on is_expense flag
                 const totalPaid = payments.reduce((sum: number, p: any) => {
                     const val = Number(p.net_amount || 0);
-                    return sum + (p.is_expense ? -Math.abs(val) : Math.abs(val));
+                    const isExpense = isExpensePayment(p);
+                    return sum + (isExpense ? -Math.abs(val) : Math.abs(val));
                 }, 0);
                 valorEfetivo = totalPaid;
-                if (refundAdjustmentAmount > 0) {
+                if (refundAdjustmentAmount > 0 && !skipRefundGap) {
                     const refundGap = Math.max(0, refundAdjustmentAmount - totalAjustes);
                     if (refundGap > 0) {
                         valorEfetivo = Math.max(0, valorEfetivo - refundGap);
@@ -805,10 +951,28 @@ export async function GET(request: NextRequest) {
 
                         if (sOrder && sItems && sItems.length > 0) {
                             const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                            const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                             const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
                             const orderSellingRaw = Number(sOrder.order_selling_price);
-                            const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : baseTaxas;
+                            let orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : baseTaxas;
+                            const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                            if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                                orderSellingPrice = escrowSelling;
+                            }
                             const totalSellerDiscount = Number(sOrder.seller_discount) || 0;
+                            const orderDiscountedRaw = Number(sOrder.order_discounted_price);
+                            let orderDiscountedPrice = Number.isFinite(orderDiscountedRaw) ? orderDiscountedRaw : 0;
+                            const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                            if (orderDiscountedPrice <= 0 && escrowDiscounted > 0) {
+                                orderDiscountedPrice = escrowDiscounted;
+                            }
+                            if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                                orderSellingPrice = orderDiscountedPrice;
+                            }
+                            const hasExplicitDiscountedPrice = orderDiscountedPrice > 0;
+                            const hasOrderLevelDiscount = hasExplicitDiscountedPrice &&
+                                orderSellingPrice > 0 &&
+                                orderDiscountedPrice < orderSellingPrice - 0.01;
 
                             // Use Shopee's buyer_total_amount (escrow) as the original value when available
                             const shopeeTotalAmount = Number(sOrder.total_amount) || 0;
@@ -818,7 +982,7 @@ export async function GET(request: NextRequest) {
                                 valorOriginal = shopeeTotalAmount;
                             }
 
-                            const escrowRefundAmount = getShopeeRefundAmountFromEscrow(escrowDetail);
+                            const escrowRefundAmount = getShopeeRefundAmountFromEscrow(escrowDetail, sOrder.order_status);
                             if (escrowRefundAmount > 0) {
                                 shopeeRefundAmount = escrowRefundAmount;
                             }
@@ -830,9 +994,11 @@ export async function GET(request: NextRequest) {
                             // - Bundle Deal discounts ARE subtracted from the base
                             // - Total Seller Discount = Flash Sale Disc + Bundle Disc
 
-                            const nonBundleDiscounts = sItems.reduce((acc: number, item: any) => {
+                            const hasBundle = sItems.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
+                            const nonBundleDiscounts = hasBundle ? sItems.reduce((acc: number, item: any) => {
                                 // If item is NOT in a bundle deal, its discount ("Flash Sale" etc) is likely part of the Non-Base-Reducing discounts
-                                if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
+                                const promoType = item.raw_payload?.promotion_type;
+                                if (promoType && promoType !== 'bundle_deal' && item.is_wholesale !== true) {
                                     const orig = Number(item.original_price) || 0;
                                     const disc = Number(item.discounted_price) || 0;
                                     const qty = Number(item.quantity) || 1;
@@ -841,17 +1007,19 @@ export async function GET(request: NextRequest) {
                                     }
                                 }
                                 return acc;
-                            }, 0);
+                            }, 0) : 0;
 
                             // The discount that SHOULD reduce the base is the Total Discount minus Non-Bundle (Flash) discounts
                             // Clamp to 0 just in case
-                            const effectiveBundleDiscount = Math.max(0, totalSellerDiscount - nonBundleDiscounts);
+                            const effectiveBundleDiscount = hasBundle
+                                ? Math.max(0, totalSellerDiscount - nonBundleDiscounts)
+                                : 0;
 
                             // Calculated Base
                             const calculatedFeeBase = orderSellingPrice - effectiveBundleDiscount;
 
                             // Use the calculated base (User Request: "We calculate to ensure correct logic")
-                            feeBase = calculatedFeeBase;
+                            feeBase = hasOrderLevelDiscount ? orderDiscountedPrice : calculatedFeeBase;
                             if (shopeeRefundAmount > 0) {
                                 const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
                                 const refundBase = escrowSelling > 0
@@ -879,13 +1047,28 @@ export async function GET(request: NextRequest) {
                             // EXCEPTION: Bundle Deals ("Leve Mais Pague Menos") naturally have Selling Price < Sum(Items)
                             // We shouldn't treat Bundle Deals as refunds unless evidence is strong.
                             // For now, we SKIP this check if bundle deal is present to avoid false positives (reducing count from 3 to 2).
-                            const hasBundle = sItems.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
-
                             const actualOrderValue = shopeeRefundAmount > 0
                                 ? Math.max(0, valorOriginal - shopeeRefundAmount)
                                 : orderSellingPrice;
 
-                            if (!hasBundle && actualOrderValue > 0 && shopeeOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
+                            const voucherFromSellerRaw = Number(sOrder.voucher_from_seller) || 0;
+                            const voucherFromShopeeRaw = Number(sOrder.voucher_from_shopee) || 0;
+                            const discountAllowance = Math.max(0, totalSellerDiscount)
+                                + Math.max(0, voucherFromSellerRaw)
+                                + Math.max(0, voucherFromShopeeRaw);
+                            const refundGap = shopeeOrderValue - actualOrderValue;
+                            const isImplicitRefundGap = refundGap > Math.max(0.1, discountAllowance + 0.05);
+                            const allowImplicitRefund = shopeeRefundAmount > 0 || (
+                                !hasEscrowDetail &&
+                                !hasBundle &&
+                                !hasOrderLevelDiscount &&
+                                isImplicitRefundGap
+                            );
+                            if (allowImplicitRefund && actualOrderValue > 0 && shopeeOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
+                                if (shopeeRefundAmount <= 0 && isImplicitRefundGap) {
+                                    shopeeRefundAmount = refundGap;
+                                    feeBase = actualOrderValue;
+                                }
                                 const refundRatio = actualOrderValue / shopeeOrderValue;
                                 const originalCount = sItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 1), 0);
                                 const adjustedCount = Math.round(originalCount * refundRatio);
@@ -943,25 +1126,67 @@ export async function GET(request: NextRequest) {
                         if (marketplace === 'shopee' && order.numero_pedido_ecommerce) {
                             const sOrder = shopeeOrdersMap.get(order.numero_pedido_ecommerce);
                             if (sOrder) {
+                                const sItems = shopeeItemsMap.get(order.numero_pedido_ecommerce);
+                                const hasBundle = sItems?.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true) || false;
                                 const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                                const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                                 const orderSellingRaw = Number(sOrder.order_selling_price);
-                                const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                                let orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                                const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                                if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                                    orderSellingPrice = escrowSelling;
+                                }
                                 const sellerDiscount = Number(sOrder.seller_discount) || 0;
+                                const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                                const orderDiscountedPrice = Number(sOrder.order_discounted_price)
+                                    || (escrowDiscounted > 0 ? escrowDiscounted : 0)
+                                    || (
+                                        sellerDiscount > 0 && orderSellingPrice > 0
+                                            ? Math.max(0, orderSellingPrice - sellerDiscount)
+                                            : 0
+                                    );
+                                if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                                    orderSellingPrice = orderDiscountedPrice;
+                                }
                                 const isLeveMaisPagueMenos = sellerDiscount > 0 && orderSellingPrice > 0 && (sellerDiscount / orderSellingPrice) <= 0.05;
                                 const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
-                                const refundFromEscrow = getShopeeRefundAmountFromEscrow(escrowDetail);
-                                const refundAmount = refundFromEscrow > 0
+                                const refundFromEscrow = getShopeeRefundAmountFromEscrow(escrowDetail, sOrder.order_status);
+                                const implicitRefund = Math.max(0, (Number(sOrder.total_amount) || 0) - orderSellingPrice);
+                                const voucherFromSellerRaw = Number(sOrder.voucher_from_seller) || 0;
+                                const voucherFromShopeeRaw = Number(sOrder.voucher_from_shopee) || 0;
+                                const discountAllowance = Math.max(0, sellerDiscount)
+                                    + Math.max(0, voucherFromSellerRaw)
+                                    + Math.max(0, voucherFromShopeeRaw);
+                                const allowImplicitRefund = !hasEscrowDetail &&
+                                    !hasBundle &&
+                                    implicitRefund > Math.max(0.1, discountAllowance + 0.05);
+                                const detectedRefundAmount = refundFromEscrow > 0
                                     ? refundFromEscrow
-                                    : Math.max(0, (Number(sOrder.total_amount) || 0) - orderSellingPrice);
+                                    : (allowImplicitRefund ? implicitRefund : 0);
+                                const usedFallbackRefund = detectedRefundAmount <= 0 && shopeeRefundAmount > 0;
+                                const refundAmount = usedFallbackRefund
+                                    ? shopeeRefundAmount
+                                    : detectedRefundAmount;
                                 const originalOrderValue = escrowBuyerTotal > 0
                                     ? escrowBuyerTotal
                                     : (Number(sOrder.total_amount) || orderSellingPrice);
+                                const resolvedOriginalOrderValue = originalOrderValue > 0
+                                    ? originalOrderValue
+                                    : (valorOriginal > 0 ? valorOriginal : null);
+                                const resolvedOrderSellingPrice = usedFallbackRefund && resolvedOriginalOrderValue !== null
+                                    ? Math.max(0, resolvedOriginalOrderValue - refundAmount)
+                                    : orderSellingPrice;
+                                const escrowAmount = Number(sOrder.escrow_amount) || 0;
+                                const actualShippingFee = Number(escrowDetail?.actual_shipping_fee || 0);
+                                const freightDiscount = refundAmount > 0 && (escrowAmount < 0 || actualShippingFee > 0)
+                                    ? (actualShippingFee > 0 ? actualShippingFee : Math.abs(escrowAmount))
+                                    : 0;
 
                                 (feeCalc as any).shopeeData = {
-                                    orderSellingPrice,
-                                    orderDiscountedPrice: Number(sOrder.order_discounted_price) || 0,
+                                    orderSellingPrice: resolvedOrderSellingPrice,
+                                    orderDiscountedPrice,
                                     sellerDiscount,
-                                    escrowAmount: Number(sOrder.escrow_amount) || 0,
+                                    escrowAmount,
                                     voucherFromSeller: Number(sOrder.voucher_from_seller) || 0,
                                     voucherFromShopee: Number(sOrder.voucher_from_shopee) || 0,
                                     amsCommissionFee: Number(sOrder.ams_commission_fee) || 0,
@@ -970,8 +1195,9 @@ export async function GET(request: NextRequest) {
                                     // total_amount is the original order value before any refunds
                                     // order_selling_price is the current value (after refunds)
                                     refundAmount,
+                                    freightDiscount,
                                     originalProductCount: productCount,
-                                    originalOrderValue,
+                                    originalOrderValue: resolvedOriginalOrderValue,
                                     escrowDifference: 0 // Calculated on frontend if needed
                                 };
                             }
@@ -1108,7 +1334,24 @@ export async function GET(request: NextRequest) {
                     const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
                     const totalAmount = Number(sOrder.total_amount) || 0;
                     const orderSellingRaw = Number(sOrder.order_selling_price);
-                    const orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                    let orderSellingPrice = Number.isFinite(orderSellingRaw) ? orderSellingRaw : 0;
+                    const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                    if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                        orderSellingPrice = escrowSelling;
+                    }
+                    const orderDiscountedRaw = Number(sOrder.order_discounted_price);
+                    let orderDiscountedPrice = Number.isFinite(orderDiscountedRaw) ? orderDiscountedRaw : 0;
+                    const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                    if (orderDiscountedPrice <= 0 && escrowDiscounted > 0) {
+                        orderDiscountedPrice = escrowDiscounted;
+                    }
+                    if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                        orderSellingPrice = orderDiscountedPrice;
+                    }
+                    const hasExplicitDiscountedPrice = orderDiscountedPrice > 0;
+                    const hasOrderLevelDiscount = hasExplicitDiscountedPrice &&
+                        orderSellingPrice > 0 &&
+                        orderDiscountedPrice < orderSellingPrice - 0.01;
 
                     if (escrowBuyerTotal > 0) {
                         valorOriginal = escrowBuyerTotal;
@@ -1118,15 +1361,39 @@ export async function GET(request: NextRequest) {
                         fallbackReceivedValue = totalAmount;
                     }
 
-                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail);
+                    const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail, sOrder.order_status);
                     if (escrowRefund > 0) {
                         shopeeRefundAmount = escrowRefund;
                         fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
-                    } else if (totalAmount > 0 && orderSellingPrice > 0 && totalAmount > orderSellingPrice) {
+                    } else if (totalAmount > 0 && orderSellingPrice > 0 && totalAmount > orderSellingPrice && !hasOrderLevelDiscount && !hasEscrowDetail) {
                         shopeeRefundAmount = totalAmount - orderSellingPrice;
                         fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                    } else {
+                        const escrowAmount = Number(sOrder.escrow_amount) || 0;
+                        if (shopeeRefundAmount <= 0 && escrowAmount < 0 && totalAmount <= 0 && orderSellingPrice <= 0 && valorOriginal > 0) {
+                            shopeeRefundAmount = valorOriginal;
+                            fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
+                        }
                     }
                 }
+            }
+
+            const payments = Array.isArray(o.marketplace_payments)
+                ? o.marketplace_payments
+                : (o.marketplace_payments ? [o.marketplace_payments] : []);
+            const isExpensePayment = (p: any) => p.is_expense === true || Number(p.net_amount || 0) < 0;
+            const hasIncomePayment = payments.some((p: any) => !isExpensePayment(p) && Number(p.net_amount || 0) > 0);
+            const hasExpensePayment = payments.some((p: any) => isExpensePayment(p) && Math.abs(Number(p.net_amount || 0)) > 0);
+            const hasOnlyExpensePayments = !hasIncomePayment && hasExpensePayment;
+            const refundFromPayments = marketplace === 'shopee' &&
+                shopeeRefundAmount <= 0 &&
+                hasOnlyExpensePayments &&
+                valorOriginal > 0;
+            const skipRefundGap = marketplace === 'shopee' && hasOnlyExpensePayments;
+
+            if (refundFromPayments) {
+                shopeeRefundAmount = valorOriginal;
+                fallbackReceivedValue = Math.max(0, valorOriginal - shopeeRefundAmount);
             }
 
             let baseTaxas = Math.max(0, vTotal - vFrete);
@@ -1168,9 +1435,8 @@ export async function GET(request: NextRequest) {
             }
 
             // Prefer Net Amount from payment(s) if available
-            const payments = Array.isArray(o.marketplace_payments) ? o.marketplace_payments : (o.marketplace_payments ? [o.marketplace_payments] : []);
             const totalAjustes = payments
-                .filter((p: any) => p.is_expense === true)
+                .filter((p: any) => isExpensePayment(p))
                 .reduce((sum: number, p: any) => sum + Math.abs(Number(p.net_amount || 0)), 0);
             const refundAdjustmentAmount = marketplace === 'mercado_livre'
                 ? meliRefundAmount
@@ -1186,11 +1452,12 @@ export async function GET(request: NextRequest) {
             if (payments.length > 0) {
                 valor = payments.reduce((sum: number, p: any) => {
                     const val = Number(p.net_amount || 0);
-                    // Use Math.abs and is_expense to guarantee correct sign
+                    const isExpense = isExpensePayment(p);
+                    // Use Math.abs and is_expense/negative value to guarantee correct sign
                     // Expenses subtract, Income adds
-                    return sum + (p.is_expense ? -Math.abs(val) : Math.abs(val));
+                    return sum + (isExpense ? -Math.abs(val) : Math.abs(val));
                 }, 0);
-                if (refundAdjustmentAmount > 0) {
+                if (refundAdjustmentAmount > 0 && !skipRefundGap) {
                     const refundGap = Math.max(0, refundAdjustmentAmount - totalAjustes);
                     if (refundGap > 0) {
                         valor = Math.max(0, valor - refundGap);
@@ -1215,6 +1482,7 @@ export async function GET(request: NextRequest) {
                             let productCount = linkData?.product_count || 1;
                             let isKit = linkData?.is_kit || false;
                             let amsCommissionFee = 0;
+                            let voucherFromSeller = 0;
                             let feeBase = baseTaxas; // Default, will be overridden for Shopee
 
                             // ALWAYS prefer real item count from Shopee over link data
@@ -1222,6 +1490,7 @@ export async function GET(request: NextRequest) {
                             if (marketplace === 'shopee') {
                                 const sItems = shopeeItemsMap.get(o.numero_pedido_ecommerce);
                                 const sOrder = shopeeOrdersMap.get(o.numero_pedido_ecommerce);
+                                const hasBundle = !!sItems?.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
 
                                 if (sItems && sItems.length > 0) {
                                     const realItemCount = sItems.reduce((acc: number, i: any) => acc + (Number(i.quantity) || 1), 0);
@@ -1233,16 +1502,33 @@ export async function GET(request: NextRequest) {
 
                                 // CRITICAL FIX: Use calculated fee base to ensure correctness across Flash Sale / Bundle Deals
                                 const orderSellingRaw = Number(sOrder?.order_selling_price);
-                                const orderSellingPrice = Number.isFinite(orderSellingRaw)
+                                let orderSellingPrice = Number.isFinite(orderSellingRaw)
                                     ? orderSellingRaw
                                     : (Number(o.valor) || baseTaxas);
+                                const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
+                                if (orderSellingPrice <= 0 && escrowSelling > 0) {
+                                    orderSellingPrice = escrowSelling;
+                                }
+                                const orderDiscountedRaw = Number(sOrder?.order_discounted_price);
+                                let orderDiscountedPrice = Number.isFinite(orderDiscountedRaw) ? orderDiscountedRaw : 0;
+                                const escrowDiscounted = Number(escrowDetail?.order_discounted_price || 0);
+                                if (orderDiscountedPrice <= 0 && escrowDiscounted > 0) {
+                                    orderDiscountedPrice = escrowDiscounted;
+                                }
+                                if (orderSellingPrice <= 0 && orderDiscountedPrice > 0) {
+                                    orderSellingPrice = orderDiscountedPrice;
+                                }
+                                const hasExplicitDiscountedPrice = orderDiscountedPrice > 0;
+                                const hasOrderLevelDiscount = hasExplicitDiscountedPrice &&
+                                    orderSellingPrice > 0 &&
+                                    orderDiscountedPrice < orderSellingPrice - 0.01;
                                 const totalSellerDiscount = Number(sOrder?.seller_discount) || 0;
-                                feeBase = orderSellingPrice;
 
-                                // Helper logic to isolate Bundle Deal discount
-                                if (sOrder && sItems && sItems.length > 0) {
+                                let effectiveBundleDiscount = 0;
+                                if (hasBundle && sItems && sItems.length > 0) {
                                     const nonBundleDiscounts = sItems.reduce((acc: number, item: any) => {
-                                        if (item.raw_payload?.promotion_type !== 'bundle_deal' && item.is_wholesale !== true) {
+                                        const promoType = item.raw_payload?.promotion_type;
+                                        if (promoType && promoType !== 'bundle_deal' && item.is_wholesale !== true) {
                                             const orig = Number(item.original_price) || 0;
                                             const disc = Number(item.discounted_price) || 0;
                                             const qty = Number(item.quantity) || 1;
@@ -1252,18 +1538,58 @@ export async function GET(request: NextRequest) {
                                         }
                                         return acc;
                                     }, 0);
-
-                                    const effectiveBundleDiscount = Math.max(0, totalSellerDiscount - nonBundleDiscounts);
-                                    feeBase = orderSellingPrice - effectiveBundleDiscount;
+                                    effectiveBundleDiscount = Math.max(0, totalSellerDiscount - nonBundleDiscounts);
                                 }
+
+                                const calculatedFeeBase = orderSellingPrice - effectiveBundleDiscount;
+                                feeBase = hasOrderLevelDiscount ? orderDiscountedPrice : calculatedFeeBase;
 
                                 if (shopeeRefundAmount > 0) {
                                     const escrowDetail = sOrder?.raw_payload?.escrow_detail;
+                                    const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                                     const escrowSelling = Number(escrowDetail?.order_selling_price || 0);
                                     const refundBase = escrowSelling > 0
                                         ? escrowSelling
                                         : Math.max(0, valorOriginal - shopeeRefundAmount);
                                     feeBase = refundBase;
+                                }
+
+                                if (sItems && sItems.length > 0) {
+                                    const shopeeOrderValue = sItems.reduce((sum: number, item: any) => {
+                                        const price = item.discounted_price || item.original_price || 0;
+                                        const qty = Number(item.quantity) || 1;
+                                        return sum + (price * qty);
+                                    }, 0);
+                                    const actualOrderValue = shopeeRefundAmount > 0
+                                        ? Math.max(0, valorOriginal - shopeeRefundAmount)
+                                        : orderSellingPrice;
+                                    const voucherFromSellerRaw = Number(sOrder?.voucher_from_seller) || 0;
+                                    const voucherFromShopeeRaw = Number(sOrder?.voucher_from_shopee) || 0;
+                                    const discountAllowance = Math.max(0, totalSellerDiscount)
+                                        + Math.max(0, voucherFromSellerRaw)
+                                        + Math.max(0, voucherFromShopeeRaw);
+                                    const refundGap = shopeeOrderValue - actualOrderValue;
+                                    const isImplicitRefundGap = refundGap > Math.max(0.1, discountAllowance + 0.05);
+                                    const allowImplicitRefund = shopeeRefundAmount > 0 || (
+                                        !hasEscrowDetail &&
+                                        !hasBundle &&
+                                        !hasOrderLevelDiscount &&
+                                        isImplicitRefundGap
+                                    );
+                                    if (allowImplicitRefund && actualOrderValue > 0 && shopeeOrderValue > 0 && actualOrderValue < shopeeOrderValue) {
+                                        if (shopeeRefundAmount <= 0 && isImplicitRefundGap) {
+                                            shopeeRefundAmount = refundGap;
+                                            feeBase = actualOrderValue;
+                                        }
+                                        const refundRatio = actualOrderValue / shopeeOrderValue;
+                                        const originalCount = sItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 1), 0);
+                                        const adjustedCount = Math.round(originalCount * refundRatio);
+                                        productCount = Math.max(1, adjustedCount);
+                                    }
+                                }
+
+                                if (sOrder?.voucher_from_seller) {
+                                    voucherFromSeller = Number(sOrder.voucher_from_seller) || 0;
                                 }
 
                                 // Extract AMS Commission for more accurate pending value estimation
@@ -1278,6 +1604,7 @@ export async function GET(request: NextRequest) {
                                 productCount,
                                 isKit,
                                 usesFreeShipping: (o.fee_overrides as any)?.usesFreeShipping ?? (linkData?.uses_free_shipping || false),
+                                sellerVoucher: voucherFromSeller > 0 ? voucherFromSeller : undefined,
                                 amsCommissionFee: amsCommissionFee > 0 ? amsCommissionFee : undefined,
                                 isCampaignOrder: linkData?.is_campaign_order || false,
                                 orderDate: new Date(o.data_criacao || new Date())

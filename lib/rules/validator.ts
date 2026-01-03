@@ -10,7 +10,23 @@ import type {
     RuleValidationError,
     RuleValidationResult,
     RuleCondition,
+    RuleConditionField,
 } from './types';
+import { normalizeMarketplaces } from './marketplaces';
+
+const normalizeConditionField = (field: string): RuleConditionField => {
+    const normalized = field.trim().toLowerCase();
+    if (normalized === 'transaction_type' || normalized === 'transactiontype') {
+        return 'type';
+    }
+    if (normalized === 'descricao') {
+        return 'description';
+    }
+    if (['description', 'type', 'amount', 'order_id', 'full_text'].includes(normalized)) {
+        return normalized as RuleConditionField;
+    }
+    return field as RuleConditionField;
+};
 
 /**
  * Validate a regex pattern
@@ -117,10 +133,10 @@ export function validateRule(rule: CreateRulePayload | AutoRule): RuleValidation
         });
     }
 
-    if (!rule.marketplace) {
+    if (!Array.isArray(rule.marketplaces) || rule.marketplaces.length === 0) {
         errors.push({
-            field: 'marketplace',
-            message: 'Marketplace é obrigatório',
+            field: 'marketplaces',
+            message: 'Selecione pelo menos um marketplace',
             code: 'REQUIRED',
         });
     }
@@ -198,9 +214,10 @@ export function sanitizeRule(rule: CreateRulePayload): CreateRulePayload {
         ...rule,
         name: rule.name.trim(),
         description: rule.description?.trim(),
-        marketplace: rule.marketplace.toLowerCase(),
+        marketplaces: normalizeMarketplaces(rule.marketplaces),
         conditions: rule.conditions.map(c => ({
             ...c,
+            field: normalizeConditionField(String(c.field || '')),
             value: typeof c.value === 'string' ? c.value.trim() : c.value,
         })),
         actions: rule.actions.map(a => ({
@@ -213,6 +230,8 @@ export function sanitizeRule(rule: CreateRulePayload): CreateRulePayload {
         stopOnMatch: rule.stopOnMatch ?? false,
     };
 }
+
+export { normalizeConditionField };
 
 /**
  * Generate a unique ID for conditions
@@ -240,7 +259,7 @@ export function createEmptyRule(): CreateRulePayload {
     return {
         name: '',
         description: '',
-        marketplace: 'all',
+        marketplaces: normalizeMarketplaces(),
         conditions: [createEmptyCondition()],
         conditionLogic: 'AND',
         actions: [{ type: 'add_tags', tags: [] }],
