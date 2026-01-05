@@ -1,14 +1,16 @@
 export function resolveBaseUrl() {
-  const fromEnv = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL;
+  const internal = process.env.INTERNAL_BASE_URL;
+  if (internal) return internal.replace(/\/$/, '');
+  const port = Number(process.env.PORT);
+  if (Number.isFinite(port) && port > 0) {
+    return `http://127.0.0.1:${port}`;
+  }
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, '');
   const vercelUrl = process.env.VERCEL_URL;
   if (vercelUrl) {
     const normalized = vercelUrl.startsWith('http') ? vercelUrl : `https://${vercelUrl}`;
     return normalized.replace(/\/$/, '');
-  }
-  const port = Number(process.env.PORT);
-  if (Number.isFinite(port) && port > 0) {
-    return `http://127.0.0.1:${port}`;
   }
   return 'http://localhost:3000';
 }
