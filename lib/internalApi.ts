@@ -6,6 +6,10 @@ export function resolveBaseUrl() {
     const normalized = vercelUrl.startsWith('http') ? vercelUrl : `https://${vercelUrl}`;
     return normalized.replace(/\/$/, '');
   }
+  const port = Number(process.env.PORT);
+  if (Number.isFinite(port) && port > 0) {
+    return `http://127.0.0.1:${port}`;
+  }
   return 'http://localhost:3000';
 }
 
