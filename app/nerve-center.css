@@ -38,9 +38,7 @@
     padding: 0.5rem 0.75rem;
     border-radius: var(--radius-full);
     border: 1px solid var(--surface-panel-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    background: var(--surface-panel-bg);
     backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
     -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
     box-shadow: var(--shadow-sm);
@@ -83,22 +81,16 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 1rem;
+    padding: 1.25rem;
     gap: 1rem;
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: var(--radius-card);
-    background:
-        radial-gradient(120% 140% at 12% -8%, var(--accent-soft), transparent 60%),
-        radial-gradient(120% 140% at 100% 0%, var(--color-warning-soft), transparent 65%),
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    background: var(--surface-panel-bg);
     backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
     -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-sat));
     border: 1px solid var(--surface-panel-border);
-    box-shadow:
-        var(--shadow-lg),
-        inset 0 1px 0 var(--surface-border-strong);
+    box-shadow: var(--shadow-lg);
     color: var(--text-main);
     isolation: isolate;
 }
@@ -208,15 +200,11 @@
     gap: 1rem;
     padding: 1rem;
     border-radius: var(--radius-xl);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
-    border: 1px solid var(--surface-panel-border);
-    box-shadow:
-        var(--shadow-sm),
-        inset 0 1px 0 var(--surface-border-strong);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    background: var(--surface-row-bg);
+    border: 1px solid var(--surface-row-border);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .hero-summary {
@@ -339,15 +327,14 @@
 
 .signal-chip {
     padding: 0.6rem 0.75rem;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     border: 1px solid var(--surface-row-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-row-bg);
+    background: var(--surface-row-bg);
     display: grid;
     gap: 0.3rem;
     backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
     -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    box-shadow: var(--shadow-sm);
 }
 
 .signal-title {
@@ -394,14 +381,13 @@
 }
 
 .nerve-pulse {
-    padding: 0.6rem 0.2rem 0;
-    border-radius: var(--radius-lg);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-row-bg);
+    padding: 0.75rem;
+    border-radius: var(--radius-xl);
+    background: var(--surface-row-bg);
     border: 1px solid var(--surface-row-border);
     backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
     -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    box-shadow: var(--shadow-sm);
 }
 
 .nerve-section {
@@ -471,15 +457,13 @@
     grid-template-columns: auto 1fr;
     gap: 0.6rem;
     padding: 0.75rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--surface-panel-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--surface-row-border);
+    background: var(--surface-row-bg);
     transition: var(--transition-all);
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .driver-card.impact-alto {
@@ -582,18 +566,16 @@
 .action-card {
     padding: 0.9rem;
     border-radius: var(--radius-xl);
-    border: 1px solid var(--surface-panel-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    border: 1px solid var(--surface-row-border);
+    background: var(--surface-row-bg);
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
     position: relative;
     overflow: hidden;
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .action-card.impact-alto {
@@ -730,16 +712,14 @@
 
 .quality-card {
     padding: 0.85rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--surface-panel-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--surface-row-border);
+    background: var(--surface-row-bg);
     display: grid;
     gap: 0.6rem;
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .quality-header {
@@ -828,7 +808,7 @@
     gap: 0.6rem;
     align-items: center;
     padding: 0.65rem 0.75rem;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     border: 1px dashed var(--surface-row-border);
     color: var(--text-muted);
     background: var(--surface-row-bg);
@@ -851,14 +831,12 @@
     display: grid;
     gap: 0.5rem;
     padding: 0.75rem;
-    border-radius: var(--radius-lg);
-    background:
-        linear-gradient(135deg, var(--accent-soft), var(--color-info-soft)),
-        var(--surface-panel-bg);
-    border: 1px solid var(--surface-panel-border);
+    border-radius: var(--radius-xl);
+    background: var(--surface-row-bg);
+    border: 1px solid var(--surface-row-border);
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .nerve-chat {
@@ -919,14 +897,12 @@
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.75rem;
-    border-radius: var(--radius-lg);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
-    border: 1px solid var(--surface-panel-border);
+    border-radius: var(--radius-xl);
+    background: var(--surface-row-bg);
+    border: 1px solid var(--surface-row-border);
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .placeholder-dot {
@@ -955,14 +931,12 @@
     display: grid;
     gap: 0.5rem;
     padding: 0.75rem;
-    border-radius: var(--radius-lg);
-    background:
-        linear-gradient(135deg, var(--accent-soft), var(--color-warning-soft)),
-        var(--surface-panel-bg);
-    border: 1px solid var(--surface-panel-border);
+    border-radius: var(--radius-xl);
+    background: var(--surface-row-bg);
+    border: 1px solid var(--surface-row-border);
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .context-row {
@@ -1064,14 +1038,12 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.6rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--surface-panel-border);
-    background:
-        linear-gradient(135deg, var(--surface-sheen-start), var(--surface-sheen-end)),
-        var(--surface-panel-bg);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--surface-row-border);
+    background: var(--surface-row-bg);
     box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
-    -webkit-backdrop-filter: blur(var(--card-blur)) saturate(var(--card-sat));
+    backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
+    -webkit-backdrop-filter: blur(var(--row-blur)) saturate(var(--row-sat));
 }
 
 .nerve-message {
@@ -1169,7 +1141,8 @@
 
 /* Scrollbar */
 .nerve-center::-webkit-scrollbar {
-    width: 4px;
+    width: 0;
+    height: 0;
 }
 
 .nerve-center::-webkit-scrollbar-track {
@@ -1177,10 +1150,17 @@
 }
 
 .nerve-center::-webkit-scrollbar-thumb {
-    background: var(--surface-row-border);
-    border-radius: 2px;
+    background: transparent;
 }
 
 .nerve-center::-webkit-scrollbar-thumb:hover {
-    background: var(--accent-soft);
+    background: transparent;
+}
+
+.nerve-center {
+    scrollbar-width: none;
+}
+
+.nerve-center::-webkit-scrollbar {
+    display: none;
 }

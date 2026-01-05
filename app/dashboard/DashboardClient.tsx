@@ -2145,7 +2145,7 @@ export default function DashboardClient() {
   return (
     <>
       <div className="space-y-8">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="grid gap-6">
           <div
             ref={heroCardRef}
             className="rounded-[36px] glass-panel glass-tint p-6 sm:p-8 space-y-6 min-w-0"
