@@ -1,0 +1,42 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST_IP }}
+        username: ${{ secrets.HOST_USER }}
+        key: ${{ secrets.HOST_KEY }}
+        port: 65002 # Porta comum da Hostinger, ajuste se necessário via secret
+        script: |
+          # Navegar para a pasta do projeto (ajuste o caminho se necessário)
+          cd domains/gestao.ambientautilidades.com.br/public_html
+          
+          # 1. Pull do código
+          git pull origin main
+          
+          # 2. Instalar dependências (produção)
+          npm install
+          
+          # 3. Build Next.js
+          npm run build
+          
+          # 4. Preparar arquivos standalone (Cópia obrigatória)
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          
+          # 5. Reiniciar aplicação (Assumindo PM2 ou kill simples)
+          # Tenta recarregar via PM2 se existir, ou mata o node
+          if command -v pm2 &> /dev/null; then
+              pm2 reload all || pm2 restart all
+          else
+              # Método "bruto" para Hostinger Node App (Mata o processo node para que o painel reinicie)
+              pkill -f "node .next/standalone/server.js" || echo "Nenhum processo rodando"
+          fi
