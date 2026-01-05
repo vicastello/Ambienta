@@ -4,11 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { parsePaymentFile, type ParsedPayment } from '@/lib/paymentParsers';
 import { syncShopeeEscrowForOrders } from '@/lib/shopeeEscrowSync';
 
-export const config = {
-    api: {
-        bodyParser: false,
-    },
-};
+// Config removed for App Router compatibility
 
 export async function POST(request: NextRequest) {
     try {

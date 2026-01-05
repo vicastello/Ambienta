@@ -15,11 +15,7 @@ import {
     type PaymentInput,
 } from '@/lib/rules';
 
-export const config = {
-    api: {
-        bodyParser: false,
-    },
-};
+// Config removed for App Router compatibility
 
 const getMeliRefundAmount = (raw: any): number => {
     const payments = Array.isArray(raw?.payments) ? raw.payments : [];
