@@ -5,7 +5,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { format, differenceInDays, isToday, isTomorrow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
-    ChevronLeft, ChevronRight, Loader2, Search, X,
+    ChevronLeft, ChevronRight, ChevronDown, Loader2, Search, X,
     ShoppingBag, Package, Store, ArrowUpDown, ArrowUp, ArrowDown,
     CheckCircle2, Clock, AlertTriangle, XCircle, Bell,
     Check, Download, CreditCard, Circle, Minus,
@@ -735,6 +735,7 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
     const [tagModalOrderId, setTagModalOrderId] = useState<number | null>(null);
     const [newTagValue, setNewTagValue] = useState('');
     const [loadingTags, setLoadingTags] = useState(false);
+    const [collapsed, setCollapsed] = useState(false);
 
     // Fetch available tags on mount
     useEffect(() => {
@@ -975,375 +976,412 @@ export function ReceivablesTable({ orders = [], meta, loading }: ReceivablesTabl
 
     return (
         <div className="space-y-4">
-            {/* Alert Banners */}
-            <AlertBanner orders={orders} />
+            {/* Collapsible Header */}
+            <button
+                onClick={() => setCollapsed(!collapsed)}
+                className={cn(
+                    "flex items-center gap-3 w-full text-left py-3 px-4 rounded-2xl",
+                    "glass-panel glass-tint",
+                    "border border-white/40 dark:border-white/10",
+                    "hover:bg-white/60 dark:hover:bg-white/5 transition-all duration-200",
+                    "group"
+                )}
+            >
+                <div className={cn(
+                    "flex items-center justify-center w-8 h-8 rounded-xl",
+                    "bg-emerald-100 dark:bg-emerald-900/30",
+                    "transition-transform duration-200",
+                    !collapsed && "rotate-0",
+                    collapsed && "-rotate-90"
+                )}>
+                    <ChevronDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-main flex items-center gap-3">
+                    A Receber
+                    <span className={cn(
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                        "bg-emerald-100 dark:bg-emerald-900/30",
+                        "text-emerald-700 dark:text-emerald-300"
+                    )}>
+                        {orders.length}
+                    </span>
+                </h3>
+                <span className="ml-auto text-xs text-muted">
+                    {collapsed ? 'Clique para expandir' : 'Clique para minimizar'}
+                </span>
+            </button>
 
-            {/* Selection Action Bar */}
-            <SelectionActionBar
-                selectedOrders={selectedOrders}
-                onClearSelection={clearSelection}
-                onMarkAsPaid={handleMarkAsPaid}
-                onExportCSV={handleExportCSV}
-                isProcessing={isProcessing}
-            />
+            {!collapsed && (
+                <>
+                    {/* Alert Banners */}
+                    <AlertBanner orders={orders} />
 
+                    {/* Selection Action Bar */}
+                    <SelectionActionBar
+                        selectedOrders={selectedOrders}
+                        onClearSelection={clearSelection}
+                        onMarkAsPaid={handleMarkAsPaid}
+                        onExportCSV={handleExportCSV}
+                        isProcessing={isProcessing}
+                    />
 
-
-            {/* Table */}
-            <div className="glass-panel glass-tint rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
-                            <tr className="group">
-                                {/* Checkbox header */}
-                                <th className="py-4 px-4 w-12">
-                                    <button
-                                        onClick={toggleSelectAll}
-                                        className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
-                                        title={allPendingSelected ? 'Desmarcar todos' : 'Selecionar todos pendentes'}
-                                    >
-                                        {allPendingSelected ? (
-                                            <CheckCircle2 className="w-4 h-4 text-primary-500" />
-                                        ) : somePendingSelected ? (
-                                            <div className="relative">
-                                                <Circle className="w-4 h-4 text-slate-400" />
-                                                <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
-                                            </div>
-                                        ) : (
-                                            <Circle className="w-4 h-4 text-slate-400" />
-                                        )}
-                                    </button>
-                                </th>
-                                <SortableHeader
-                                    label="Pedido"
-                                    field="numero_pedido"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                />
-                                <SortableHeader
-                                    label="Data"
-                                    field="data_pedido"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                />
-                                <SortableHeader
-                                    label="Cliente"
-                                    field="cliente"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                />
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Canal</th>
-                                <SortableHeader
-                                    label="Vlr. Pedido"
-                                    field="valor"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                    align="right"
-                                />
-                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Esperado</th>
-                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Recebido</th>
-                                <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Diferença</th>
-                                <SortableHeader
-                                    label="Status"
-                                    field="status_pagamento"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                    align="center"
-                                />
-                                <SortableHeader
-                                    label="Vencimento"
-                                    field="vencimento_estimado"
-                                    sortField={sortField}
-                                    sortDirection={sortDirection}
-                                    onSort={handleSort}
-                                    align="right"
-                                />
-                                <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">
-                                    <Tag className="w-4 h-4 inline mr-1" />
-                                    Tags
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/10 dark:divide-white/5">
-                            {processedOrders.length === 0 ? (
-                                <tr>
-                                    <td colSpan={12} className="py-12 text-center text-slate-500">
-                                        <div className="flex flex-col items-center gap-2">
-                                            <Search className="w-8 h-8 text-slate-300" />
-                                            <p>Nenhum pedido encontrado com os filtros atuais.</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                processedOrders.map((order) => {
-                                    const marketplaceBadge = getMarketplaceBadge(order.canal);
-                                    const BadgeIcon = marketplaceBadge.icon;
-                                    const status = getEnhancedStatus(order);
-                                    const StatusIcon = status.icon;
-                                    const isSelected = selectedIds.has(order.id);
-                                    const isPaid = order.status_pagamento === 'pago';
-
-                                    return (
-                                        <tr
-                                            key={order.id}
-                                            onClick={() => setDetailOrder(order)}
-                                            className={cn(
-                                                "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer group",
-                                                order.status_pagamento === 'atrasado' && "bg-rose-50/50 dark:bg-rose-950/20",
-                                                order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10",
-                                                isSelected && "bg-gradient-to-r from-primary-100/60 via-primary-50/40 to-transparent dark:from-primary-900/30 dark:via-primary-950/20 dark:to-transparent"
-                                            )}
-                                        >
-                                            {/* Checkbox */}
-                                            <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
-                                                {!isPaid && (
-                                                    <button
-                                                        onClick={() => toggleSelection(order.id)}
-                                                        className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
-                                                    >
-                                                        {isSelected ? (
-                                                            <CheckCircle2 className="w-4 h-4 text-primary-500" />
-                                                        ) : (
-                                                            <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
-                                                        )}
-                                                    </button>
+                    {/* Table */}
+                    <div className="glass-panel glass-tint rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
+                                    <tr className="group">
+                                        {/* Checkbox header */}
+                                        <th className="py-4 px-4 w-12">
+                                            <button
+                                                onClick={toggleSelectAll}
+                                                className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                title={allPendingSelected ? 'Desmarcar todos' : 'Selecionar todos pendentes'}
+                                            >
+                                                {allPendingSelected ? (
+                                                    <CheckCircle2 className="w-4 h-4 text-primary-500" />
+                                                ) : somePendingSelected ? (
+                                                    <div className="relative">
+                                                        <Circle className="w-4 h-4 text-slate-400" />
+                                                        <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
+                                                    </div>
+                                                ) : (
+                                                    <Circle className="w-4 h-4 text-slate-400" />
                                                 )}
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex flex-col">
-                                                    <span className="font-mono font-medium text-slate-700 dark:text-slate-200">
-                                                        #{order.numero_pedido}
-                                                    </span>
-                                                    <span className="text-[10px] text-slate-400">ID: {order.tiny_id}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6 text-slate-600 dark:text-slate-400">
-                                                {formatDate(order.data_pedido)}
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="font-medium text-slate-700 dark:text-slate-200 max-w-[200px] truncate" title={order.cliente}>
-                                                    {order.cliente || 'Consumidor Final'}
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <span className={cn(
-                                                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium",
-                                                    marketplaceBadge.bg, marketplaceBadge.text
-                                                )}>
-                                                    <BadgeIcon className="w-3.5 h-3.5" />
-                                                    {marketplaceBadge.label}
-                                                </span>
-                                            </td>
-                                            <td className="py-4 px-6 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
-                                                {/* @ts-ignore - valor_original exists but type not updated */}
-                                                {formatCurrency(order.valor_original || order.valor)}
-                                            </td>
-                                            <td className="py-4 px-4 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
-                                                {order.valor_esperado !== undefined && order.valor_esperado !== null
-                                                    ? formatCurrency(order.valor_esperado)
-                                                    : '-'}
-                                            </td>
-                                            <td className="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-200">
-                                                {formatCurrency(order.valor)}
-                                            </td>
-                                            <td className="py-4 px-4 text-right text-xs">
-                                                {order.diferenca !== undefined ? (
-                                                    <span className={cn(
-                                                        "font-semibold",
-                                                        order.diferenca >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                                                    )}>
-                                                        {formatCurrency(order.diferenca)}
-                                                    </span>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="py-4 px-6 text-center">
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <button
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className={cn(
-                                                                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
-                                                                "hover:ring-2 hover:ring-primary-500/30 transition-all",
-                                                                status.bg, status.text
-                                                            )}
-                                                        >
-                                                            <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
-                                                            {status.label}
-                                                        </button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="center" className="min-w-[160px]">
-                                                        {order.status_pagamento !== 'pago' && (
-                                                            <DropdownMenuItem
-                                                                onClick={async (e) => {
-                                                                    e.stopPropagation();
-                                                                    await markOrdersAsPaid([order.id]);
-                                                                    router.refresh();
-                                                                }}
-                                                                className="flex items-center gap-2 text-emerald-600"
-                                                            >
-                                                                <CheckCircle2 className="w-4 h-4" />
-                                                                Marcar como Pago
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                        {order.status_pagamento === 'pago' && (
-                                                            <DropdownMenuItem
-                                                                onClick={async (e) => {
-                                                                    e.stopPropagation();
-                                                                    await markOrdersAsUnpaid([order.id]);
-                                                                    router.refresh();
-                                                                }}
-                                                                className="flex items-center gap-2 text-amber-600"
-                                                            >
-                                                                <Clock className="w-4 h-4" />
-                                                                Marcar como Pendente
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </td>
-                                            <td className="py-4 px-6 text-right text-slate-500 text-xs">
-                                                {order.status_pagamento === 'pago'
-                                                    ? formatDate(order.data_pagamento)
-                                                    : formatDate(order.vencimento_estimado)
-                                                }
-                                            </td>
-                                            {/* Tags Cell */}
-                                            <td className="py-4 px-6">
-                                                <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
-                                                    {/* Import tags from payments_breakdown */}
-                                                    {(() => {
-                                                        const importTags = new Set<string>();
-                                                        const tagMeta = new Map<string, string>();
-                                                        order.payments_breakdown?.forEach((p: any) => {
-                                                            if (p.tags && Array.isArray(p.tags)) {
-                                                                p.tags.forEach((t: string) => {
-                                                                    importTags.add(t);
-                                                                    tagMeta.set(t, 'Tag do extrato');
-                                                                });
-                                                            }
-                                                        });
-                                                        getAutoTags(order).forEach((t) => {
-                                                            if (!importTags.has(t)) {
-                                                                tagMeta.set(t, 'Tag automática');
-                                                            }
-                                                            importTags.add(t);
-                                                        });
-                                                        return Array.from(importTags).map((tag, idx) => {
-                                                            const colors = getTagColor(tag);
-                                                            return (
-                                                                <span
-                                                                    key={`import-${idx}`}
-                                                                    className={cn(
-                                                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
-                                                                        colors.bg, colors.text
-                                                                    )}
-                                                                    title={tagMeta.get(tag) || 'Tag do extrato'}
-                                                                >
-                                                                    {formatTagName(tag)}
-                                                                </span>
-                                                            );
-                                                        });
-                                                    })()}
-                                                    {/* Manual tags */}
-                                                    {(orderTags.get(order.id) || []).map((tag, idx) => {
-                                                        const colors = getTagColor(tag);
-                                                        return (
-                                                            <span
-                                                                key={idx}
-                                                                className={cn(
-                                                                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
-                                                                    colors.bg, colors.text
-                                                                )}
-                                                            >
-                                                                {formatTagName(tag)}
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        removeTagFromOrder(order.id, tag);
-                                                                    }}
-                                                                    className="hover:opacity-70 rounded-full p-0.5"
-                                                                >
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
-                                                            </span>
-                                                        );
-                                                    })}
-                                                    {/* Button to open tag modal */}
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setTagModalOrderId(order.id);
-                                                        }}
-                                                        className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
-                                                        title="Gerenciar tags"
-                                                    >
-                                                        <Plus className="w-4 h-4" />
-                                                    </button>
+                                            </button>
+                                        </th>
+                                        <SortableHeader
+                                            label="Pedido"
+                                            field="numero_pedido"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                        />
+                                        <SortableHeader
+                                            label="Data"
+                                            field="data_pedido"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                        />
+                                        <SortableHeader
+                                            label="Cliente"
+                                            field="cliente"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                        />
+                                        <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Canal</th>
+                                        <SortableHeader
+                                            label="Vlr. Pedido"
+                                            field="valor"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                            align="right"
+                                        />
+                                        <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Esperado</th>
+                                        <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Vlr. Recebido</th>
+                                        <th className="py-4 px-4 text-right font-semibold text-slate-600 dark:text-slate-300 text-xs">Diferença</th>
+                                        <SortableHeader
+                                            label="Status"
+                                            field="status_pagamento"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                            align="center"
+                                        />
+                                        <SortableHeader
+                                            label="Vencimento"
+                                            field="vencimento_estimado"
+                                            sortField={sortField}
+                                            sortDirection={sortDirection}
+                                            onSort={handleSort}
+                                            align="right"
+                                        />
+                                        <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">
+                                            <Tag className="w-4 h-4 inline mr-1" />
+                                            Tags
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/10 dark:divide-white/5">
+                                    {processedOrders.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={12} className="py-12 text-center text-slate-500">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <Search className="w-8 h-8 text-slate-300" />
+                                                    <p>Nenhum pedido encontrado com os filtros atuais.</p>
                                                 </div>
                                             </td>
                                         </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                        <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
-                            <tr>
-                                <td colSpan={5} className="py-4 px-6 text-right">Total</td>
-                                <td className="py-4 px-6 text-right text-xs">
-                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_original || o.valor || 0), 0))}
-                                </td>
-                                <td className="py-4 px-4 text-right text-xs">
-                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_esperado || 0), 0))}
-                                </td>
-                                <td className="py-4 px-4 text-right">
-                                    {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor || 0), 0))}
-                                </td>
-                                <td className="py-4 px-4 text-right text-xs">
-                                    {(() => {
-                                        const totalDiff = processedOrders.reduce((acc, o) => acc + (o.diferenca || 0), 0);
-                                        return (
-                                            <span className={cn(
-                                                totalDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                                            )}>
-                                                {formatCurrency(totalDiff)}
-                                            </span>
-                                        );
-                                    })()}
-                                </td>
-                                <td colSpan={3}></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
+                                    ) : (
+                                        processedOrders.map((order) => {
+                                            const marketplaceBadge = getMarketplaceBadge(order.canal);
+                                            const BadgeIcon = marketplaceBadge.icon;
+                                            const status = getEnhancedStatus(order);
+                                            const StatusIcon = status.icon;
+                                            const isSelected = selectedIds.has(order.id);
+                                            const isPaid = order.status_pagamento === 'pago';
 
-                {/* Pagination footer */}
-                {meta && meta.totalPages > 1 && (
-                    <div className="flex items-center justify-between px-6 py-4 bg-white/30 dark:bg-black/10 border-t border-white/20 dark:border-white/10">
-                        <button
-                            onClick={() => handlePageChange(meta.page - 1)}
-                            disabled={meta.page <= 1}
-                            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronLeft className="w-5 h-5" />
-                        </button>
-                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                            Página {meta.page} de {meta.totalPages} • {processedOrders.length} de {orders.length} registros
-                        </span>
-                        <button
-                            onClick={() => handlePageChange(meta.page + 1)}
-                            disabled={meta.page >= meta.totalPages}
-                            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
+                                            return (
+                                                <tr
+                                                    key={order.id}
+                                                    onClick={() => setDetailOrder(order)}
+                                                    className={cn(
+                                                        "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer group",
+                                                        order.status_pagamento === 'atrasado' && "bg-rose-50/50 dark:bg-rose-950/20",
+                                                        order.status_pagamento === 'pago' && "bg-emerald-50/30 dark:bg-emerald-950/10",
+                                                        isSelected && "bg-gradient-to-r from-primary-100/60 via-primary-50/40 to-transparent dark:from-primary-900/30 dark:via-primary-950/20 dark:to-transparent"
+                                                    )}
+                                                >
+                                                    {/* Checkbox */}
+                                                    <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                                                        {!isPaid && (
+                                                            <button
+                                                                onClick={() => toggleSelection(order.id)}
+                                                                className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                            >
+                                                                {isSelected ? (
+                                                                    <CheckCircle2 className="w-4 h-4 text-primary-500" />
+                                                                ) : (
+                                                                    <Circle className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
+                                                                )}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-4 px-6">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-mono font-medium text-slate-700 dark:text-slate-200">
+                                                                #{order.numero_pedido}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400">ID: {order.tiny_id}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 px-6 text-slate-600 dark:text-slate-400">
+                                                        {formatDate(order.data_pedido)}
+                                                    </td>
+                                                    <td className="py-4 px-6">
+                                                        <div className="font-medium text-slate-700 dark:text-slate-200 max-w-[200px] truncate" title={order.cliente}>
+                                                            {order.cliente || 'Consumidor Final'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 px-6">
+                                                        <span className={cn(
+                                                            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium",
+                                                            marketplaceBadge.bg, marketplaceBadge.text
+                                                        )}>
+                                                            <BadgeIcon className="w-3.5 h-3.5" />
+                                                            {marketplaceBadge.label}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-4 px-6 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
+                                                        {/* @ts-ignore - valor_original exists but type not updated */}
+                                                        {formatCurrency(order.valor_original || order.valor)}
+                                                    </td>
+                                                    <td className="py-4 px-4 text-right font-medium text-slate-600 dark:text-slate-400 text-xs">
+                                                        {order.valor_esperado !== undefined && order.valor_esperado !== null
+                                                            ? formatCurrency(order.valor_esperado)
+                                                            : '-'}
+                                                    </td>
+                                                    <td className="py-4 px-4 text-right font-bold text-slate-700 dark:text-slate-200">
+                                                        {formatCurrency(order.valor)}
+                                                    </td>
+                                                    <td className="py-4 px-4 text-right text-xs">
+                                                        {order.diferenca !== undefined ? (
+                                                            <span className={cn(
+                                                                "font-semibold",
+                                                                order.diferenca >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                                            )}>
+                                                                {formatCurrency(order.diferenca)}
+                                                            </span>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="py-4 px-6 text-center">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <button
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className={cn(
+                                                                        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
+                                                                        "hover:ring-2 hover:ring-primary-500/30 transition-all",
+                                                                        status.bg, status.text
+                                                                    )}
+                                                                >
+                                                                    <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
+                                                                    {status.label}
+                                                                </button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="center" className="min-w-[160px]">
+                                                                {order.status_pagamento !== 'pago' && (
+                                                                    <DropdownMenuItem
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            await markOrdersAsPaid([order.id]);
+                                                                            router.refresh();
+                                                                        }}
+                                                                        className="flex items-center gap-2 text-emerald-600"
+                                                                    >
+                                                                        <CheckCircle2 className="w-4 h-4" />
+                                                                        Marcar como Pago
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                                {order.status_pagamento === 'pago' && (
+                                                                    <DropdownMenuItem
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            await markOrdersAsUnpaid([order.id]);
+                                                                            router.refresh();
+                                                                        }}
+                                                                        className="flex items-center gap-2 text-amber-600"
+                                                                    >
+                                                                        <Clock className="w-4 h-4" />
+                                                                        Marcar como Pendente
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </td>
+                                                    <td className="py-4 px-6 text-right text-slate-500 text-xs">
+                                                        {order.status_pagamento === 'pago'
+                                                            ? formatDate(order.data_pagamento)
+                                                            : formatDate(order.vencimento_estimado)
+                                                        }
+                                                    </td>
+                                                    {/* Tags Cell */}
+                                                    <td className="py-4 px-6">
+                                                        <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
+                                                            {/* Import tags from payments_breakdown */}
+                                                            {(() => {
+                                                                const importTags = new Set<string>();
+                                                                const tagMeta = new Map<string, string>();
+                                                                order.payments_breakdown?.forEach((p: any) => {
+                                                                    if (p.tags && Array.isArray(p.tags)) {
+                                                                        p.tags.forEach((t: string) => {
+                                                                            importTags.add(t);
+                                                                            tagMeta.set(t, 'Tag do extrato');
+                                                                        });
+                                                                    }
+                                                                });
+                                                                getAutoTags(order).forEach((t) => {
+                                                                    if (!importTags.has(t)) {
+                                                                        tagMeta.set(t, 'Tag automática');
+                                                                    }
+                                                                    importTags.add(t);
+                                                                });
+                                                                return Array.from(importTags).map((tag, idx) => {
+                                                                    const colors = getTagColor(tag);
+                                                                    return (
+                                                                        <span
+                                                                            key={`import-${idx}`}
+                                                                            className={cn(
+                                                                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                                                                                colors.bg, colors.text
+                                                                            )}
+                                                                            title={tagMeta.get(tag) || 'Tag do extrato'}
+                                                                        >
+                                                                            {formatTagName(tag)}
+                                                                        </span>
+                                                                    );
+                                                                });
+                                                            })()}
+                                                            {/* Manual tags */}
+                                                            {(orderTags.get(order.id) || []).map((tag, idx) => {
+                                                                const colors = getTagColor(tag);
+                                                                return (
+                                                                    <span
+                                                                        key={idx}
+                                                                        className={cn(
+                                                                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                                                                            colors.bg, colors.text
+                                                                        )}
+                                                                    >
+                                                                        {formatTagName(tag)}
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                removeTagFromOrder(order.id, tag);
+                                                                            }}
+                                                                            className="hover:opacity-70 rounded-full p-0.5"
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                        </button>
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                            {/* Button to open tag modal */}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setTagModalOrderId(order.id);
+                                                                }}
+                                                                className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
+                                                                title="Gerenciar tags"
+                                                            >
+                                                                <Plus className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                                <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
+                                    <tr>
+                                        <td colSpan={5} className="py-4 px-6 text-right">Total</td>
+                                        <td className="py-4 px-6 text-right text-xs">
+                                            {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_original || o.valor || 0), 0))}
+                                        </td>
+                                        <td className="py-4 px-4 text-right text-xs">
+                                            {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor_esperado || 0), 0))}
+                                        </td>
+                                        <td className="py-4 px-4 text-right">
+                                            {formatCurrency(processedOrders.reduce((acc, o) => acc + (o.valor || 0), 0))}
+                                        </td>
+                                        <td className="py-4 px-4 text-right text-xs">
+                                            {(() => {
+                                                const totalDiff = processedOrders.reduce((acc, o) => acc + (o.diferenca || 0), 0);
+                                                return (
+                                                    <span className={cn(
+                                                        totalDiff >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                                    )}>
+                                                        {formatCurrency(totalDiff)}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
+                                        <td colSpan={3}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        {/* Pagination footer */}
+                        {meta && meta.totalPages > 1 && (
+                            <div className="flex items-center justify-between px-6 py-4 bg-white/30 dark:bg-black/10 border-t border-white/20 dark:border-white/10">
+                                <button
+                                    onClick={() => handlePageChange(meta.page - 1)}
+                                    disabled={meta.page <= 1}
+                                    className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ChevronLeft className="w-5 h-5" />
+                                </button>
+                                <span className="text-sm text-slate-600 dark:text-slate-400">
+                                    Página {meta.page} de {meta.totalPages} • {processedOrders.length} de {orders.length} registros
+                                </span>
+                                <button
+                                    onClick={() => handlePageChange(meta.page + 1)}
+                                    disabled={meta.page >= meta.totalPages}
+                                    className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ChevronRight className="w-5 h-5" />
+                                </button>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                </>
+            )}
 
             {/* Order Detail Drawer */}
             <OrderDetailDrawer

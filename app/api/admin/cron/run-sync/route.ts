@@ -152,7 +152,7 @@ async function tagTinyReturns(diasRecentes: number) {
 
     totalFetched += items.length;
     matchedTinyIds.push(
-      ...items.map((item) => (typeof item.id === 'number' ? item.id : null)).filter(Boolean)
+      ...items.map((item) => item.id).filter((id): id is number => typeof id === 'number')
     );
 
     if (items.length < RETURNS_PAGE_LIMIT) {

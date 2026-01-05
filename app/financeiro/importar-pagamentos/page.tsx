@@ -275,7 +275,7 @@ export default function ImportarPagamentosPage() {
                     amount: payment.netAmount,
                     paymentDate: payment.paymentDate || '',
                 };
-                return evaluateConditions(previewRule.conditions, paymentInput, previewRule.logic).matched;
+                return evaluateConditions(previewRule.conditions as any, paymentInput, previewRule.logic).matched;
             }
             if (createRule && patternKeyword) {
                 const textToMatch = `${payment.transactionDescription || ''} ${payment.transactionType || ''}`.toLowerCase();
@@ -480,7 +480,7 @@ export default function ImportarPagamentosPage() {
                     };
 
                     const existingConditions = Array.isArray(targetRule.conditions) ? targetRule.conditions : [];
-                    const existingKeys = new Set(existingConditions.map((condition) => buildConditionKey({
+                    const existingKeys = new Set(existingConditions.map((condition: any) => buildConditionKey({
                         field: condition.field,
                         operator: condition.operator,
                         value: String(condition.value ?? ''),
@@ -496,7 +496,7 @@ export default function ImportarPagamentosPage() {
                         const updatedConditions = [...existingConditions, newCondition];
                         const textFields = new Set(['description', 'type', 'full_text', 'order_id']);
                         const shouldUseOr = existingConditions.length > 0 &&
-                            existingConditions.every((condition) => textFields.has(normalizeField(condition.field))) &&
+                            existingConditions.every((condition: any) => textFields.has(normalizeField(condition.field))) &&
                             textFields.has(normalizeField(newCondition.field));
                         const nextLogic = shouldUseOr ? 'OR' : targetRule.conditionLogic;
 

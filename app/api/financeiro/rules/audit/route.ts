@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         const action = searchParams.get('action');
 
         let query = supabaseAdmin
-            .from('rule_audit_log')
+            .from('rule_audit_log' as any)
             .select('*')
             .order('changed_at', { ascending: false })
             .limit(Math.min(limit, 200));
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
         // Fetch the audit entry
         const { data: auditEntry, error: auditError } = await supabaseAdmin
-            .from('rule_audit_log')
+            .from('rule_audit_log' as any)
             .select('*')
             .eq('id', auditId)
             .single();
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
             }, { status: 404 });
         }
 
-        const entry = auditEntry as AuditLogEntry;
+        const entry = auditEntry as unknown as AuditLogEntry;
         const dataToRestore = useNewData ? entry.new_data : entry.previous_data;
 
         if (!dataToRestore) {
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
 
         // Check if the rule still exists
         const { data: existingRule } = await supabaseAdmin
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('id')
             .eq('id', entry.rule_id)
             .single();
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
             const { id: _id, created_at: _createdAt, ...restoreData } = dataToRestore as Record<string, unknown>;
 
             const { error: insertError } = await supabaseAdmin
-                .from('auto_rules')
+                .from('auto_rules' as any)
                 .insert({
                     ...restoreData,
                     id: entry.rule_id, // Keep original ID
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
             const { id: _id, created_at: _createdAt, updated_at: _updatedAt, ...restoreData } = dataToRestore as Record<string, unknown>;
 
             const { error: updateError } = await supabaseAdmin
-                .from('auto_rules')
+                .from('auto_rules' as any)
                 .update({
                     ...restoreData,
                     updated_at: new Date().toISOString(),

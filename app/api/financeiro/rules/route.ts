@@ -156,7 +156,7 @@ export async function GET(request: NextRequest) {
         const enabledOnly = searchParams.get('enabled') === 'true';
 
         let query = (supabaseAdmin as any)
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('*')
             .order('priority', { ascending: false });
 
@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        let dbRules = (data || []).map(dbRowToRule);
+        let dbRules: AutoRule[] = (data || []).map(dbRowToRule);
 
         if (marketplace && marketplace !== 'all') {
             dbRules = dbRules.filter((rule) => rule.marketplaces.includes(marketplace));
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
 
         // Conflict check (enabled rules only)
         const { data: existingRows, error: existingError } = await (supabaseAdmin as any)
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('*')
             .eq('enabled', true);
 
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
             const mergedMarketplaces = mergeMarketplaces(duplicate.marketplaces, candidateMarketplaces);
             if (mergedMarketplaces.length !== duplicate.marketplaces.length) {
                 const { data: merged, error: mergeError } = await (supabaseAdmin as any)
-                    .from('auto_rules')
+                    .from('auto_rules' as any)
                     .update({ marketplaces: mergedMarketplaces })
                     .eq('id', duplicate.id)
                     .select()
@@ -330,7 +330,7 @@ export async function POST(request: NextRequest) {
 
         // Insert
         const { data, error } = await (supabaseAdmin as any)
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .insert(dbRow)
             .select()
             .single();
@@ -408,7 +408,7 @@ export async function PATCH(request: NextRequest) {
 
         if (shouldCheckConflict) {
             const { data: currentRow, error: currentError } = await (supabaseAdmin as any)
-                .from('auto_rules')
+                .from('auto_rules' as any)
                 .select('*')
                 .eq('id', id)
                 .single();
@@ -437,7 +437,7 @@ export async function PATCH(request: NextRequest) {
 
             if (candidateRule.enabled) {
                 const { data: existingRows, error: existingError } = await (supabaseAdmin as any)
-                    .from('auto_rules')
+                    .from('auto_rules' as any)
                     .select('*')
                     .eq('enabled', true)
                     .neq('id', id);
@@ -505,7 +505,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         const { data, error } = await (supabaseAdmin as any)
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .update(updateData)
             .eq('id', id)
             .select()
@@ -556,7 +556,7 @@ export async function DELETE(request: NextRequest) {
         }
 
         const { error } = await (supabaseAdmin as any)
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .delete()
             .eq('id', id);
 

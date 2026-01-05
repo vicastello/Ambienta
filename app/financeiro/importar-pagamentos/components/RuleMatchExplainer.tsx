@@ -118,9 +118,13 @@ function RuleDetailCard({ detail, defaultExpanded = false }: { detail: MatchedRu
             >
                 <div className="flex items-center gap-2">
                     {detail.isSystemRule ? (
-                        <Shield className="w-4 h-4 text-purple-500" title="Regra do sistema" />
+                        <span title="Regra do sistema">
+                            <Shield className="w-4 h-4 text-purple-500" />
+                        </span>
                     ) : (
-                        <Zap className="w-4 h-4 text-blue-500" title="Regra personalizada" />
+                        <span title="Regra personalizada">
+                            <Zap className="w-4 h-4 text-blue-500" />
+                        </span>
                     )}
                     <span className="font-medium text-sm text-slate-800 dark:text-slate-100">
                         {detail.ruleName}

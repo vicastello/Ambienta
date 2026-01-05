@@ -143,7 +143,7 @@ const loadUserRules = async (marketplace: string) => {
     if (cached) return cached;
 
     const { data, error } = await supabaseAdmin
-        .from('auto_rules')
+        .from('auto_rules' as any)
         .select('*')
         .eq('enabled', true);
 
@@ -450,7 +450,7 @@ export async function POST(request: NextRequest) {
                     const inlineIds = [...new Set(pendingEscrowOrders)];
                     const escrowResult = await syncShopeeEscrowForOrders(inlineIds, { concurrency: 6, delayMs: 120 });
                     // Remove successful ones from pending
-                    const succeeded = escrowResult.updated > 0 ? new Set(inlineIds.filter(id => ! (escrowResult.failedOrders || []).includes(id))) : new Set<string>();
+                    const succeeded = escrowResult.updated > 0 ? new Set(inlineIds.filter(id => !(escrowResult.failedOrders || []).includes(id))) : new Set<string>();
                     const remaining = new Set(inlineIds.filter(id => !succeeded.has(id)));
                     // Reload only the synced orders to update maps
                     if (succeeded.size > 0) {
@@ -690,7 +690,7 @@ export async function POST(request: NextRequest) {
                     voucherFromShopee = Number(escrowData.voucher_from_shopee) || 0;
                 }
                 const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
-                const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail, escrowData?.order_status);
+                const escrowRefund = getShopeeRefundAmountFromEscrow(escrowDetail, (escrowData as any)?.order_status);
 
                 if (escrowBuyerTotal > 0) {
                     if (!shopeeOrderValue || shopeeOrderValue <= 0) {
@@ -893,6 +893,7 @@ export async function POST(request: NextRequest) {
                     const finalAmsFee = realizedAmsFee !== undefined ? realizedAmsFee : amsCommissionFee;
 
                     // Debug logging for specific order
+                    const hasSellerDiscount = (sellerDiscount || 0) > 0;
                     if (baseMarketplaceOrderId === '250324E753MYUP') {
                         console.log('[DEBUG 250324E753MYUP] Fee Calc Input:', {
                             orderValue,

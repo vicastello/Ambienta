@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
         // Fetch current rule
         const { data: rule, error: fetchError } = await supabaseAdmin
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('*')
             .eq('id', ruleId)
             .single();
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
             case 'publish': {
                 // Try RPC function first
                 const { data: rpcResult, error: rpcError } = await supabaseAdmin
-                    .rpc('publish_rule', { p_rule_id: ruleId });
+                    .rpc('publish_rule' as any, { p_rule_id: ruleId });
 
                 if (!rpcError && rpcResult?.success) {
                     return NextResponse.json({
@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
                 };
 
                 // If has draft_data, apply it
-                if (rule.draft_data) {
-                    const draft = rule.draft_data as Record<string, unknown>;
+                if ((rule as any).draft_data) {
+                    const draft = (rule as any).draft_data as Record<string, unknown>;
                     if (draft.name) updateData.name = draft.name;
                     if (draft.description !== undefined) updateData.description = draft.description;
                     if (draft.conditions) updateData.conditions = draft.conditions;
@@ -80,11 +80,11 @@ export async function POST(request: NextRequest) {
                     if (draft.stop_on_match !== undefined) updateData.stop_on_match = draft.stop_on_match;
                     if (draft.marketplaces) updateData.marketplaces = draft.marketplaces;
                     updateData.draft_data = null;
-                    updateData.version = (rule.version || 1) + 1;
+                    updateData.version = ((rule as any).version || 1) + 1;
                 }
 
                 const { error: updateError } = await supabaseAdmin
-                    .from('auto_rules')
+                    .from('auto_rules' as any)
                     .update(updateData)
                     .eq('id', ruleId);
 
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
                     success: true,
                     message: 'Regra publicada com sucesso',
                     action: 'published',
-                    newVersion: rule.draft_data ? (rule.version || 1) + 1 : rule.version || 1,
+                    newVersion: (rule as any).draft_data ? ((rule as any).version || 1) + 1 : (rule as any).version || 1,
                 });
             }
 
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
                 }
 
                 const { error: updateError } = await supabaseAdmin
-                    .from('auto_rules')
+                    .from('auto_rules' as any)
                     .update({
                         draft_data: draftData,
                         updated_at: new Date().toISOString(),
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
             case 'discard_draft': {
                 const { error: updateError } = await supabaseAdmin
-                    .from('auto_rules')
+                    .from('auto_rules' as any)
                     .update({
                         draft_data: null,
                         updated_at: new Date().toISOString(),

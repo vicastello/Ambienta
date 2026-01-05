@@ -160,7 +160,9 @@ export default function RulePrecedenceView({
                                             {rule.name}
                                         </span>
                                         {isInConflict(rule.id) && (
-                                            <AlertTriangle className="w-4 h-4 text-orange-500" title="Possível conflito com outra regra" />
+                                            <span title="Possível conflito com outra regra">
+                                                <AlertTriangle className="w-4 h-4 text-orange-500" />
+                                            </span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2">

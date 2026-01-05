@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
         // Fetch all enabled rules with metrics
         const { data: rules, error: rulesError } = await supabaseAdmin
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('id, name, match_count, total_impact, last_applied_at, created_at, enabled')
             .eq('enabled', true)
             .order('match_count', { ascending: false });
@@ -63,16 +63,16 @@ export async function GET(request: NextRequest) {
         // Note: daysBack is used in dormant rule detection below
 
         // Calculate averages
-        const matchCounts = rules.map(r => r.match_count || 0);
+        const matchCounts = rules.map((r: any) => r.match_count || 0);
         const avgMatch = matchCounts.reduce((a, b) => a + b, 0) / rules.length;
-        const impacts = rules.map(r => r.total_impact || 0);
+        const impacts = rules.map((r: any) => r.total_impact || 0);
         const avgImpact = impacts.reduce((a, b) => a + b, 0) / rules.length;
 
         // Standard deviation for match counts
         const matchVariance = matchCounts.reduce((sum, val) => sum + Math.pow(val - avgMatch, 2), 0) / rules.length;
         const matchStdDev = Math.sqrt(matchVariance);
 
-        for (const rule of rules) {
+        for (const rule of (rules as any[])) {
             const stats: RuleStats = {
                 ruleId: rule.id,
                 ruleName: rule.name,

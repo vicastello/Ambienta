@@ -362,7 +362,7 @@ const logParseFailure = (rawContent: string) => {
 
 export function parseAIResponse(rawContent: string): AIIntelligenceResponse {
     try {
-        const parsedRaw = parseJsonFromText(rawContent);
+        const parsedRaw = parseJsonFromText(rawContent) as any;
         const parsed = Array.isArray(parsedRaw) ? { insights: parsedRaw } : parsedRaw;
 
         if (!parsed || typeof parsed !== 'object') {

@@ -1331,6 +1331,7 @@ export async function GET(request: NextRequest) {
                 const sOrder = shopeeOrdersMap.get(o.numero_pedido_ecommerce);
                 if (sOrder) {
                     const escrowDetail = sOrder.raw_payload?.escrow_detail;
+                    const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                     const escrowBuyerTotal = Number(escrowDetail?.buyer_total_amount || 0);
                     const totalAmount = Number(sOrder.total_amount) || 0;
                     const orderSellingRaw = Number(sOrder.order_selling_price);
@@ -1490,6 +1491,8 @@ export async function GET(request: NextRequest) {
                             if (marketplace === 'shopee') {
                                 const sItems = shopeeItemsMap.get(o.numero_pedido_ecommerce);
                                 const sOrder = shopeeOrdersMap.get(o.numero_pedido_ecommerce);
+                                const escrowDetail = sOrder?.raw_payload?.escrow_detail;
+                                const hasEscrowDetail = !!escrowDetail && typeof escrowDetail === 'object';
                                 const hasBundle = !!sItems?.some((i: any) => i.raw_payload?.promotion_type === 'bundle_deal' || i.is_wholesale === true);
 
                                 if (sItems && sItems.length > 0) {

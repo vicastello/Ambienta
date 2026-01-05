@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ReadonlyURLSearchParams } from 'next/navigation';
 import { listManualEntries, markEntryAsPaid, deleteManualEntry, updateManualEntry } from '../../actions';
-import { Loader2, Trash2, CheckCircle2, Clock, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, Edit2, Circle, Minus, CreditCard, Download, AlertTriangle } from 'lucide-react';
+import { Loader2, Trash2, CheckCircle2, Clock, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, Edit2, Circle, Minus, CreditCard, Download, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getTagColor, formatTagName } from '@/lib/tagColors';
 import {
@@ -29,6 +29,17 @@ interface ManualEntry {
     tags?: string[];
     paid_date?: string;
     source?: 'manual' | 'import';
+}
+
+// Interface for daily grouped entries by category
+interface GroupedEntry {
+    date: string;                 // YYYY-MM-DD
+    category: string;             // Categoria do agrupamento (ex: "Renda do Pedido", "Recarga de Ads")
+    groupKey: string;             // Chave única: date|category
+    totalAmount: number;          // Soma total (positivo ou negativo)
+    type: 'income' | 'expense';   // Tipo do grupo
+    entries: ManualEntry[];       // Entradas originais
+    consolidatedStatus: 'confirmed' | 'pending' | 'overdue'; // Status consolidado
 }
 
 interface ManualEntriesTableProps {
@@ -240,6 +251,8 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [editingEntry, setEditingEntry] = useState<ManualEntry | null>(null);
+    const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+    const [collapsed, setCollapsed] = useState(false);
 
     // Extract filters from URL
     const dataInicio = searchParams.get('dataInicio') || undefined;
@@ -295,6 +308,100 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
             return 0;
         });
     }, [entries, sortField, sortDirection]);
+
+    // Group entries by date + category
+    const groupedEntries = useMemo(() => {
+        const groups = new Map<string, GroupedEntry>();
+
+        // Helper to extract category from entry
+        const getEntryCategory = (entry: ManualEntry): string => {
+            // Use subcategory if available
+            if (entry.subcategory && entry.subcategory !== 'Importado') {
+                return entry.subcategory;
+            }
+
+            // Extract from description patterns
+            const desc = entry.description?.toLowerCase() || '';
+            if (desc.includes('renda do pedido') || desc.includes('order income')) {
+                return 'Renda do Pedido';
+            }
+            if (desc.includes('recarga') || desc.includes('ads') || desc.includes('publicidade')) {
+                return 'Recarga de Ads';
+            }
+            if (desc.includes('frete') || desc.includes('envio') || desc.includes('shipping')) {
+                return 'Frete';
+            }
+            if (desc.includes('reembolso') || desc.includes('estorno') || desc.includes('refund')) {
+                return 'Reembolso';
+            }
+            if (desc.includes('comissão') || desc.includes('taxa') || desc.includes('commission') || desc.includes('fee')) {
+                return 'Taxas e Comissões';
+            }
+            if (desc.includes('ajuste') || desc.includes('adjustment')) {
+                return 'Ajustes';
+            }
+
+            // Fallback to category or generic
+            return entry.category || 'Outros';
+        };
+
+        entries.forEach(entry => {
+            // Extract date part (YYYY-MM-DD)
+            const dateKey = entry.due_date?.split('T')[0] || entry.due_date;
+            const category = getEntryCategory(entry);
+            const groupKey = `${dateKey}|${category}`;
+
+            if (!groups.has(groupKey)) {
+                groups.set(groupKey, {
+                    date: dateKey,
+                    category: category,
+                    groupKey: groupKey,
+                    totalAmount: 0,
+                    type: entry.type,
+                    entries: [],
+                    consolidatedStatus: 'confirmed'
+                });
+            }
+
+            const group = groups.get(groupKey)!;
+            group.entries.push(entry);
+            group.totalAmount += entry.amount;
+
+            // Consolidated status: overdue > pending > confirmed
+            if (entry.status === 'overdue') {
+                group.consolidatedStatus = 'overdue';
+            } else if (entry.status === 'pending' && group.consolidatedStatus !== 'overdue') {
+                group.consolidatedStatus = 'pending';
+            }
+        });
+
+        // Sort by date, then by category
+        return Array.from(groups.values()).sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            if (dateA !== dateB) {
+                if (sortField === 'due_date') {
+                    return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+                }
+                return dateA - dateB;
+            }
+            // Same date, sort by category
+            return a.category.localeCompare(b.category);
+        });
+    }, [entries, sortField, sortDirection]);
+
+    // Toggle date expansion
+    const toggleDateExpansion = (date: string) => {
+        setExpandedDates(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(date)) {
+                newSet.delete(date);
+            } else {
+                newSet.add(date);
+            }
+            return newSet;
+        });
+    };
 
     const selectedEntries = useMemo(() =>
         entries.filter(e => selectedIds.has(e.id)),
@@ -443,283 +550,312 @@ export function ManualEntriesTable({ searchParams }: ManualEntriesTableProps) {
     return (
         <>
             <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
-                    Lançamentos
-                    <span className="ml-2 text-sm font-normal text-slate-400">({entries.length})</span>
-                </h3>
+                <button
+                    onClick={() => setCollapsed(!collapsed)}
+                    className={cn(
+                        "flex items-center gap-3 w-full text-left py-3 px-4 rounded-2xl",
+                        "glass-panel glass-tint",
+                        "border border-white/40 dark:border-white/10",
+                        "hover:bg-white/60 dark:hover:bg-white/5 transition-all duration-200",
+                        "group"
+                    )}
+                >
+                    <div className={cn(
+                        "flex items-center justify-center w-8 h-8 rounded-xl",
+                        "bg-primary-100 dark:bg-primary-900/30",
+                        "transition-transform duration-200",
+                        !collapsed && "rotate-0",
+                        collapsed && "-rotate-90"
+                    )}>
+                        <ChevronDown className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-main flex items-center gap-3">
+                        Lançamentos
+                        <span className={cn(
+                            "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                            "bg-primary-100 dark:bg-primary-900/30",
+                            "text-primary-700 dark:text-primary-300"
+                        )}>
+                            {entries.length}
+                        </span>
+                    </h3>
+                    <span className="ml-auto text-xs text-muted">
+                        {collapsed ? 'Clique para expandir' : 'Clique para minimizar'}
+                    </span>
+                </button>
 
-                {/* Selection Action Bar */}
-                {selectedIds.size > 0 && (
-                    <SelectionActionBar
-                        selectedEntries={selectedEntries}
-                        onMarkAsPaid={handleBulkMarkAsPaid}
-                        onClearSelection={() => setSelectedIds(new Set())}
-                        isProcessing={bulkProcessing}
-                    />
-                )}
+                {!collapsed && (
+                    <>
+                        {/* Selection Action Bar */}
+                        {selectedIds.size > 0 && (
+                            <SelectionActionBar
+                                selectedEntries={selectedEntries}
+                                onMarkAsPaid={handleBulkMarkAsPaid}
+                                onClearSelection={() => setSelectedIds(new Set())}
+                                isProcessing={bulkProcessing}
+                            />
+                        )}
 
-                <div className="glass-panel glass-tint rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
-                                <tr>
-                                    <th className="py-4 px-4 w-12">
-                                        <button
-                                            onClick={toggleSelectAll}
-                                            className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
-                                            title={isAllSelected ? 'Desmarcar todos' : 'Selecionar todos'}
-                                        >
-                                            {isAllSelected ? (
-                                                <CheckCircle2 className="w-4 h-4 text-primary-500" />
-                                            ) : isSomeSelected ? (
-                                                <div className="relative">
-                                                    <Circle className="w-4 h-4 text-slate-400" />
-                                                    <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
-                                                </div>
-                                            ) : (
-                                                <Circle className="w-4 h-4 text-slate-400" />
-                                            )}
-                                        </button>
-                                    </th>
-                                    <SortableHeader
-                                        label="Descrição"
-                                        field="description"
-                                        sortField={sortField}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                    />
-                                    <SortableHeader
-                                        label="Entidade"
-                                        field="entity_name"
-                                        sortField={sortField}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                    />
-                                    <SortableHeader
-                                        label="Vencimento"
-                                        field="due_date"
-                                        sortField={sortField}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                    />
-                                    <SortableHeader
-                                        label="Valor"
-                                        field="amount"
-                                        sortField={sortField}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                        align="right"
-                                    />
-                                    <SortableHeader
-                                        label="Status"
-                                        field="status"
-                                        sortField={sortField}
-                                        sortDirection={sortDirection}
-                                        onSort={handleSort}
-                                        align="center"
-                                    />
-                                    <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Tags</th>
-                                    <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-right">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/10 dark:divide-white/5">
-                                {sortedEntries.map((entry) => {
-                                    const status = getEnhancedStatus(entry);
-                                    const StatusIcon = status.icon;
-                                    const isSelected = selectedIds.has(entry.id);
-
-                                    return (
-                                        <tr
-                                            key={entry.id}
-                                            onClick={() => setEditingEntry(entry)}
-                                            className={cn(
-                                                "hover:bg-white/40 dark:hover:bg-white/5 transition-colors group cursor-pointer",
-                                                entry.status === 'overdue' && "bg-rose-50/50 dark:bg-rose-950/20",
-                                                entry.status === 'confirmed' && "bg-emerald-50/30 dark:bg-emerald-950/10",
-                                                isSelected && "bg-gradient-to-r from-primary-100/60 via-primary-50/40 to-transparent dark:from-primary-900/30 dark:via-primary-950/20 dark:to-transparent"
-                                            )}
-                                        >
-                                            <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="glass-panel glass-tint rounded-3xl border border-white/40 dark:border-white/10 overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-white/50 dark:bg-black/20 border-b border-white/20 dark:border-white/10">
+                                        <tr>
+                                            <th className="py-4 px-4 w-12">
                                                 <button
-                                                    onClick={() => toggleSelection(entry.id)}
+                                                    onClick={toggleSelectAll}
                                                     className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                    title={isAllSelected ? 'Desmarcar todos' : 'Selecionar todos'}
                                                 >
-                                                    {isSelected ? (
+                                                    {isAllSelected ? (
                                                         <CheckCircle2 className="w-4 h-4 text-primary-500" />
+                                                    ) : isSomeSelected ? (
+                                                        <div className="relative">
+                                                            <Circle className="w-4 h-4 text-slate-400" />
+                                                            <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
+                                                        </div>
                                                     ) : (
                                                         <Circle className="w-4 h-4 text-slate-400" />
                                                     )}
                                                 </button>
-                                            </td>
-                                            <td className="py-4 px-6 font-medium text-slate-700 dark:text-slate-200">
-                                                <div className="flex flex-col">
-                                                    <span>{entry.description}</span>
-                                                    <span className="text-xs text-slate-400">{entry.category}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6 text-slate-600 dark:text-slate-400">
-                                                {entry.entity_name || '-'}
-                                            </td>
-                                            <td className="py-4 px-6 text-slate-600 dark:text-slate-400">
-                                                {formatDate(entry.due_date)}
-                                            </td>
-                                            <td className={`py-4 px-6 text-right font-semibold ${entry.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                {entry.type === 'income' ? '+' : '-'} {formatCurrency(entry.amount)}
-                                            </td>
-                                            <td className="py-4 px-6 text-center">
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <button
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            disabled={processing === entry.id}
-                                                            className={cn(
-                                                                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer",
-                                                                "hover:ring-2 hover:ring-primary-500/30 transition-all disabled:opacity-50",
-                                                                status.bg, status.text
-                                                            )}
-                                                        >
-                                                            {processing === entry.id ? (
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                            ) : (
-                                                                <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
-                                                            )}
-                                                            {status.label}
-                                                        </button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="center" className="min-w-[160px]">
-                                                        {entry.source === 'import' ? (
-                                                            <div className="px-2 py-1.5 text-xs text-center text-muted">
-                                                                Importado automaticamente
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                {entry.status !== 'confirmed' && (
-                                                                    <DropdownMenuItem
-                                                                        onClick={() => handleMarkAsPaid(entry.id)}
-                                                                        className="flex items-center gap-2 text-emerald-600"
-                                                                    >
-                                                                        <CheckCircle2 className="w-4 h-4" />
-                                                                        Marcar como Pago
-                                                                    </DropdownMenuItem>
-                                                                )}
-                                                                {entry.status === 'confirmed' && (
-                                                                    <DropdownMenuItem
-                                                                        onClick={() => handleMarkAsPending(entry.id)}
-                                                                        className="flex items-center gap-2 text-amber-600"
-                                                                    >
-                                                                        <Clock className="w-4 h-4" />
-                                                                        Marcar como Pendente
-                                                                    </DropdownMenuItem>
-                                                                )}
-                                                            </>
+                                            </th>
+                                            <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Data</th>
+                                            <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300">Categoria</th>
+                                            <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-center">Qtd</th>
+                                            <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-right">Valor</th>
+                                            <th className="py-4 px-6 font-semibold text-slate-600 dark:text-slate-300 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/10 dark:divide-white/5">
+                                        {groupedEntries.map((group) => {
+                                            const isExpanded = expandedDates.has(group.groupKey);
+                                            const statusConfig = {
+                                                confirmed: {
+                                                    label: 'Pago',
+                                                    bg: 'bg-emerald-100 dark:bg-emerald-900/30',
+                                                    text: 'text-emerald-700 dark:text-emerald-300',
+                                                    icon: CheckCircle2,
+                                                    iconColor: 'text-emerald-500'
+                                                },
+                                                pending: {
+                                                    label: 'Pendente',
+                                                    bg: 'bg-amber-100 dark:bg-amber-900/30',
+                                                    text: 'text-amber-700 dark:text-amber-300',
+                                                    icon: Clock,
+                                                    iconColor: 'text-amber-500'
+                                                },
+                                                overdue: {
+                                                    label: 'Atrasado',
+                                                    bg: 'bg-rose-100 dark:bg-rose-900/30',
+                                                    text: 'text-rose-700 dark:text-rose-300',
+                                                    icon: AlertTriangle,
+                                                    iconColor: 'text-rose-500'
+                                                }
+                                            };
+                                            const status = statusConfig[group.consolidatedStatus];
+                                            const StatusIcon = status.icon;
+
+                                            // Check if any entries in this group are selected
+                                            const groupEntryIds = group.entries.map(e => e.id);
+                                            const selectedInGroup = groupEntryIds.filter(id => selectedIds.has(id)).length;
+                                            const allGroupSelected = selectedInGroup === group.entries.length;
+                                            const someGroupSelected = selectedInGroup > 0 && selectedInGroup < group.entries.length;
+
+                                            const toggleGroupSelection = () => {
+                                                setSelectedIds(prev => {
+                                                    const newSet = new Set(prev);
+                                                    if (allGroupSelected) {
+                                                        groupEntryIds.forEach(id => newSet.delete(id));
+                                                    } else {
+                                                        groupEntryIds.forEach(id => newSet.add(id));
+                                                    }
+                                                    return newSet;
+                                                });
+                                            };
+
+                                            return (
+                                                <React.Fragment key={group.groupKey}>
+                                                    {/* Grouped Row */}
+                                                    <tr
+                                                        onClick={() => toggleDateExpansion(group.groupKey)}
+                                                        className={cn(
+                                                            "hover:bg-white/40 dark:hover:bg-white/5 transition-colors cursor-pointer",
+                                                            group.type === 'expense' && "bg-rose-50/30 dark:bg-rose-950/10",
+                                                            group.type === 'income' && "bg-emerald-50/30 dark:bg-emerald-950/10",
+                                                            group.consolidatedStatus === 'overdue' && "bg-rose-50/50 dark:bg-rose-950/20",
+                                                            group.consolidatedStatus === 'pending' && "bg-amber-50/30 dark:bg-amber-950/10"
                                                         )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex flex-wrap gap-1 items-center max-w-[180px]">
-                                                    {(entry.tags || []).map((tag, idx) => {
-                                                        const colors = getTagColor(tag);
+                                                    >
+                                                        <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); toggleGroupSelection(); }}
+                                                                    className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                                >
+                                                                    {allGroupSelected ? (
+                                                                        <CheckCircle2 className="w-4 h-4 text-primary-500" />
+                                                                    ) : someGroupSelected ? (
+                                                                        <div className="relative">
+                                                                            <Circle className="w-4 h-4 text-slate-400" />
+                                                                            <Minus className="w-2.5 h-2.5 text-primary-500 absolute top-[3px] left-[3px]" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <Circle className="w-4 h-4 text-slate-400" />
+                                                                    )}
+                                                                </button>
+                                                                {isExpanded ? (
+                                                                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                                                                ) : (
+                                                                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-6 font-medium text-slate-700 dark:text-slate-200">
+                                                            {formatDate(group.date)}
+                                                        </td>
+                                                        <td className="py-4 px-6 text-slate-600 dark:text-slate-400">
+                                                            <span className="font-medium">{group.category}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6 text-center text-slate-600 dark:text-slate-400">
+                                                            {group.entries.length}
+                                                        </td>
+                                                        <td className={cn(
+                                                            "py-4 px-6 text-right font-semibold",
+                                                            group.type === 'income' ? "text-emerald-600" : "text-rose-600"
+                                                        )}>
+                                                            {group.type === 'income' ? '+' : '-'} {formatCurrency(group.totalAmount)}
+                                                        </td>
+                                                        <td className="py-4 px-6 text-center">
+                                                            <span className={cn(
+                                                                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium",
+                                                                status.bg, status.text
+                                                            )}>
+                                                                <StatusIcon className={cn("w-3.5 h-3.5", status.iconColor)} />
+                                                                {status.label}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* Expanded Detail Rows */}
+                                                    {isExpanded && group.entries.map((entry) => {
+                                                        const entryStatus = getEnhancedStatus(entry);
+                                                        const EntryStatusIcon = entryStatus.icon;
+                                                        const isSelected = selectedIds.has(entry.id);
+
                                                         return (
-                                                            <span
-                                                                key={idx}
+                                                            <tr
+                                                                key={entry.id}
+                                                                onClick={() => setEditingEntry(entry)}
                                                                 className={cn(
-                                                                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border",
-                                                                    colors.bg,
-                                                                    colors.text,
-                                                                    colors.border
+                                                                    "bg-slate-50/50 dark:bg-slate-900/30 hover:bg-white/60 dark:hover:bg-white/10 transition-colors cursor-pointer",
+                                                                    isSelected && "bg-gradient-to-r from-primary-100/60 via-primary-50/40 to-transparent dark:from-primary-900/30 dark:via-primary-950/20 dark:to-transparent"
                                                                 )}
                                                             >
-                                                                {formatTagName(tag)}
-                                                                <button
-                                                                    onClick={() => removeTag(entry.id, tag)}
-                                                                    className={cn("rounded-full p-0.5 transition-colors opacity-60 hover:opacity-100", colors.text)}
-                                                                >
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
-                                                            </span>
+                                                                <td className="py-3 px-4 pl-12" onClick={(e) => e.stopPropagation()}>
+                                                                    <button
+                                                                        onClick={() => toggleSelection(entry.id)}
+                                                                        className="p-1 rounded hover:bg-white/40 dark:hover:bg-white/10 transition-colors"
+                                                                    >
+                                                                        {isSelected ? (
+                                                                            <CheckCircle2 className="w-4 h-4 text-primary-500" />
+                                                                        ) : (
+                                                                            <Circle className="w-4 h-4 text-slate-400" />
+                                                                        )}
+                                                                    </button>
+                                                                </td>
+                                                                <td colSpan={2} className="py-3 px-6 text-sm text-slate-600 dark:text-slate-400">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-medium text-slate-700 dark:text-slate-200">{entry.description}</span>
+                                                                        <span className="text-xs text-slate-400">{entry.entity_name || entry.category}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td colSpan={2} className={cn(
+                                                                    "py-3 px-6 text-right font-medium",
+                                                                    entry.type === 'income' ? 'text-emerald-600' : 'text-rose-600'
+                                                                )}>
+                                                                    {entry.type === 'income' ? '+' : '-'} {formatCurrency(entry.amount)}
+                                                                </td>
+                                                                <td className="py-3 px-6"></td>
+                                                                <td className="py-3 px-6 text-center">
+                                                                    <DropdownMenu>
+                                                                        <DropdownMenuTrigger asChild>
+                                                                            <button
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                disabled={processing === entry.id}
+                                                                                className={cn(
+                                                                                    "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium cursor-pointer",
+                                                                                    "hover:ring-2 hover:ring-primary-500/30 transition-all disabled:opacity-50",
+                                                                                    entryStatus.bg, entryStatus.text
+                                                                                )}
+                                                                            >
+                                                                                {processing === entry.id ? (
+                                                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                                                ) : (
+                                                                                    <EntryStatusIcon className={cn("w-3 h-3", entryStatus.iconColor)} />
+                                                                                )}
+                                                                                {entryStatus.label}
+                                                                            </button>
+                                                                        </DropdownMenuTrigger>
+                                                                        <DropdownMenuContent align="center" className="min-w-[160px]">
+                                                                            {entry.source === 'import' ? (
+                                                                                <div className="px-2 py-1.5 text-xs text-center text-muted">
+                                                                                    Importado automaticamente
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    {entry.status !== 'confirmed' && (
+                                                                                        <DropdownMenuItem
+                                                                                            onClick={() => handleMarkAsPaid(entry.id)}
+                                                                                            className="flex items-center gap-2 text-emerald-600"
+                                                                                        >
+                                                                                            <CheckCircle2 className="w-4 h-4" />
+                                                                                            Marcar como Pago
+                                                                                        </DropdownMenuItem>
+                                                                                    )}
+                                                                                    {entry.status === 'confirmed' && (
+                                                                                        <DropdownMenuItem
+                                                                                            onClick={() => handleMarkAsPending(entry.id)}
+                                                                                            className="flex items-center gap-2 text-amber-600"
+                                                                                        >
+                                                                                            <Clock className="w-4 h-4" />
+                                                                                            Marcar como Pendente
+                                                                                        </DropdownMenuItem>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                        </DropdownMenuContent>
+                                                                    </DropdownMenu>
+                                                                </td>
+                                                            </tr>
                                                         );
                                                     })}
-                                                    {tagInputId === entry.id ? (
-                                                        <input
-                                                            autoFocus
-                                                            className="w-16 px-1 py-0.5 text-xs rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-slate-800"
-                                                            value={newTagValue}
-                                                            onChange={(e) => setNewTagValue(e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    addTag(entry.id, newTagValue);
-                                                                } else if (e.key === 'Escape') {
-                                                                    setTagInputId(null);
-                                                                    setNewTagValue('');
-                                                                }
-                                                            }}
-                                                            onBlur={() => {
-                                                                if (newTagValue.trim()) {
-                                                                    addTag(entry.id, newTagValue);
-                                                                } else {
-                                                                    setTagInputId(null);
-                                                                }
-                                                            }}
-                                                            placeholder="tag..."
-                                                        />
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => setTagInputId(entry.id)}
-                                                            className="p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-500 transition-colors"
-                                                            title="Adicionar tag"
-                                                        >
-                                                            <Plus className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6 text-right">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <button
-                                                        onClick={() => setEditingEntry(entry)}
-                                                        disabled={entry.source === 'import'}
-                                                        className="p-1.5 rounded-full hover:bg-primary-100 dark:hover:bg-primary-900/30 text-primary-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                        title={entry.source === 'import' ? "Importado (somente leitura)" : "Editar"}
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(entry.id, entry.description)}
-                                                        disabled={processing === entry.id || entry.source === 'import'}
-                                                        className="p-1.5 rounded-full hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                                        title={entry.source === 'import' ? "Importado (somente leitura)" : "Excluir"}
-                                                    >
-                                                        {processing === entry.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                            <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
-                                <tr>
-                                    <td colSpan={4} className="py-4 px-6 text-right">Total</td>
-                                    <td className="py-4 px-6 text-right">
-                                        {(() => {
-                                            const total = sortedEntries.reduce((acc, e) => {
-                                                const val = e.amount || 0;
-                                                return acc + (e.type === 'income' ? val : -val);
-                                            }, 0);
-                                            return (
-                                                <span className={total >= 0 ? "text-emerald-600" : "text-rose-600"}>
-                                                    {formatCurrency(total)}
-                                                </span>
+                                                </React.Fragment>
                                             );
-                                        })()}
-                                    </td>
-                                    <td colSpan={3}></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
+                                        })}
+                                    </tbody>
+                                    <tfoot className="bg-white/50 dark:bg-black/20 border-t border-white/20 dark:border-white/10 font-bold text-slate-700 dark:text-slate-200">
+                                        <tr>
+                                            <td colSpan={4} className="py-4 px-6 text-right">Total</td>
+                                            <td className="py-4 px-6 text-right">
+                                                {(() => {
+                                                    const totalIncome = groupedEntries.filter(g => g.type === 'income').reduce((acc, g) => acc + g.totalAmount, 0);
+                                                    const totalExpense = groupedEntries.filter(g => g.type === 'expense').reduce((acc, g) => acc + g.totalAmount, 0);
+                                                    const net = totalIncome - totalExpense;
+                                                    return (
+                                                        <span className={net >= 0 ? "text-emerald-600" : "text-rose-600"}>
+                                                            {formatCurrency(net)}
+                                                        </span>
+                                                    );
+                                                })()}
+                                            </td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Edit Modal */}

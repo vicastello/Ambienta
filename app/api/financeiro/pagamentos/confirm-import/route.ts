@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { syncShopeeEscrowForOrders } from '@/lib/shopeeEscrowSync';
+import { fetchAndSaveTinyOrder } from '@/lib/tinyClient';
 
 /**
  * Confirm import endpoint
@@ -382,9 +383,9 @@ export async function POST(request: NextRequest) {
                     .replace(/_\d+$/, '');
             const orderSnList = Array.from(new Set(
                 payments
-                    .map((payment) => normalizeOrderId(payment.marketplaceOrderId))
+                    .map((payment: any) => normalizeOrderId(payment.marketplaceOrderId))
                     .filter((orderSn: string) => orderSn.length > 0)
-            ));
+            )) as string[];
 
             try {
                 const escrowResult = await syncShopeeEscrowForOrders(orderSnList, {
@@ -428,32 +429,33 @@ export async function POST(request: NextRequest) {
             for (const [ruleId, metrics] of ruleMetrics) {
                 try {
                     // Use raw SQL for atomic increment
-                    await supabaseAdmin.rpc('increment_rule_metrics', {
-                        p_rule_id: ruleId,
-                        p_match_count: metrics.count,
-                        p_total_impact: metrics.impact,
-                        p_last_applied_at: now,
-                    }).then(() => {
+                    try {
+                        await supabaseAdmin.rpc('increment_rule_metrics' as any, {
+                            p_rule_id: ruleId,
+                            p_match_count: metrics.count,
+                            p_total_impact: metrics.impact,
+                            p_last_applied_at: now,
+                        });
                         console.log(`[ConfirmImport] Updated metrics for rule ${ruleId}: +${metrics.count} matches, +${metrics.impact.toFixed(2)} impact`);
-                    }).catch(async () => {
+                    } catch (rpcError) {
                         // Fallback: simple update if RPC doesn't exist
                         const { data: existingRule } = await supabaseAdmin
-                            .from('auto_rules')
+                            .from('auto_rules' as any)
                             .select('match_count, total_impact')
                             .eq('id', ruleId)
                             .single();
 
                         if (existingRule) {
                             await supabaseAdmin
-                                .from('auto_rules')
+                                .from('auto_rules' as any)
                                 .update({
-                                    match_count: (existingRule.match_count || 0) + metrics.count,
-                                    total_impact: (existingRule.total_impact || 0) + metrics.impact,
+                                    match_count: ((existingRule as any).match_count || 0) + metrics.count,
+                                    total_impact: ((existingRule as any).total_impact || 0) + metrics.impact,
                                     last_applied_at: now,
                                 })
                                 .eq('id', ruleId);
                         }
-                    });
+                    }
                 } catch (e) {
                     console.warn(`[ConfirmImport] Failed to update metrics for rule ${ruleId}:`, e);
                 }

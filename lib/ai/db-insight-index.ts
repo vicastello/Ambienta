@@ -979,7 +979,7 @@ export async function buildDbInsightIndex(input: {
       titulo: 'Vendas muito volateis no periodo',
       descricao: `Oscilacao diaria alta (CV ${(dailyCv * 100).toFixed(0)}%).`,
       evidencia: `${(dailyCv * 100).toFixed(0)}%`,
-      impactoPercent: null,
+      impactoPercent: undefined,
       cobertura: dias,
       confianca: confidenceFromCoverage(pedidos),
       acao: {
@@ -1062,7 +1062,7 @@ export async function buildDbInsightIndex(input: {
       titulo: 'Produtos sem estoque',
       descricao: `${outOfStockCount} produtos ativos estao sem estoque no momento.`,
       evidencia: `${outOfStockCount} SKUs`,
-      impactoPercent: null,
+      impactoPercent: undefined,
       cobertura: outOfStockCount,
       confianca: confidenceFromCoverage(outOfStockCount),
       acao: {
@@ -1080,7 +1080,7 @@ export async function buildDbInsightIndex(input: {
       titulo: 'Estoque baixo em varios SKUs',
       descricao: `${lowStockCount} produtos com estoque abaixo do minimo operacional.`,
       evidencia: `${lowStockCount} SKUs`,
-      impactoPercent: null,
+      impactoPercent: undefined,
       cobertura: lowStockCount,
       confianca: confidenceFromCoverage(lowStockCount),
       acao: {
@@ -1233,7 +1233,7 @@ export async function buildDbInsightIndex(input: {
       descricao: `Saidas superam entradas em ${formatCurrency(Math.abs(fluxoLiquido))} no periodo.`,
       evidencia: formatCurrency(fluxoLiquido),
       impactoValor: fluxoLiquido,
-      impactoPercent: null,
+      impactoPercent: undefined,
       cobertura: paidEntries.length,
       confianca: confidenceFromCoverage(paidEntries.length),
       acao: {
@@ -1252,7 +1252,7 @@ export async function buildDbInsightIndex(input: {
       descricao: `Pendencias a pagar superam recebimentos em ${formatCurrency(pendingPayables - pendingReceivables)}.`,
       evidencia: formatCurrency(pendingPayables),
       impactoValor: pendingPayables - pendingReceivables,
-      impactoPercent: null,
+      impactoPercent: undefined,
       cobertura: pendingEntries.length,
       confianca: confidenceFromCoverage(pendingEntries.length),
       acao: {

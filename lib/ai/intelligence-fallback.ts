@@ -325,7 +325,7 @@ export function buildFallbackIntelligence(ctx: RichDashboardContext): AIIntellig
         acoes: actions.slice(0, 4),
         insights,
         qualidadeDados,
-        projecao,
+        projecao: projecao as any,
         meta: {
             origem: 'fallback',
             modelo: 'local',

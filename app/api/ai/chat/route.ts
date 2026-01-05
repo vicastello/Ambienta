@@ -286,8 +286,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<ChatResponse 
                     throw new Error(`Chat responses error ${completionResponse.status}: ${errorText}`);
                 }
 
-                const payload = await completionResponse.json();
-                const content = extractResponsesOutput(payload);
+                const completionJson = await completionResponse.json();
+                const content = extractResponsesOutput(completionJson);
                 const encoder = new TextEncoder();
                 const stream = new ReadableStream({
                     start(controller) {

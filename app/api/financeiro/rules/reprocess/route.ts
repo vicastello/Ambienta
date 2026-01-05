@@ -100,12 +100,12 @@ export async function POST(request: NextRequest) {
 
         // Get user rules
         const { data: userRulesData } = await supabaseAdmin
-            .from('auto_rules')
+            .from('auto_rules' as any)
             .select('*')
             .eq('enabled', true)
             .order('priority', { ascending: false });
 
-        const userRules: AutoRule[] = (userRulesData || []).map((row: Record<string, unknown>) => ({
+        const userRules: AutoRule[] = ((userRulesData as any[]) || []).map((row: any) => ({
             id: row.id as string,
             name: row.name as string,
             description: row.description as string | undefined,
@@ -224,17 +224,17 @@ export async function POST(request: NextRequest) {
             for (const [ruleId, metrics] of metricsToUpdate) {
                 try {
                     const { data: existingRule } = await supabaseAdmin
-                        .from('auto_rules')
+                        .from('auto_rules' as any)
                         .select('match_count, total_impact')
                         .eq('id', ruleId)
                         .single();
 
                     if (existingRule) {
                         await supabaseAdmin
-                            .from('auto_rules')
+                            .from('auto_rules' as any)
                             .update({
-                                match_count: (existingRule.match_count || 0) + metrics.count,
-                                total_impact: (existingRule.total_impact || 0) + metrics.impact,
+                                match_count: ((existingRule as any).match_count || 0) + metrics.count,
+                                total_impact: ((existingRule as any).total_impact || 0) + metrics.impact,
                                 last_applied_at: now,
                             })
                             .eq('id', ruleId);
