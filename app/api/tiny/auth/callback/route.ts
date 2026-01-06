@@ -13,6 +13,27 @@ type TinyOAuthCallbackResponse = {
   token_type?: string;
 };
 
+const normalizeBaseUrl = (value: string) => {
+  const trimmed = value.trim().replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+};
+
+const resolveRedirectBase = (req: NextRequest) => {
+  const envBase = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (envBase) return normalizeBaseUrl(envBase);
+
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const forwardedProto = req.headers.get('x-forwarded-proto') ?? 'https';
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '');
+  }
+
+  return new URL(req.url).origin;
+};
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get('code');
@@ -120,7 +141,8 @@ export async function GET(req: NextRequest) {
   console.log('[Tiny OAuth callback] Tokens recebidos, salvando em cookies.');
 
   // cria a resposta redirecionando pro dashboard
-  const response = NextResponse.redirect(new URL('/dashboard', req.url));
+  const baseUrl = resolveRedirectBase(req);
+  const response = NextResponse.redirect(new URL('/dashboard', baseUrl));
 
   // cookies HTTP-only com os tokens
   response.cookies.set('tiny_access_token', json.access_token, {
