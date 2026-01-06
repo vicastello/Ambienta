@@ -542,48 +542,34 @@ export function ProductTable({
                                 const isCritical = isWarning || isUrgent;
                                 const isAlertEmbalagem = !!p.alerta_embalagem;
 
-                                // Background para células sticky (precisa ser opaco para scroll)
+                                // Background para células sticky (sempre opaco neutro para scroll)
                                 let stickyDataClass = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
 
+                                // Borda colorida no início da linha para indicar alerta
+                                let alertBorderClass = '';
+
                                 if (isCritical) {
-                                    // PRIORIDADE 1: CRÍTICO (Rose)
-                                    // Usando cor customizada ultra-suave para colunas travadas
-                                    stickyDataClass = '!bg-[#fff8f9] dark:!bg-rose-950/50';
-                                    if (isSelected) {
-                                        // Selecionado + Crítico: Mais sutil que antes (apenas rose-50)
-                                        rowClass += ' bg-rose-50 dark:bg-rose-900/30';
-                                    } else {
-                                        // Apenas Crítico: Gradiente EXTREMAMENTE suave (quase imperceptível)
-                                        rowClass += ' bg-gradient-to-r from-[#fffcfd] to-transparent dark:from-rose-500/5 dark:to-transparent';
-                                    }
+                                    // CRÍTICO: Borda rosa/vermelha
+                                    alertBorderClass = 'border-l-4 border-l-rose-500 dark:border-l-rose-400';
                                 } else if (isAlertEmbalagem) {
-                                    // PRIORIDADE 2: EMBALAGEM (Amber)
-                                    // Usando cor customizada ultra-suave para colunas travadas
-                                    stickyDataClass = '!bg-[#fffdfa] dark:!bg-amber-950/50';
-                                    if (isSelected) {
-                                        // Selecionado + Warning
-                                        rowClass += ' bg-amber-50 dark:bg-amber-900/30';
-                                    } else {
-                                        // Apenas Warning
-                                        rowClass += ' bg-gradient-to-r from-[#fffefd] to-transparent dark:from-amber-500/5 dark:to-transparent';
-                                    }
+                                    // EMBALAGEM: Borda âmbar
+                                    alertBorderClass = 'border-l-4 border-l-amber-500 dark:border-l-amber-400';
+                                }
+
+                                if (isSelected) {
+                                    // Selecionado: Verde/Teal
+                                    rowClass += ' table-row-selected';
+                                    stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
                                 } else {
-                                    // PRIORIDADE 3: SEM ALERTA / NORMAL
-                                    if (isSelected) {
-                                        // Apenas Selecionado (Verde/Teal Padrão)
-                                        rowClass += ' table-row-selected';
-                                        stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
-                                    } else {
-                                        // Normal Zebra
-                                        if (virtualRow.index % 2 === 0) {
-                                            rowClass += ' dark:bg-white/[0.02]';
-                                        }
+                                    // Normal Zebra
+                                    if (virtualRow.index % 2 === 0) {
+                                        rowClass += ' dark:bg-white/[0.02]';
                                     }
                                 }
 
                                 return (
                                     <tr key={p.id_produto_tiny} className={rowClass}>
-                                        <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell ${stickyDataClass}`}>
+                                        <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell ${stickyDataClass} ${alertBorderClass}`}>
                                             <button
                                                 type="button"
                                                 role="checkbox"
