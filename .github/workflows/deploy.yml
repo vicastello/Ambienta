@@ -21,8 +21,23 @@ jobs:
           echo "Missing HOST_USER secret."
           exit 1
         fi
-        if [ -z "${{ secrets.HOST_KEY }}" ]; then
-          echo "Missing HOST_KEY secret."
+        if [ -z "${{ secrets.HOST_KEY }}" ] && [ -z "${{ secrets.HOST_KEY_B64 }}" ]; then
+          echo "Missing HOST_KEY (private key) or HOST_KEY_B64."
+          exit 1
+        fi
+    - name: Prepare SSH key
+      env:
+        HOST_KEY: ${{ secrets.HOST_KEY }}
+        HOST_KEY_B64: ${{ secrets.HOST_KEY_B64 }}
+      run: |
+        if [ -n "$HOST_KEY_B64" ]; then
+          echo "$HOST_KEY_B64" | base64 -d > /tmp/deploy_key
+        else
+          printf '%s' "$HOST_KEY" > /tmp/deploy_key
+        fi
+        chmod 600 /tmp/deploy_key
+        if ! ssh-keygen -y -f /tmp/deploy_key > /dev/null 2>&1; then
+          echo "Invalid SSH private key. Ensure HOST_KEY is the private key or set HOST_KEY_B64."
           exit 1
         fi
     - name: Deploy via SSH
@@ -30,7 +45,7 @@ jobs:
       with:
         host: ${{ env.DEPLOY_HOST }}
         username: ${{ secrets.HOST_USER }}
-        key: ${{ secrets.HOST_KEY }}
+        key_path: /tmp/deploy_key
         port: ${{ env.DEPLOY_PORT }} # Porta comum da Hostinger, ajuste se necessário via secret
         script: |
           export PATH="/opt/alt/alt-nodejs22/root/bin:$PATH"
