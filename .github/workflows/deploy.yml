@@ -30,7 +30,7 @@ jobs:
         HOST_KEY: ${{ secrets.HOST_KEY }}
         HOST_KEY_B64: ${{ secrets.HOST_KEY_B64 }}
       run: |
-        KEY_PATH="$GITHUB_WORKSPACE/.ssh_deploy_key"
+        KEY_PATH="$RUNNER_TEMP/.ssh_deploy_key"
         if [ -n "$HOST_KEY_B64" ]; then
           echo "$HOST_KEY_B64" | base64 -d > "$KEY_PATH"
         else
@@ -41,12 +41,17 @@ jobs:
           echo "Invalid SSH private key. Ensure HOST_KEY is the private key or set HOST_KEY_B64."
           exit 1
         fi
+        {
+          echo "DEPLOY_KEY<<EOF"
+          cat "$KEY_PATH"
+          echo "EOF"
+        } >> "$GITHUB_ENV"
     - name: Deploy via SSH
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ env.DEPLOY_HOST }}
         username: ${{ secrets.HOST_USER }}
-        key_path: /github/workspace/.ssh_deploy_key
+        key: ${{ env.DEPLOY_KEY }}
         port: ${{ env.DEPLOY_PORT }} # Porta comum da Hostinger, ajuste se necessário via secret
         script: |
           export PATH="/opt/alt/alt-nodejs22/root/bin:$PATH"
