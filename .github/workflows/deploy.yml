@@ -51,12 +51,9 @@ jobs:
           mkdir -p .next/standalone/.next/static .next/standalone/public
           cp -R .next/static/. .next/standalone/.next/static
           cp -R public/. .next/standalone/public
-          
-          # 5. Reiniciar aplicação (Assumindo PM2 ou kill simples)
-          # Tenta recarregar via PM2 se existir, ou mata o node
-          if command -v pm2 &> /dev/null; then
-              pm2 reload all || pm2 restart all
-          else
-              # Método "bruto" para Hostinger Node App (Mata o processo node para que o painel reinicie)
-              pkill -f "node .next/standalone/server.js" || echo "Nenhum processo rodando"
+
+          # 5. Garantir startup file do Passenger e reiniciar
+          if [ -f .htaccess ]; then
+              sed -i 's/^PassengerStartupFile .*/PassengerStartupFile start-server.js/' .htaccess
           fi
+          mkdir -p tmp && touch tmp/restart.txt
