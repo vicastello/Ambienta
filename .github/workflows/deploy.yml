@@ -25,6 +25,15 @@ jobs:
           echo "Missing HOST_KEY (private key) or HOST_KEY_B64."
           exit 1
         fi
+    - name: Preflight SSH connectivity
+      run: |
+        set -euo pipefail
+        echo "Checking SSH connectivity to $DEPLOY_HOST:$DEPLOY_PORT"
+        if ! command -v nc >/dev/null 2>&1; then
+          echo "Missing nc (netcat) in runner."
+          exit 1
+        fi
+        nc -zv -w 10 "$DEPLOY_HOST" "$DEPLOY_PORT"
     - name: Prepare SSH key
       env:
         HOST_KEY: ${{ secrets.HOST_KEY }}
