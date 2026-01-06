@@ -7,7 +7,7 @@
     "dev:cron": "npx dotenv -e .env.local -- tsx scripts/devCronServer.ts",
     "dev:full": "concurrently \"npm run dev\" \"sleep 10 && npm run dev:cron\"",
     "build": "next build",
-    "postbuild": "mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/ && mkdir -p .next/standalone/public && cp -R public/. .next/standalone/public/",
+    "postbuild": "mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/ && mkdir -p .next/standalone/public && cp -R public/. .next/standalone/public/ && node scripts/patch-standalone-env.js",
     "lint": "eslint app components --ext .ts,.tsx",
     "test": "jest",
     "start": "node .next/standalone/server.js",
