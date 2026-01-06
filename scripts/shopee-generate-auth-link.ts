@@ -12,8 +12,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 
-// Load .env.vercel
-const envPath = path.resolve(process.cwd(), '.env.vercel');
+// Load .env.local
+const envPath = path.resolve(process.cwd(), '.env.local');
 if (fs.existsSync(envPath)) {
     const envConfig = dotenv.parse(fs.readFileSync(envPath));
     for (const k in envConfig) process.env[k] = envConfig[k];

@@ -1,12 +1,11 @@
 # Guia: Sincronização Automática com Supabase pg_cron
 
-## 🎯 Diferenças entre Vercel Cron vs Supabase pg_cron
+## 🎯 Diferenças entre cron externo (Hostinger) vs Supabase pg_cron
 
-### Vercel Cron (Atual - Limitado)
-- ❌ **Limite**: 20 execuções/dia por cron (plano grátis)
-- ❌ **Frequência mínima**: Prática (~1 hora)
-- ✅ **Vantagem**: Fácil de configurar no `vercel.json`
-- 📝 **Uso**: Tarefas menos frequentes (refresh token, backups)
+### Cron externo (Hostinger)
+- ✅ **Fácil de configurar** no hPanel
+- ⚠️ **Frequência limitada** (ideal para tarefas menos frequentes)
+- 📝 **Uso**: refresh de token, backfills pontuais, jobs de baixa prioridade
 
 ### Supabase pg_cron (Recomendado)
 - ✅ **Sem limites** de execução
@@ -30,10 +29,10 @@
 
 ### Opção 1: Via Supabase Dashboard (Recomendado)
 1. Acesse: https://supabase.com/dashboard
-4. **Logs**: Use as tabelas `cron.job_run_details` para monitorar
 3. Vá em **SQL Editor**
 4. Cole o conteúdo de `supabase/migrations/20251121120000_cron_sync_produtos.sql`
 5. Clique em **Run**
+6. **Logs**: Use as tabelas `cron.job_run_details` para monitorar
 
 ### Opção 2: Via CLI do Supabase
 ```bash
@@ -73,32 +72,20 @@ LIMIT 10;
 ```
 
 ### Executar manualmente para testar
-- Para produtos, use as rotas HTTP (`/api/admin/sync/produtos` ou `/api/admin/cron/sync-produtos`) em vez de chamadas SQL.
+- Para produtos, use as rotas HTTP (`/api/admin/sync/produtos`) em vez de chamadas SQL.
 
 ---
 
 ## ⚙️ Ajustar Frequência
 
 ### Ajustar frequência
-- Ajuste o cron que chama `/api/admin/cron/sync-produtos` no banco (pg_cron) alterando a migration correspondente; não use mais `SELECT sync_produtos_from_tiny();`.
+- Ajuste o cron que chama `/api/admin/sync/produtos` no banco (pg_cron) alterando a migration correspondente; não use mais `SELECT sync_produtos_from_tiny();`.
 
 ---
 
-## 📝 Manter Vercel Cron para Redundância
+## 📝 Cron externo (Hostinger) opcional
 
-Recomendo **manter** o Vercel cron como backup:
-
-```json
-// vercel.json
-{
-  "crons": [
-    {
-      "path": "/api/admin/cron/sync-produtos",
-      "schedule": "0 */6 * * *"  // Backup a cada 6 horas
-    }
-  ]
-}
-```
+Se quiser redundância, configure um cron no hPanel para chamar endpoints HTTP (com `CRON_SECRET` quando aplicável).
 
 ---
 
@@ -106,10 +93,10 @@ Recomendo **manter** o Vercel cron como backup:
 
 | Recurso | Método | Frequência | Objetivo |
 |---------|--------|------------|----------|
-| **Pedidos** | Supabase pg_cron | 1 minuto | Tempo real |
-| **Produtos (preço/básico)** | App API (pg_cron → `/api/admin/cron/sync-produtos`) | 2 minutos | Quase tempo real |
-| **Produtos (estoque/imagem)** | Vercel cron | 6 horas | Backup + dados pesados |
-| **Token refresh** | Vercel cron | 6 horas | Manutenção |
+| **Pedidos** | Supabase pg_cron → `/api/admin/cron/run-sync` | 15 min | Sincronização contínua |
+| **Produtos (estoque básico)** | Supabase pg_cron → `/api/admin/sync/produtos` | poucas vezes/dia | Atualizar catálogo |
+| **Produtos (estoque/imagem)** | Hostinger Cron (opcional) | 6 horas | Backfill pesado |
+| **Token refresh** | Supabase pg_cron → `/api/admin/cron/refresh-tiny-token` | 6 horas | Manutenção |
 
 ---
 
@@ -129,5 +116,4 @@ Recomendo **manter** o Vercel cron como backup:
 2. ✅ Verificar execução após 2 minutos
 3. ✅ Monitorar logs por 1 hora
 4. ✅ Ajustar frequência conforme necessidade
-5. ✅ Manter Vercel cron como backup
-
+5. ✅ Ajustar cron externo (Hostinger) se precisar de redundância

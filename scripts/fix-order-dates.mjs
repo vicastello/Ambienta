@@ -14,8 +14,8 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env.vercel.production.local from project root (has Supabase credentials)
-config({ path: resolve(__dirname, '..', '.env.vercel.production.local') });
+// Load .env.production.local from project root (has Supabase credentials)
+config({ path: resolve(__dirname, '..', '.env.production.local') });
 
 import { createClient } from '@supabase/supabase-js';
 

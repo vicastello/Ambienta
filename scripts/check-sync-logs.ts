@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// Load .env.vercel manually
-const envPath = join(process.cwd(), '.env.vercel');
+// Load .env.local manually
+const envPath = join(process.cwd(), '.env.local');
 const envContent = readFileSync(envPath, 'utf-8');
 const lines = envContent.split('\n');
 

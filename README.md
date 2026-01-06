@@ -1,6 +1,6 @@
 # Gestor Tiny · Ambienta
 
-> Painel interno da Ambienta que centraliza pedidos do Tiny ERP, sincroniza estoque/produtos no Supabase e expõe dashboards (App Router + Tailwind 4) hospedados na Vercel.
+> Painel interno da Ambienta que centraliza pedidos do Tiny ERP, sincroniza estoque/produtos no Supabase e expõe dashboards (App Router + Tailwind 4) hospedados na Hostinger (Node.js standalone).
 
 ## Visão Geral
 - **Frontend**: Next.js 16 (App Router) + React 19 + Tailwind 4. Todos os fluxos passam por `components/layout/AppLayout` e consomem APIs do próprio app (evitar Supabase direto no cliente).
@@ -24,13 +24,13 @@
 3. Pós-processamento automático: `runFreteEnrichment`, `normalizeMissingOrderChannels`, `sincronizarItensAutomaticamente` e o sync de produtos via `/api/admin/sync/produtos` (cron `cron_run_produtos_backfill` + cursor `catalog_backfill`, passando pelo `lib/tinyApi.ts`). A antiga função SQL `sync_produtos_from_tiny()` foi aposentada (veja `supabase/migrations/20251206120000_drop_sync_produtos_from_tiny.sql` e script legacy `scripts/applyViaSql.ts` está bloqueado).
 4. `/api/tiny/dashboard/resumo` agrega períodos atuais/anterior + canais/mapa, respeitando timezone `America/Sao_Paulo` e itens persistidos.
 
-> **Produção**: `public.cron_run_tiny_sync()` (definida em `supabase/migrations/20251128120000_cron_run_tiny_sync.sql`) chama `POST https://gestor-tiny.vercel.app/api/admin/cron/run-sync` a cada 15 min (`cron.schedule('tiny_sync_every_15min', '*/15 * * * *', ...)`). Ajuste a frequência alterando a migration ou executando `cron.unschedule/cron.schedule` direto no banco. O Vercel Cron ficou restrito a tarefas diárias (ex.: refresh de token).
+> **Produção**: `public.cron_run_tiny_sync()` (definida em `supabase/migrations/20251128120000_cron_run_tiny_sync.sql`) chama `POST https://gestao.ambientautilidades.com.br/api/admin/cron/run-sync` a cada 15 min (`cron.schedule('tiny_sync_every_15min', '*/15 * * * *', ...)`). Ajuste a frequência alterando a migration ou executando `cron.unschedule/cron.schedule` direto no banco. O cron principal é o pg_cron do Supabase; qualquer cron legado foi removido.
 
 ## Ambiente & Execução
 1. **Instalação**
 	```bash
 	npm install
-	cp .env.vercel.example .env.local # preencha chaves Tiny/Supabase
+	cp env.example .env.local # preencha chaves Tiny/Supabase
 	```
 2. **Desenvolvimento**
 	```bash

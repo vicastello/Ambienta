@@ -4,7 +4,7 @@ const { getShopeeEscrowDetail } = require('../lib/shopeeClient');
 // Configurar env
 const fs = require('fs');
 const path = require('path');
-const envPath = path.join(__dirname, '..', '.env.vercel');
+const envPath = path.join(__dirname, '..', '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf8');
 envContent.split('\n').forEach((line: string) => {
     const match = line.match(/^([^#=]+)=(.*)$/);

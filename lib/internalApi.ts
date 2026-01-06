@@ -7,11 +7,6 @@ export function resolveBaseUrl() {
   }
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, '');
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) {
-    const normalized = vercelUrl.startsWith('http') ? vercelUrl : `https://${vercelUrl}`;
-    return normalized.replace(/\/$/, '');
-  }
   return 'http://localhost:3000';
 }
 

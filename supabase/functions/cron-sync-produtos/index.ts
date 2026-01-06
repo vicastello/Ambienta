@@ -1,12 +1,17 @@
 // Edge Function: cron-sync-produtos
-// Chama o endpoint do Vercel para sincronizar produtos/estoque.
+// Chama o endpoint do app para sincronizar produtos/estoque.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 serve(async (req) => {
-  const baseUrl = Deno.env.get('VERCEL_API_BASE_URL'); // ex.: https://seu-app.vercel.app
+  const baseUrl = Deno.env.get('APP_BASE_URL')
+    ?? Deno.env.get('HOSTINGER_API_BASE_URL')
+    ?? Deno.env.get('VERCEL_API_BASE_URL'); // legado
 
   if (!baseUrl) {
-    return new Response(JSON.stringify({ ok: false, error: 'Missing VERCEL_API_BASE_URL' }), {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: 'Missing APP_BASE_URL (or HOSTINGER_API_BASE_URL/VERCEL_API_BASE_URL)',
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

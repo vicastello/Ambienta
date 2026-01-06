@@ -2,7 +2,7 @@
 
 ## 🎯 Problema Resolvido
 
-Em **produção no Vercel**, os cron jobs rodam automaticamente. Mas em **desenvolvimento local**, eles não funcionam. Este servidor simula os cron jobs localmente.
+Em **produção (Hostinger + Supabase pg_cron)**, os cron jobs rodam automaticamente. Mas em **desenvolvimento local**, eles não funcionam. Este servidor simula os cron jobs localmente.
 
 ## 🚀 Como Usar
 
@@ -159,9 +159,8 @@ console.table(data);
 - ✅ Sincroniza automaticamente a cada 2 horas
 - ⚠️ Lembre de iniciar o servidor quando começar a trabalhar
 
-### Em Produção (Vercel):
-- ✅ Os cron jobs rodam automaticamente
-- ✅ Configurados no `vercel.json`
+### Em Produção (Hostinger + Supabase pg_cron):
+- ✅ Os cron jobs rodam automaticamente via Supabase pg_cron
 - ✅ Não precisa do servidor de dev
 - ✅ Deploy e pronto!
 

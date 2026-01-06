@@ -1,5 +1,5 @@
 -- Migration: Adicionar cron job para renovação automática do token Tiny a cada 4 horas
--- Este cron é um backup para garantir que o token seja renovado mesmo se o Vercel Cron falhar
+-- Este cron é um backup para garantir que o token seja renovado mesmo se o cron principal falhar
 
 BEGIN;
 
@@ -17,7 +17,7 @@ SELECT cron.schedule(
   '0 */4 * * *',  -- A cada 4 horas
   $$SELECT
     net.http_get(
-      url := 'https://gestor-tiny.vercel.app/api/admin/cron/refresh-tiny-token',
+      url := 'https://gestao.ambientautilidades.com.br/api/admin/cron/refresh-tiny-token',
       headers := jsonb_build_object(
         'User-Agent', 'Supabase-PgCron/1.0'
       ),

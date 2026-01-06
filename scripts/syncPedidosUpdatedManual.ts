@@ -1,6 +1,6 @@
 /**
  * Script para rodar manualmente a sincronização de pedidos atualizados
- * (equivalente ao cron job que rodaria automaticamente no Vercel)
+ * (equivalente ao cron job que roda via pg_cron/cron externo)
  */
 
 import { supabaseAdmin } from "../lib/supabaseAdmin";

@@ -1,5 +1,5 @@
--- Fix Mercado Livre cron URL to use correct Vercel domain
--- Updates meli_sync_http function to use gestor-tiny.vercel.app
+-- Fix Mercado Livre cron URL to use the production domain
+-- Updates meli_sync_http function to use gestao.ambientautilidades.com.br
 
 set search_path = public, extensions;
 set check_function_bodies = off;
@@ -14,7 +14,7 @@ declare
   v_request_id bigint;
 begin
   select net.http_post(
-    url := 'https://gestor-tiny.vercel.app/api/marketplaces/mercado-livre/sync',
+    url := 'https://gestao.ambientautilidades.com.br/api/marketplaces/mercado-livre/sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'User-Agent', 'Supabase-PgCron/1.0'
@@ -31,7 +31,7 @@ begin
     'meli_sync_http dispatched via pg_cron',
     jsonb_build_object(
       'request_id', to_jsonb(v_request_id),
-      'url', 'https://gestor-tiny.vercel.app/api/marketplaces/mercado-livre/sync'
+      'url', 'https://gestao.ambientautilidades.com.br/api/marketplaces/mercado-livre/sync'
     )
   );
 exception

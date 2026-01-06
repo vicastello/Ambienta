@@ -6,7 +6,7 @@ Este documento é um guia único e acionável para assumir manutenção/evoluç�
 1) Visão Geral e Stack
 - Frontend: Next.js 16 (App Router) + React 19 + Tailwind CSS v4.
 - Backend: rotas API em app/api/* (Next.js Route Handlers). Integração com Supabase (Postgres + pg_cron). Integração com Tiny ERP.
-- Deploy: Vercel (app). Supabase como banco/funções/cron.
+- Deploy: Hostinger (Node.js standalone). Supabase como banco/funções/cron.
 - Filosofia: o cliente (browser) fala apenas com as nossas APIs internas; a API fala com o banco (supabase-admin) e integrações.
 
 Pastas principais
@@ -30,7 +30,7 @@ Pré-requisitos
 
 Passos
 1. npm install
-2. Copie variáveis: cp .env.vercel.example .env.local e preencha.
+2. Copie variáveis: cp env.example .env.local e preencha.
 3. Rodar local:
    - App: npm run dev
    - Cron local (opcional): npm run dev:cron

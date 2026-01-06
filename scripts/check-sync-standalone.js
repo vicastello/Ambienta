@@ -5,8 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-// Carregar .env.vercel
-const envPath = path.join(process.cwd(), '.env.vercel');
+// Carregar .env.local
+const envPath = path.join(process.cwd(), '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf-8');
 const lines = envContent.split('\n');
 

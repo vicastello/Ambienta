@@ -10,12 +10,12 @@ A API Tiny v3 possui o parâmetro `dataAtualizacao` no endpoint `/pedidos` que r
 
 **Documentação API:** `GET /pedidos?dataAtualizacao=yyyy-mm-dd`
 
-### 2. **Cron Job Automático**
-Criado endpoint `/api/admin/cron/sync-pedidos-updated` que:
-- Roda automaticamente **a cada 2 horas** (configurado no `vercel.json`)
-- Busca pedidos atualizados nas últimas 6 horas (configurável via env `SYNC_UPDATED_HOURS`)
-- Faz upsert no banco **preservando dados enriquecidos** (frete e canal)
-- Registra logs em `sync_logs` para auditoria
+### 2. **Sync Incremental Automático**
+Executa o modo incremental via `/api/tiny/sync`:
+- **Endpoint**: `POST /api/tiny/sync` com `{ "mode": "incremental" }`
+- **Agendamento**: Supabase pg_cron ou Hostinger Cron
+- **Janela**: usa `dataAtualizacao` com checkpoint em `sync_settings`
+- **Logs**: registra em `sync_logs` para auditoria
 
 ### 3. **Preservação de Dados Enriquecidos**
 O sistema garante que ao atualizar um pedido:
@@ -27,23 +27,23 @@ O sistema garante que ao atualizar um pedido:
 ## Arquivos Criados/Modificados
 
 ### Novos Arquivos
-1. **`app/api/admin/cron/sync-pedidos-updated/route.ts`**
-   - Endpoint do cron job
-   - Busca e atualiza pedidos modificados
+1. **`src/services/tinySyncService.ts`**
+   - Sync incremental usando `dataAtualizacao`
+   - Atualiza checkpoint em `sync_settings`
 
 2. **`scripts/testSyncUpdated.ts`**
    - Script de teste para validação
    - Mostra pedidos atualizados antes/depois
 
 ### Arquivos Modificados
-1. **`lib/syncProcessor.ts`**
-   - Exportou `upsertOrdersPreservingEnriched()` para uso em cron jobs
+1. **`app/api/tiny/sync/route.ts`**
+   - Roteia `mode: "incremental"` para o serviço incremental
 
 2. **`lib/tinyApi.ts`**
    - Adicionou suporte ao parâmetro `dataAtualizacao` em `listarPedidosTiny()`
 
-3. **`vercel.json`**
-   - Adicionou cron job que roda a cada 2 horas
+3. **`lib/syncProcessor.ts`**
+   - Reuso do upsert com preservação de dados enriquecidos
 
 ## Configuração
 
@@ -56,12 +56,19 @@ SYNC_UPDATED_HOURS=6
 CRON_SECRET=seu-secret-aqui
 ```
 
-### Cron Schedule (vercel.json)
-```json
-{
-  "path": "/api/admin/cron/sync-pedidos-updated",
-  "schedule": "0 */2 * * *"  // A cada 2 horas
-}
+### Cron Schedule (Supabase pg_cron)
+```sql
+SELECT cron.schedule(
+  'sync_pedidos_incremental',
+  '0 */2 * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://gestao.ambientautilidades.com.br/api/tiny/sync',
+    headers := '{"Content-Type": "application/json"}'::jsonb,
+    body := '{"mode": "incremental"}'::jsonb
+  );
+  $$
+);
 ```
 
 **Schedules disponíveis:**
@@ -81,7 +88,9 @@ npx tsx scripts/testSyncUpdated.ts
 ### 2. Teste Manual do Endpoint
 ```bash
 # Chamar o endpoint diretamente
-curl -X POST https://seu-dominio.vercel.app/api/admin/cron/sync-pedidos-updated
+curl -X POST https://gestao.ambientautilidades.com.br/api/tiny/sync \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"incremental"}'
 ```
 
 ### 3. Monitorar Logs
@@ -141,7 +150,7 @@ Os pedidos agora refletem automaticamente mudanças de status no Tiny.
 ## Troubleshooting
 
 ### Problema: Cron não está rodando
-**Solução:** Verificar configuração no Vercel Dashboard → Project Settings → Cron Jobs
+**Solução:** Verificar o job no Supabase (`cron.job`/`cron.schedule`) ou o cron configurado no hPanel da Hostinger.
 
 ### Problema: Rate limit (429)
 **Solução:** Aumentar delays no código ou reduzir frequência do cron
@@ -171,7 +180,7 @@ Os pedidos agora refletem automaticamente mudanças de status no Tiny.
 ## Referências
 
 - **API Tiny v3:** https://erp.tiny.com.br/public-api/v3/swagger
-- **Vercel Cron:** https://vercel.com/docs/cron-jobs
+- **Supabase pg_cron:** https://supabase.com/docs/guides/database/extensions/pg_cron
 - **Código relacionado:**
   - `lib/syncProcessor.ts` - Lógica de sync com preservação
   - `lib/tinyMapping.ts` - Mapeamento de dados Tiny → DB

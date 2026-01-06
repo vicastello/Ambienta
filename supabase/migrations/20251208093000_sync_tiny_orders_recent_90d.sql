@@ -16,7 +16,7 @@ select
     '30 8 * * *',
     $$select
       net.http_post(
-        url := 'https://gestor-tiny.vercel.app/api/tiny/sync?mode=orders&daysBack=90&force=1',
+        url := 'https://gestao.ambientautilidades.com.br/api/tiny/sync?mode=orders&daysBack=90&force=1',
         headers := jsonb_build_object('Content-Type', 'application/json'),
         body := '{}'::jsonb,
         timeout_milliseconds := 300000

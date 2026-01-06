@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script para manter o app rodando localmente enquanto Vercel está bloqueado
+# Script para manter o app rodando localmente quando precisar simular os cron jobs
 # Roda sincronizações a cada 30 minutos
 
 BASE_URL="http://localhost:3000"

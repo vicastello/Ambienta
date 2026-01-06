@@ -18,15 +18,8 @@ const CLIENT_SECRET = process.env.TINY_CLIENT_SECRET?.trim();
  * GET /api/admin/cron/refresh-tiny-token
  * 
  * Cron job que verifica e renova o token do Tiny automaticamente.
- * Deve ser chamado pelo Vercel Cron a cada 6 horas.
- * 
- * Configurar em vercel.json:
- * {
- *   "crons": [{
- *     "path": "/api/admin/cron/refresh-tiny-token",
- *     "schedule": "0 *\/6 * * *"
- *   }]
- * }
+ * Deve ser chamado via pg_cron (Supabase) ou cron externo (hPanel) a cada 6 horas.
+ * Veja TINY_TOKEN_MANAGEMENT.md para exemplos de agendamento.
  */
 export async function GET(request: Request) {
   try {

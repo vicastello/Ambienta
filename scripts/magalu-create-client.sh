@@ -59,7 +59,7 @@ if [ $? -eq 0 ]; then
     echo "2. Atualize o .env.local:"
     echo "   MAGALU_CLIENT_ID=<client_id>"
     echo "   MAGALU_CLIENT_SECRET=<client_secret>"
-    echo "3. Configure as mesmas variáveis no Vercel (produção)"
+    echo "3. Configure as mesmas variáveis no painel da Hostinger (produção)"
     echo "4. Teste em http://localhost:3000/marketplaces/magalu"
     echo ""
 else

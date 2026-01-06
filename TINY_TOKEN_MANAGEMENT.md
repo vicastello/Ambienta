@@ -33,16 +33,19 @@ CREATE TABLE tiny_tokens (
 - **Função**: Verifica e renova tokens proativamente
 - **Trigger**: Renova se faltam menos de 4 horas para expirar
 
-#### Configuração no `vercel.json`:
-```json
-{
-  "crons": [
-    {
-      "path": "/api/admin/cron/refresh-tiny-token",
-      "schedule": "0 */6 * * *"
-    }
-  ]
-}
+#### Configuração recomendada (Supabase pg_cron ou Hostinger Cron)
+Exemplo com pg_cron no Supabase:
+```sql
+SELECT cron.schedule(
+  'refresh_tiny_token',
+  '0 */6 * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://gestao.ambientautilidades.com.br/api/admin/cron/refresh-tiny-token',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer <CRON_SECRET>"}'::jsonb
+  );
+  $$
+);
 ```
 
 ### 3. Renovação Manual
@@ -50,10 +53,10 @@ CREATE TABLE tiny_tokens (
 #### Endpoint de Refresh Manual
 ```bash
 # Verificar status do token
-curl https://seu-dominio.vercel.app/api/tiny/auth/refresh
+curl https://gestao.ambientautilidades.com.br/api/tiny/auth/refresh
 
 # Forçar renovação
-curl -X POST https://seu-dominio.vercel.app/api/tiny/auth/refresh
+curl -X POST https://gestao.ambientautilidades.com.br/api/tiny/auth/refresh
 ```
 
 Resposta de status:
@@ -73,7 +76,7 @@ Resposta de status:
 ### 4. Quando Mudam as Credenciais
 
 #### Passo 1: Atualizar Variáveis de Ambiente
-No Vercel ou `.env.local`:
+No Hostinger (hPanel → Environment Variables) ou `.env.local`:
 ```bash
 TINY_CLIENT_ID=novo_client_id
 TINY_CLIENT_SECRET=novo_client_secret
@@ -81,17 +84,17 @@ TINY_CLIENT_SECRET=novo_client_secret
 
 #### Passo 2: Reconectar (se necessário)
 Se o refresh_token também ficou inválido:
-1. Acesse: `https://seu-dominio.vercel.app/api/tiny/auth/login`
+1. Acesse: `https://gestao.ambientautilidades.com.br/api/tiny/auth/login`
 2. Autorize no Tiny
 3. Sistema salvará automaticamente os novos tokens
 
 #### Passo 3: Testar
 ```bash
 # Verificar status
-curl https://seu-dominio.vercel.app/api/tiny/auth/refresh
+curl https://gestao.ambientautilidades.com.br/api/tiny/auth/refresh
 
 # Ou forçar renovação
-curl -X POST https://seu-dominio.vercel.app/api/tiny/auth/refresh
+curl -X POST https://gestao.ambientautilidades.com.br/api/tiny/auth/refresh
 ```
 
 ### 5. Monitoramento
@@ -128,7 +131,7 @@ npx tsx scripts/checkToken.ts
 **Sintoma**: Renovação automática começa a falhar
 **Solução**:
 1. Atualizar `TINY_CLIENT_ID` e `TINY_CLIENT_SECRET`
-2. Deploy no Vercel
+2. Deploy na Hostinger
 3. Reconectar se necessário
 
 ### 7. Fluxo Completo
@@ -192,7 +195,7 @@ SUPABASE_SERVICE_ROLE_KEY=xxx
 # Tiny ERP
 TINY_CLIENT_ID=xxx
 TINY_CLIENT_SECRET=xxx
-TINY_REDIRECT_URI=http://localhost:3000/api/tiny/auth/callback
+TINY_REDIRECT_URI=https://gestao.ambientautilidades.com.br/api/tiny/auth/callback
 
 # Segurança (opcional, recomendado para produção)
 CRON_SECRET=algum_segredo_forte

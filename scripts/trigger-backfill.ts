@@ -6,8 +6,8 @@ import fetch from 'node-fetch'; // Standard available in recent node, or use bui
 try {
     dotenv.config({ path: '.env.local' });
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        console.log('Falling back to .env.vercel');
-        dotenv.config({ path: '.env.vercel' });
+        console.log('Falling back to .env.local');
+        dotenv.config({ path: '.env.local' });
     }
 } catch (e) { }
 

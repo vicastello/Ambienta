@@ -5,8 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-// Carregar .env.vercel
-const envPath = path.join(process.cwd(), '.env.vercel');
+// Carregar .env.local
+const envPath = path.join(process.cwd(), '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf-8');
 const lines = envContent.split('\n');
 
@@ -113,7 +113,7 @@ async function testTokenRefresh() {
                     console.log('\n💡 SOLUÇÃO:');
                     console.log('   1. Acesse o painel de desenvolvedor do Tiny');
                     console.log('   2. Verifique o CLIENT_ID e CLIENT_SECRET da sua aplicação');
-                    console.log('   3. Atualize as variáveis de ambiente (.env.vercel e Vercel Dashboard)');
+                    console.log('   3. Atualize as variáveis de ambiente (.env.local e painel da Hostinger)');
                     console.log('   4. Reconecte a aplicação se necessário');
                 }
             } catch (e) {

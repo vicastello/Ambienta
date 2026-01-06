@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 try {
     dotenv.config({ path: '.env.local' });
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-        dotenv.config({ path: '.env.vercel' });
+        dotenv.config({ path: '.env.local' });
     }
 } catch (e) { }
 

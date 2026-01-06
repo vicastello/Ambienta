@@ -11,7 +11,7 @@ declare
   v_request_id bigint;
 begin
   select net.http_post(
-    url := 'https://gestor-tiny.vercel.app/api/admin/sync/produtos',
+    url := 'https://gestao.ambientautilidades.com.br/api/admin/sync/produtos',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'User-Agent', 'Supabase-PgCron/1.0'
@@ -35,7 +35,7 @@ begin
     'cron_run_produtos_backfill dispatched via pg_cron',
     jsonb_build_object(
       'request_id', to_jsonb(v_request_id),
-      'url', 'https://gestor-tiny.vercel.app/api/admin/sync/produtos'
+      'url', 'https://gestao.ambientautilidades.com.br/api/admin/sync/produtos'
     )
   );
 exception

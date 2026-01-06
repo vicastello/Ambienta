@@ -6,7 +6,7 @@ import { Client } from 'pg';
 // Load envs BEFORE importing lib
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
-dotenv.config({ path: '.env.vercel', override: true });
+dotenv.config({ path: '.env.local', override: true });
 
 // Dynamic import to ensure envs are loaded first
 const { supabaseAdmin } = require('../lib/supabaseAdmin');

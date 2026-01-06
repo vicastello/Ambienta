@@ -1,5 +1,5 @@
--- Fix estoque round robin cron URL to use correct Vercel domain
--- Updates tiny_estoque_round_robin_http function to use gestor-tiny.vercel.app
+-- Fix estoque round robin cron URL to use the production domain
+-- Updates tiny_estoque_round_robin_http function to use gestao.ambientautilidades.com.br
 
 set search_path = public, extensions;
 set check_function_bodies = off;
@@ -22,7 +22,7 @@ begin
   end if;
 
   select net.http_post(
-    url := 'https://gestor-tiny.vercel.app/api/tiny/cron/estoque-round-robin',
+    url := 'https://gestao.ambientautilidades.com.br/api/tiny/cron/estoque-round-robin',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || v_secret,

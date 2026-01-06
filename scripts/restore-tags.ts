@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 // Load env
 dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
-dotenv.config({ path: '.env.vercel', override: true });
+dotenv.config({ path: '.env.local', override: true });
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -54,11 +54,11 @@ npx tsx scripts/syncPedidosUpdatedManual.ts
 - ✅ Controle total
 - ✅ Não fica rodando em background
 
-### Em Produção (Vercel)
+### Em Produção (Hostinger + Supabase pg_cron)
 
 **Não precisa fazer nada!** ✅
 
-Os cron jobs rodam automaticamente conforme configurado no `vercel.json`.
+Os cron jobs rodam automaticamente via Supabase pg_cron (ou Hostinger Cron, se configurado).
 
 ---
 
@@ -362,7 +362,7 @@ npm run dev          # Terminal do Next.js
 **Em Produção:**
 ```bash
 # Só fazer deploy - cron roda automaticamente
-vercel --prod
+git push origin main
 ```
 
 **Manual (quando precisar):**
@@ -384,4 +384,4 @@ npx tsx scripts/syncPedidosUpdatedManual.ts
 
 **Status**: ✅ Sistema 100% funcional e testado
 
-**Última atualização**: 21/11/2025
+**Última atualização**: 06/01/2026

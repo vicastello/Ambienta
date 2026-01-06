@@ -16,7 +16,7 @@ SELECT cron.schedule(
   '*/15 * * * *',
   $$SELECT
     net.http_post(
-      url := 'https://gestor-tiny.vercel.app/api/admin/cron/fix-pedido-itens',
+      url := 'https://gestao.ambientautilidades.com.br/api/admin/cron/fix-pedido-itens',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'x-cron-secret', '5919ebd248ec2f12378b7a6efec85e47a510bc296e1b3469c883be9507a533e2',

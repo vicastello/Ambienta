@@ -70,10 +70,11 @@ MAGALU_API_KEY_ID=<novo_id_aqui>
 MAGALU_API_KEY_SECRET=<novo_secret_aqui>
 ```
 
-### 2. Atualizar no Vercel:
-```bash
-vercel env add MAGALU_API_KEY_ID
-vercel env add MAGALU_API_KEY_SECRET
+### 2. Atualizar no Hostinger:
+No hPanel → **Node.js App → Environment Variables**:
+```
+MAGALU_API_KEY_ID=<novo_id_aqui>
+MAGALU_API_KEY_SECRET=<novo_secret_aqui>
 ```
 
 ### 3. Testar Sincronização:

@@ -9,7 +9,7 @@ import type { Database, Json } from '@/src/types/db-public';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Em ambiente serverless (Vercel), "background" não é confiável.
+// Em ambiente serverless, "background" não é confiável.
 // Permitimos até 5 minutos para rodar sync recent/repair inline.
 export const maxDuration = 300;
 

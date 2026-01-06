@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 
 // Load environment variables manually since we are running a script
-const envPath = path.resolve(process.cwd(), '.env.vercel');
+const envPath = path.resolve(process.cwd(), '.env.local');
 if (fs.existsSync(envPath)) {
     const envConfig = dotenv.parse(fs.readFileSync(envPath));
     for (const k in envConfig) {

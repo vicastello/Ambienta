@@ -196,7 +196,7 @@ SELECT * FROM shopee_sync_cursor;
 
 ### Para fazer sync inicial (90 dias):
 ```bash
-curl -X POST https://seu-dominio.vercel.app/api/marketplaces/shopee/sync \
+curl -X POST https://gestao.ambientautilidades.com.br/api/marketplaces/shopee/sync \
   -H "Content-Type: application/json" \
   -d '{"initial": true}'
 ```

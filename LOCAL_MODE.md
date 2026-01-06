@@ -1,6 +1,6 @@
 # 🖥️ Modo Local - Guia de Uso
 
-Enquanto o Vercel estiver bloqueado (até 31/12), siga este guia para usar o app localmente.
+Guia para usar o app localmente, independente do deploy em produção.
 
 ## Iniciar o App
 
@@ -40,15 +40,14 @@ curl -X POST http://localhost:3000/api/marketplaces/shopee/sync-escrow \
   -d '{"orderSn": "SEU_PEDIDO"}'
 ```
 
-## Quando Vercel Voltar (31/12)
+## Quando precisar fazer deploy em produção
 
-Basta executar:
 ```bash
-npx vercel --prod
+git push origin main
 ```
 
-Ou aguardar o deploy automático via GitHub.
+O CI faz o deploy na Hostinger automaticamente.
 
 > [!NOTE]
 > Todos os dados sincronizados localmente vão para o mesmo Supabase.
-> Nada precisa ser migrado quando o Vercel voltar.
+> Nada precisa ser migrado quando o deploy em produção acontecer.

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Read env vars
-const envPath = path.join(__dirname, '..', '.env.vercel');
+const envPath = path.join(__dirname, '..', '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf8');
 const envVars: Record<string, string> = {};
 envContent.split('\n').forEach((line: string) => {

@@ -237,7 +237,7 @@ BEGIN
   END IF;
 
   PERFORM net.http_post(
-    url := 'https://gestor-tiny.vercel.app/api/tiny/sync/itens',
+    url := 'https://gestao.ambientautilidades.com.br/api/tiny/sync/itens',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'User-Agent', 'Supabase-Trigger/1.0'

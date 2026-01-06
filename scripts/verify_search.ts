@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 
-const envPath = path.join(process.cwd(), '.env.vercel');
+const envPath = path.join(process.cwd(), '.env.local');
 const envContent = fs.readFileSync(envPath, 'utf-8');
 const envVars: any = {};
 envContent.split('\n').forEach(line => {

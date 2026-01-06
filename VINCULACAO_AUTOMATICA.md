@@ -91,17 +91,31 @@ O sistema pode ser configurado para rodar automaticamente todos os dias:
 **Configuração recomendada:**
 - Executar diariamente às 2h da manhã
 - Processar últimos 7 dias (para pegar pedidos recentes)
-- Configurar via Vercel Cron ou similar
+- Configurar via Supabase pg_cron (recomendado) ou Cron Jobs do hPanel
 
-**Exemplo no `vercel.json`:**
+**Exemplo (Supabase pg_cron):**
 
-```json
-{
-  "crons": [{
-    "path": "/api/admin/cron/auto-link-orders?daysBack=7",
-    "schedule": "0 2 * * *"
-  }]
-}
+```sql
+SELECT cron.schedule(
+  'auto-link-orders-7d',
+  '0 2 * * *',
+  $cron$
+  SELECT net.http_get(
+    url := 'https://gestao.ambientautilidades.com.br/api/admin/cron/auto-link-orders?daysBack=7',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer SEU_CRON_SECRET',
+      'User-Agent', 'Supabase-PgCron/1.0'
+    )
+  )
+  $cron$
+);
+```
+
+**Exemplo (Hostinger Cron Jobs):**
+
+```bash
+curl -X GET -H "Authorization: Bearer SEU_CRON_SECRET" \
+  https://gestao.ambientautilidades.com.br/api/admin/cron/auto-link-orders?daysBack=7
 ```
 
 ## Estrutura do Código
@@ -277,7 +291,7 @@ Cada execução retorna:
 ## Próximos Passos Sugeridos
 
 1. **Configurar Cron Diário**
-   - Adicionar ao `vercel.json` ou sistema de cron
+   - Adicionar no Supabase pg_cron ou no cron do hPanel
    - Rodar todos os dias às 2h da manhã
 
 2. **Monitoramento**

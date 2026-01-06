@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
-const envContent = fs.readFileSync('/Users/vitorcastello/projetos/gestor-tiny/.env.vercel', 'utf-8');
+const envContent = fs.readFileSync('/Users/vitorcastello/projetos/gestor-tiny/.env.local', 'utf-8');
 const envVars: Record<string, string> = {};
 envContent.split('\n').forEach(line => {
     const m = line.match(/^([^=]+)=(.*)$/);

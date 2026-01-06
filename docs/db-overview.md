@@ -3,10 +3,10 @@
 ## Status atual de automações / cron (nov/2025)
 - **pg_cron no Supabase**: a migration `20251128120000_cron_run_tiny_sync.sql` habilita `pg_net` + `pg_cron`, cria a função `public.cron_run_tiny_sync()` e agenda o job `tiny_sync_every_15min`, que chama `/api/admin/cron/run-sync` para sincronizar pedidos, enrich e produtos a cada 15 minutos direto do banco.
 - **Scripts locais**: `scripts/devCronServer.ts`, `start-dev-cron.sh` e afins apenas simulam os cron jobs em desenvolvimento (`npm run dev:cron`). Eles não são implantados nem acionados em produção.
-- **Produção (Vercel)**: o cron em `vercel.json` continua disponível apenas para o refresh diário de token (`/api/admin/cron/refresh-tiny-token`). A sincronização contínua agora depende exclusivamente do job `pg_cron` no Supabase.
+- **Produção (Hostinger)**: o refresh de token e os syncs automáticos rodam via Supabase pg_cron (ou cron externo no hPanel, se configurado). A sincronização contínua depende do job `pg_cron` no Supabase.
 
 - **Cron de sincronização (Supabase pg_cron)**
-  - Função: `public.cron_run_tiny_sync()` chama `https://gestor-tiny.vercel.app/api/admin/cron/run-sync` via `net.http_post`, registrando logs em `sync_logs` para auditoria.
+  - Função: `public.cron_run_tiny_sync()` chama `https://gestao.ambientautilidades.com.br/api/admin/cron/run-sync` via `net.http_post`, registrando logs em `sync_logs` para auditoria.
   - Job agendado: `cron.schedule('tiny_sync_every_15min', '*/15 * * * *', $$select public.cron_run_tiny_sync();$$)` garante pedidos recentes, enrich e sync de produtos automaticamente.
   - Ajustes: para alterar frequência ou pausar, use `cron.unschedule('tiny_sync_every_15min')`/`cron.schedule(...)` via SQL ou edite a migration incremental.
 

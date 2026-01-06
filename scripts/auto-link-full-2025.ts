@@ -10,10 +10,9 @@ import { existsSync } from 'fs';
 
 // Load env FIRST
 const envFiles = [
-    '.env.development.local',
-    '.env.vercel.production.local',
-    '.env.vercel',
     '.env.local',
+    '.env.production.local',
+    '.env.development.local',
 ];
 
 for (const envFile of envFiles) {

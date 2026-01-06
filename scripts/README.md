@@ -92,10 +92,10 @@ npx tsx scripts/jobSyncProdutos.ts
 
 Ou via API:
 ```bash
-curl -X POST http://localhost:3000/api/admin/cron/sync-produtos
+curl -X POST http://localhost:3000/api/admin/sync/produtos
 ```
 
-**Agendamento (Vercel):** Configurado em `vercel.json` para rodar a cada 6 horas.
+**Agendamento (Supabase pg_cron/Hostinger):** configure um cron externo para chamar `/api/admin/sync/produtos` (ex.: a cada 6 horas).
 
 ## 🛒 Itens dos Pedidos
 

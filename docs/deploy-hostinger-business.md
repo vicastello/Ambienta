@@ -33,7 +33,7 @@ No hPanel -> Sites -> Gerenciar -> **Aplicativo Node.js**:
 
 ### Variáveis de Ambiente
 
-Configure as variáveis no painel (Environment Variables) conforme `env.example` (ou `.env.example`).
+Configure as variáveis no painel (Environment Variables) conforme `env.example`.
 **Crítico**:
 - `NEXT_PUBLIC_SUPABASE_URL`: URL do projeto Supabase.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Chave pública.

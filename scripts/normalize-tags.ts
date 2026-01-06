@@ -5,7 +5,7 @@ import * as dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
 // Load env before creating client
-dotenv.config({ path: '.env.vercel' });
+dotenv.config({ path: '.env.local' });
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

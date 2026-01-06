@@ -25,7 +25,7 @@
   • Fallback: se o pedido não retornar itens, tenta extrair do `raw` armazenado em `tiny_orders`.
   • Antes de inserir, garante que os produtos existam (`ensureProdutosNoCatalog`) e atualiza estoque (`atualizarEstoqueProdutos`).
   • `salvarItensLote` e `sincronizarItensAutomaticamente` controlam delays e retries para respeitar o limite ~100 req/min.
-- Gatilho automático: `supabase/migrations/20251122124500_trigger_auto_sync_itens.sql` (também em `supabase-export/supabase/migrations/20251122124500_trigger_auto_sync_itens.sql`) define a função `tiny_orders_auto_sync_itens()` e o trigger `trg_tiny_orders_auto_sync_itens`. Ele usa `pg_net.http_post` para chamar `https://gestor-tiny.vercel.app/api/tiny/sync/itens` imediatamente após cada inserção em `tiny_orders`.
+- Gatilho automático: `supabase/migrations/20251122124500_trigger_auto_sync_itens.sql` (também em `supabase-export/supabase/migrations/20251122124500_trigger_auto_sync_itens.sql`) define a função `tiny_orders_auto_sync_itens()` e o trigger `trg_tiny_orders_auto_sync_itens`. Ele usa `pg_net.http_post` para chamar `https://gestao.ambientautilidades.com.br/api/tiny/sync/itens` imediatamente após cada inserção em `tiny_orders`.
 - O fallback `sincronizarItensAutomaticamente` é usado em `lib/syncProcessor.ts` e pode ser acionado manualmente via scripts/cron (ex.: `scripts/syncPedidoItens.ts`).
 
 ## 4. Enrichment e logging
@@ -57,7 +57,7 @@
 
 ## 7. Pontos críticos identificados até aqui
 1. Qualquer pedido persistido só terá itens após `sincronizarItensPorPedidos`. Em caso de erro ou 429, o job atual apenas loga e tenta `sincronizarItensAutomaticamente` como fallback.
-2. A trigger `tiny_orders_auto_sync_itens` usa o domínio fixo `gestor-tiny.vercel.app`. Em ambientes diferentes (preview, local) essa chamada pode falhar silenciosamente.
+2. A trigger `tiny_orders_auto_sync_itens` usa o domínio fixo de produção. Se o domínio mudar, atualize a função/trigger para o novo host.
 3. `tinyApi` e `pedidoItensHelper` fazem retries, mas não logam cada pedido falho com contexto estruturado, o que dificulta auditoria.
 4. Ainda falta um job periódico para detectar `tiny_orders` sem itens e reaplicar `sincronizarItensPorPedidos` com logs e retries claros.
 
@@ -65,7 +65,7 @@
 - Workflow em `.github/workflows/cron-fix-pedido-itens.yml` roda a cada 15 minutos (`*/15 * * * *`) e via `workflow_dispatch`.
 - Chama `POST /api/admin/cron/fix-pedido-itens` com `dias=3`, `limit=400`, `force=true`, header `x-cron-secret`.
 - Secrets no repositório GitHub necessários:
-  - `APP_URL_PROD` → URL do app em produção (ex.: `https://gestor-tiny-XXXX.vercel.app`).
+  - `APP_URL_PROD` → URL do app em produção (ex.: `https://gestao.ambientautilidades.com.br`).
   - `CRON_FIX_PEDIDO_ITENS_SECRET` → mesmo valor de `CRON_SECRET` configurado no app.
 - Rodar manualmente:
   - Via Actions: acione o workflow `Cron Fix Pedido Itens` (workflow_dispatch).

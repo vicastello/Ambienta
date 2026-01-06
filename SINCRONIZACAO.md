@@ -151,8 +151,8 @@ curl -X POST http://localhost:3000/api/admin/enrich-frete \
     "dataFinal": "2025-11-24"
   }'
 
-# Produção (Vercel)
-curl -X POST https://gestor-tiny.vercel.app/api/admin/enrich-frete \
+# Produção (Hostinger)
+curl -X POST https://gestao.ambientautilidades.com.br/api/admin/enrich-frete \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "range",
@@ -212,7 +212,7 @@ SELECT cron.schedule(
   '0 2 * * *', -- Todo dia às 2h da manhã
   $$
   SELECT net.http_post(
-    url := 'https://seu-app.vercel.app/api/tiny/sync',
+    url := 'https://gestao.ambientautilidades.com.br/api/tiny/sync',
     headers := '{"Content-Type": "application/json"}'::jsonb,
     body := '{"mode": "recent", "diasRecentes": 3}'::jsonb
   );

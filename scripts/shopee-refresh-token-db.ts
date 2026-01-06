@@ -10,17 +10,11 @@ import path from 'path';
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
-// Load .env.vercel para Supabase, então .env.local para sobrescrever com credenciais Shopee corretas
-const envVercelPath = path.resolve(process.cwd(), '.env.vercel');
-if (fs.existsSync(envVercelPath)) {
-    const envConfig = dotenv.parse(fs.readFileSync(envVercelPath));
+// Load .env.local (Supabase + Shopee)
+const envPath = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(envPath)) {
+    const envConfig = dotenv.parse(fs.readFileSync(envPath));
     for (const k in envConfig) process.env[k] = envConfig[k];
-}
-
-const envLocalPath = path.resolve(process.cwd(), '.env.local');
-if (fs.existsSync(envLocalPath)) {
-    const envConfig = dotenv.parse(fs.readFileSync(envLocalPath));
-    for (const k in envConfig) process.env[k] = envConfig[k]; // override
 }
 
 const supabase = createClient(

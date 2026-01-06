@@ -2,7 +2,7 @@
 
 ### Visão geral
 - `pg_cron` agenda o job `tiny_produtos_backfill_hourly`, que executa `public.cron_run_produtos_backfill()` uma vez por hora.
-- A função usa `pg_net.http_post` para chamar `https://gestor-tiny.vercel.app/api/admin/sync/produtos` com `mode: 'backfill'`, `modeLabel: 'backfill_cron'`, `limit: 10`, `workers: 1`, `enrichEstoque: false` e `cursorKey: 'catalog_backfill'`.
+- A função usa `pg_net.http_post` para chamar `https://gestao.ambientautilidades.com.br/api/admin/sync/produtos` com `mode: 'backfill'`, `modeLabel: 'backfill_cron'`, `limit: 10`, `workers: 1`, `enrichEstoque: false` e `cursorKey: 'catalog_backfill'`.
 - `/api/admin/sync/produtos` delega para `syncProdutosFromTiny` (`src/lib/sync/produtos.ts`). Esse helper respeita rate limit, persiste estado em `produtos_sync_cursor` e grava telemetria em `sync_logs`.
 - A UI segue consumindo `/api/produtos` e `/api/tiny/dashboard/resumo`, que refletem `tiny_produtos` após cada rodada do cron ou de execuções manuais.
 
@@ -44,7 +44,7 @@
 4. Se tudo OK, deixe o cron seguir sozinho; ele continuará do último `backfillNextOffset` gravado.
 
 ### Variáveis de ambiente relevantes
-- **Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`, `DATABASE_URL` (para scripts que usam pg direto).
+- **Hostinger (produção)**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`, `DATABASE_URL` (para scripts que usam pg direto).
 - **Supabase**: precisa do `pg_net` e `pg_cron` habilitados; a migration já executa `create extension if not exists`. Não há mais Edge Function para esse fluxo.
 
 ### Dicas gerais

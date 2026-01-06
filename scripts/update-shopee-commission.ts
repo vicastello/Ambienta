@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 
-const envContent = fs.readFileSync('.env.vercel', 'utf-8');
+const envContent = fs.readFileSync('.env.local', 'utf-8');
 const envVars: Record<string, string> = {};
 envContent.split('\n').forEach(line => {
     const m = line.match(/^([^=]+)=(.*)$/);

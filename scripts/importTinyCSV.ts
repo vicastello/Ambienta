@@ -19,10 +19,9 @@ import type { Database } from '../src/types/db-public';
 
 // Load env from multiple possible locations
 const envFiles = [
-    '.env.development.local',
-    '.env.vercel.production.local',
-    '.env.vercel',
     '.env.local',
+    '.env.production.local',
+    '.env.development.local',
 ];
 
 for (const envFile of envFiles) {

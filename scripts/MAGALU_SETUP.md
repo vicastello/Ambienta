@@ -89,9 +89,9 @@ MAGALU_CLIENT_SECRET=xyz789...
 MAGALU_REDIRECT_URI=http://localhost:3000/api/magalu/oauth/callback
 ```
 
-### Configurar no Vercel (Produção):
+### Configurar no Hostinger (Produção):
 
-1. Acesse: https://vercel.com/seu-projeto/settings/environment-variables
+1. Acesse: hPanel → **Node.js App → Environment Variables**
 2. Adicione as variáveis:
    - `MAGALU_CLIENT_ID`
    - `MAGALU_CLIENT_SECRET`

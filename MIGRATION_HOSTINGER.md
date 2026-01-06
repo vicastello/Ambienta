@@ -11,7 +11,7 @@ No painel Hostinger -> Sites -> Gerenciar -> **Aplicativo Node.js**:
 
 ## 2. Environment Variables
 
-Configure as seguintes variáveis no painel da Hostinger. Baseado em `.env.example`:
+Configure as seguintes variáveis no painel da Hostinger. Baseado em `env.example`:
 
 ### Essenciais (Boot do App)
 *   `NEXT_PUBLIC_SUPABASE_URL`

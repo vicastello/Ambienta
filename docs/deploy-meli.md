@@ -14,15 +14,15 @@ Verifique na UI do Supabase se as tabelas `public.meli_orders` e `public.meli_or
 select * from cron.job where jobname = 'meli_orders_sync_15min';
 ```
 
-## Passo 4: Garantir envs na Vercel (Mercado Livre)
+## Passo 4: Garantir envs na Hostinger (Mercado Livre)
 - `ML_APP_ID`
 - `ML_ACCESS_TOKEN`
 - `ML_CLIENT_SECRET`
 - `ML_REDIRECT_URI`
 - `ML_REFRESH_TOKEN` (se estiver usando refresh)
 
-## Passo 5: Deploy do Next (Vercel)
-Faça o deploy do projeto na Vercel após as envs estarem corretas.
+## Passo 5: Deploy do Next (Hostinger)
+Faça o deploy do projeto na Hostinger após as envs estarem corretas.
 
 ## Passo 6: Rodar um sync manual em produção (opcional para validar)
 ```bash

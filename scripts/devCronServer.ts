@@ -1,15 +1,14 @@
 /**
  * Servidor de desenvolvimento para rodar tarefas automáticas localmente
  * 
- * Este script simula TODOS os cron jobs do Vercel + Supabase em ambiente de desenvolvimento.
+ * Este script simula TODOS os cron jobs (Supabase + endpoints HTTP) em ambiente de desenvolvimento.
  * Ele roda em background e executa periodicamente:
  * - Sincronização de pedidos Tiny (a cada 2 horas)
  * - Sincronização de itens (junto com pedidos)
  * - Sincronização de marketplaces: Shopee, Mercado Livre, Magalu
  * - Refresh de tokens (a cada 6 horas)
  * 
- * IMPORTANTE: Com Vercel offline até 31/12/2025, este script é a única forma
- * de manter as sincronizações funcionando.
+ * IMPORTANTE: Use este script quando precisar testar/rodar os jobs localmente.
  * 
  * Uso:
  *   npm run dev:cron    (separado)
@@ -345,7 +344,7 @@ function formatNextRun(ms: number): string {
 async function main() {
   console.log('\n╔═════════════════════════════════════════════════════════════════╗');
   console.log('║  🤖 SERVIDOR DE DESENVOLVIMENTO - SINCRONIZAÇÃO LOCAL         ║');
-  console.log('║  ⚠️  Vercel offline até 31/12 - rodando tudo localmente       ║');
+  console.log('║  ⚠️  Jobs rodando localmente (modo dev)                      ║');
   console.log('╚═════════════════════════════════════════════════════════════════╝\n');
 
   console.log('📝 Configuração:');
