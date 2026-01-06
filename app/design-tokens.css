@@ -1200,7 +1200,7 @@
         font-size: 0.875rem;
         border-collapse: separate;
         border-spacing: 0;
-        table-layout: fixed;
+        table-layout: auto;
     }
 
     .tbody-divider {

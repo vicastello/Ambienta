@@ -36,6 +36,8 @@ import { OrderHistoryTab } from './components/OrderHistoryTab';
 import { AlertsPanel } from './components/AlertsPanel';
 import { SupplierGroupView } from './components/SupplierGroupView';
 import { StickyTotalsBar } from './components/StickyTotalsBar';
+import { ColumnVisibilityDropdown } from './components/ColumnVisibilityDropdown';
+import { useColumnVisibility } from './hooks/useColumnVisibility';
 import { MultiSelectDropdown } from '@/components/MultiSelectDropdown';
 import { useToast } from '../components/ui/Toast';
 import { AppDatePicker } from './components/AppDatePicker';
@@ -196,7 +198,19 @@ export default function ComprasClient() {
   const savedOrdersLoadedRef = useRef(false);
   const isMountedRef = useRef(true);
   const manualItemIdRef = useRef(MANUAL_ITEM_ID_SEED);
+  const isFullReloadRef = useRef(false); // Flag para distinguir reload completo de edição individual
   const { toast } = useToast();
+
+  // Column visibility state
+  const {
+    visibility: columnVisibility,
+    toggleColumn,
+    showAll: showAllColumns,
+    hideAll: hideAllColumns,
+    restoreDefaults: restoreColumnDefaults,
+    visibleCount: visibleColumnCount,
+    totalCount: totalColumnCount,
+  } = useColumnVisibility();
 
   const fetchSavedOrdersFromApi = useCallback(async () => {
     setSavedOrdersSyncing(true);
@@ -257,6 +271,7 @@ export default function ComprasClient() {
         embalagem_qtd: Math.max(Number(item.embalagem_qtd) || 1, 1),
         observacao_compras: item.observacao_compras ?? null,
       }));
+      isFullReloadRef.current = true; // Marcar como reload completo
       setDados(produtosNormalizados);
       setLastUpdatedAt(new Date().toISOString());
     } catch (error: unknown) {
@@ -482,6 +497,42 @@ export default function ComprasClient() {
       setManualEntry(createManualEntry());
       return;
     }
+
+    // Se não é um reload completo (é apenas edição de campo), não executar smart merge
+    if (!isFullReloadRef.current) {
+      // Apenas garantir que os overrides de pedidos sejam limpos para IDs inexistentes
+      const validIds = new Set(dados.map((item) => item.id_produto_tiny));
+      setPedidoOverrides((prev) => {
+        const next: Record<number, number> = {};
+        let changed = false;
+        for (const [key, value] of Object.entries(prev)) {
+          const id = Number(key);
+          if (validIds.has(id)) {
+            next[id] = value;
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      setPedidoInputDrafts((prev) => {
+        const next: Record<number, string> = {};
+        let changed = false;
+        for (const [key, value] of Object.entries(prev)) {
+          const id = Number(key);
+          if (validIds.has(id)) {
+            next[id] = value;
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      return;
+    }
+
+    // Resetar flag para próximas edições
+    isFullReloadRef.current = false;
 
 
     // Detectar novos itens que devem ser auto-selecionados (sugestão > 0)
@@ -1857,6 +1908,17 @@ export default function ComprasClient() {
                       Não Sel.
                     </button>
                   </div>
+
+                  {/* Column visibility toggle */}
+                  <ColumnVisibilityDropdown
+                    visibility={columnVisibility}
+                    onToggle={toggleColumn}
+                    onShowAll={showAllColumns}
+                    onHideAll={hideAllColumns}
+                    onRestoreDefaults={restoreColumnDefaults}
+                    visibleCount={visibleColumnCount}
+                    totalCount={totalColumnCount}
+                  />
                 </div>
               </div>
             </div>
@@ -1891,6 +1953,7 @@ export default function ComprasClient() {
                   onEditManualItem={handleEditManualItem}
                   onDeleteManualItem={handleDeleteManualItem}
                   isLoading={loading}
+                  visibleColumns={columnVisibility}
                 />
               </div>
             </div>

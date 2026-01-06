@@ -22,6 +22,7 @@ import {
     SortKey,
     SortDirection,
 } from '../types';
+import type { ColumnVisibility } from '../hooks/useColumnVisibility';
 
 type ProductTableProps = {
     products: ProdutoDerivado[];
@@ -52,6 +53,8 @@ type ProductTableProps = {
     onEditManualItem?: (id: number, item: Partial<ManualItem>) => void;
     onDeleteManualItem?: (id: number) => void;
     isLoading?: boolean;
+    // Column visibility
+    visibleColumns?: ColumnVisibility;
 };
 
 // Skeleton Row Component
@@ -153,6 +156,7 @@ export function ProductTable({
     onEditManualItem,
     onDeleteManualItem,
     isLoading = false,
+    visibleColumns,
 }: ProductTableProps) {
 
     const parentRef = useRef<HTMLDivElement>(null);
@@ -161,6 +165,59 @@ export function ProductTable({
     const [newItemInput, setNewItemInput] = React.useState({ nome: '', fornecedor_codigo: '', quantidade: '' });
     const [editingItemId, setEditingItemId] = React.useState<number | null>(null);
     const [editingItemData, setEditingItemData] = React.useState({ nome: '', fornecedor_codigo: '', quantidade: '' });
+
+    // Defaults quando visibleColumns não é passado (todas visíveis)
+    const cols = visibleColumns ?? {
+        sku: true,
+        fornecedor: true,
+        embalagem: true,
+        leadTime: true,
+        estoque: true,
+        ruptura: true,
+        consumoPeriodo: true,
+        consumoMensal: true,
+        sugestao: true,
+        custo: true,
+        total: true,
+        observacao: true,
+        status: true,
+    };
+
+    // Cálculo dinâmico das posições sticky baseado nas colunas visíveis
+    const stickyPositions = useMemo(() => {
+        const CHECKBOX_WIDTH = 50;
+        const PRODUTO_WIDTH = 320;
+        const SKU_WIDTH = 90;
+        const FORNECEDOR_WIDTH = 110;
+        const EMBALAGEM_WIDTH = 60;
+
+        let offset = CHECKBOX_WIDTH; // Checkbox sempre em left: 0
+        const positions = {
+            produto: `${offset}px`,
+            sku: '',
+            fornecedor: '',
+            embalagem: '',
+        };
+
+        offset += PRODUTO_WIDTH;
+
+        if (cols.sku) {
+            positions.sku = `${offset}px`;
+            offset += SKU_WIDTH;
+        }
+
+        if (cols.fornecedor) {
+            positions.fornecedor = `${offset}px`;
+            offset += FORNECEDOR_WIDTH;
+        }
+
+        if (cols.embalagem) {
+            positions.embalagem = `${offset}px`;
+            offset += EMBALAGEM_WIDTH;
+        }
+
+        return positions;
+    }, [cols.sku, cols.fornecedor, cols.embalagem]);
 
     const handleAddItem = () => {
         if (!onAddManualItem) return;
@@ -247,15 +304,23 @@ export function ProductTable({
     };
 
     const renderSortableHeader = (label: string, key: SortKey, width: string, align: 'left' | 'right' = 'left', stickyLeft?: string) => {
-        const style: React.CSSProperties = {
-            width,
-            minWidth: width,
-            maxWidth: width,
-            ...(stickyLeft
-                ? { position: 'sticky', top: 0, left: stickyLeft, zIndex: 30 }
-                : { position: 'sticky', top: 0, zIndex: 20 }
-            )
-        };
+        // Sticky columns use fixed widths; non-sticky columns use minWidth only to allow expansion
+        const style: React.CSSProperties = stickyLeft
+            ? {
+                width,
+                minWidth: width,
+                maxWidth: width,
+                position: 'sticky',
+                top: 0,
+                left: stickyLeft,
+                zIndex: 30,
+            }
+            : {
+                minWidth: width,
+                position: 'sticky',
+                top: 0,
+                zIndex: 20,
+            };
 
         // Ensure solid background with !important (using !) to hide scrolling content
         const baseBg = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
@@ -291,24 +356,25 @@ export function ProductTable({
                         <th className="px-3 py-2 text-left w-[50px] sticky top-0 left-0 z-30 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] align-middle border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">
                             <span className="sr-only">Selecionar</span>
                         </th>
-                        {/* Frozen Columns */}
-                        {renderSortableHeader('Produto', 'nome', '320px', 'left', '50px')}
-                        {renderSortableHeader('SKU', 'codigo', '90px', 'left', '370px')}
-                        {renderSortableHeader('Cód. Forn.', 'fornecedor_codigo', '110px', 'left', '460px')}
-                        {renderSortableHeader('Emb.', 'embalagem_qtd', '60px', 'right', '570px')}
+                        {/* Frozen Columns - Produto sempre visível */}
+                        {renderSortableHeader('Produto', 'nome', '320px', 'left', stickyPositions.produto)}
+                        {cols.sku && renderSortableHeader('SKU', 'codigo', '90px', 'left', stickyPositions.sku)}
+                        {cols.fornecedor && renderSortableHeader('Cód. Forn.', 'fornecedor_codigo', '110px', 'left', stickyPositions.fornecedor)}
+                        {cols.embalagem && renderSortableHeader('Emb.', 'embalagem_qtd', '60px', 'right', stickyPositions.embalagem)}
 
                         {/* Scrolling Columns */}
-                        <th className="px-3 py-2 text-right min-w-[70px] w-[70px] align-middle sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]" title="Lead Time (dias de entrega do fornecedor)">LT</th>
-                        {renderSortableHeader('Estoque', 'disponivel', '85px', 'right')}
-                        {renderSortableHeader('Rupt.', 'diasAteRuptura', '70px', 'right')}
-                        {renderSortableHeader('Cons. Per.', 'consumo_periodo', '85px', 'right')}
-                        {renderSortableHeader('Cons. Mês', 'consumo_mensal', '85px', 'right')}
-                        {renderSortableHeader('Sugestão', 'sugestao_base', '85px', 'right')}
+                        {cols.leadTime && <th className="px-3 py-2 text-right min-w-[70px] align-middle sticky top-0 z-20 !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]" title="Lead Time (dias de entrega do fornecedor)">LT</th>}
+                        {cols.estoque && renderSortableHeader('Estoque', 'disponivel', '85px', 'right')}
+                        {cols.ruptura && renderSortableHeader('Rupt.', 'diasAteRuptura', '70px', 'right')}
+                        {cols.consumoPeriodo && renderSortableHeader('Cons. Per.', 'consumo_periodo', '85px', 'right')}
+                        {cols.consumoMensal && renderSortableHeader('Cons. Mês', 'consumo_mensal', '85px', 'right')}
+                        {cols.sugestao && renderSortableHeader('Sugestão', 'sugestao_base', '85px', 'right')}
+                        {/* Pedido sempre visível */}
                         {renderSortableHeader('Pedido', 'sugestao_ajustada', '90px', 'right')}
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Custo</th>
-                        <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Total</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[180px] w-[180px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Obs. (PDF)</th>
-                        <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[100px] w-[100px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>
+                        {cols.custo && <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Custo</th>}
+                        {cols.total && <th className="px-3 py-2 text-right sticky top-0 z-20 min-w-[90px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Total</th>}
+                        {cols.observacao && <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[150px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Obs. (PDF)</th>}
+                        {cols.status && <th className="px-3 py-2 text-left sticky top-0 z-20 min-w-[80px] align-middle !bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)] border-b border-[var(--color-neutral-200)] dark:border-[var(--color-neutral-800)]">Status</th>}
                     </tr>
                 </thead>
                 <tbody className="tbody-divider">
@@ -555,8 +621,8 @@ export function ProductTable({
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className={`px-3 py-2 cell-text-code select-all truncate sticky left-[370px] z-10 ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px' }}>{p.codigo || '-'}</td>
-                                        <td className={`px-3 py-2 sticky left-[460px] z-10 ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                        {cols.sku && <td className={`px-3 py-2 cell-text-code select-all truncate sticky z-10 ${stickyDataClass}`} title={p.codigo ?? ''} style={{ width: '90px', minWidth: '90px', maxWidth: '90px', left: stickyPositions.sku }}>{p.codigo || '-'}</td>}
+                                        {cols.fornecedor && <td className={`px-3 py-2 sticky z-10 ${stickyDataClass}`} style={{ width: '110px', minWidth: '110px', maxWidth: '110px', left: stickyPositions.fornecedor }}>
                                             <div className="flex flex-col gap-0.5 w-full min-w-0">
                                                 <input
                                                     className="app-input h-8 text-sm px-2"
@@ -571,8 +637,8 @@ export function ProductTable({
                                                     {fornecedorNomeFormatado || 'N/D'}
                                                 </p>
                                             </div>
-                                        </td>
-                                        <td className={`px-3 py-2 text-right sticky left-[570px] z-10 ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px' }}>
+                                        </td>}
+                                        {cols.embalagem && <td className={`px-3 py-2 text-right sticky z-10 ${stickyDataClass}`} style={{ width: '60px', minWidth: '60px', maxWidth: '60px', left: stickyPositions.embalagem }}>
                                             <input
                                                 type="number"
                                                 min={1}
@@ -580,8 +646,8 @@ export function ProductTable({
                                                 value={p.embalagem_qtd}
                                                 onChange={(e) => onUpdateEmbalagem(p.id_produto_tiny, Number(e.target.value))}
                                             />
-                                        </td>
-                                        <td className="px-3 py-2" style={{ width: '70px', minWidth: '70px', maxWidth: '70px' }}>
+                                        </td>}
+                                        {cols.leadTime && <td className="px-3 py-2" style={{ minWidth: '70px' }}>
                                             <input
                                                 type="number"
                                                 min={0}
@@ -592,8 +658,8 @@ export function ProductTable({
                                                 onChange={(e) => onUpdateLeadTime(p.id_produto_tiny, Number(e.target.value))}
                                                 title="Lead Time em dias"
                                             />
-                                        </td>
-                                        <td className="px-3 py-2 text-right" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
+                                        </td>}
+                                        {cols.estoque && <td className="px-3 py-2 text-right" style={{ minWidth: '85px' }}>
                                             <div className="flex items-center justify-end gap-2">
                                                 <div className="text-[var(--color-neutral-900)] dark:text-white font-semibold text-xs">
                                                     {disponivel.toLocaleString('pt-BR')}
@@ -608,8 +674,8 @@ export function ProductTable({
                                                     <Loader2 className={`w-3 h-3 ${loadingLive ? 'animate-spin' : ''}`} />
                                                 </button>
                                             </div>
-                                        </td>
-                                        <td className="px-3 py-2 text-right" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                                        </td>}
+                                        {cols.ruptura && <td className="px-3 py-2 text-right" style={{ minWidth: '70px' }}>
                                             {(() => {
                                                 const dias = p.diasAteRuptura;
                                                 if (dias === null) {
@@ -626,10 +692,10 @@ export function ProductTable({
                                                     </span>
                                                 );
                                             })()}
-                                        </td>
-                                        <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_periodo.toLocaleString('pt-BR')}</td>
-                                        <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>{p.consumo_mensal.toFixed(0)}</td>
-                                        <td className="px-3 py-2 text-right" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
+                                        </td>}
+                                        {cols.consumoPeriodo && <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ minWidth: '85px' }}>{p.consumo_periodo.toLocaleString('pt-BR')}</td>}
+                                        {cols.consumoMensal && <td className="px-3 py-2 text-[var(--color-neutral-900)] dark:text-white text-right text-xs" style={{ minWidth: '85px' }}>{p.consumo_mensal.toFixed(0)}</td>}
+                                        {cols.sugestao && <td className="px-3 py-2 text-right" style={{ minWidth: '85px' }}>
                                             <div className="font-semibold text-[var(--color-neutral-900)] dark:text-white text-xs">{p.sugestao_base.toFixed(0)}</div>
                                             {Math.ceil(p.quantidadeNecessaria) > 0 && Math.ceil(p.quantidadeNecessaria) !== p.sugestao_base && (
                                                 <div className="text-[9px] text-[var(--color-neutral-500)] leading-none mt-0.5" title="Quantidade real necessária sem arredondamento de embalagem">
@@ -639,8 +705,8 @@ export function ProductTable({
                                             {p.alerta_embalagem && p.precisaRepor && (
                                                 <div className="text-[9px] text-table-warning leading-none mt-0.5" title="Abaixo do lote">Lote</div>
                                             )}
-                                        </td>
-                                        <td className="px-3 py-2 text-right" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                        </td>}
+                                        <td className="px-3 py-2 text-right" style={{ minWidth: '90px' }}>
                                             <div className="flex items-center justify-end gap-1 relative">
                                                 {p.estoquePendente > 0 && (
                                                     <div
@@ -665,25 +731,25 @@ export function ProductTable({
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-3 py-2 text-right font-medium cell-text-price truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                        {cols.custo && <td className="px-3 py-2 text-right font-medium cell-text-price truncate" style={{ minWidth: '90px' }}>
                                             {p.preco_custo > 0
                                                 ? p.preco_custo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                                 : '-'}
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-bold cell-text-price text-[var(--color-success)] dark:text-[var(--color-success-light)] truncate" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                        </td>}
+                                        {cols.total && <td className="px-3 py-2 text-right font-bold cell-text-price text-[var(--color-success)] dark:text-[var(--color-success-light)] truncate" style={{ minWidth: '90px' }}>
                                             {p.total_valor_calculado > 0
                                                 ? p.total_valor_calculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                                                 : '-'}
-                                        </td>
-                                        <td className="px-3 py-2" style={{ width: '220px', minWidth: '220px', maxWidth: '220px' }}>
+                                        </td>}
+                                        {cols.observacao && <td className="px-3 py-2" style={{ minWidth: '150px' }}>
                                             <textarea
                                                 className="app-input w-full min-h-[40px] h-10 text-sm px-4 py-2 resize-y"
                                                 value={p.observacao_compras ?? ''}
                                                 onChange={(e) => onUpdateObservacao(p.id_produto_tiny, e.target.value)}
                                                 placeholder="Obs..."
                                             />
-                                        </td>
-                                        <td className="px-3 py-2 text-left" style={{ width: '100px', minWidth: '100px', maxWidth: '100px' }}>
+                                        </td>}
+                                        {cols.status && <td className="px-3 py-2 text-left" style={{ minWidth: '80px' }}>
                                             {syncStatus[p.id_produto_tiny] === 'saving' && (
                                                 <span className="sync-indicator sync-indicator-saving">
                                                     <Loader2 className="w-3 h-3 animate-spin" /> Salvando
@@ -703,7 +769,7 @@ export function ProductTable({
                                                     <AlertCircle className="w-3 h-3" /> Erro
                                                 </button>
                                             )}
-                                        </td>
+                                        </td>}
                                     </tr>
                                 );
                             })}
