@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { SHOPEE_DEFAULTS } from '@/app/configuracoes/taxas-marketplace/lib/defaults';
+import { normalizeEnvValue } from '@/lib/env';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseKey =
+    normalizeEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
+    normalizeEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
