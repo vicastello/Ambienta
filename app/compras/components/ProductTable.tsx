@@ -396,13 +396,11 @@ export function ProductTable({
                                     const isSelected = selectedIds[m.id];
 
                                     // Manual items don't have complex warning logic yet, but valid to have selection style
-                                    let stickyDataClass = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
-                                    if (isSelected) {
-                                        stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
-                                    }
+                                    // Sticky cells sempre neutros
+                                    const stickyDataClass = '!bg-[var(--color-neutral-50)] dark:!bg-[var(--color-neutral-900)]';
 
                                     return (
-                                        <tr key={`manual-item-${m.id}`} className={`align-middle manual-row ${isSelected ? 'table-row-selected' : 'bg-amber-50/30 dark:bg-amber-900/10'}`}>
+                                        <tr key={`manual-item-${m.id}`} className="align-middle manual-row">
                                             <td className={`px-3 py-2 w-[50px] align-middle text-center sticky left-0 z-10 sticky-cell ${stickyDataClass}`}>
                                                 <button
                                                     type="button"
@@ -556,15 +554,9 @@ export function ProductTable({
                                     alertBorderClass = 'alert-border-warning';
                                 }
 
-                                if (isSelected) {
-                                    // Selecionado: Verde/Teal
-                                    rowClass += ' table-row-selected';
-                                    stickyDataClass = '!bg-teal-50 dark:!bg-teal-950';
-                                } else {
-                                    // Normal Zebra
-                                    if (virtualRow.index % 2 === 0) {
-                                        rowClass += ' dark:bg-white/[0.02]';
-                                    }
+                                // Zebra striping apenas (sem cor para selecionados)
+                                if (virtualRow.index % 2 === 0) {
+                                    rowClass += ' dark:bg-white/[0.02]';
                                 }
 
                                 return (
