@@ -1125,6 +1125,27 @@
         /* amber-950/50 */
     }
 
+    /* Alert Border Indicators - Borda vertical colorida para alertas */
+    .alert-border-critical {
+        border-left: 4px solid #f43f5e !important;
+        /* rose-500 */
+    }
+
+    :root.dark .alert-border-critical {
+        border-left: 4px solid #fb7185 !important;
+        /* rose-400 */
+    }
+
+    .alert-border-warning {
+        border-left: 4px solid #f59e0b !important;
+        /* amber-500 */
+    }
+
+    :root.dark .alert-border-warning {
+        border-left: 4px solid #fbbf24 !important;
+        /* amber-400 */
+    }
+
     /* ==========================================================================
      TABLE ROW ZEBRA - Para alternância de cores
      ========================================================================== */
@@ -1797,8 +1818,15 @@
 }
 
 @keyframes upload-bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-6px);
+    }
 }
 
 /* ==========================================================================

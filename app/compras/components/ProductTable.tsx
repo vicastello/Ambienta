@@ -550,10 +550,10 @@ export function ProductTable({
 
                                 if (isCritical) {
                                     // CRÍTICO: Borda rosa/vermelha
-                                    alertBorderClass = 'border-l-4 border-l-rose-500 dark:border-l-rose-400';
+                                    alertBorderClass = 'alert-border-critical';
                                 } else if (isAlertEmbalagem) {
                                     // EMBALAGEM: Borda âmbar
-                                    alertBorderClass = 'border-l-4 border-l-amber-500 dark:border-l-amber-400';
+                                    alertBorderClass = 'alert-border-warning';
                                 }
 
                                 if (isSelected) {
